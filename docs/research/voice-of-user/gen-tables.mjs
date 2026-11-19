@@ -1,5 +1,5 @@
 // Usage: node docs/research/voice-of-user/gen-tables.mjs docs/research/voice-of-user/data > docs/research/voice-of-user/ranking.md
-// Writes the full ranking that doc 18 links to. Edit clusters.mjs (status, call, notes), then rerun.
+// Edit clusters.mjs, then rerun.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

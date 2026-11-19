@@ -1,10 +1,5 @@
-// ===========================================
-// Fake AMQP queue for unit tests
-// ===========================================
-// A queue with prefetch 1: one message is out at a time, an ack removes it, a
-// nack with requeue puts it back at the head, a nack without requeue moves it
-// to `deadLettered`. Losing the connection (`disconnect()`) returns the
-// unacknowledged message to the head, marked redelivered, as RabbitMQ does.
+// Prefetch 1. Losing the connection returns the unacknowledged message to the head, marked
+// redelivered, as RabbitMQ does.
 
 import type { AmqpConsume, AmqpConsumer, AmqpDelivery, AmqpOutbound, AmqpPublisher } from '../amqp/amqp-client.js';
 
@@ -19,7 +14,6 @@ export class FakeAmqpQueue {
   readonly acked: string[] = [];
   readonly deadLettered: string[] = [];
   connectCount = 0;
-  /** Connect attempts left to fail. */
   failConnects = 0;
   /** Put a nacked-with-requeue message at the tail, as a quorum queue may, instead of the head. */
   requeueAtTail = false;
@@ -44,7 +38,6 @@ export class FakeAmqpQueue {
     return this.connection;
   };
 
-  /** Drop the connection: the message out for processing goes back, redelivered. */
   disconnect(): void {
     const connection = this.connection;
     if (!connection) return;
@@ -70,7 +63,6 @@ export class FakeAmqpQueue {
     return this.connection !== null;
   }
 
-  /** Connections opened and not yet closed by the client, or lost. */
   get openConnections(): number {
     return this.consumers.filter((c) => c.connectionOpen).length;
   }
@@ -151,7 +143,6 @@ class FakeConsumer implements AmqpConsumer {
   }
 }
 
-/** A publisher that records messages, or fails while `failPublishes` > 0 (losing its connection if `dropOnFail`). */
 export class FakeAmqpPublisher implements AmqpPublisher {
   readonly published: AmqpOutbound[] = [];
   failPublishes = 0;

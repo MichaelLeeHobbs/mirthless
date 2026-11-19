@@ -1,34 +1,22 @@
-// ===========================================
-// Alert Action Dispatcher
-// ===========================================
-// Executes alert actions: LOG writes to the logger,
-// CHANNEL routes error details to a target channel.
-
 import type { AlertTemplateVariable } from '@galvanigraph/core-models';
 import { fillPlaceholders, recordLookup } from '@galvanigraph/core-util';
 import type { LoadedAlert, AlertAction, ChannelErrorEvent } from './alert-evaluator.js';
 
-// ----- Types -----
-
-/** Logger interface for LOG actions. */
 export interface AlertLogger {
   warn(obj: Record<string, unknown>, message: string): void;
 }
 
-/** Callback to dispatch a message to a channel (for CHANNEL actions). */
 export type ChannelSender = (
   channelId: string,
   content: string,
 ) => Promise<void>;
 
-/** Callback to send alert emails (injected by the server). */
 export type EmailSender = (
   to: readonly string[],
   subject: string,
   body: string,
 ) => Promise<void>;
 
-/** Dependencies for the action dispatcher. */
 export interface ActionDispatcherDeps {
   readonly logger: AlertLogger;
   readonly channelSender?: ChannelSender;
@@ -37,9 +25,6 @@ export interface ActionDispatcherDeps {
   readonly channelName?: string;
 }
 
-// ----- Dispatch -----
-
-/** Dispatch all actions for a matched alert. */
 export async function dispatchActions(
   alert: LoadedAlert,
   event: ChannelErrorEvent,
@@ -52,7 +37,6 @@ export async function dispatchActions(
   }
 }
 
-/** Dispatch a single action. */
 async function dispatchSingleAction(
   action: AlertAction,
   alert: LoadedAlert,
@@ -120,7 +104,6 @@ async function dispatchSingleAction(
   }
 }
 
-/** Format alert content for channel dispatch. */
 function formatAlertContent(alert: LoadedAlert, event: ChannelErrorEvent, channelName?: string): string {
   const body = alert.bodyTemplate
     ? substituteAlertTemplate(alert.bodyTemplate, alert, event, channelName)
@@ -128,7 +111,6 @@ function formatAlertContent(alert: LoadedAlert, event: ChannelErrorEvent, channe
   return body;
 }
 
-/** Default alert body when no template is configured. */
 function defaultAlertBody(alert: LoadedAlert, event: ChannelErrorEvent): string {
   return [
     `Alert: ${alert.name}`,
@@ -139,22 +121,13 @@ function defaultAlertBody(alert: LoadedAlert, event: ChannelErrorEvent): string 
   ].join('\n');
 }
 
-/**
- * The event time as UTC ISO text, or undefined when the timestamp is missing or
- * not a valid time. A missing time (null from stored data) is not the 1970 epoch.
- */
+/** A missing time (null from stored data) is not the 1970 epoch. */
 function alertTime(timestamp: number): string | undefined {
   if (typeof timestamp !== 'number') return undefined;
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-/**
- * Substitute `${name}` placeholders in an alert template by the shared rule in
- * {@link fillPlaceholders}. Only the variables in ALERT_TEMPLATE_VARIABLES are
- * replaced; anything else, and `${timestamp}` when the event time is invalid,
- * is left as written.
- */
 export function substituteAlertTemplate(
   template: string,
   alert: LoadedAlert,

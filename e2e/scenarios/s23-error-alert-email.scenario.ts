@@ -1,7 +1,4 @@
-// S23: a destination error sends an alert email.
-// Operator expectation (doc 14 B1 and Mirth Alerts): an error on a channel
-// mails the on-call address with the channel name. The alert is set up in this
-// product's own alert screen (API), since alerts are server settings an
+// Doc 14 B1. The alert is made through the API, not the import: alerts are server settings an
 // operator recreates rather than channel exports.
 // Needs GreenMail: docker compose -f docker/docker-compose.yml --profile test up -d mail-test
 

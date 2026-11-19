@@ -1,7 +1,3 @@
-// ===========================================
-// Data Pruner Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { DataPrunerController } from '../controllers/data-pruner.controller.js';
@@ -25,14 +21,12 @@ router.get(
   DataPrunerController.getStatistics,
 );
 
-// Prune all channels
 router.post(
   '/',
   requirePermission('settings:write'),
   DataPrunerController.pruneAll,
 );
 
-// Prune a specific channel
 router.post(
   '/:channelId',
   requirePermission('settings:write'),

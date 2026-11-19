@@ -1,7 +1,3 @@
-// ===========================================
-// DICOM Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import type { MessageDispatcher, RawMessage, DispatchResult } from '../../base.js';
@@ -13,8 +9,6 @@ import {
   type DcmtkAssociationData,
   type ReceiverFactory,
 } from '../dicom-receiver.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<DicomReceiverConfig>): DicomReceiverConfig {
   return {
@@ -105,13 +99,9 @@ function makeDispatcher(response?: Result<DispatchResult>): MessageDispatcher {
   return vi.fn(async () => response ?? defaultResponse);
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- onDeploy -----
 
 describe('DicomReceiver.onDeploy', () => {
   it('succeeds with valid config', async () => {
@@ -169,8 +159,6 @@ describe('DicomReceiver.onDeploy', () => {
   });
 });
 
-// ----- onStart -----
-
 describe('DicomReceiver.onStart', () => {
   it('fails when dispatcher is not set', async () => {
     const mock = makeMockReceiver();
@@ -205,8 +193,6 @@ describe('DicomReceiver.onStart', () => {
   });
 });
 
-// ----- FILE_RECEIVED dispatch (PER_FILE mode) -----
-
 describe('DicomReceiver PER_FILE dispatch', () => {
   it('dispatches with filePath as content and metadata in sourceMap', async () => {
     const mock = makeMockReceiver();
@@ -218,7 +204,6 @@ describe('DicomReceiver PER_FILE dispatch', () => {
     const fileData = makeFileData();
     mock.fileHandler!(fileData);
 
-    // Allow async handler to complete
     await vi.waitFor(() => {
       expect(dispatcher).toHaveBeenCalledTimes(1);
     });
@@ -240,7 +225,6 @@ describe('DicomReceiver PER_FILE dispatch', () => {
     receiver.setDispatcher(dispatcher);
     await receiver.onStart();
 
-    // Undeploy clears dispatcher
     await receiver.onUndeploy();
 
     mock.fileHandler!(makeFileData());
@@ -249,8 +233,6 @@ describe('DicomReceiver PER_FILE dispatch', () => {
     expect(dispatcher).not.toHaveBeenCalled();
   });
 });
-
-// ----- PER_ASSOCIATION mode -----
 
 describe('DicomReceiver PER_ASSOCIATION dispatch', () => {
   it('dispatches association data as JSON array content', async () => {
@@ -279,8 +261,6 @@ describe('DicomReceiver PER_ASSOCIATION dispatch', () => {
   });
 });
 
-// ----- Post-action -----
-
 describe('DicomReceiver post-action', () => {
   it('does not apply post-action when dispatch fails', async () => {
     const mock = makeMockReceiver();
@@ -301,11 +281,8 @@ describe('DicomReceiver post-action', () => {
     await vi.waitFor(() => {
       expect(dispatcher).toHaveBeenCalledTimes(1);
     });
-    // No error thrown — post-action is skipped
   });
 });
-
-// ----- Lifecycle -----
 
 describe('DicomReceiver lifecycle', () => {
   it('stops the underlying receiver', async () => {

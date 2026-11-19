@@ -1,9 +1,4 @@
-// ===========================================
-// Role Editor Page
-// ===========================================
-// Create, edit or clone a role (D-310). /roles/new, /roles/new?from=<id> for a
-// clone (saved with clonedFrom, which the audit log records), /roles/:id to
-// edit. The admin role is shown read-only: it is locked.
+// A clone (?from=<id>) saves with clonedFrom, which the audit log records.
 
 import { useEffect, useRef, useState, type ReactNode, type ChangeEvent } from 'react';
 import { Link as RouterLink, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -43,7 +38,6 @@ function draftOf(role: RoleSummary | undefined, clone: boolean): Draft {
   return { name: clone ? `Copy of ${role.name}` : role.name, description: role.description, permissions: new Set(permissions) };
 }
 
-/** How many fields differ from the loaded role. */
 function changeCount(a: Draft, b: Draft): number {
   const samePerms = a.permissions.size === b.permissions.size && [...a.permissions].every((p) => b.permissions.has(p));
   return Number(a.name !== b.name) + Number(a.description !== b.description) + Number(!samePerms);
@@ -61,8 +55,8 @@ export function RoleEditorPage(): ReactNode {
 
   const editing = roles?.find((r) => r.id === id);
   const source = roles?.find((r) => r.id === fromId);
-  // The draft is taken once per role being edited or cloned. A background
-  // refetch (a new holder count, another tab) must not reset what is typed.
+  // Seeded once per role: a background refetch (a new holder count, another
+  // tab) must not reset what is typed.
   const key = `${id ?? ''}|${fromId ?? ''}`;
   const [seed, setSeed] = useState<{ readonly key: string; readonly draft: Draft } | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);

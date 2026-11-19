@@ -1,7 +1,3 @@
-// ===========================================
-// Destination Connector Default Properties
-// ===========================================
-
 import type { DestinationFormValues } from './types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../source/types.js';
 import { NEW_SCRIPT_LANGUAGE } from '../../../lib/script-language.js';
@@ -27,9 +23,7 @@ export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   headers: {},
   contentType: 'text/plain',
   responseTimeout: 30000,
-  // Transport mode. HTTPS selects TLS material from the certificate store by ID;
-  // the server resolves IDs -> PEM at deploy time (readTlsClientOptions consumes
-  // the resolved cert/key/ca/rejectUnauthorized bag). No raw PEM is stored here.
+  // TLS by certificate id; the server resolves ids to PEM at deploy. No raw PEM is stored here.
   scheme: 'HTTP',
   tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
 };
@@ -110,9 +104,7 @@ export const DICOM_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   timeoutMs: 30000,
 };
 
-// Keys MUST match exactly what the SFTP destination connector reads in
-// packages/connectors/src/sftp (host/port/username/password/privateKey/
-// passphrase/remoteDirectory/fileNameTemplate/appendMode/strictHostKey/hostKey).
+// Keys must match exactly what the SFTP destination connector reads (packages/connectors/src/sftp).
 export const SFTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '',
   port: 22,
@@ -157,12 +149,10 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   AMQP: AMQP_DEST_DEFAULTS,
 };
 
-/** Get default properties for a destination connector type. */
 export function getDestDefaultProperties(connectorType: string): Record<string, unknown> {
   return { ...(DEFAULTS_MAP[connectorType] ?? {}) };
 }
 
-/** Create a new destination with defaults. */
 export function createDefaultDestination(index: number): DestinationFormValues {
   return {
     name: `Destination ${String(index + 1)}`,

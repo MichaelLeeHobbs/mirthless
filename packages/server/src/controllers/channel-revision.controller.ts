@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Revision Controller
-// ===========================================
-// Handles HTTP requests for channel revision history.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, holdsPermission } from '@galvanigraph/core-models';
 import { recordReadBestEffort } from '../lib/audited-read.js';

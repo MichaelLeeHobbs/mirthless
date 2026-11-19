@@ -1,16 +1,5 @@
-// ===========================================
-// Migration Scenario Suite: Playwright config
-// ===========================================
-// Runs the operator scenarios in e2e/scenarios against a real server and a real
-// Postgres database. Each scenario imports a Mirth Connect channel export,
-// deploys it and sends real messages through real connectors.
-//
-// The suite owns its server: it never reuses one, so a developer's running
-// server and database are never touched. It needs a migrated, seeded `*_test`
-// database in SCENARIO_DATABASE_URL (see docs/testing/migration-scenarios.md).
-//
-// pnpm test:scenarios         run the suite
-// pnpm test:scenarios:score   run it and print the weighted score
+// The suite never reuses a server, so a developer's running server and database
+// are never touched. Setup: docs/testing/migration-scenarios.md.
 
 import { defineConfig } from '@playwright/test';
 import { SCENARIO_FILE_ROOT } from './e2e/scenarios/support/files.js';

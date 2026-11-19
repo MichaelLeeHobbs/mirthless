@@ -1,9 +1,3 @@
-// ===========================================
-// Resources E2E Tests
-// ===========================================
-// Creates, edits and deletes a resource of this spec's own through the UI,
-// checking each change on the page and in the API.
-
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, getData } from './fixtures/api.js';
@@ -18,7 +12,6 @@ interface ResourceRow { readonly id: string; readonly name: string }
 
 let api: APIRequestContext;
 
-/** This spec's resources (names starting with TEST_RESOURCE_NAME) as the API lists them. */
 async function ownResources(): Promise<readonly ResourceRow[]> {
   const list = await getData<ResourceRow[]>(api, '/resources');
   return list.filter((r) => r.name.startsWith(TEST_RESOURCE_NAME));
@@ -67,7 +60,6 @@ test.describe('Resources', () => {
   test('new resource appears in list', async ({ page }) => {
     await page.goto('/resources');
 
-    // A fresh load shows the saved row: name, description, default MIME type and content size.
     const row = page.getByRole('row', { name: new RegExp(TEST_RESOURCE_NAME) });
     await expect(row.getByRole('cell')).toHaveText([TEST_RESOURCE_NAME, DESCRIPTION, 'text/plain', '20.0 B', '']);
   });

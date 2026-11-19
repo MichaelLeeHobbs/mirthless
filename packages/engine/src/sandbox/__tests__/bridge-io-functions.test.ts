@@ -1,14 +1,6 @@
-// ===========================================
-// Bridge IO Functions Tests
-// ===========================================
-// Tests for httpFetch, dbQuery, routeMessage, getResource bridge functions.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS, type ExecutionOptions, type CompiledScript } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
-
-
-// ----- Helpers -----
 
 function makeScript(code: string): CompiledScript {
   return { code };
@@ -22,8 +14,6 @@ function makeContext(overrides?: Partial<SandboxContext>): SandboxContext {
   const base = createSandboxContext('test msg', 'raw data');
   return { ...base, ...overrides };
 }
-
-// ----- Tests -----
 
 describe('Bridge IO Functions', () => {
   describe('httpFetch', () => {

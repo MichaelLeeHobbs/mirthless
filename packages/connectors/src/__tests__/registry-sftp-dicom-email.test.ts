@@ -1,7 +1,3 @@
-// ===========================================
-// Registry: SFTP, DICOM and EMAIL properties parsed by the core-models schemas
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 

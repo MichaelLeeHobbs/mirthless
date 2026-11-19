@@ -1,9 +1,3 @@
-// ===========================================
-// Event Service
-// ===========================================
-// Business logic for querying, creating, and purging audit events.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, desc, and, inArray, gte, lte, sql } from 'drizzle-orm';
 import { AUDIT_ACTION, type CreateEventInput, type EventListQuery } from '@galvanigraph/core-models';
@@ -13,8 +7,6 @@ import { db } from '../lib/db.js';
 import { events } from '../db/schema/index.js';
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
-
-// ----- Response Types -----
 
 export interface EventSummary {
   readonly id: number;
@@ -42,15 +34,11 @@ export interface EventListResult {
   };
 }
 
-// ----- Helpers -----
-
-/** The event filters shared by the event list and the event export. */
 export type EventFilter = Pick<EventListQuery, 'level' | 'name' | 'outcome' | 'userId' | 'channelId' | 'startDate' | 'endDate'>;
 
 /**
- * Builds the WHERE clause for an event query. `level` and `name` are comma-separated lists.
- * A scoped caller sees only the events of channels inside `scope`, and no
- * system-wide events (D-310). Returns undefined when no filter is set.
+ * `level` and `name` are comma-separated lists. A scoped caller sees no system-wide
+ * events (D-310).
  */
 export function buildEventWhereConditions(query: EventFilter, scope: ChannelScope = ALL_CHANNELS): ReturnType<typeof and> {
   const conditions = [];
@@ -91,10 +79,7 @@ export function buildEventWhereConditions(query: EventFilter, scope: ChannelScop
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
-// ----- Service -----
-
 export class EventService {
-  /** List events with pagination and filters. */
   static async list(query: EventListQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<EventListResult>> {
     return tryCatch(async () => {
       const offset = (query.page - 1) * query.pageSize;
@@ -137,7 +122,7 @@ export class EventService {
     });
   }
 
-  /** Get event by ID with full detail; one outside `scope` reads as not found. */
+  /** An event outside `scope` reads as not found. */
   static async getById(id: number, scope: ChannelScope = ALL_CHANNELS): Promise<Result<EventDetail>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -164,11 +149,7 @@ export class EventService {
     });
   }
 
-  /**
-   * Whether an event named `name` was recorded for `userId` at or after
-   * `since`. A key's first read of the day waits on this, so it gets the
-   * audit write's short limit.
-   */
+  /** A key's first read of the day waits on this, so it gets the audit write's short limit. */
   static async hasEventSince(name: string, userId: string, since: Date): Promise<Result<boolean>> {
     return tryCatch(db.transaction(async (tx) => {
       await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(AUDIT_WRITE_TIMEOUT_MS)}`));
@@ -179,7 +160,7 @@ export class EventService {
     }));
   }
 
-  /** Create a new audit event. Internal use only. */
+  /** Internal use only. */
   static async create(input: CreateEventInput): Promise<Result<EventDetail>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -212,12 +193,9 @@ export class EventService {
   }
 
   /**
-   * Purge events at least N days old (N >= 1). Admin-only. The server's database
-   * role cannot delete events itself (D-307), so this calls the owner function
-   * `purge_events`, which refuses N below 1. The purge and its record in the
-   * protected audit log share one transaction (D-312): when the record cannot
-   * be written the purge rolls back, and a purge that fails is not recorded
-   * as done.
+   * The server's database role cannot delete events (D-307), so this calls the owner
+   * function `purge_events`, which refuses N below 1. The purge and its audit record
+   * share one transaction (D-312).
    */
   static async purge(olderThanDays: number, actor?: { userId?: string | null; ipAddress?: string | null }): Promise<Result<{ deleted: number }>> {
     return tryCatch(async () => db.transaction(async (tx) => {

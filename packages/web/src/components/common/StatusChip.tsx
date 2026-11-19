@@ -1,11 +1,4 @@
-// ===========================================
-// Status Chip / Status Dot
-// ===========================================
-// The signature element of the UI: one consistent way to show state. A filled
-// dot carries the colour, a label carries the meaning — so state is never
-// communicated by colour alone (colour-blind and screen-reader safe). Used for
-// channel deployment states and message statuses alike, driven by the semantic
-// level from lib/status.ts.
+// State is never shown by colour alone: a label carries the meaning (colour-blind and screen-reader safe).
 
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
@@ -14,13 +7,11 @@ import { channelStateLevel, messageStatusLevel, type StatusLevel } from '../../l
 import { humanize } from '../../lib/format.js';
 
 interface StatusChipProps {
-  /** Display label in sentence case, e.g. "Started" or "Sent". */
+  /** Sentence case, e.g. "Started". */
   readonly label: string;
-  /** Semantic level; drives the colour. */
   readonly level: StatusLevel;
 }
 
-/** A dot-plus-label pill. State is encoded by both colour and text. */
 export function StatusChip({ label, level }: StatusChipProps): ReactNode {
   const theme = useTheme();
   const color = theme.palette.status[level];
@@ -54,12 +45,11 @@ export function StatusChip({ label, level }: StatusChipProps): ReactNode {
 
 interface StatusDotProps {
   readonly level: StatusLevel;
-  /** Accessible label. When omitted the dot is decorative (paired with text). */
+  /** Omit only when text beside the dot names the state: the dot is then hidden from screen readers. */
   readonly title?: string;
   readonly size?: number;
 }
 
-/** A bare status dot with a soft halo — for compact leading table cells. */
 export function StatusDot({ level, title, size = 8 }: StatusDotProps): ReactNode {
   const theme = useTheme();
   const color = theme.palette.status[level];
@@ -82,12 +72,10 @@ export function StatusDot({ level, title, size = 8 }: StatusDotProps): ReactNode
   );
 }
 
-/** Convenience: render a channel deployment state as a StatusChip. */
 export function ChannelStateChip({ state }: { readonly state: string }): ReactNode {
   return <StatusChip label={humanize(state)} level={channelStateLevel(state)} />;
 }
 
-/** Convenience: render a message/connector status as a StatusChip. */
 export function MessageStatusChip({ status }: { readonly status: string }): ReactNode {
   return <StatusChip label={humanize(status)} level={messageStatusLevel(status)} />;
 }

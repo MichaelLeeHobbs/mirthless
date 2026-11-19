@@ -1,7 +1,3 @@
-// ===========================================
-// Mirth code template library conversion tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import type { MirthConvertResult } from '../mirth-import.service.js';
 
@@ -25,7 +21,6 @@ function library(name: string, templates: string, enabledFor: readonly string[] 
 
 const CHANNEL_ID = '5c000400-0000-4000-8000-000000000001';
 
-/** Convert a server backup holding one channel and the given libraries. */
 function convertBackup(libraries: string): MirthConvertResult {
   const xml = `<serverConfiguration version="4.5.0"><channels><channel version="4.5.0"><id>${CHANNEL_ID}</id><name>C</name>
 <sourceConnector><properties class="com.mirth.connect.connectors.vm.VmReceiverProperties"/></sourceConnector><destinationConnectors/></channel></channels>

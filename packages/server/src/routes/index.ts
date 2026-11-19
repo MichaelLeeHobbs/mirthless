@@ -1,8 +1,3 @@
-// ===========================================
-// Route Aggregator
-// ===========================================
-// Combines all route modules under /api/v1 prefix.
-
 import { Router, type IRouter } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { apiKeyRateLimiter } from '../middleware/rate-limit.middleware.js';
@@ -50,10 +45,8 @@ import userRoutes from './user.routes.js';
 
 const router: IRouter = Router();
 
-// ----- Public: the only routes a caller without a session reaches (D-299) -----
-// PUBLIC_ROUTES in __tests__/api-routes.ts lists them, and public-routes.test.ts
-// fails on any other route that answers an anonymous caller. Add one only with a
-// reason in that list.
+// Public: the only routes a caller without a session reaches (D-299). Add one
+// only with its reason in PUBLIC_ROUTES (__tests__/api-routes.ts).
 
 // Health check, used by Playwright and load balancers
 router.get('/health', (_req, res) => {
@@ -62,7 +55,6 @@ router.get('/health', (_req, res) => {
 // Login and refresh (each behind its own rate limiter). Logout authenticates itself.
 router.use('/auth', authRoutes);
 
-// ----- Everything below needs a session -----
 // One guard for the whole API. Routers must not add their own: ten routers share
 // the /channels mount, and each one's guard would run again (#217).
 router.use(authenticate);
@@ -74,9 +66,8 @@ router.use(jsonBody);
 router.use('/alerts', alertRoutes);
 router.use('/api-keys', apiKeyRoutes);
 router.use('/audit', auditRoutes);
-// Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
-// defines GET /:id which greedily matches any single-segment path like
-// /statistics or /status, causing UUID validation failures.
+// Specific /channels sub-routers go before channelRoutes, whose GET /:id would
+// capture paths like /status and fail UUID validation.
 router.use('/channels', attachmentRoutes);
 router.use('/channels', channelExportRoutes);
 router.use('/channels/import/mirth', mirthImportRoutes);

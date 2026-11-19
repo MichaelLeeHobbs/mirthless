@@ -1,7 +1,3 @@
-// ===========================================
-// MessageSearchBar Tests
-// ===========================================
-
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';

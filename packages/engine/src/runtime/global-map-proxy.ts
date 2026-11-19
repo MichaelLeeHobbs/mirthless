@@ -1,24 +1,15 @@
-// ===========================================
-// Global Map Proxy
-// ===========================================
 // The one in-memory copy of the global map, shared by every deployed channel.
-// Tracks which keys scripts changed and saves them to the database on a timer.
 
 import { GlobalChannelMap } from './global-channel-map.js';
 
-// ----- Types -----
-
-/** Where the global map is persisted. */
 export interface GlobalMapStore {
-  /** Save one entry. `isJson` is false for plain text, true for any other value stored as JSON. */
+  /** `isJson` is false for plain text, true for any other value stored as JSON. */
   readonly save: (key: string, value: string, isJson: boolean) => Promise<void>;
-  /** Remove one entry. */
   readonly remove: (key: string) => Promise<void>;
-  /** Called when a save or remove fails. The key stays pending and is retried on the next flush. */
+  /** The key stays pending and is retried on the next flush. */
   readonly onFlushError: (key: string, error: unknown) => void;
 }
 
-/** A persisted global map entry. */
 export interface GlobalMapRow {
   readonly key: string;
   readonly value: string | null;
@@ -36,13 +27,9 @@ function fromRow(row: GlobalMapRow): unknown {
   }
 }
 
-// ----- Implementation -----
-
-/** In-memory global map with change tracking and periodic flush. */
 export class GlobalMapProxy {
   private readonly map = new GlobalChannelMap();
   private readonly dirty = new Set<string>();
-  /** The latest write of each key that has not settled yet. */
   private readonly inFlight = new Map<string, Promise<void>>();
   private readonly persistence: GlobalMapStore;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
@@ -53,14 +40,12 @@ export class GlobalMapProxy {
     this.flushIntervalMs = flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
   }
 
-  /** Initialize from persisted entries. Plain text stays text; JSON entries get their type back. */
   load(entries: ReadonlyArray<GlobalMapRow>): void {
     for (const entry of entries) {
       this.map.put(entry.key, fromRow(entry));
     }
   }
 
-  /** Start periodic flush timer. */
   start(): void {
     if (this.flushTimer !== null) return;
     this.flushTimer = setInterval(() => {
@@ -68,26 +53,20 @@ export class GlobalMapProxy {
     }, this.flushIntervalMs);
   }
 
-  /** Get a snapshot as a plain record for sandbox injection. */
   toRecord(): Record<string, unknown> {
     return this.map.toRecord();
   }
 
-  /**
-   * Apply what a script changed. `before` is the snapshot the script was given
-   * and `after` is the map it left; only keys that differ are written.
-   */
   applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
     for (const key of this.map.applyChanges(before, after)) {
       this.dirty.add(key);
     }
   }
 
-  // An edit made through the API is already in the database, but a script save
-  // of the same key on another connection can commit after it, even one whose
-  // promise resolved before the API told the proxy. So an API edit always marks
-  // the key dirty: the next flush writes the API's value last. The extra write
-  // is idempotent.
+  // An API edit is already in the database, but a script save of the same key on
+  // another connection can commit after it, even one whose promise resolved before
+  // the API told the proxy. So an API edit always marks the key dirty and the next
+  // flush writes the API's value last (#92). The extra write is idempotent.
 
   /** Take an entry that the API already persisted. */
   set(row: GlobalMapRow): void {
@@ -107,7 +86,7 @@ export class GlobalMapProxy {
     this.map.clear();
   }
 
-  /** Save every changed key. Never rejects: failures are reported and retried next time. */
+  /** Never rejects: failures are reported and retried next time. */
   async flush(): Promise<void> {
     if (this.dirty.size === 0) return;
 
@@ -124,7 +103,6 @@ export class GlobalMapProxy {
     });
   }
 
-  /** Stop the flush timer and flush any remaining changes. */
   async dispose(): Promise<void> {
     if (this.flushTimer !== null) {
       clearInterval(this.flushTimer);

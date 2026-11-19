@@ -1,11 +1,3 @@
-// ===========================================
-// SettingsPage Tests
-// ===========================================
-// Settings show in plain-words sections; the save bar appears only once a value
-// changes; invalid values block saving; secrets are write-only; pruner settings
-// save through the pruner schedule so the schedule changes at once. Data and
-// permission hooks are mocked.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';

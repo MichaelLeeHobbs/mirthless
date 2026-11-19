@@ -1,21 +1,9 @@
-// ===========================================
-// Engine Content-Encryption Tests
-// ===========================================
-// Verifies the message store adapter encrypts content at rest when a channel
-// has encryptData enabled (round-trip, is_encrypted flag, stored bytes are NOT
-// plaintext, mixed rows) and that EngineManager.deploy refuses to deploy an
-// encryptData channel with no key configured.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Config mock (drives content-crypto key) -----
 
 const cfg: { CONTENT_ENCRYPTION_KEY: string | undefined } = {
   CONTENT_ENCRYPTION_KEY: 'a'.repeat(64),
 };
 vi.mock('../../config/index.js', () => ({ config: cfg }));
-
-// ----- Engine / connector mocks -----
 
 vi.mock('@galvanigraph/engine', () => ({
   ChannelRuntime: vi.fn(),
@@ -104,8 +92,6 @@ beforeEach(() => {
   mockInitializeMessage.mockResolvedValue(ok({ messageId: 1, correlationId: 'c1' }));
 });
 
-// ----- storeContent encryption -----
-
 describe('message store adapter — encryptData enabled', () => {
   it('encrypts content before persisting (stored bytes are NOT plaintext) and sets is_encrypted', async () => {
     const store = createMessageStoreAdapter({
@@ -123,7 +109,6 @@ describe('message store adapter — encryptData enabled', () => {
     const storedContent = args[4] as string;
     const encryptedFlag = args[6] as boolean;
 
-    // Stored value is an envelope, not the plaintext PHI.
     expect(isEncryptedEnvelope(storedContent)).toBe(true);
     expect(storedContent).not.toContain('Jane Doe');
     expect(storedContent).not.toBe(PHI);
@@ -200,8 +185,6 @@ describe('message store adapter — encryptData disabled', () => {
     expect(args[6]).toBe(false);
   });
 });
-
-// ----- deploy guard -----
 
 describe('EngineManager.deploy — encryptData key guard', () => {
   function makeChannel(encryptData: boolean): Record<string, unknown> {

@@ -1,7 +1,3 @@
-// ===========================================
-// EMAIL Connector Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { emailSourcePropertiesSchema } from '../email-connector.schema.js';
 

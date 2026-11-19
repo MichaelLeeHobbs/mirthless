@@ -1,8 +1,4 @@
-// S07: HTTP API listener routes by URL path and answers from the postprocessor.
-// Production pattern: "10001 API". Destinations are named after URL paths; the
-// source step keeps only the one matching $s('contextPath'); a destination
-// transformer puts the reply in the channel map and the postprocessor returns
-// it as JSON.
+// Production pattern: "10001 API", with destinations named after URL paths.
 
 import { expect, request } from '@playwright/test';
 import { channelExport, httpListener, jsWriter } from './support/mirth-xml.js';

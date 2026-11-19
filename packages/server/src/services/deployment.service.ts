@@ -1,9 +1,3 @@
-// ===========================================
-// Deployment Service
-// ===========================================
-// Orchestrates channel deployment, start, stop, and status.
-// All methods return Result<T> via tryCatch.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
@@ -21,8 +15,7 @@ import { CodeTemplateService } from './code-template.service.js';
 import { assertScriptsTypeCheck } from './script-type-gate.service.js';
 
 /**
- * Refuse a channel whose TypeScript scripts have type errors. Runs before
- * anything is torn down, so a refused redeploy leaves the channel running.
+ * Runs before anything is torn down, so a refused redeploy leaves the channel running.
  * Results are cached, so a redeploy's second check costs nothing.
  */
 async function typeCheckChannel(channel: ChannelDetail): Promise<void> {
@@ -31,45 +24,31 @@ async function typeCheckChannel(channel: ChannelDetail): Promise<void> {
   await assertScriptsTypeCheck(channel, templates.value);
 }
 
-/** Options for a deploy. */
 export interface DeployOptions {
   /**
-   * Refuse a channel with TypeScript type errors (default true). The startup
-   * auto-deploy turns it off and does not check at all: a channel that was
-   * running must come back after a restart, and the check would only cost time.
+   * Default true. Startup auto-deploy turns it off: a channel that was running must come
+   * back after a restart.
    */
   readonly typeCheck?: boolean;
 }
-
-// ----- Types -----
 
 export interface ChannelStatus {
   readonly channelId: string;
   readonly state: ChannelState;
 }
 
-// ----- Helpers -----
-
-/** Emit a channel state change event to all connected sockets. */
 function emitStateChange(channelId: string, state: ChannelState): void {
   emitToChannelAudience(channelId, SOCKET_EVENT.CHANNEL_STATE, { channelId, state });
 }
 
-/**
- * The error for a channel that deployed but would not start. The channel stays
- * deployed and stopped so it can be started once the cause is fixed.
- */
+/** The channel stays deployed and stopped, so it can be started once the cause is fixed. */
 function notRunning(action: 'deployed' | 'redeployed', channelId: string, cause: Error): ServiceError {
   logger.error({ channelId, errMsg: cause.message }, `Channel was ${action} but could not start`);
   emitStateChange(channelId, CHANNEL_STATE.STOPPED);
   return new ServiceError('CONFLICT', `Channel was ${action} but is stopped. ${cause.message}`);
 }
 
-/**
- * The channel as it deploys: configuration map references in connector
- * settings resolved, and a Channel Reader given its own channel id (used to
- * register itself).
- */
+/** A Channel Reader source gets its own channel id, which it registers itself under. */
 async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDetail> {
   const entries = await ConfigMapService.list();
   if (!entries.ok) throw new ServiceError('INTERNAL', `Could not load the configuration map: ${entries.error.message}`);
@@ -82,10 +61,7 @@ async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDeta
   };
 }
 
-// ----- Service -----
-
 export class DeploymentService {
-  /** Deploy a channel (loads config and initializes connectors). */
   static async deploy(channelId: string, context?: AuditContext, options: DeployOptions = {}): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const channelResult = await ChannelService.getById(channelId);
@@ -107,7 +83,6 @@ export class DeploymentService {
 
       const deployChannel = await withConfigReferences(channel);
 
-      // Validate source connector properties
       const srcValidation = validateConnectorProperties(
         deployChannel.sourceConnectorType, 'source', deployChannel.sourceConnectorProperties,
       );
@@ -115,7 +90,6 @@ export class DeploymentService {
         throw new ServiceError('INVALID_INPUT', srcValidation.error.message);
       }
 
-      // Validate each destination's connector properties
       for (const dest of deployChannel.destinations) {
         const destValidation = validateConnectorProperties(
           dest.connectorType, 'destination', dest.properties,
@@ -138,7 +112,6 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      // Auto-start if channel's initialState calls for it (skip if already in target state)
       const deployed = engine.getRuntime(channelId);
       const currentState = deployed?.runtime.getState() ?? 'STOPPED';
       let finalState: ChannelState = currentState as ChannelState;
@@ -161,7 +134,6 @@ export class DeploymentService {
     });
   }
 
-  /** Undeploy a channel (shuts down and removes runtime). */
   static async undeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const engine = getEngine();
@@ -189,13 +161,7 @@ export class DeploymentService {
     });
   }
 
-  /**
-   * Redeploy a channel: apply its latest saved configuration to the running engine.
-   * Editing a deployed channel does not affect the live runtime until it is
-   * redeployed, so without this the running channel silently keeps executing the
-   * old config. Preserves the prior runtime state (a STARTED channel comes back
-   * STARTED, a PAUSED one PAUSED).
-   */
+  /** Saved edits reach a deployed channel only through a redeploy. Keeps the prior runtime state. */
   static async redeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const engine = getEngine();
@@ -222,8 +188,7 @@ export class DeploymentService {
       const deployResult = await DeploymentService.deploy(channelId, context);
       if (!deployResult.ok) throw deployResult.error;
 
-      // Restore the prior runtime state if deploy() (which follows initialState)
-      // did not already land there.
+      // deploy() follows initialState, which may differ from the prior state.
       let state = deployResult.value.state;
       if (priorState === 'STARTED' && state !== 'STARTED') {
         const r = await DeploymentService.start(channelId, context);
@@ -243,7 +208,6 @@ export class DeploymentService {
     });
   }
 
-  /** Start a deployed channel. */
   static async start(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
@@ -278,12 +242,10 @@ export class DeploymentService {
     });
   }
 
-  /** Stop a running channel gracefully. */
   static async stop(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
 
-      // Stop queue consumers before stopping runtime
       await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
       const result = await deployed.runtime.stop();
@@ -304,12 +266,10 @@ export class DeploymentService {
     });
   }
 
-  /** Force-stop a running channel. */
   static async halt(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
 
-      // Stop queue consumers before halting runtime
       await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
       const result = await deployed.runtime.halt();
@@ -330,7 +290,7 @@ export class DeploymentService {
     });
   }
 
-  /** Pause a running channel (stop source only). */
+  /** Stops the source only. */
   static async pause(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
@@ -352,7 +312,6 @@ export class DeploymentService {
     });
   }
 
-  /** Resume a paused channel. */
   static async resume(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
@@ -374,7 +333,6 @@ export class DeploymentService {
     });
   }
 
-  /** Get status of a single deployed channel. */
   static async getStatus(channelId: string): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
@@ -382,7 +340,6 @@ export class DeploymentService {
     });
   }
 
-  /** Get status of all deployed channels. */
   static async getAllStatuses(): Promise<Result<readonly ChannelStatus[]>> {
     return tryCatch(async () => {
       const engine = getEngine();
@@ -395,14 +352,8 @@ export class DeploymentService {
   }
 
   /**
-   * Auto-deploy all enabled channels on server startup.
-   * Channels with initialState STARTED are deployed and started.
-   * Channels with initialState PAUSED are deployed and started then paused.
-   * Channels with initialState STOPPED are deployed only.
-   * Channels deploy after the channels they depend on. If the dependencies
-   * can't be loaded, nothing is auto-deployed: a safe order can't be proven.
-   * Fails when the channels can't be listed or ordered, or when any channel
-   * failed to deploy (the others are still deployed), naming those channels.
+   * If the dependencies can't be loaded, nothing deploys: a safe order can't be proven.
+   * A channel that fails to deploy does not stop the others.
    */
   static async autoDeployChannels(): Promise<Result<void>> {
     return tryCatch(async () => {
@@ -425,7 +376,6 @@ export class DeploymentService {
           failedNames.push(ch.name);
           continue;
         }
-        // deploy() handles auto-start based on initialState — just log the result
         logger.info({ channelId: ch.id, channelName: ch.name, state: deployResult.value.state }, 'Auto-deployed channel');
       }
       if (failedNames.length > 0) {
@@ -434,29 +384,20 @@ export class DeploymentService {
     });
   }
 
-  /**
-   * Send a raw message to a deployed, started channel. Fails with NOT_FOUND when
-   * the channel is not deployed and CONFLICT when it is not STARTED or could not
-   * process the message (see EngineManager.sendMessage).
-   */
+  /** NOT_FOUND when not deployed; CONFLICT when not STARTED or the message could not be processed. */
   static async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return getEngine().sendMessage(channelId, content);
   }
 }
 
-// ----- Helper -----
-
-/**
- * Every live channel, read in one query and kept once per id, so no channel
- * is deployed twice or skipped (names are not unique). Throws when it can't load.
- */
+/** Kept once per id (names are not unique), so no channel is deployed twice or skipped. */
 async function listAllChannels(): Promise<readonly ChannelDeployEntry[]> {
   const result = await ChannelService.listLiveForDeploy();
   if (!result.ok) throw result.error;
   return [...new Map(result.value.map((ch) => [ch.id, ch])).values()];
 }
 
-/** Sort channels so dependencies deploy first. Returns null, after logging, if edges can't load. */
+/** null, already logged, when the dependency edges can't load. */
 async function orderForDeploy<T extends { readonly id: string }>(channels: readonly T[]): Promise<readonly T[] | null> {
   const edgesResult = await ChannelDependencyService.listAll();
   if (!edgesResult.ok) {

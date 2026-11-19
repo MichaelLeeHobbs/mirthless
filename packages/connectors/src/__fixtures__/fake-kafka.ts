@@ -1,10 +1,5 @@
-// ===========================================
-// Fake Kafka topic for unit tests
-// ===========================================
-// One partition and one consumer group. A subscription reads from the group's
-// committed offset and waits for new records, like a real consumer does after
-// joining. `disconnect()` makes the open subscription fail the way a dropped
-// broker connection does.
+// One partition and one consumer group. A subscription starts at the group's committed offset,
+// as a real consumer does after joining.
 
 import type {
   KafkaInboundRecord,
@@ -26,9 +21,7 @@ export class FakeKafkaTopic {
   /** The group's committed offset: the next record it will read after joining. */
   committed = 0;
   subscribeCount = 0;
-  /** Subscribe attempts left to fail (a broker that is down). */
   failSubscribes = 0;
-  /** Commits left to fail. */
   failCommits = 0;
   private active: FakeSubscription | null = null;
   private listeners: (() => void)[] = [];
@@ -52,7 +45,6 @@ export class FakeKafkaTopic {
     return this.active;
   };
 
-  /** Fail the open subscription as a dropped connection would. */
   disconnect(): void {
     this.active?.fail(new Error('ECONNRESET connection to broker lost'));
   }
@@ -128,7 +120,6 @@ class FakeSubscription implements KafkaSubscription {
   }
 }
 
-/** A producer that records what it was asked to send, or fails while `failSends` > 0. */
 export class FakeKafkaProducer implements KafkaProducerClient {
   readonly sent: KafkaOutboundRecord[] = [];
   failSends = 0;

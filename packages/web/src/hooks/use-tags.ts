@@ -1,13 +1,6 @@
-// ===========================================
-// Tag API Hooks
-// ===========================================
-// TanStack Query hooks for channel tag CRUD + assignment.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateTagInput, UpdateTagInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface TagSummary {
   readonly id: string;
@@ -16,14 +9,10 @@ export interface TagSummary {
   readonly assignmentCount: number;
 }
 
-// ----- Query Keys -----
-
 const TAG_KEYS = {
   all: ['tags'] as const,
   list: () => [...TAG_KEYS.all, 'list'] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useTags(): ReturnType<typeof useQuery<readonly TagSummary[]>> {
   return useQuery({
@@ -79,8 +68,6 @@ export function useDeleteTag(): ReturnType<typeof useMutation<void, Error, strin
     },
   });
 }
-
-// ----- Tag Assignment Types -----
 
 export interface TagAssignment {
   readonly tagId: string;

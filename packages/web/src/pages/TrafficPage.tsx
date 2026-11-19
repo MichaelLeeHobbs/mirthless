@@ -1,10 +1,3 @@
-// ===========================================
-// Traffic Page (Global Traffic & Triage)
-// ===========================================
-// Engine-wide message ops: a "Needs Attention" feed of errored messages across all
-// channels with one-click reprocess, plus cross-channel search. Per-channel message
-// browsing still lives behind each channel (channel context menu -> Messages).
-
 import { useState, useCallback, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
@@ -35,12 +28,10 @@ export function TrafficPage(): ReactNode {
   const { notify } = useNotification();
   const [tab, setTab] = useState(0);
 
-  // --- Triage feed (errors across all channels) ---
   const [triageLimit, setTriageLimit] = useState(25);
   const [triageOffset, setTriageOffset] = useState(0);
   const triage = useCrossChannelSearch({ status: 'ERROR', limit: triageLimit, offset: triageOffset });
 
-  // --- Search ---
   const [status, setStatus] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -55,7 +46,6 @@ export function TrafficPage(): ReactNode {
   };
   const search = useCrossChannelSearch(searchFilters);
 
-  // --- Reprocess ---
   const reprocess = useReprocessMessage();
   const [reprocessingKey, setReprocessingKey] = useState<string | null>(null);
   const { has } = usePermissions();

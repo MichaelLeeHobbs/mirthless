@@ -1,9 +1,3 @@
-// ===========================================
-// Message Processor — 8-Stage Pipeline
-// ===========================================
-// Orchestrates message flow: receive → preprocess → filter → transform →
-// route to destinations → postprocess → mark processed.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import type { SandboxContext } from '../sandbox/sandbox-context.js';
@@ -14,9 +8,6 @@ import { DestinationSet, createDestinationSetProxy } from './destination-set.js'
 import { parseForSandbox, serializeFromSandbox, serializeTransformed, type DataTypeOptions } from './data-type-handler.js';
 import { mergeVariables, renderDestinationTemplate } from './destination-template.js';
 
-// ----- Types -----
-
-/** Compiled scripts for a channel, set at deploy time. */
 export interface ChannelScripts {
   readonly preprocessor?: CompiledScript;
   readonly postprocessor?: CompiledScript;
@@ -30,14 +21,12 @@ export interface ChannelScripts {
   readonly globalUndeploy?: CompiledScript;
 }
 
-/** Compiled scripts for a destination. */
 export interface DestinationScripts {
   readonly filter?: CompiledScript;
   readonly transformer?: CompiledScript;
   readonly responseTransformer?: CompiledScript;
 }
 
-/** Configuration for a single destination in the pipeline. */
 export interface DestinationConfig {
   readonly metaDataId: number;
   readonly name: string;
@@ -51,15 +40,10 @@ export interface DestinationConfig {
   readonly queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS';
   /** Run after the preceding destination finishes instead of in parallel with it (default false). */
   readonly waitForPrevious?: boolean | undefined;
-  /** What to send instead of the transformed message, with `${...}` references (see destination-template.ts). */
+  /** Sent instead of the transformed message, with `${...}` references filled. */
   readonly template?: string | undefined;
 }
 
-/**
- * Split destinations into chains. Each destination with waitForPrevious joins the
- * chain of the destination before it; any other destination starts a new chain.
- * Chains run in parallel and destinations within a chain run sequentially.
- */
 export function groupDestinationChains(
   destinations: readonly DestinationConfig[],
 ): ReadonlyArray<readonly DestinationConfig[]> {
@@ -75,25 +59,21 @@ export function groupDestinationChains(
   return chains;
 }
 
-/** Callback to send a message to a destination connector. */
 export type SendToDestination = (
   metaDataId: number,
   messageId: number,
   content: string,
   signal: AbortSignal,
   correlationId?: string,
-  /** The message's map variables as the destination saw them (see storeVariables). */
   variables?: Readonly<Record<string, unknown>>,
 ) => Promise<Result<DestinationResponse>>;
 
-/** Response from a destination send. */
 export interface DestinationResponse {
   readonly status: 'SENT' | 'ERROR';
   readonly content: string;
   readonly errorMessage?: string;
 }
 
-/** A content row to insert in a batch. */
 export interface ContentRow {
   readonly metaDataId: number;
   readonly contentType: number;
@@ -101,7 +81,6 @@ export interface ContentRow {
   readonly dataType: string;
 }
 
-/** Callback to persist message data. */
 export interface MessageStore {
   createMessage(channelId: string, serverId: string, correlationId?: string): Promise<Result<{ messageId: number; correlationId: string }>>;
   createConnectorMessage(channelId: string, messageId: number, metaDataId: number, name: string, status: string): Promise<Result<void>>;
@@ -115,53 +94,43 @@ export interface MessageStore {
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
   storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
-  /** Optional: remove one content type of a connector message (an earlier failure reason, once delivered). */
+  /** Drops an earlier failure reason once delivered. */
   removeContent?(channelId: string, messageId: number, metaDataId: number, contentType: number): Promise<Result<void>>;
-  /** Optional: store a connector message's custom metadata column values. */
   storeCustomMetadata?(channelId: string, messageId: number, metaDataId: number, metadata: Readonly<Record<string, unknown>>): Promise<Result<void>>;
 
-  /**
-   * Optional batch: creates message + source connector + content rows + stats in one round-trip.
-   * Implementations that don't provide this fall back to individual calls.
-   */
+  /** Message, source connector, content rows and stats in one round-trip; without it the pipeline makes individual calls. */
   initializeMessage?(
     channelId: string, serverId: string, connectorName: string,
     contentRows: readonly ContentRow[], correlationId?: string,
   ): Promise<Result<{ messageId: number; correlationId: string }>>;
 
-  /**
-   * Optional batch: sets source connector status to SENT, increments sent stat, marks processed — one round-trip.
-   */
+  /** Source status SENT, the sent stat and the processed mark in one round-trip. */
   finalizeMessage?(
     channelId: string, messageId: number, serverId: string,
   ): Promise<Result<void>>;
 
   /**
-   * Optional: apply the channel's removeContentOnCompletion / removeAttachmentsOnCompletion
-   * policy for a message that has fully and successfully completed. The pipeline only
-   * calls this when there are no errored or still-queued destinations, so it never
+   * Applies the channel's removeContentOnCompletion / removeAttachmentsOnCompletion
+   * policy. Called only when no destination errored or is still queued, so it never
    * races the queue consumer or destroys content needed to investigate a failure.
    */
   removeCompletedContent?(channelId: string, messageId: number): Promise<Result<void>>;
 
   /**
-   * Optional: called by a queue consumer after it delivers a queued message.
-   * The store applies the same removal policy, but only if every destination
-   * of the message has now finished without an error. The consumer sees one
-   * destination and cannot tell; the store can.
+   * Called by a queue consumer after it delivers a queued message. Applies the
+   * same removal policy only if every destination has now finished without an
+   * error: the consumer sees one destination and cannot tell; the store can.
    */
   removeContentIfDelivered?(channelId: string, messageId: number): Promise<Result<void>>;
 }
 
-/** Input to the pipeline. */
 export interface PipelineInput {
   readonly rawContent: string;
   readonly sourceMap: Readonly<Record<string, unknown>>;
-  /** Cross-channel correlation ID. If provided, reuses an existing correlation chain. */
+  /** Reuses an existing cross-channel correlation chain. */
   readonly correlationId?: string | undefined;
 }
 
-/** Result of processing a message. */
 export interface ProcessedMessage {
   readonly messageId: number;
   readonly correlationId: string;
@@ -177,14 +146,12 @@ export interface ProcessedMessage {
   readonly destinationResults: readonly DestinationResult[];
 }
 
-/** Result of sending to one destination. */
 export interface DestinationResult {
   readonly metaDataId: number;
   readonly status: 'SENT' | 'FILTERED' | 'QUEUED' | 'ERROR';
   readonly response?: string;
 }
 
-/** Callback to notify the alert system of pipeline errors. */
 export type AlertEventHandler = (event: {
   readonly channelId: string;
   readonly errorType: string;
@@ -192,21 +159,18 @@ export type AlertEventHandler = (event: {
   readonly timestamp: number;
 }) => Promise<void>;
 
-/** Stage timing entry emitted by the pipeline. */
 export interface StageTiming {
   readonly stage: string;
   readonly durationMs: number;
 }
 
-/** Callback for pipeline debug timing. Called once per message with all stage timings. */
+/** Called once per message. */
 export type TimingCallback = (messageId: number, totalMs: number, stages: readonly StageTiming[]) => void;
 
-/** Pipeline configuration. */
 export interface PipelineConfig {
   readonly channelId: string;
   readonly serverId: string;
   readonly dataType: string;
-  /** Settings the data type reads and writes messages with (the Delimited columns). */
   readonly dataTypeOptions?: DataTypeOptions | undefined;
   readonly scripts: ChannelScripts;
   readonly destinations: readonly DestinationConfig[];
@@ -218,42 +182,33 @@ export interface PipelineConfig {
   readonly onTiming?: TimingCallback | undefined;
   /** Called when a message store write fails after the point where the message can still be failed cleanly. */
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
-  /** Where the response to the sender comes from. Absent: the first destination that returned one. */
+  /** Absent: the first destination that returned a response. */
   readonly responseSource?: ResponseSource | undefined;
-  /** Custom metadata columns, filled after the source transformer. */
+  /** Filled after the source transformer. */
   readonly metadataColumns?: readonly MetadataColumnConfig[] | undefined;
 }
 
-/**
- * A custom metadata column. `mapping` names a map variable, looked up in the
- * connector, channel and source maps in that order, as Mirth does.
- */
+/** `mapping` names a map variable, looked up in the connector, channel and source maps in that order, as Mirth does. */
 export interface MetadataColumnConfig {
   readonly name: string;
   readonly dataType: string;
   readonly mapping: string;
 }
 
-/**
- * POSTPROCESSOR: the channel postprocessor's return value.
- * DESTINATION: the named destination's response.
- */
 export type ResponseSource =
   | { readonly kind: 'POSTPROCESSOR' }
   | { readonly kind: 'DESTINATION'; readonly destinationName: string };
 
-/** A message store write that failed. */
 export interface StoreFailure {
   readonly channelId: string;
   readonly messageId: number;
   /** 0 for the source, otherwise the destination. */
   readonly metaDataId: number;
-  /** What could not be saved, in words a log reader can act on. */
+  /** In words a log reader can act on. */
   readonly what: string;
   readonly errorMessage: string;
 }
 
-/** Mutable map state carried across pipeline stages. */
 interface PipelineMapState {
   channelMap: Record<string, unknown>;
   responseMap: Record<string, unknown>;
@@ -269,24 +224,21 @@ const CT_SENT = 5;
 const CT_RESPONSE = 6;
 const CT_RESPONSE_TRANSFORMED = 7;
 const CT_SOURCE_MAP = 9;
-/** A destination's variables (see storeVariables). */
+/** Holds a destination's merged map variables, not only its channel map. */
 const CT_CHANNEL_MAP = 10;
 const CT_ERROR = 11;
 const CT_PROCESSING_ERROR = 13;
 
 /**
- * Resolve the message a preprocessor or transformer produced. A script may
- * return the new message content; a boolean return (e.g. the filter-style
- * `return true`) is a common mistake that must NOT overwrite the message with
- * the string "true". Boolean and empty returns fall back to the (possibly
- * mutated) `msg` variable.
+ * A boolean return (the filter-style `return true`) is a common mistake that must
+ * not overwrite the message with the string "true". Boolean and empty returns
+ * fall back to the (possibly mutated) `msg` variable.
  */
 function scriptReplacement(returnValue: unknown, msg: unknown): unknown {
   if (returnValue != null && typeof returnValue !== 'boolean') return returnValue;
   return msg;
 }
 
-/** The text a postprocessor's return value sends back. Nothing for undefined or null. */
 function responseText(returnValue: unknown): string | undefined {
   if (returnValue === undefined || returnValue === null) return undefined;
   if (typeof returnValue === 'string') return returnValue;
@@ -294,11 +246,7 @@ function responseText(returnValue: unknown): string | undefined {
   return String(returnValue);
 }
 
-/**
- * Each column's value from the first map that has its variable, converted to
- * the column's type. A column with no value, or a NUMBER that is not a number,
- * is left out.
- */
+/** A column with no value, or a NUMBER that is not a number, is left out. */
 export function metadataValues(
   columns: readonly MetadataColumnConfig[],
   maps: readonly Readonly<Record<string, unknown>>[],
@@ -316,15 +264,12 @@ export function metadataValues(
   return values;
 }
 
-/** A finite number, or text that is one; anything else (blank text, a boolean) is no value. */
 function numberValue(raw: unknown): number | undefined {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : undefined;
   if (typeof raw !== 'string' || raw.trim() === '') return undefined;
   const n = Number(raw);
   return Number.isFinite(n) ? n : undefined;
 }
-
-// ----- Pipeline -----
 
 export class MessageProcessor {
   private readonly sandbox: SandboxExecutor;
@@ -344,13 +289,11 @@ export class MessageProcessor {
     this.store = store;
     this.sendFn = sendFn;
     this.config = config;
-    // Use per-channel scriptTimeoutMs if configured, otherwise fall back to execOptions
     this.execOptions = config.scriptTimeoutMs
       ? { ...execOptions, timeout: config.scriptTimeoutMs }
       : execOptions;
   }
 
-  /** Process an inbound message through the 8-stage pipeline. */
   async processMessage(
     input: PipelineInput,
     signal: AbortSignal,
@@ -359,7 +302,6 @@ export class MessageProcessor {
       const { channelId, serverId, dataType } = this.config;
       const timing = this.config.onTiming;
 
-      // Lightweight timing tracker — zero overhead when onTiming is not set
       const stages: StageTiming[] = [];
       let lastMark = timing ? performance.now() : 0;
       const mark = (stage: string): void => {
@@ -369,14 +311,12 @@ export class MessageProcessor {
         lastMark = now;
       };
 
-      // Initialize map state that persists across pipeline stages
       const mapState: PipelineMapState = {
         channelMap: {},
         responseMap: {},
         connectorMap: {},
       };
 
-      // Stage 1: Create message + source connector + raw content + stats
       let messageId: number;
       let correlationId: string;
       if (this.store.initializeMessage) {
@@ -411,7 +351,6 @@ export class MessageProcessor {
       try {
       let content = input.rawContent;
 
-      // Validate inbound data type — parse to verify format is valid
       try {
         parseForSandbox(content, dataType, this.config.dataTypeOptions);
       } catch (parseErr) {
@@ -434,7 +373,6 @@ export class MessageProcessor {
         return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       }
 
-      // Helper: mark source as errored and return ERROR result
       const errorOut = async (stage: string, errMsg: string): Promise<ProcessedMessage> => {
         await this.saved(messageId, 0, 'the ERROR status of a failed message', [
           this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, errMsg, 'TEXT'),
@@ -453,7 +391,6 @@ export class MessageProcessor {
         return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       };
 
-      // Stage 2a: Global preprocessor
       if (this.config.scripts.globalPreprocessor) {
         const gpreResult = await this.runScript(
           this.config.scripts.globalPreprocessor, content, input, signal, mapState,
@@ -467,7 +404,6 @@ export class MessageProcessor {
         mark('globalPreprocessor');
       }
 
-      // Stage 2b: Channel preprocessor
       if (this.config.scripts.preprocessor) {
         const preResult = await this.runScript(
           this.config.scripts.preprocessor, content, input, signal, mapState,
@@ -480,14 +416,12 @@ export class MessageProcessor {
         mark('preprocessor');
       }
 
-      // Create destination set for source filter/transformer to control routing
       const enabledDests = this.config.destinations.filter((d) => d.enabled);
       const destSet = new DestinationSet(
         enabledDests.map((d) => ({ name: d.name, metaDataId: d.metaDataId })),
       );
       const destSetExtras = { destinationSet: createDestinationSetProxy(destSet) };
 
-      // Stage 3: Source filter
       if (this.config.scripts.sourceFilter) {
         const filterResult = await this.runScript(
           this.config.scripts.sourceFilter, content, input, signal, mapState, destSetExtras,
@@ -506,24 +440,20 @@ export class MessageProcessor {
         }
       }
 
-      // Stage 4: Source transformer
       if (this.config.scripts.sourceTransformer) {
         const txResult = await this.runScript(
           this.config.scripts.sourceTransformer, content, input, signal, mapState, destSetExtras,
         );
         if (!txResult.ok) return errorOut('sourceTransformer', txResult.error.message);
-        // Use explicit return value if present, otherwise fall back to msg variable
         const transformed = scriptReplacement(txResult.value.returnValue, txResult.value.msg);
         content = serializeTransformed(transformed, content, dataType, this.config.dataTypeOptions);
         mark('sourceTransformer');
       }
 
-      // Create a row for every destination this message will go to, then mark
-      // the source TRANSFORMED. Recovery reads TRANSFORMED as "routing began",
-      // so every destination row must exist first: a destination later in a
-      // waitForPrevious chain would otherwise be missing after a crash and
-      // never be delivered. Nothing has been sent yet, so any failure here
-      // fails the message cleanly.
+      // Every destination row must exist before the source is marked TRANSFORMED:
+      // recovery reads TRANSFORMED as "routing began", so a destination later in a
+      // waitForPrevious chain would otherwise be missing after a crash and never
+      // be delivered. Nothing has been sent yet, so a failure here fails cleanly.
       const activeIds = destSet.getActiveMetaDataIds();
       const activeDests = this.config.destinations
         .filter((d) => d.enabled && (!activeIds || activeIds.has(d.metaDataId)));
@@ -540,7 +470,6 @@ export class MessageProcessor {
       if (!routed.ok) return errorOut('storeTransformed', routed.error.message);
       mark('storeTransformed');
 
-      // Stage 5+6: Route to destinations (filtered by destinationSet)
       const destResults = await this.routeToDestinations(
         messageId, content, input, signal, mapState, activeDests, correlationId,
       );
@@ -551,7 +480,6 @@ export class MessageProcessor {
       // together: the store keeps one error text per connector message.
       const postErrors: string[] = [];
 
-      // Stage 7a: Channel postprocessor (receives responseMap populated with dest responses)
       let postprocessorResponse: string | undefined;
       if (this.config.scripts.postprocessor) {
         const postResult = await this.runScript(
@@ -565,7 +493,6 @@ export class MessageProcessor {
         mark('postprocessor');
       }
 
-      // Stage 7b: Global postprocessor
       if (this.config.scripts.globalPostprocessor) {
         const gpostResult = await this.runScript(
           this.config.scripts.globalPostprocessor, content, input, signal, mapState,
@@ -580,9 +507,8 @@ export class MessageProcessor {
       if (postprocessorFailed) await this.storeAndAlertPostError(messageId, postErrors.join('\n'));
       const hasError = destHasError || postprocessorFailed;
 
-      // Stage 8: Finalize source connector. Do NOT record the source as SENT when a
-      // destination or postprocessor failed — that would overcount throughput and
-      // hide failures. Mark the source ERRORed instead so stats stay truthful.
+      // Never record the source as SENT when a destination or postprocessor
+      // failed: that would overcount throughput and hide failures.
       const hasQueued = destResults.some((r) => r.status === 'QUEUED');
       const finalWhat = 'the final message status';
       if (hasError) {
@@ -601,20 +527,17 @@ export class MessageProcessor {
         ]);
       }
 
-      // Apply removeContentOnCompletion only when the message is fully done — no
-      // errors and nothing still queued (a queued destination needs the stored
-      // content to deliver later, and error content must be kept for investigation).
+      // A queued destination needs the stored content to deliver later, and error
+      // content must be kept for investigation.
       if (!hasError && !hasQueued && this.store.removeCompletedContent) {
         await this.store.removeCompletedContent(channelId, messageId);
       }
       mark('finalize');
 
-      // Emit timing data
       if (timing) {
         timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
       }
 
-      // Notify alert system of destination errors
       if (destHasError && this.config.onError) {
         await this.config.onError({
           channelId,
@@ -644,7 +567,6 @@ export class MessageProcessor {
     });
   }
 
-  /** Finish a message that failed with an error no stage handled. */
   private async failUnexpected(messageId: number, reason: string): Promise<void> {
     const { channelId, serverId } = this.config;
     const errorMessage = `Unexpected error while processing: ${reason}`;
@@ -659,7 +581,7 @@ export class MessageProcessor {
     }
   }
 
-  /** Route message to its active destinations, whose connector rows already exist. */
+  /** The destinations' connector rows must already exist. */
   private async routeToDestinations(
     messageId: number,
     content: string,
@@ -672,7 +594,6 @@ export class MessageProcessor {
     const { channelId, serverId, dataType } = this.config;
 
     const processDestination = async (dest: DestinationConfig): Promise<DestinationResult> => {
-      // Shares the message's channelMap and responseMap; connectorMap is this destination's own.
       const destMaps: PipelineMapState = {
         channelMap: mapState.channelMap,
         responseMap: mapState.responseMap,
@@ -680,9 +601,8 @@ export class MessageProcessor {
       };
       let destContent = content;
 
-      // Destination filter.
-      // A script error must fail the destination loudly, never fall through as
-      // if the filter passed (which would send unfiltered PHI downstream).
+      // A filter script error must fail the destination loudly, never fall through
+      // as if the filter passed (which would send unfiltered PHI downstream).
       if (dest.scripts.filter) {
         const filterResult = await this.runScript(
           dest.scripts.filter, destContent, input, signal, destMaps,
@@ -699,7 +619,6 @@ export class MessageProcessor {
         }
       }
 
-      // Destination transformer — a script error must fail the destination.
       // Never send untransformed content downstream on a transformer failure.
       if (dest.scripts.transformer) {
         const txResult = await this.runScript(
@@ -727,10 +646,9 @@ export class MessageProcessor {
         return this.destErrorOut(messageId, dest, 'storeVariables', variablesStored.error.message);
       }
 
-      // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
-      // destination reloads exactly this row to deliver, and crash recovery
-      // redispatches from it — if the write fails we must error now (before any
-      // send) rather than silently lose the message or deliver un-persisted PHI.
+      // Stored before queuing or sending: a queued destination reloads exactly this
+      // row, and crash recovery redispatches from it. If the write fails, error now
+      // rather than silently lose the message or deliver un-persisted PHI.
       const storeSentResult = await this.store.storeContent(
         channelId, messageId, dest.metaDataId, CT_SENT, destContent, dataType,
       );
@@ -738,12 +656,10 @@ export class MessageProcessor {
         return this.destErrorOut(messageId, dest, 'storeSentContent', storeSentResult.error.message);
       }
 
-      // ALWAYS: hand straight to the queue (the consumer delivers + retries).
       if (dest.queueMode === 'ALWAYS') {
         return this.enqueueDestination(messageId, dest);
       }
 
-      // NEVER / ON_FAILURE: attempt a direct send first.
       const sendResult = await this.sendFn(
         dest.metaDataId, messageId, destContent, signal, correlationId,
         Object.keys(variables).length > 0 ? variables : undefined,
@@ -751,7 +667,6 @@ export class MessageProcessor {
 
       if (!sendResult.ok) {
         await this.recordSendFailure(messageId, dest.metaDataId, sendResult.error.message);
-        // ON_FAILURE: fall back to the queue for retry instead of a hard ERROR.
         if (dest.queueMode === 'ON_FAILURE') {
           return this.enqueueDestination(messageId, dest);
         }
@@ -771,14 +686,11 @@ export class MessageProcessor {
           channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, 'TEXT',
         );
 
-        // Populate responseMap with destination response
         mapState.responseMap[dest.name] = { status: response.status, content: response.content };
 
-        // Response transformer (if configured). A script error here must be
-        // surfaced loudly (error content + alert), never swallowed — but the
-        // message was already delivered to the destination, so we keep the
-        // destination SENT and fall back to the untransformed response rather
-        // than flip to ERROR (which could trigger a duplicate redelivery).
+        // A response transformer error is surfaced (error content + alert), but the
+        // message was already delivered, so the destination stays SENT with the
+        // untransformed response: ERROR could trigger a duplicate redelivery.
         let responseContent = response.content;
         if (dest.scripts.responseTransformer) {
           const rtResult = await this.runScript(
@@ -819,8 +731,6 @@ export class MessageProcessor {
         };
       }
 
-      // Destination responded but not SENT (e.g. remote NAK). ON_FAILURE queues
-      // it for retry; otherwise mark ERROR.
       await this.recordSendFailure(messageId, dest.metaDataId, response.errorMessage ?? response.content, response.content);
       if (dest.queueMode === 'ON_FAILURE') {
         return this.enqueueDestination(messageId, dest);
@@ -844,11 +754,7 @@ export class MessageProcessor {
     return settled.flat();
   }
 
-  /**
-   * Keep why a send failed (and what the destination answered, if anything),
-   * so the message browser can say what went wrong whether the destination
-   * ends ERROR or waits in the queue.
-   */
+  /** Kept so the message browser can say what went wrong whether the destination ends ERROR or waits in the queue. */
   private async recordSendFailure(messageId: number, metaDataId: number, reason: string, response?: string): Promise<void> {
     const { channelId } = this.config;
     const text = reason.trim() === '' ? 'The destination reported a failure without a reason' : reason;
@@ -858,22 +764,19 @@ export class MessageProcessor {
     ]);
   }
 
-  /** Enqueue a destination for (retried) delivery by the queue consumer. */
   private async enqueueDestination(
     messageId: number,
     dest: DestinationConfig,
   ): Promise<DestinationResult> {
     const enqueueResult = await this.store.enqueue(this.config.channelId, messageId, dest.metaDataId);
     if (!enqueueResult.ok) {
-      // Enqueue failed — the message would otherwise be marked QUEUED but sit
-      // undelivered forever (queue consumer never sees it, recovery skips
-      // processed rows). Fail loud so it is retried/alerted, not lost.
+      // Otherwise it would be marked QUEUED but sit undelivered forever (the queue
+      // consumer never sees it, recovery skips processed rows). Fail loud, not lost.
       return this.destErrorOut(messageId, dest, 'enqueue', enqueueResult.error.message);
     }
     return { metaDataId: dest.metaDataId, status: 'QUEUED' as const };
   }
 
-  /** Mark a destination ERRORed after a filter/transformer script failure (stores error content + errored stat). */
   private async destErrorOut(
     messageId: number,
     dest: DestinationConfig,
@@ -889,7 +792,6 @@ export class MessageProcessor {
     return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
   }
 
-  /** Store postprocessor script errors against the source connector and raise an alert event. */
   private async storeAndAlertPostError(messageId: number, errorMessage: string): Promise<void> {
     const { channelId } = this.config;
     await this.saved(messageId, 0, 'a postprocessor error', [
@@ -931,7 +833,6 @@ export class MessageProcessor {
     return this.store.storeContent(this.config.channelId, messageId, dest.metaDataId, CT_CHANNEL_MAP, JSON.stringify(variables), 'JSON');
   }
 
-  /** Store the source's custom metadata column values, read from the maps. Nothing to store is a success. */
   private storeSourceMetadata(
     messageId: number,
     mapState: PipelineMapState,
@@ -944,7 +845,6 @@ export class MessageProcessor {
     return this.store.storeCustomMetadata(this.config.channelId, messageId, 0, values);
   }
 
-  /** The response for the sender, from where the channel's response source says. */
   private pickResponse(destResults: readonly DestinationResult[], postprocessorResponse: string | undefined): string | undefined {
     const source = this.config.responseSource;
     if (source?.kind === 'POSTPROCESSOR') return postprocessorResponse;
@@ -955,7 +855,6 @@ export class MessageProcessor {
     return destResults.find((r) => r.response)?.response;
   }
 
-  /** Run a script in the sandbox with the current message context and map state. */
   private async runScript(
     script: CompiledScript,
     content: string,
@@ -964,8 +863,7 @@ export class MessageProcessor {
     mapState: PipelineMapState,
     extras?: Readonly<Record<string, unknown>> | undefined,
   ): Promise<Result<ExecutionResult>> {
-    // Parse content based on data type. If parsing fails (e.g., content was
-    // transformed to a different format), fall back to raw string.
+    // Content a transformer turned into another format no longer parses: pass the raw string.
     let parsedMsg: unknown;
     try {
       parsedMsg = parseForSandbox(content, this.config.dataType, this.config.dataTypeOptions);

@@ -1,9 +1,3 @@
-// ===========================================
-// HL7v2 Message Generator
-// ===========================================
-// Generates realistic HL7v2 messages for testing.
-// Uses seeded PRNG for deterministic output.
-
 import { Hl7Message } from './hl7-message.js';
 import { formatTimestamp } from './hl7-timestamp.js';
 import {
@@ -24,16 +18,13 @@ import {
   DOCTOR_NAMES,
 } from './hl7-code-tables.js';
 
-// ----- Types -----
-
 export interface GenerateOptions {
   readonly messageType: HL7MessageType;
   readonly count?: number;
   readonly seed?: number;
 }
 
-// ----- Seeded PRNG (mulberry32) -----
-
+// mulberry32
 function createPrng(seed: number): () => number {
   let state = seed | 0;
   return (): number => {
@@ -47,8 +38,6 @@ function createPrng(seed: number): () => number {
 function pick<T>(arr: readonly T[], rng: () => number): T {
   return arr[Math.floor(rng() * arr.length)]!;
 }
-
-// ----- Helpers -----
 
 function generateRandomDigits(rng: () => number, length: number): string {
   let id = '';
@@ -64,8 +53,6 @@ function generateDob(rng: () => number): string {
   const day = String(1 + Math.floor(rng() * 28)).padStart(2, '0');
   return `${String(year)}${month}${day}`;
 }
-
-// ----- Build MSH -----
 
 function buildMsh(msgDef: typeof MESSAGE_TYPES[HL7MessageType], rng: () => number, timestamp: string): string {
   const sendFac = pick(FACILITY_NAMES, rng);
@@ -87,8 +74,6 @@ function buildMsh(msgDef: typeof MESSAGE_TYPES[HL7MessageType], rng: () => numbe
   ];
   return parts.join('|');
 }
-
-// ----- Build segments -----
 
 function buildEvn(timestamp: string): string {
   return `EVN||${timestamp}`;
@@ -151,8 +136,6 @@ function buildAig(rng: () => number): string {
   return `AIG|1||${doctor}|DOCTOR`;
 }
 
-// ----- Build message -----
-
 function buildSegment(name: string, rng: () => number, timestamp: string): string {
   switch (name) {
     case 'EVN': return buildEvn(timestamp);
@@ -167,10 +150,6 @@ function buildSegment(name: string, rng: () => number, timestamp: string): strin
   }
 }
 
-/**
- * Generate one or more HL7v2 messages.
- * Returns an array of HL7 message strings.
- */
 export function generateHL7Messages(options: GenerateOptions): readonly string[] {
   const count = Math.min(Math.max(options.count ?? 1, 1), 100);
   const seed = options.seed ?? Date.now();
@@ -191,7 +170,7 @@ export function generateHL7Messages(options: GenerateOptions): readonly string[]
     }
 
     const rawMessage = segmentStrings.join('\r');
-    // Parse and re-serialize to validate the message
+    // Parsed to validate it.
     const parsed = Hl7Message.parse(rawMessage);
     results.push(parsed.toString());
   }

@@ -1,7 +1,3 @@
-// ===========================================
-// System Info E2E Tests
-// ===========================================
-
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, getData } from './fixtures/api.js';
@@ -46,7 +42,6 @@ test.describe('System Info', () => {
     const info = await getData<SystemInfo>(api, '/system');
     await page.goto('/system');
 
-    // Each fact is a term/definition pair; the definitions match what the API reports.
     const fact = (panel: string, term: string): ReturnType<typeof page.locator> =>
       page.getByRole('region', { name: panel, exact: true }).locator(`dt:text-is("${term}") + dd`);
     await expect(fact('Server', 'Version')).toHaveText(info.server.version);

@@ -1,9 +1,4 @@
-// ===========================================
-// Script type-check worker
-// ===========================================
-// Worker-thread entry for checkScriptTypesBatch. Lives as long as the engine,
-// so TypeScript and its lib files are loaded and parsed once; each request is
-// a batch of scripts, answered in order.
+// Answers each request's jobs in order.
 
 import { parentPort } from 'node:worker_threads';
 import { checkScriptTypes } from './script-type-check.js';

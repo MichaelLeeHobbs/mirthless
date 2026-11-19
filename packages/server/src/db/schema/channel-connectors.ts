@@ -1,6 +1,4 @@
-// ===========================================
-// Channel Connectors Table Schema (Destinations)
-// ===========================================
+// Destinations only: the source connector lives on the channels row.
 
 import { pgTable, uuid, varchar, timestamp, boolean, integer, jsonb, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
@@ -16,20 +14,17 @@ export const channelConnectors = pgTable('channel_connectors', {
   connectorType: varchar('connector_type', { length: 50 }).notNull(),
   properties: jsonb('properties').notNull().$type<Record<string, unknown>>(),
 
-  // Per-destination response transformer script (runs on the destination's
-  // response after a successful send). Null/empty = no response transformer.
+  // Runs on the destination's response after a successful send. Null or empty: none.
   responseTransformer: text('response_transformer'),
-  /** Language of the response transformer: JAVASCRIPT or TYPESCRIPT. */
+  /** JAVASCRIPT or TYPESCRIPT. */
   responseTransformerLanguage: varchar('response_transformer_language', { length: 20 }).notNull().default('JAVASCRIPT'),
 
-  // Queue settings
   queueMode: varchar('queue_mode', { length: 20 }).notNull().default('NEVER'),
   retryCount: integer('retry_count').notNull().default(0),
   retryIntervalMs: integer('retry_interval_ms').notNull().default(10_000),
   rotateQueue: boolean('rotate_queue').notNull().default(false),
   queueThreadCount: integer('queue_thread_count').notNull().default(1),
 
-  // Destination chain
   chainId: integer('chain_id').notNull().default(0),
   orderInChain: integer('order_in_chain').notNull().default(0),
   waitForPrevious: boolean('wait_for_previous').notNull().default(false),

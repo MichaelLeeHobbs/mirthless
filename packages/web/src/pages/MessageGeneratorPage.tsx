@@ -1,8 +1,3 @@
-// ===========================================
-// Message Generator Page
-// ===========================================
-// Generates HL7v2 test messages with configurable options.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';

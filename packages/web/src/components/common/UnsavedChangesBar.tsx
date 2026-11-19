@@ -1,9 +1,4 @@
-// ===========================================
-// Unsaved Changes Bar
-// ===========================================
-// A bar that sticks to the bottom of a form page while it has unsaved changes,
-// holding Discard and Save. It only exists while something changed, so a clean
-// form shows no disabled Save button and the action sits where the editing is.
+// Render only while the form has unsaved changes, so a clean form shows no disabled Save button.
 
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
@@ -12,10 +7,8 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 
 interface UnsavedChangesBarProps {
-  /** How many changes are waiting; the label reads "1 unsaved change" or "3 unsaved changes". */
   readonly count: number;
   readonly saving: boolean;
-  /** Why Save is blocked (a field is invalid), shown in place of the count. */
   readonly blockedReason?: string | null;
   readonly onDiscard: () => void;
   readonly onSave: () => void;

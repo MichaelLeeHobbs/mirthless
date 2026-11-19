@@ -1,7 +1,3 @@
-// ===========================================
-// Wordmark Tests
-// ===========================================
-
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { ThemeProvider, type Theme } from '@mui/material/styles';
@@ -13,7 +9,6 @@ function renderHeading(theme: Theme): HTMLElement {
   return screen.getByRole('heading');
 }
 
-/** Colour of each letter, read from the innermost element holding it. */
 function letterColours(heading: HTMLElement): string[] {
   const colours: string[] = [];
   const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);

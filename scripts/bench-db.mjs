@@ -1,10 +1,5 @@
-// ===========================================
-// Database Latency Benchmark
-// ===========================================
-// Measures raw pg driver query latency to isolate Docker/network overhead
-// from application-level overhead (Drizzle ORM, tryCatch, etc.).
-//
-// Usage: node scripts/bench-db.mjs
+// Raw pg driver latency, to separate Docker/network overhead from
+// application-level overhead (Drizzle ORM, tryCatch).
 
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../packages/server/package.json', import.meta.url));
@@ -14,7 +9,6 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://galvanigraph:galv
 const ITERATIONS = 50;
 const WARMUP = 5;
 
-/** Build pool config — supports DATABASE_URL or individual PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE env vars. */
 function buildPoolConfig() {
   if (process.env.PGHOST || process.env.PGUSER) {
     return {
@@ -49,7 +43,6 @@ async function bench(label, fn) {
 async function main() {
   const pool = new pg.Pool(buildPoolConfig());
 
-  // Verify connection
   const client = await pool.connect();
   const version = await client.query('SELECT version()');
   console.log(`Connected: ${version.rows[0].version.split(',')[0]}`);
@@ -57,7 +50,6 @@ async function main() {
   console.log(`Iterations: ${ITERATIONS} (after ${WARMUP} warmup)\n`);
   client.release();
 
-  // --- 1. Raw query latency ---
   console.log('=== Raw Query Latency ===');
 
   await bench('SELECT 1 (ping)', async () => {
@@ -68,10 +60,8 @@ async function main() {
     await pool.query('SELECT NOW()');
   });
 
-  // --- 2. Single INSERT + RETURNING ---
   console.log('\n=== Single Operations ===');
 
-  // Create a temp table for benchmarking
   await pool.query(`
     CREATE TABLE IF NOT EXISTS _bench_messages (
       id BIGSERIAL PRIMARY KEY,
@@ -109,7 +99,6 @@ async function main() {
       PRIMARY KEY (channel_id, meta_data_id, server_id)
     )
   `);
-  // Seed stats row
   await pool.query(`
     INSERT INTO _bench_stats (channel_id, meta_data_id, server_id, received)
     VALUES ('00000000-0000-0000-0000-000000000001', 0, 'bench', 0)
@@ -145,7 +134,6 @@ async function main() {
     `);
   });
 
-  // --- 3. Batched CTE (like our initializeMessage) ---
   console.log('\n=== Batched CTEs (pipeline-style) ===');
 
   await bench('CTE: create + connector + 2 content + stats', async () => {
@@ -190,7 +178,6 @@ async function main() {
     `);
   });
 
-  // --- 4. Promise.all parallel (like our old approach) ---
   console.log('\n=== Promise.all parallel (old approach) ===');
 
   await bench('Promise.all(INSERT x3 + UPSERT)', async () => {
@@ -211,11 +198,9 @@ async function main() {
     ]);
   });
 
-  // --- 5. Full pipeline simulation ---
   console.log('\n=== Full Pipeline Simulation ===');
 
   await bench('2-round-trip (CTE init + CTE finalize)', async () => {
-    // Initialize
     await pool.query(`
       WITH new_msg AS (
         INSERT INTO _bench_messages (channel_id, server_id)
@@ -240,7 +225,6 @@ async function main() {
       )
       SELECT id FROM new_msg
     `);
-    // Finalize
     await pool.query(`
       WITH update_connector AS (
         UPDATE _bench_connector SET status = 'SENT' WHERE message_id = 1 AND meta_data_id = 0
@@ -281,12 +265,10 @@ async function main() {
       SELECT id FROM new_msg
     `);
     const msgId = r.rows[0].id;
-    // Store transformed + update status
     await Promise.all([
       pool.query(`INSERT INTO _bench_content (message_id, content_type, content) VALUES ($1, 3, 'transformed')`, [msgId]),
       pool.query(`UPDATE _bench_connector SET status = 'TRANSFORMED' WHERE message_id = $1`, [msgId]),
     ]);
-    // Finalize
     await pool.query(`
       WITH update_connector AS (
         UPDATE _bench_connector SET status = 'SENT' WHERE message_id = $1 AND meta_data_id = 0
@@ -301,7 +283,6 @@ async function main() {
     `, [msgId]);
   });
 
-  // Cleanup
   await pool.query('DROP TABLE IF EXISTS _bench_content, _bench_connector, _bench_messages, _bench_stats');
   await pool.end();
 

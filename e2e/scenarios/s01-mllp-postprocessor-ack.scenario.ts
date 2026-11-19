@@ -1,6 +1,4 @@
-// S01: MLLP listener whose ACK comes from the postprocessor.
-// Production pattern: "10000 HL7 LISTENER". The source transformer builds the
-// ACK into the channel map and the postprocessor returns it as the response.
+// Production pattern: "10000 HL7 LISTENER".
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, jsWriter } from './support/mirth-xml.js';

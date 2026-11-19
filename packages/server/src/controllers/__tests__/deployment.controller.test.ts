@@ -1,9 +1,4 @@
-// ===========================================
-// Deployment Controller Tests: POST /channels/:id/send-message
-// ===========================================
-// Runs the real controller, DeploymentService and EngineManager. Only the
-// deployed channel (its runtime state and processMessage) is faked, so these
-// tests pin the HTTP status and body the endpoint answers with.
+// Runs the real controller, DeploymentService and EngineManager; only the deployed channel is faked.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
@@ -39,7 +34,7 @@ function makeReq(): Request {
   return { params: { id: CHANNEL_ID }, body: { content: 'MSH|raw' } } as unknown as Request;
 }
 
-/** Register a fake deployed channel in the engine's private runtimes map. */
+/** Through the engine's private runtimes map. */
 function deploy(state: string, processMessage: ReturnType<typeof vi.fn>): void {
   const deployed = { channelId: CHANNEL_ID, config: { name: 'Target' }, runtime: { getState: () => state }, processMessage } as unknown as DeployedChannel;
   (engine as unknown as { runtimes: Map<string, DeployedChannel> }).runtimes.set(CHANNEL_ID, deployed);

@@ -1,11 +1,3 @@
-// ===========================================
-// API keys E2E Tests (#267 slice 13)
-// ===========================================
-// An admin issues a key on the API keys page, copies its token from the one
-// dialog that shows it, and the token works against the API. A planned
-// replace hands out a new token while the old one keeps working; a revoke
-// with a reason stops every token at once.
-//
 // Keys are never deleted, so each run uses a name of its own (D-289).
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
@@ -15,13 +7,13 @@ import { API_BASE } from './fixtures/api.js';
 const RUN_ID = Date.now().toString(36);
 const KEY_NAME = `e2e-key-${RUN_ID}`;
 
-/** A datetime-local value 30 days on, in the browser's zone (this machine's). */
+// datetime-local takes local time; the browser runs in this machine's zone.
 function inThirtyDays(): string {
   const when = new Date(Date.now() + 30 * 86_400_000);
   return new Date(when.getTime() - when.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-/** The status of GET /channels with `token`, from a client that holds no cookies. */
+// A fresh context, so no session cookie authenticates the call instead of the token.
 async function callWith(token: string): Promise<number> {
   const client: APIRequestContext = await request.newContext({ extraHTTPHeaders: { Connection: 'close' } });
   try {

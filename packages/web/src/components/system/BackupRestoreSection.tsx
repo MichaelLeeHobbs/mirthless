@@ -1,8 +1,3 @@
-// ===========================================
-// Backup/Restore Section
-// ===========================================
-// Download backup and upload restore with collision mode selector.
-
 import { useState, useRef, type ReactNode, type ChangeEvent } from 'react';
 import { saveBlob } from '../../lib/download.js';
 import Box from '@mui/material/Box';
@@ -29,7 +24,6 @@ import type { ServerRestoreResult } from '@galvanigraph/core-models';
 import { useBackup, useRestore } from '../../hooks/use-backup.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
 
-/** Every error and warning the restore reported, under its section. */
 function RestoreErrors({ sections }: { readonly sections: ServerRestoreResult['sections'] }): ReactNode {
   const withErrors = sections.filter((s) => s.errors.length > 0);
   if (withErrors.length === 0) return null;
@@ -196,7 +190,6 @@ export function BackupRestoreSection(): ReactNode {
         </Box>
       )}
 
-      {/* Restore Confirmation Dialog */}
       <Dialog open={restoreDialogOpen} onClose={() => setRestoreDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Restore from Backup</DialogTitle>
         <DialogContent>

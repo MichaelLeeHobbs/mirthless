@@ -1,7 +1,3 @@
-// ===========================================
-// Database pool configuration tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 
 const cfg = vi.hoisted(() => ({

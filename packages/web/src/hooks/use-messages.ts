@@ -1,13 +1,6 @@
-// ===========================================
-// Message API Hooks
-// ===========================================
-// TanStack Query hooks for message search, detail, and deletion.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import { messageFilterParts, type MessageFilters } from '../lib/message-filter-query.js';
-
-// ----- Response Types -----
 
 export interface ConnectorSummary {
   readonly metaDataId: number;
@@ -54,8 +47,6 @@ export interface MessageDetail {
   readonly connectors: readonly ConnectorDetail[];
 }
 
-// ----- Search Params -----
-
 export interface MessageSearchParams extends MessageFilters {
   readonly channelId: string;
   readonly limit: number;
@@ -64,11 +55,8 @@ export interface MessageSearchParams extends MessageFilters {
   readonly sortDir: string;
 }
 
-// ----- Query Keys -----
-
 export const MESSAGE_KEYS = {
   all: ['messages'] as const,
-  /** Every search of one channel's messages, whatever its filters and page. */
   channelSearches: (channelId: string) => [...MESSAGE_KEYS.all, 'search', channelId] as const,
   search: (channelId: string, params: Record<string, unknown>) =>
     [...MESSAGE_KEYS.channelSearches(channelId), params] as const,
@@ -76,9 +64,6 @@ export const MESSAGE_KEYS = {
     [...MESSAGE_KEYS.all, 'detail', channelId, messageId] as const,
 } as const;
 
-// ----- Build Query String -----
-
-/** Build the search query string: the filters, then paging and sort. Exported for testing. */
 export function buildSearchQuery(params: MessageSearchParams): string {
   const parts = messageFilterParts(params);
   parts.push(`limit=${String(params.limit)}`);
@@ -88,9 +73,6 @@ export function buildSearchQuery(params: MessageSearchParams): string {
   return parts.join('&');
 }
 
-// ----- Queries -----
-
-/** Search messages for a channel with filters and pagination. */
 export function useMessageSearch(params: MessageSearchParams): ReturnType<typeof useQuery<MessageSearchResult>> {
   return useQuery({
     queryKey: MESSAGE_KEYS.search(params.channelId, params as unknown as Record<string, unknown>),
@@ -105,13 +87,11 @@ export function useMessageSearch(params: MessageSearchParams): ReturnType<typeof
       return result.data;
     },
     enabled: params.channelId.length > 0,
-    // Fallback polling so the list keeps refreshing even if the WebSocket
-    // connection drops (real-time push is the primary path).
+    // Fallback for a dropped WebSocket; live push is the primary path.
     refetchInterval: 30_000,
   });
 }
 
-/** Fetch full message detail with all content. */
 export function useMessageDetail(
   channelId: string,
   messageId: number | null,
@@ -131,7 +111,6 @@ export function useMessageDetail(
   });
 }
 
-/** Delete a message. */
 export function useDeleteMessage(): ReturnType<typeof useMutation<void, Error, { channelId: string; messageId: number }>> {
   const queryClient = useQueryClient();
 

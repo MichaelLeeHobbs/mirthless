@@ -1,10 +1,3 @@
-// ===========================================
-// apiFetch token refresh (#219)
-// ===========================================
-// When a request comes back 401, apiFetch refreshes the session and retries.
-// The refresh answer carries the user as they are now, so the stored
-// permission list follows a role change instead of keeping the sign-in list.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { accessKey, apiFetch, checkAccess, isChannelPath, resetAccessCheck } from '../client.js';
 import { useAuthStore } from '../../stores/auth.store.js';
@@ -19,7 +12,6 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-/** A 401, then the refresh answer, then the retried request's answer. */
 function stubFetch(refreshBody: unknown): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn()
     .mockResolvedValueOnce(json(401, { success: false, error: { code: 'UNAUTHORIZED', message: 'expired' } }))

@@ -1,10 +1,5 @@
-// ===========================================
-// Message Reprocess Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock DB and event emitter
 const mockTxExecute = vi.fn();
 
 vi.mock('../../lib/db.js', () => ({
@@ -33,26 +28,22 @@ import { db } from '../../lib/db.js';
 const mockSelect = vi.mocked(db.select);
 const mockUpdate = vi.mocked(db.update);
 
-/** Queue one or more `db.select().from().where()` results in call order. */
 function mockSelectSequence(...results: unknown[]): void {
   for (const r of results) {
     mockSelect.mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve(r) }) } as never);
   }
 }
 
-/** A deployed channel that also exposes its destination config (for resend). */
 function deployedWithDests(state: string, destinations: { metaDataId: number; queueMode: string }[]) {
   return { runtime: { getState: () => state }, config: { destinations } };
 }
 
-/** Capture the values passed to `db.update().set()`. */
 function mockUpdateCapture(): { set: ReturnType<typeof vi.fn> } {
   const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   mockUpdate.mockReturnValue({ set } as never);
   return { set };
 }
 
-/** A deployed channel whose pipeline accepts a re-injected message. */
 function deployedChannel(state: string, processMessage: ReturnType<typeof vi.fn>) {
   return { runtime: { getState: () => state }, processMessage };
 }
@@ -63,8 +54,6 @@ function mockRawContent(content: string | null): void {
   mockSelect.mockReturnValue({ from: mockFrom } as never);
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   mockSelect.mockReset();
   mockUpdate.mockReset();
@@ -72,8 +61,6 @@ beforeEach(() => {
   mockTxExecute.mockReset();
   mockTxExecute.mockResolvedValue({ rows: [], rowCount: 0 });
 });
-
-// ----- reprocessMessage -----
 
 describe('MessageReprocessService.reprocessMessage', () => {
   it('re-injects raw content through the deployed channel and returns the new message id', async () => {
@@ -88,7 +75,6 @@ describe('MessageReprocessService.reprocessMessage', () => {
       expect(result.value.messageId).toBe(1);
       expect(result.value.newMessageId).toBe(42);
     }
-    // Re-injected the exact stored raw content
     expect(processMessage).toHaveBeenCalledWith('MSH|^~\\&|...', { reprocessedFrom: 1 });
   });
 
@@ -160,8 +146,6 @@ describe('MessageReprocessService.reprocessMessage', () => {
   });
 });
 
-// ----- bulkDelete -----
-
 describe('MessageReprocessService.bulkDelete', () => {
   it('deletes messages in dependency order', async () => {
     const mockWhere = vi.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]);
@@ -225,8 +209,6 @@ describe('MessageReprocessService.bulkDelete', () => {
   });
 });
 
-// ----- bulkReprocess -----
-
 describe('MessageReprocessService.bulkReprocess', () => {
   it('reprocesses every message and returns per-item results', async () => {
     mockRawContent('MSH|raw');
@@ -277,8 +259,6 @@ describe('MessageReprocessService.bulkReprocess', () => {
     if (!result.ok) expect(result.error).toHaveProperty('code', 'CONFLICT');
   });
 });
-
-// ----- resendDestination -----
 
 describe('MessageReprocessService.resendDestination', () => {
   it('re-enqueues a queue-enabled destination and returns QUEUED', async () => {
@@ -333,7 +313,7 @@ describe('MessageReprocessService.resendDestination', () => {
 
   it('returns NOT_FOUND when the connector message does not exist', async () => {
     mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
-    mockSelectSequence([]); // connector message lookup returns nothing
+    mockSelectSequence([]);
 
     const result = await MessageReprocessService.resendDestination('ch-001', 5, 1);
 

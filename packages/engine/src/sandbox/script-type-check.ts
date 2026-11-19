@@ -1,12 +1,5 @@
-// ===========================================
-// Script type check
-// ===========================================
-// Type-checks a TypeScript user script the way the web editor does: the same
-// sandbox declarations (msg typed by data type), the same code templates and
-// the same compiler settings, all from core-models. Deploy uses it to refuse a
-// channel whose TypeScript scripts have type errors. esbuild, which compiles
-// scripts, does not type-check.
-//
+// Checks a script as the web editor does (the same declarations, templates and compiler
+// settings, from core-models); esbuild, which compiles scripts, does not type-check.
 // TypeScript is loaded on first use, so the engine does not pay for it at start.
 
 import type { Result } from '@galvanigraph/core-util';
@@ -16,22 +9,19 @@ import {
   wrapScriptBody, type ScriptSurface, type TemplateSource,
 } from '@galvanigraph/core-models';
 
-/** One type error in a script. */
 export interface ScriptTypeError {
   /** 1-based line in the script as the user wrote it. */
   readonly line: number;
   readonly column: number;
   readonly message: string;
-  /** TypeScript diagnostic code, e.g. 2322. */
+  /** TypeScript diagnostic code. */
   readonly code: number;
-  /** True when the code does not parse; false for a type error. */
   readonly syntax: boolean;
 }
 
 /**
- * A script that does not parse gets its syntax errors only: type errors in
- * code that does not parse are noise. Apply it to one script's errors (or one
- * part's, for scripts checked joined).
+ * Type errors in code that does not parse are noise. Apply it to one script's errors, or one
+ * part's for scripts checked joined.
  */
 export function onlySyntaxWhileBroken(errors: readonly ScriptTypeError[]): readonly ScriptTypeError[] {
   return errors.some((e) => e.syntax) ? errors.filter((e) => e.syntax) : errors;
@@ -39,7 +29,6 @@ export function onlySyntaxWhileBroken(errors: readonly ScriptTypeError[]): reado
 
 const SCRIPT_FILE = '/script.ts';
 
-/** Parsed TypeScript lib files (lib.es2022.d.ts and the files it references), by name. */
 const libFiles = new Map<string, import('typescript').SourceFile | undefined>();
 
 type TypeScript = typeof import('typescript');
@@ -50,10 +39,6 @@ async function loadTypeScript(): Promise<TypeScript> {
   return typescript;
 }
 
-/**
- * Type-check one TypeScript script on its surface, with the code templates it
- * can call. Returns the errors (empty when the script is clean), sorted by line.
- */
 export async function checkScriptTypes(
   script: string,
   surface: ScriptSurface,
@@ -64,9 +49,8 @@ export async function checkScriptTypes(
     const files: Readonly<Record<string, string>> = {
       '/sandbox.d.ts': scriptDeclarations(surface),
       '/code-templates.d.ts': templateDeclarations(templates, surface),
-      // Checked as the engine runs it, the body of a function: a `return`
-      // outside one is an error TypeScript reports without checking the
-      // returned expression (#206). Errors are mapped back to the script's lines.
+      // Checked as the body of a function, as the engine runs it: TypeScript does not
+      // check a `return` expression outside one (#206).
       [SCRIPT_FILE]: wrapScriptBody(script),
     };
     const options: import('typescript').CompilerOptions = {
@@ -87,12 +71,10 @@ export async function checkScriptTypes(
     host.readFile = (name) => files[name] ?? ts.sys.readFile(name);
     const program = ts.createProgram(Object.keys(files), options, host);
     const source = program.getSourceFile(SCRIPT_FILE);
-    // Errors inside the declaration files (a template's own mistakes) are not
-    // this script's: templates are checked when they are saved.
-    // Both kinds are returned, marked: a caller checking several parts joined
-    // (transformer steps) must not let one part's syntax error hide another
-    // part's type errors, so the "syntax errors only while it does not parse"
-    // rule is applied per part by the caller (onlySyntaxWhileBroken).
+    // A template's own errors are not this script's: templates are checked when saved.
+    // Syntax and type errors are both returned, marked: a caller checking parts joined
+    // (transformer steps) must not let one part's syntax error hide another part's type
+    // errors, so it applies onlySyntaxWhileBroken per part.
     const toError = (syntax: boolean) => (d: import('typescript').Diagnostic): ScriptTypeError => {
       const pos = d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start) : { line: 0, character: 0 };
       const at = scriptBodyPosition(script, pos.line + 1, pos.character + 1);

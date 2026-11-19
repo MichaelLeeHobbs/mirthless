@@ -1,7 +1,3 @@
-// ===========================================
-// Deployment Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { sendMessageInputSchema } from '@galvanigraph/core-models';
@@ -21,7 +17,6 @@ scopeToChannel(router);
 // Large bodies are parsed here, after authentication, never before it.
 router.use(largeJsonBody);
 
-// Channel-specific actions
 router.post('/:id/deploy', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.deploy);
 router.post('/:id/undeploy', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.undeploy);
 router.post('/:id/redeploy', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.redeploy);
@@ -33,7 +28,6 @@ router.post('/:id/resume', requirePermission('channels:deploy'), validate({ para
 router.post('/:id/send-message', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema, body: sendMessageInputSchema }), DeploymentController.sendMessage);
 router.get('/:id/status', requirePermission('channels:read'), validate({ params: uuidParamsSchema }), DeploymentController.getStatus);
 
-// All channels status
 router.get('/status', requirePermission('channels:read'), DeploymentController.getAllStatuses);
 
 export default router;

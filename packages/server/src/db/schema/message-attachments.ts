@@ -1,7 +1,4 @@
-// ===========================================
-// Message Attachments Table Schema
-// ===========================================
-// Note: content uses text as a placeholder until bytea custom type is implemented.
+// content is text as a placeholder until a bytea custom type exists.
 
 import { pgTable, uuid, varchar, text, boolean, integer, bigint, primaryKey, index } from 'drizzle-orm/pg-core';
 

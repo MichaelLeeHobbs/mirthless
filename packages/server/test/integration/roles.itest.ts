@@ -1,10 +1,5 @@
-// ===========================================
-// Roles and the anti-escalation rules (real Postgres, #265 slice 6b)
-// ===========================================
-// Roles are rows an admin creates, edits, clones and deletes. Nobody gives
-// more than they hold (the within rule), acts on a user holding more than they
-// do (the target rule), or changes the admin role. Each change and its audit
-// row commit together.
+// Nobody gives more than they hold (the within rule) or acts on a user holding
+// more than they do (the target rule) (#265).
 
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -204,7 +199,6 @@ describeIntegration('roles and grant rules (real Postgres)', () => {
       // Emptying the role would cut off a holder the editor could not edit one by one.
       await expect(db.transaction((tx) => GrantService.updateRole(tx, wideRole, { permissions: [] }, { userId: editor })))
         .rejects.toSatisfy((e) => codeOf(e) === 'FORBIDDEN');
-      // A role whose holders are all within the editor can be narrowed.
       const narrowRole = await createRole(admin, ['channels:read']);
       await db.transaction((tx) => GrantService.updateRole(tx, narrowRole, { permissions: [] }, { userId: editor }));
     });

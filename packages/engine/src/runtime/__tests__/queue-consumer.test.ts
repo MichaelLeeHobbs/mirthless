@@ -1,14 +1,8 @@
-// ===========================================
-// Queue Consumer Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach, type Mock } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { QueueConsumer } from '../queue-consumer.js';
 import type { QueueConsumerConfig } from '../queue-consumer.js';
 import type { MessageStore, SendToDestination, DestinationResponse } from '../../pipeline/message-processor.js';
-
-// ----- Helpers -----
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
@@ -51,8 +45,6 @@ function makeSendFn(response?: DestinationResponse): SendToDestination {
   const resp = response ?? { status: 'SENT' as const, content: 'ACK' };
   return vi.fn().mockResolvedValue(ok(resp));
 }
-
-// ----- Tests -----
 
 let consumer: QueueConsumer | null = null;
 
@@ -115,7 +107,7 @@ describe('QueueConsumer', () => {
       consumer = new QueueConsumer(makeConfig({ retryCount: 3 }), store, sendFn);
       await consumer.poll();
 
-      // Should re-queue, not release as ERROR (attempts=1 < retryCount=3)
+      // attempts 1 < retryCount 3
       expect(store.updateConnectorMessageStatus).toHaveBeenCalledWith(
         '00000000-0000-0000-0000-000000000001', 10, 1, 'QUEUED',
       );
@@ -355,7 +347,6 @@ describe('QueueConsumer', () => {
       // retryCount 1: the first attempt and one retry are allowed.
       expect((await attempt(1, 0)).release).not.toHaveBeenCalledWith(CH, 20, 1, 'ERROR');
       expect((await attempt(1, 1)).release).toHaveBeenCalledWith(CH, 20, 1, 'ERROR');
-      // retryCount 2: two retries.
       expect((await attempt(2, 1)).release).not.toHaveBeenCalledWith(CH, 20, 1, 'ERROR');
       expect((await attempt(2, 2)).release).toHaveBeenCalledWith(CH, 20, 1, 'ERROR');
     });
@@ -679,7 +670,6 @@ describe('QueueConsumer', () => {
       await stopping;
       vi.useRealTimers();
 
-      // The message in flight is finished; the one behind it goes back on the queue unsent.
       expect(store.release).toHaveBeenCalledWith(CH, 10, 1, 'SENT');
       expect(store.release).toHaveBeenCalledWith(CH, 11, 1, 'QUEUED');
       expect(sendFn).toHaveBeenCalledTimes(1);
@@ -735,8 +725,6 @@ describe('QueueConsumer', () => {
     });
   });
 });
-
-// ----- Content removal after a queued delivery -----
 
 describe('QueueConsumer content removal', () => {
   const CH = '00000000-0000-0000-0000-000000000001';

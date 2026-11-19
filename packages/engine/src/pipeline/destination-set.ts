@@ -1,19 +1,8 @@
-// ===========================================
-// Destination Set
-// ===========================================
-// Controls which destinations receive a message.
-// Available in source filter and source transformer scripts.
-
-// ----- Types -----
-
 interface DestinationInfo {
   readonly name: string;
   readonly metaDataId: number;
 }
 
-// ----- DestinationSet -----
-
-/** Tracks which destinations are active for the current message. */
 export class DestinationSet {
   private readonly allDestinations: ReadonlyArray<DestinationInfo>;
   private readonly active: Set<string>;
@@ -23,35 +12,31 @@ export class DestinationSet {
     this.active = new Set(destinations.map((d) => d.name));
   }
 
-  /** Remove all destinations. */
   removeAll(): void {
     this.active.clear();
   }
 
-  /** Remove destinations. Takes what Mirth's does: a name, a metaDataId, or a list of either. */
+  /** Takes what Mirth's does: a name, a metaDataId, or a list of either. */
   remove(target: unknown): void {
     for (const name of this.resolve(target)) this.active.delete(name);
   }
 
-  /** Keep only the given destinations (a name, a metaDataId, or a list of either). */
   removeAllExcept(target: unknown): void {
     const keep = this.resolve(target).filter((name) => this.active.has(name));
     this.active.clear();
     for (const name of keep) this.active.add(name);
   }
 
-  /** Add destinations back (must be known destinations). */
   add(target: unknown): void {
     for (const name of this.resolve(target)) this.active.add(name);
   }
 
-  /** Check if a destination (by name or metaDataId) is currently active. */
   contains(target: unknown): boolean {
     const names = this.resolve(target);
     return names.length > 0 && names.every((name) => this.active.has(name));
   }
 
-  /** The known destination names a target refers to. Unknown names and ids are ignored. */
+  /** Unknown names and ids are ignored. */
   private resolve(target: unknown): string[] {
     const items: readonly unknown[] = Array.isArray(target) ? target : [target];
     const names: string[] = [];
@@ -63,12 +48,10 @@ export class DestinationSet {
     return names;
   }
 
-  /** Get all active destination names. */
   getConnectorNames(): ReadonlyArray<string> {
     return [...this.active];
   }
 
-  /** Get the metaDataIds of active destinations. */
   getActiveMetaDataIds(): ReadonlySet<number> {
     const ids = new Set<number>();
     for (const dest of this.allDestinations) {
@@ -80,9 +63,6 @@ export class DestinationSet {
   }
 }
 
-// ----- Proxy -----
-
-/** Create a plain-object proxy with closures for sandbox injection. */
 export function createDestinationSetProxy(set: DestinationSet): Record<string, unknown> {
   return {
     removeAll(): void { set.removeAll(); },

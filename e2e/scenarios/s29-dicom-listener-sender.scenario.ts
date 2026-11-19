@@ -1,9 +1,5 @@
-// S29: a DICOM router forwards what a modality stores to the PACS.
-// Issue #171: the import kept no DICOM Listener or Sender setting (port, AE
-// titles, storage folder), so DICOM channels did not deploy. Both channels here
-// are Mirth DICOM channels: a router (DICOM Listener -> DICOM Sender) and the
-// PACS it forwards to (DICOM Listener -> TCP Sender, so the test sees what
-// arrived). A DICOM message here is the stored file's path (connector reference).
+// Issue #171. The PACS channel forwards to a TCP Sender so the test sees what arrived;
+// a DICOM message is the stored file's path (connector reference).
 
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';

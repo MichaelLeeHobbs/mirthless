@@ -1,15 +1,7 @@
-// ===========================================
-// DICOM Dispatcher (Destination Connector)
-// ===========================================
-// A dcmjs-dimse DICOM SCU that sends DICOM files via C-STORE.
-// Expects message content to be a file path.
-
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { createDimseSender } from './dcmjs-dimse-adapter.js';
-
-// ----- Config -----
 
 export interface DicomDispatcherConfig {
   readonly host: string;
@@ -22,15 +14,12 @@ export interface DicomDispatcherConfig {
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
   /**
-   * When set, the file path in message content must resolve to a location inside
-   * this directory. Message content is transformer-controlled, so without this a
-   * malicious/misconfigured transform could exfiltrate any readable local file
-   * (e.g. /etc/passwd) to the remote AE. Set it to the receiver's storage dir.
+   * Content is transformer-controlled, so without this any readable local file could be
+   * sent to the remote AE. Set it to the receiver's storage dir.
    */
   readonly allowedBaseDir?: string | undefined;
 }
 
-/** True when `filePath` resolves to a location inside `baseDir`. */
 function isWithinBaseDir(filePath: string, baseDir: string): boolean {
   const resolvedBase = path.resolve(baseDir);
   const resolved = path.resolve(filePath);
@@ -38,22 +27,17 @@ function isWithinBaseDir(filePath: string, baseDir: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-// ----- dcmtk abstraction (for testability) -----
-
-/** Result of a successful send operation. */
 export interface DcmtkSendResult {
   readonly files: readonly string[];
   readonly fileCount: number;
   readonly durationMs: number;
 }
 
-/** Minimal interface for the underlying DICOM sender. */
 export interface DcmtkSender {
   send(files: readonly string[]): Promise<Result<DcmtkSendResult>>;
   stop(): Promise<void>;
 }
 
-/** Factory that creates a DcmtkSender. */
 export type SenderFactory = (options: {
   readonly host: string;
   readonly port: number;
@@ -65,8 +49,6 @@ export type SenderFactory = (options: {
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
 }) => Result<DcmtkSender>;
-
-// ----- Dispatcher -----
 
 export class DicomDispatcher implements DestinationConnectorRuntime {
   private readonly config: DicomDispatcherConfig;

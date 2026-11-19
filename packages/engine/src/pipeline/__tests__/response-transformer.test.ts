@@ -1,8 +1,3 @@
-// ===========================================
-// Response Transformer Tests
-// ===========================================
-// Tests for the response transformer pipeline stage.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { MessageProcessor } from '../message-processor.js';
@@ -14,7 +9,6 @@ import type {
   DestinationResponse,
 } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS, type CompiledScript } from '../../sandbox/sandbox-executor.js';
-// ----- Helpers -----
 
 function makeScript(code: string): CompiledScript {
   return { code };
@@ -68,15 +62,11 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
   };
 }
 
-// ----- Setup -----
-
 let sandbox: VmSandboxExecutor;
 
 beforeEach(() => {
   sandbox = new VmSandboxExecutor();
 });
-
-// ----- Tests -----
 
 describe('Response Transformer', () => {
   it('stores response as-is when no response transformer configured', async () => {
@@ -90,7 +80,7 @@ describe('Response Transformer', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.destinationResults[0]!.response).toBe('original response');
-    // CT_RESPONSE=6 should be stored, CT_RESPONSE_TRANSFORMED=7 should NOT
+    // CT_RESPONSE = 6, CT_RESPONSE_TRANSFORMED = 7
     const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const responseStores = storeContentCalls.filter((c: unknown[]) => c[3] === 6);
     const transformedStores = storeContentCalls.filter((c: unknown[]) => c[3] === 7);
@@ -118,7 +108,6 @@ describe('Response Transformer', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.destinationResults[0]!.response).toBe('transformed: original response');
-    // Both CT_RESPONSE=6 and CT_RESPONSE_TRANSFORMED=7 should be stored
     const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const responseStores = storeContentCalls.filter((c: unknown[]) => c[3] === 6);
     const transformedStores = storeContentCalls.filter((c: unknown[]) => c[3] === 7);
@@ -146,7 +135,6 @@ describe('Response Transformer', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Non-string return values are now serialized (42 → "42")
     expect(result.value.destinationResults[0]!.response).toBe('42');
   });
 
@@ -196,10 +184,9 @@ describe('Response Transformer', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Message was delivered — stays SENT, response falls back to the raw response.
     expect(result.value.destinationResults[0]!.status).toBe('SENT');
     expect(result.value.destinationResults[0]!.response).toBe('original response');
-    // The error was surfaced, not swallowed: error content (CT 13) + alert.
+    // CT 13 = error content
     const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const errorStores = storeContentCalls.filter((c: unknown[]) => c[3] === 13);
     expect(errorStores).toHaveLength(1);
@@ -266,7 +253,6 @@ describe('Response Transformer', () => {
   it('response transformer receives response content as msg', async () => {
     const store = makeStore();
     const sendFn = makeSendFn({ status: 'SENT', content: 'the-response' });
-    // Script that returns msg (which should be the response content)
     const rtScript = makeScript('return msg;');
     const config = makeConfig({
       destinations: [{
@@ -289,7 +275,6 @@ describe('Response Transformer', () => {
   it('handles response transformer execution failure gracefully', async () => {
     const store = makeStore();
     const sendFn = makeSendFn({ status: 'SENT', content: 'original' });
-    // Script that throws
     const rtScript = makeScript('throw new Error("transform failed");');
     const config = makeConfig({
       destinations: [{
@@ -306,7 +291,6 @@ describe('Response Transformer', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Falls back to original response content
     expect(result.value.destinationResults[0]!.response).toBe('original');
   });
 
@@ -330,7 +314,6 @@ describe('Response Transformer', () => {
     const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const txStore = storeContentCalls.find((c: unknown[]) => c[3] === 7);
     expect(txStore).toBeDefined();
-    // metaDataId should be 3
     expect(txStore![2]).toBe(3);
   });
 });

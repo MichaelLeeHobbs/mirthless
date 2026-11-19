@@ -1,8 +1,3 @@
-// ===========================================
-// File Source Connector Form
-// ===========================================
-// Configuration form for file reader source connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -35,7 +30,6 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Directory settings */}
       <Grid
         size={{
           xs: 12,
@@ -104,7 +98,6 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
         />
       </Grid>
 
-      {/* Right column — Processing settings */}
       <Grid
         size={{
           xs: 12,

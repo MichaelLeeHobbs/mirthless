@@ -2,7 +2,7 @@
 // scriptDeclarations) must name exactly the globals the sandbox gives a script.
 // A global the runtime has but the declarations lack refuses valid TypeScript
 // at deploy; one the declarations have but the runtime lacks passes the check
-// and fails when the channel runs. This test asks the sandbox itself.
+// and fails when the channel runs.
 
 import { describe, it, expect } from 'vitest';
 import { scriptDeclarations } from '@galvanigraph/core-models';
@@ -32,13 +32,11 @@ async function runtimeGlobals(context: SandboxContext): Promise<string[]> {
   return (result.value.returnValue as string[]).filter((n) => !REALM_GLOBALS.has(n) && !n.startsWith('__')).sort();
 }
 
-/** Top-level names a declaration file declares (var, const, function). */
 function declaredGlobals(declarations: string): string[] {
   const names = [...declarations.matchAll(/^declare (?:var|const|let|function) ([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]!);
   return [...new Set(names)].sort();
 }
 
-/** What the runtime has that is not declared, and what is declared that the runtime lacks. */
 function drift(declared: readonly string[], runtime: readonly string[]): { undeclared: string[]; missing: string[] } {
   return {
     undeclared: runtime.filter((n) => !declared.includes(n)),

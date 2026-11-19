@@ -1,15 +1,9 @@
-// ===========================================
-// Mirth Connect XML Import Controller
-// ===========================================
-// Handles HTTP requests for importing Mirth Connect XML channel exports.
-
 import type { Request, Response } from 'express';
 import type { MirthImportInput } from '@galvanigraph/core-models';
 import { MirthImportService } from '../services/mirth-import.service.js';
 import logger from '../lib/logger.js';
 
 export class MirthImportController {
-  /** Import channels from Mirth Connect XML. */
   static async importFromXml(req: Request, res: Response): Promise<void> {
     const input = req.body as MirthImportInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
@@ -28,7 +22,6 @@ export class MirthImportController {
     res.json({ success: true, data: result.value });
   }
 
-  /** Preview conversion of Mirth Connect XML (dry run). */
   static async preview(req: Request, res: Response): Promise<void> {
     const input = req.body as MirthImportInput;
 

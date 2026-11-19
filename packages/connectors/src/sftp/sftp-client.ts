@@ -1,24 +1,10 @@
-// ===========================================
-// SFTP Client Abstraction
-// ===========================================
-// A small injectable interface over an SFTP client (default: ssh2-sftp-client)
-// so the receiver/dispatcher are unit-testable WITHOUT a real SFTP server.
-// Mirrors the SmtpTransport / ImapClient factory-DI pattern in this package.
-// Never logs credentials or private keys.
-
 import { createRequire } from 'node:module';
 
 // The package is ESM, so a bare `require` is undefined at runtime (vitest
 // injects one, which hid this). Load the CJS client library through createRequire.
 const require = createRequire(import.meta.url);
 
-// ----- Connection options -----
-
-/**
- * Connection parameters shared by the SFTP source and destination.
- * Auth is password OR privateKey (with optional passphrase); at least one of
- * the two credentials MUST be present — {@link validateAuth} enforces this.
- */
+/** At least one of password and privateKey must be set; {@link validateAuth} checks it. */
 export interface SftpConnectionOptions {
   readonly host: string;
   readonly port: number;
@@ -26,68 +12,47 @@ export interface SftpConnectionOptions {
   readonly password?: string | undefined;
   readonly privateKey?: string | undefined;
   readonly passphrase?: string | undefined;
-  /** When true, verify the server host key against {@link hostKey}. */
   readonly strictHostKey: boolean;
   readonly hostKey?: string | undefined;
-  /** How long ssh2 waits for the SSH handshake (its `readyTimeout`); ssh2's default of 20 s when unset. */
+  /** ssh2's `readyTimeout` for the SSH handshake; ssh2's default of 20 s when unset. */
   readonly readyTimeoutMs?: number | undefined;
 }
 
-// ----- File listing -----
-
-/** A remote file entry returned by {@link SftpClient.list}. */
 export interface SftpFileInfo {
   readonly name: string;
   readonly size: number;
   /** Last-modified time in epoch milliseconds. */
   readonly modifyTime: number;
-  /** True for regular files; directories/links are skipped by the receiver. */
+  /** False for directories and links. */
   readonly isFile: boolean;
 }
 
 /**
- * What a remote path is, links followed: a directory, a regular file, or
- * missing. ssh2-sftp-client's exists() answers false for anything else (a
- * FIFO, socket or device), so those read as missing.
+ * Links followed. ssh2-sftp-client's exists() answers false for a FIFO,
+ * socket or device, so those read as missing.
  */
 export type SftpPathKind = 'directory' | 'file' | 'missing';
 
-// ----- Client -----
-
-/**
- * Abstraction over an SFTP client. Structurally satisfied by the default
- * ssh2-sftp-client wrapper ({@link createSsh2SftpClient}) but narrow enough to
- * mock in tests without a real server.
- */
 export interface SftpClient {
   connect(): Promise<void>;
   list(remoteDirectory: string): Promise<readonly SftpFileInfo[]>;
-  /** Download a remote file's full content as a Buffer. */
   get(remotePath: string): Promise<Buffer>;
-  /** Write (overwrite) a remote file. */
+  /** Overwrites. */
   put(data: Buffer, remotePath: string): Promise<void>;
-  /** Append to a remote file (creating it if absent). */
+  /** Creates the file if absent. */
   append(data: Buffer, remotePath: string): Promise<void>;
   delete(remotePath: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
-  /** Create a directory (recursively). No-op if it already exists. */
+  /** Recursive; no-op if it already exists. */
   mkdir(remoteDirectory: string): Promise<void>;
-  /** Whether the path is a directory, a file or missing. A link counts as what it points to. */
+  /** A link counts as what it points to. */
   pathKind(remotePath: string): Promise<SftpPathKind>;
   end(): Promise<void>;
 }
 
-/** Factory that builds an {@link SftpClient} from connection options. */
 export type SftpClientFactory = (options: SftpConnectionOptions) => SftpClient;
 
-// ----- Auth validation -----
-
-/**
- * Ensure at least one credential is configured. Returns an error message when
- * both password and privateKey are absent, otherwise null. Callers fail loudly
- * with this at deploy/connect time — an unauthenticated SFTP connect is never
- * silently attempted.
- */
+/** Callers fail with this at deploy/connect time, so an unauthenticated connect is never attempted. */
 export function validateAuth(options: SftpConnectionOptions): string | null {
   const hasPassword = typeof options.password === 'string' && options.password.length > 0;
   const hasKey = typeof options.privateKey === 'string' && options.privateKey.length > 0;
@@ -97,23 +62,15 @@ export function validateAuth(options: SftpConnectionOptions): string | null {
   return null;
 }
 
-// ----- Host key verification -----
-
-/** Normalize a host key string for comparison (trim + collapse whitespace). */
 function normalizeHostKey(key: string): string {
   return key.trim().replace(/\s+/g, ' ');
 }
 
 /**
- * Build the ssh2 `hostVerifier` for strict host-key checking. Strict checking is
- * ON by default (verify-by-default) so PHI is never sent over an unauthenticated
- * SFTP connection that an ARP/DNS attacker could MITM; it can be explicitly
- * disabled per channel. When enabled, the presented key is accepted only if the
- * whole key, base64-encoded (or read as text), equals the configured
- * {@link SftpConnectionOptions.hostKey}. No hash is taken, so this is a full-key
- * comparison, not a fingerprint check. A missing hostKey rejects everything: the
- * operator pastes the server's base64 public key blob (the third field of
- * `ssh-keyscan` output), not a `SHA256:` fingerprint, which never matches.
+ * Strict checking is on by default so PHI never crosses a connection an
+ * ARP/DNS attacker could MITM. The whole key is compared, not a fingerprint:
+ * the operator pastes the base64 key blob (the third field of `ssh-keyscan`
+ * output); a `SHA256:` fingerprint never matches.
  */
 export function makeHostVerifier(
   options: SftpConnectionOptions,
@@ -121,14 +78,12 @@ export function makeHostVerifier(
   if (!options.strictHostKey) return undefined;
   const expected = options.hostKey ? normalizeHostKey(options.hostKey) : '';
   return (key: Buffer): boolean => {
-    if (!expected) return false; // strict mode but no key configured → reject all
+    if (!expected) return false;
     const presentedB64 = normalizeHostKey(key.toString('base64'));
     const presentedRaw = normalizeHostKey(key.toString('utf8'));
     return presentedB64 === expected || presentedRaw === expected;
   };
 }
-
-// ----- Default ssh2-sftp-client factory -----
 
 interface Ssh2FileInfo {
   readonly type: string;
@@ -137,7 +92,6 @@ interface Ssh2FileInfo {
   readonly modifyTime: number;
 }
 
-/** The part of ssh2-sftp-client this module uses. */
 export interface Ssh2ClientInstance {
   connect(options: Record<string, unknown>): Promise<unknown>;
   list(remoteDir: string): Promise<readonly Ssh2FileInfo[]>;
@@ -152,11 +106,7 @@ export interface Ssh2ClientInstance {
   end(): Promise<boolean>;
 }
 
-/**
- * Map ssh2-sftp-client's exists() answer ('d', '-', 'l' or false; it uses
- * lstat, so a link is 'l') to a path kind. A link is followed with
- * `isDirectoryTarget`, so a link to a directory counts as a directory.
- */
+/** ssh2-sftp-client's exists() answers 'd', '-', 'l' or false; it uses lstat, so a link is 'l'. */
 export async function toPathKind(type: false | string, isDirectoryTarget: () => Promise<boolean>): Promise<SftpPathKind> {
   if (type === false) return 'missing';
   if (type === 'd') return 'directory';
@@ -164,10 +114,7 @@ export async function toPathKind(type: false | string, isDirectoryTarget: () => 
   return 'file';
 }
 
-/**
- * Build the ssh2 connect options from our connection options. Credentials are
- * forwarded only when present so an empty string is never sent as a password.
- */
+/** An empty string is never sent as a credential. */
 export function buildConnectOptions(options: SftpConnectionOptions): Record<string, unknown> {
   const verifier = makeHostVerifier(options);
   return {
@@ -182,13 +129,11 @@ export function buildConnectOptions(options: SftpConnectionOptions): Record<stri
   };
 }
 
-/** Create an ssh2-sftp-client-backed {@link SftpClient}. */
 export function createSsh2SftpClient(options: SftpConnectionOptions): SftpClient {
   const Ctor = require('ssh2-sftp-client') as new () => Ssh2ClientInstance;
   return wrapSsh2Client(new Ctor(), options);
 }
 
-/** Adapt an ssh2-sftp-client instance to {@link SftpClient}; exported so tests can pass a fake library. */
 export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnectionOptions): SftpClient {
   const pathKind = async (remotePath: string): Promise<SftpPathKind> =>
     toPathKind(await client.exists(remotePath), async () => (await client.stat(remotePath)).isDirectory);

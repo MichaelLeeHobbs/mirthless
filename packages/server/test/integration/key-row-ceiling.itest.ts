@@ -1,10 +1,4 @@
-// ===========================================
-// API key daily row ceiling (real Postgres, #267 slice 12b)
-// ===========================================
-// A key with messages:read may read at most API_KEY_DAILY_ROWS message rows a
-// UTC day through fail-closed reads; the read that would pass it is refused
-// with 429 before anything is sent, recorded once (D-313). Each counted read
-// records its rows, so the count survives a restart.
+// Each counted read records its rows, so the ceiling survives a restart (D-313).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -77,7 +71,6 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
     const again = await apiCall(base, key.token, 'GET', `/channels/${CHANNEL}/messages`);
     expect(again.status).toBe(429);
     expect(again.json.error?.message).toMatch(/3 rows \(messages and collection records\) for today/);
-    // One more row is too many too, whatever the read.
     expect((await apiCall(base, key.token, 'GET', `/channels/${CHANNEL}/messages/${String(messageIds[0])}`)).status).toBe(429);
 
     const reached = await mods.pool.query(`SELECT 1 FROM audit_log WHERE action = 'API_KEY_ROW_CEILING_REACHED' AND user_id = $1`, [keyUser]);
@@ -90,7 +83,6 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
       `SELECT level, attributes FROM events WHERE name = 'API_KEY_ROW_CEILING_WARNING' AND user_id = $1`, [keyUser],
     )).rows;
     await expect.poll(warnings).toEqual([{ level: 'WARN', attributes: { apiKeyId: key.key.id, used: 3, limit: CEILING } }]);
-    // The refused reads that followed did not warn again.
     expect((await apiCall(base, key.token, 'GET', `/channels/${CHANNEL}/messages`)).status).toBe(429);
     expect(await warnings()).toHaveLength(1);
   });

@@ -1,13 +1,6 @@
-// ===========================================
-// Resource API Hooks
-// ===========================================
-// TanStack Query hooks for resource CRUD.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateResourceInput, UpdateResourceInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface ResourceSummary {
   readonly id: string;
@@ -23,15 +16,11 @@ export interface ResourceDetail extends ResourceSummary {
   readonly content: string | null;
 }
 
-// ----- Query Keys -----
-
 const RES_KEYS = {
   all: ['resources'] as const,
   list: () => [...RES_KEYS.all, 'list'] as const,
   detail: (id: string) => [...RES_KEYS.all, 'detail', id] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useResources(): ReturnType<typeof useQuery<readonly ResourceSummary[]>> {
   return useQuery({

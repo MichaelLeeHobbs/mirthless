@@ -4,10 +4,8 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 
-// Helpers that have one home (.claude/reinvention/report.md). A non-exported
-// function, or const holding a function, with one of these names is a local
-// copy: import the shared one. The exported definition in its home file doesn't
-// match, and neither does a plain value such as `const errorMessage = '...'`.
+// Helpers with one home (.claude/reinvention/report.md). Only a non-exported function, or const
+// holding a function, matches: the home's exported definition and plain values do not.
 const SHARED_HELPERS = [
   { names: 'mapErrorToStatus|errorResponse', home: 'packages/server/src/lib/controller-helpers.ts' },
   { names: 'errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts (errorResponse(error).message or .code) on the server, packages/web/src/lib/error-message.ts (errorMessage) in web' },
@@ -53,9 +51,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    // Ambient declaration files legitimately use `declare var` for global
-    // (globalThis) augmentation — `no-var` is a false positive there — and are
-    // otherwise type-only, so exclude them from linting.
+    // .d.ts files use `declare var` for globalThis augmentation, where `no-var` is a false positive.
     ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/*.d.ts'],
   },
   {
@@ -70,7 +66,6 @@ export default tseslint.config(
       'no-restricted-syntax': ['error', ...sharedHelperSelectors],
     },
   },
-  // React Hooks rules (only for web package)
   {
     files: ['packages/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
@@ -79,11 +74,9 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'warn',
     },
   },
-  // Visual language guards (docs/design/15-visual-language.md). Colours and fonts
-  // come from styles/tokens.ts through the theme; the browser's own popups can't be
-  // styled or tested, so confirmations use ConfirmDialog. A later block's
-  // no-restricted-syntax replaces an earlier one's, so this one repeats the
-  // shared-helper selectors.
+  // Visual language guards (docs/design/15-visual-language.md); the browser's own popups can't be
+  // styled or tested. A later block's no-restricted-syntax replaces an earlier one's, so this one
+  // repeats the shared-helper selectors.
   {
     files: ['packages/web/src/**/*.{ts,tsx}'],
     ignores: ['packages/web/src/styles/**', '**/__tests__/**', '**/*.test.{ts,tsx}'],
@@ -138,10 +131,8 @@ export default tseslint.config(
       }],
     },
   },
-  // Playwright specs (#182, D-293). isVisible() and isHidden() answer at once without
-  // waiting, so `if (await x.isVisible())` skips the test's steps when the page
-  // is slow and still passes. A fixed sleep is slow when the page is fast and
-  // flaky when it is slow. Wait on the condition with expect() instead.
+  // #182, D-293: `if (await x.isVisible())` answers at once, so a slow page skips the steps and
+  // still passes; a fixed sleep is slow when the page is fast and flaky when it is slow.
   {
     files: ['e2e/**/*.ts'],
     rules: {
@@ -159,13 +150,8 @@ export default tseslint.config(
       ],
     },
   },
-  // services/grant.service.ts is the only writer of roles, role permissions and
-  // assignments (D-310): it applies the within, target and last-admin rules and
-  // records each change. lib/principal.ts reads them for every request; the
-  // schema and seeds define them. Everywhere else goes through GrantService.
-  // The rule sees imports only: it cannot see db.query.roles (read-only, built
-  // from the whole schema in lib/db.ts) or a raw db.execute(sql`...`). Review
-  // catches those.
+  // GrantService is the only writer of roles and assignments (D-310). The rule sees imports only:
+  // db.query.roles and a raw db.execute(sql`...`) get past it, so review catches those.
   {
     files: ['packages/server/src/**/*.ts'],
     ignores: [
@@ -188,7 +174,6 @@ export default tseslint.config(
       }],
     },
   },
-  // JSX accessibility rules (only for web package)
   {
     files: ['packages/web/**/*.{ts,tsx}'],
     plugins: { 'jsx-a11y': jsxA11y },

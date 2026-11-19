@@ -1,11 +1,5 @@
-// ===========================================
-// Offboard Keys Dialog
-// ===========================================
-// Disabling a user who issued API keys (D-322): every one of their working
-// keys stops with them, since they know the secrets. The dialog says so first,
-// listing each key and what it holds. A key manager who covers a key may take
-// it over instead: it gets a new token at once, shown after, and the old one
-// stops.
+// D-322: a disabled user's working keys stop with them, since they know the
+// secrets. Taking a key over gives it a new token instead.
 
 import { useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
@@ -23,12 +17,10 @@ import type { ApiKeyView } from '@galvanigraph/core-models';
 import { permissionLabel } from '../../lib/channel-access.js';
 
 interface OffboardKeysDialogProps {
-  /** The user being disabled and the working keys they issued; null when closed. */
   readonly target: { readonly username: string; readonly keys: readonly ApiKeyView[] } | null;
-  /** Whether the signed-in admin may take this key over (holds api_keys:manage and covers it). */
+  /** True when the signed-in user holds api_keys:manage and covers the key. */
   readonly canTakeOver: (key: ApiKeyView) => boolean;
   readonly isPending: boolean;
-  /** The server's refusal, shown as it said it. */
   readonly error: string | null;
   readonly onConfirm: (takeOwnership: readonly string[]) => void;
   readonly onCancel: () => void;

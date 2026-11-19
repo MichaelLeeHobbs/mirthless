@@ -1,8 +1,3 @@
-// ===========================================
-// Context Menu Hook
-// ===========================================
-// Reusable hook for right-click context menus.
-
 import { useState, useCallback, type MouseEvent } from 'react';
 
 export interface ContextMenuState {

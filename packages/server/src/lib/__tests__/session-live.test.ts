@@ -1,8 +1,5 @@
-// ===========================================
-// Session liveness: fail closed (GHSA-r434-hwqg-cvcw)
-// ===========================================
-// The server never issues an access token without a session id. One that has
-// none was signed elsewhere with the secret, so it must not count as live.
+// GHSA-r434-hwqg-cvcw: the server never issues an access token without a session
+// id, so one without must not count as live.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

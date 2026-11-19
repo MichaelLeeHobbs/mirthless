@@ -1,7 +1,3 @@
-// ===========================================
-// Transformer Step Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
 import { scriptLanguageSchema } from './script-language.schema.js';
 
@@ -12,9 +8,9 @@ export const transformerStepInputSchema = z.object({
   name: z.string().max(255).optional(),
   type: z.enum(TRANSFORMER_STEP_TYPES),
   script: z.string().nullable().default(null),
-  /** The language of `script`. Create stores JavaScript when it is left out; update requires it with a script (D-294). */
+  /** Create stores JavaScript when it is left out; update requires it with a script (D-294). */
   language: scriptLanguageSchema.optional(),
-  // Mapper fields (null for other types)
+  // MAPPER only; null for other types.
   sourceField: z.string().max(500).nullable().default(null),
   targetField: z.string().max(500).nullable().default(null),
   defaultValue: z.string().nullable().default(null),
@@ -25,7 +21,7 @@ export type TransformerStepInput = z.infer<typeof transformerStepInputSchema>;
 
 export const transformerInputSchema = z.object({
   connectorId: z.string().uuid().nullable().default(null),
-  // metaDataId: used to resolve connectorId when destinations are being reinserted
+  // Resolves connectorId when destinations are reinserted.
   metaDataId: z.number().int().positive().nullable().default(null),
   inboundDataType: z.string().max(50).default('HL7V2'),
   outboundDataType: z.string().max(50).default('HL7V2'),
@@ -39,9 +35,8 @@ export const transformerInputSchema = z.object({
 export type TransformerInput = z.infer<typeof transformerInputSchema>;
 
 /**
- * How a DELIMITED message is split into rows and columns. Kept on the source
- * transformer as `inboundProperties.delimited`; every field has a default, so
- * `{}` reads comma-separated lines with double-quote quoting.
+ * Kept on the source transformer as `inboundProperties.delimited`; `{}` reads
+ * comma-separated lines with double-quote quoting.
  */
 export const delimitedOptionsSchema = z.object({
   columnDelimiter: z.string().min(1).default(','),

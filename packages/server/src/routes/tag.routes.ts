@@ -1,7 +1,3 @@
-// ===========================================
-// Tag Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import {
   createTagSchema,

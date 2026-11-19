@@ -1,7 +1,3 @@
-// ===========================================
-// SMTP Connector Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { smtpDestinationPropertiesSchema } from '../smtp-connector.schema.js';
 

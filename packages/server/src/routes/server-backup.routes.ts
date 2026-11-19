@@ -1,7 +1,3 @@
-// ===========================================
-// Server Backup Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { backupExportQuerySchema, serverRestoreInputSchema } from '@galvanigraph/core-models';
 import { ServerBackupController } from '../controllers/server-backup.controller.js';

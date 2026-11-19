@@ -1,9 +1,3 @@
-// ===========================================
-// Message Detail Panel
-// ===========================================
-// Shows full message content with tabs for each content type.
-// Connector sub-tabs when multiple connectors exist.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -34,8 +28,6 @@ interface MessageDetailProps {
   readonly messageId: number;
 }
 
-// Content keys displayed as tabs, in order. The detail endpoint returns every
-// stored pipeline stage; each tab renders only when its content is present.
 const CONTENT_TABS = [
   { key: 'raw', label: 'Raw' },
   { key: 'transformed', label: 'Transformed' },
@@ -46,7 +38,6 @@ const CONTENT_TABS = [
   { key: 'processingError', label: 'Processing Error' },
 ] as const;
 
-// Map keys shown in expandable accordion
 const MAP_KEYS = ['sourceMap', 'channelMap', 'connectorMap', 'responseMap'] as const;
 
 function ConnectorContentTabs({ connector }: { readonly connector: ConnectorDetail }): ReactNode {
@@ -83,7 +74,6 @@ function ConnectorContentTabs({ connector }: { readonly connector: ConnectorDeta
       </Tabs>
       <ContentViewer content={content} />
 
-      {/* Maps accordion */}
       {MAP_KEYS.some(k => connector.content[k] !== undefined) && (
         <Accordion disableGutters sx={{ mt: 1 }}>
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>

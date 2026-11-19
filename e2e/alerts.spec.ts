@@ -1,9 +1,3 @@
-// ===========================================
-// Alerts E2E Tests
-// ===========================================
-// Creates, edits, disables and deletes an alert of this spec's own through the
-// UI, checking each change on the page and in the API.
-
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, getData } from './fixtures/api.js';
@@ -15,7 +9,6 @@ interface AlertRow { readonly id: string; readonly name: string; readonly descri
 
 let api: APIRequestContext;
 
-/** This spec's alerts (names starting with TEST_ALERT.name) as the API lists them. */
 async function ownAlerts(): Promise<readonly AlertRow[]> {
   const list = await getData<{ data: AlertRow[] }>(api, '/alerts?pageSize=100');
   return list.data.filter((a) => a.name.startsWith(TEST_ALERT.name));
@@ -54,7 +47,6 @@ test.describe('Alerts', () => {
     await page.getByLabel('Description', { exact: true }).fill(TEST_ALERT.description);
     await page.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // A created alert reopens in edit mode at its own address, titled with its name.
     await expect(page).toHaveURL(/\/alerts\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: TEST_ALERT.name })).toBeVisible();
 
@@ -84,7 +76,6 @@ test.describe('Alerts', () => {
   test('toggle alert enabled', async ({ page }) => {
     await page.goto('/alerts');
 
-    // The Enabled column is a switch named after the alert; one click flips it.
     const row = page.getByRole('row', { name: new RegExp(UPDATED_NAME) });
     const toggle = row.getByRole('switch', { name: `Disable ${UPDATED_NAME}` });
     await expect(toggle).toBeChecked();
@@ -99,7 +90,6 @@ test.describe('Alerts', () => {
 
     const row = page.getByRole('row', { name: new RegExp(UPDATED_NAME) });
     await row.getByRole('button', { name: 'Delete alert' }).click();
-    // Confirm in the in-app dialog, which names the alert.
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText(UPDATED_NAME);
     await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
@@ -127,7 +117,6 @@ test.describe('Alerts', () => {
     await page.getByRole('button', { name: 'Create Alert' }).click();
     await expect(page.getByRole('heading', { name: 'New Alert' })).toBeVisible();
 
-    // Create with no name: the form flags the field and nothing is saved.
     await page.getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page.getByText('Name is required')).toBeVisible();
     await expect(page).toHaveURL(/\/alerts\/new$/);

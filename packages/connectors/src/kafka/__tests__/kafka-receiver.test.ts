@@ -1,7 +1,3 @@
-// ===========================================
-// Kafka Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import type { RawMessage, DispatchResult } from '../../base.js';
@@ -28,7 +24,6 @@ const stored = (messageId: number, status?: DispatchResult['status']): Result<Di
 const notStored = (message: string): Result<DispatchResult> =>
   ({ ok: false, value: null, error: new Error(message) } as unknown as Result<DispatchResult>);
 
-/** A pipeline that records every message it is offered and answers with `answer`. */
 function pipeline(answer: (raw: RawMessage, attempt: number) => Result<DispatchResult> = (_r, n) => stored(n)): { dispatch: Dispatch; offered: string[] } {
   const offered: string[] = [];
   return {
@@ -113,7 +108,6 @@ describe('consuming', () => {
     const topic = new FakeKafkaTopic();
     topic.produce('MSH|1');
     topic.produce('MSH|2');
-    // The first attempt at MSH|1 fails to store (database down); later ones succeed.
     const p = pipeline((_raw, attempt) => (attempt === 1 ? notStored('database unavailable') : stored(attempt)));
     const { log } = await start(topic, p.dispatch);
     await vi.waitFor(() => { expect(topic.committed).toBe(2); });
@@ -296,7 +290,7 @@ describe('a record the pipeline never stores', () => {
     await vi.waitFor(() => { expect(fatal).toBe(1); });
     await receiver.onStop();
 
-    fail = false; // the operator fixed the cause
+    fail = false;
     await receiver.onStart();
     await vi.waitFor(() => { expect(topic.committed).toBe(1); });
     expect(p.offered).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
@@ -311,7 +305,7 @@ describe('broker disconnect', () => {
     const { log } = await start(topic, p.dispatch);
     await vi.waitFor(() => { expect(topic.committed).toBe(1); });
 
-    topic.failSubscribes = 2; // the broker stays down for two attempts
+    topic.failSubscribes = 2;
     topic.disconnect();
     topic.produce('MSH|2');
     await vi.waitFor(() => { expect(topic.committed).toBe(2); });
@@ -385,7 +379,6 @@ describe('halt then start again', () => {
     const dispatch: Dispatch = async (raw) => {
       offered.push(raw.content);
       calls += 1;
-      // The first dispatch hangs until after the restart, then answers.
       if (calls === 1) await new Promise<void>((resolve) => { releaseFirst = resolve; });
       return stored(calls);
     };

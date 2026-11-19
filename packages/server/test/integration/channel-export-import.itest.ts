@@ -1,11 +1,3 @@
-// ===========================================
-// Channel export -> import round trip — real Postgres integration
-// ===========================================
-// A destination's filter and transformer must come back attached to the
-// imported channel's own destination row. The export used to carry only the
-// exporting server's connector row id, which the import wrote into a foreign
-// key that no longer (or never) existed, and the import failed.
-
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createChannelSchema, updateChannelSchema } from '@galvanigraph/core-models';
@@ -61,7 +53,6 @@ describeIntegration('Channel export and import (real Postgres)', () => {
 
     await expectAttachedToSecond(copyId);
 
-    // Importing over the existing channel replaces its destination rows too.
     const again = unwrap(await importMod.ChannelImportService.importChannels(
       [{ ...entry, id: copyId, name: `${name}-copy` }], 'OVERWRITE', actor,
     ));
@@ -69,7 +60,6 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     await expectAttachedToSecond(copyId);
   });
 
-  /** A plain RAW channel to create, named `name`. */
   const rawChannel = (name: string): ReturnType<typeof createChannelSchema.parse> => createChannelSchema.parse({
     name, enabled: false, inboundDataType: 'RAW', outboundDataType: 'RAW',
     sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
@@ -81,13 +71,8 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     return (result.rows[0] as { n: number }).n;
   }
 
-  /** The error the stand-in `create_channel_partitions` raises. */
   const REFUSED_MARKER = 'itest: partitions refused';
 
-  /**
-   * Run `body` while migration 0016's `create_channel_partitions` raises, then
-   * put the real function back (its definition, read from the catalog).
-   */
   async function withPartitionsRefused(body: () => Promise<void>): Promise<void> {
     const { db, sql } = mods;
     const def = await db.execute(sql`SELECT pg_get_functiondef('public.create_channel_partitions(uuid)'::regprocedure) AS def`);
@@ -149,7 +134,6 @@ describeIntegration('Channel export and import (real Postgres)', () => {
       expect(await channelRows('id', copyId)).toBe(0);
     });
 
-    // The real function is back: a channel can be created again.
     const after = unwrap(await ChannelService.create(rawChannel(`${name}-after`), actor));
     created.push(after.id);
     expect(unwrap(await mods.PartitionManagerService.partitionExists(after.id))).toBe(true);
@@ -221,7 +205,6 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const afterKept = unwrap(await ChannelService.getById(created1.id));
     expect(afterKept.scripts.find((s) => s.scriptType === 'DEPLOY')).toMatchObject({ script: 'logger.info("still ts");', language: 'TYPESCRIPT' });
 
-    // A language the request gives replaces it.
     unwrap(await ChannelService.update(created1.id, updateChannelSchema.parse({
       revision: kept.revision, scripts: { deploy: 'logger.info("js");', languages: { deploy: 'JAVASCRIPT' } },
     })));

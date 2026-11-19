@@ -1,10 +1,3 @@
-// ===========================================
-// Script Editor
-// ===========================================
-// The editor for user scripts (filters, transformers, channel and global
-// scripts, code templates): a language switch, format, full screen, and a status
-// line with the cursor position and the script's problems.
-
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { SCRIPT_TEST_KINDS, ScriptLanguageCode, ScriptSurface } from '@galvanigraph/core-models';
 import Box from '@mui/material/Box';
@@ -38,10 +31,9 @@ const LANGUAGE_NAME: Readonly<Record<ScriptLanguageCode, string>> = {
   TYPESCRIPT: 'TypeScript',
 };
 
-/** Bounds for `height="auto"`: about five lines at least, then it scrolls. */
+/** Pixels for `height="auto"`: about five lines at least, then it scrolls. */
 export const AUTO_HEIGHT = { min: 116, max: 480 } as const;
 
-/** The editor area height for `height="auto"` given Monaco's content height. */
 export function autoHeight(contentHeight: number, suggestRoomPx = 0): number {
   return Math.min(AUTO_HEIGHT.max, Math.max(AUTO_HEIGHT.min, Math.ceil(contentHeight + suggestRoomPx)));
 }
@@ -54,39 +46,20 @@ const MONACO_LANGUAGE: Readonly<Record<ScriptLanguageCode, string>> = {
 export interface ScriptEditorProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
-  /**
-   * Editor area height: a CSS length, px, "100%" to fill the host, or "auto"
-   * to fit the script (between AUTO_HEIGHT.min and AUTO_HEIGHT.max, then it
-   * scrolls). Defaults to 300px.
-   */
+  /** A CSS length or px; "auto" fits the script within AUTO_HEIGHT. */
   readonly height?: string | number;
-  /** Names the editor for screen readers and the toolbar, e.g. "Deploy script". */
   readonly label?: string;
-  /** Show the label in the toolbar. Off when the host already titles the editor. */
+  /** Off when the host already titles the editor. */
   readonly showLabel?: boolean;
-  /** The language stored with the script. TypeScript scripts are type-checked here and at deploy. */
   readonly language?: ScriptLanguageCode;
   readonly showLanguageToggle?: boolean;
-  /** Fired when the user switches JavaScript/TypeScript, so the host can store it. */
   readonly onLanguageChange?: (language: ScriptLanguageCode) => void;
-  /** View-only: the code and the language cannot be changed. */
   readonly readOnly?: boolean;
-  /**
-   * Where the script runs: its code template context and whether it can use
-   * destinationSet. Set `message: false` for scripts that run without a message
-   * (deploy, undeploy); otherwise msg is typed from the channel's data type.
-   */
+  /** Set `message: false` for scripts that run without a message (deploy, undeploy); otherwise msg is typed from the channel's data type. */
   readonly surface?: Omit<ScriptSurface, 'dataType'>;
-  /**
-   * How the pipeline reads this script, which turns on the Run button inside a
-   * channel: filter (accepted or filtered), transformer (the changed message) or
-   * script (anything else).
-   */
+  /** Turns on the Run button inside a channel: filter (accepted or filtered), transformer (the changed message) or script. */
   readonly testKind?: ScriptTestKind;
-  /**
-   * Top-level names the enabled transformer steps before this one declare. The
-   * engine runs a transformer's steps as one body, so this step can use them.
-   */
+  /** Names the enabled earlier transformer steps declare: the engine runs a transformer's steps as one body. */
   readonly earlierNames?: readonly string[] | undefined;
 }
 
@@ -134,7 +107,6 @@ export function ScriptEditor({
     return () => { sub.dispose(); };
   }, [editor, height]);
 
-  // Test runs: only inside a channel (which provides the sample) and when editable.
   const testSample = useScriptTestSample();
   const { has } = usePermissions();
   const testRun = useScriptTestRun();
@@ -168,12 +140,8 @@ export function ScriptEditor({
     return () => { action.dispose(); };
   }, [editor, canTest]);
 
-  // The type service holds one set of globals; this editor's surface applies
-  // whenever it takes focus, and when it changes while this editor has focus or
-  // no editor has (on mount). While another editor's is applied, this one shows
-  // syntax errors only and says types are checked when focused. Applying on
-  // every change made a step whose earlier names changed as the focused step
-  // was typed in take the surface away from it (#228).
+  // The type service holds one set of globals. This surface applies when the editor takes focus, or changes while it or no
+  // editor has focus; applying on every change took the surface from the step being typed in (#228).
   const earlierKey = (earlierNames ?? []).join(',');
   const libs = useMemo(
     () => surfaceLibs(surface, templates ?? [], earlierKey === '' ? [] : earlierKey.split(',')),

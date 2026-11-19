@@ -1,12 +1,7 @@
-// ===========================================
-// Delimited Text
-// ===========================================
-// CSV and other delimited text as rows of named columns. Every value is text:
-// "000123" is an MRN, and turning it into 123 corrupts the message.
+// Every value stays text: "000123" is an MRN, and 123 corrupts the message.
 
 import type { DelimitedOptions } from '@galvanigraph/core-models';
 
-/** One record: column name to value. */
 export type DelimitedRow = Record<string, string>;
 
 interface Field {
@@ -15,22 +10,15 @@ interface Field {
   readonly next: number;
 }
 
-// Every scan below walks forward from where the field starts and stops at that
-// field's own end, so parsing is linear in the text. Searching the whole rest
-// of the text for each field (indexOf) made a large file quadratic.
+// Every scan stops at its own field's end. Searching the whole rest of the
+// text for each field (indexOf) made a large file quadratic.
 
-/** Index of the next column or record delimiter at or after `from`, or the text length. */
 function nextDelimiter(text: string, from: number, o: DelimitedOptions): number {
   let i = from;
   while (i < text.length && !text.startsWith(o.columnDelimiter, i) && !text.startsWith(o.recordDelimiter, i)) i += 1;
   return i;
 }
 
-/**
- * A quoted value. Inside the quotes, a quote is written twice, or (with
- * escapeWithDoubleQuote off) preceded by quoteEscape, which is itself written
- * twice; any other character is the value's own.
- */
 function readQuoted(text: string, start: number, o: DelimitedOptions): Field {
   const escapedQuote = o.escapeWithDoubleQuote ? o.quote + o.quote : o.quoteEscape + o.quote;
   const escapedEscape = o.escapeWithDoubleQuote ? undefined : o.quoteEscape + o.quoteEscape;
@@ -91,11 +79,7 @@ function stripCarriageReturns(text: string, o: DelimitedOptions): string {
   return text.replaceAll('\r', '');
 }
 
-/**
- * Parse delimited text into rows keyed by the configured column names, then
- * `column<n>` (1-based) for columns past the list. Blank lines are skipped.
- * Throws when a quoted value never closes.
- */
+/** Throws when a quoted value never closes. */
 export function parseDelimited(text: string, options: DelimitedOptions): DelimitedRow[] {
   const records = splitRecords(stripCarriageReturns(text, options), options);
   const rows: DelimitedRow[] = [];
@@ -108,7 +92,6 @@ export function parseDelimited(text: string, options: DelimitedOptions): Delimit
   return rows;
 }
 
-/** A value as the parser reads it back: quoted, with its quotes (and escapes) escaped, when it holds a delimiter or a quote. */
 function writeValue(raw: unknown, o: DelimitedOptions): string {
   const value = raw === null || raw === undefined ? '' : String(raw);
   const needsQuotes = [o.columnDelimiter, o.recordDelimiter, o.quote, '\r', '\n'].some((token) => value.includes(token));
@@ -118,11 +101,7 @@ function writeValue(raw: unknown, o: DelimitedOptions): string {
   return o.quote + escaped + o.quote;
 }
 
-/**
- * Write rows (or a single row) as delimited text, columns in each row's key
- * order, every record followed by the record delimiter. Values that hold a
- * delimiter or a quote are quoted.
- */
+/** Columns go in each row's key order, not `columnNames` order. */
 export function serializeDelimited(rows: unknown, options: DelimitedOptions): string {
   const list: readonly unknown[] = Array.isArray(rows) ? rows : [rows];
   let out = '';
@@ -133,12 +112,7 @@ export function serializeDelimited(rows: unknown, options: DelimitedOptions): st
   return out;
 }
 
-/**
- * Turn control characters typed as escapes back into the characters: `\n`,
- * `\r` and `\t` become LF, CR and tab, and `\\` becomes one backslash. Any
- * other backslash is left as it is. Delimited settings are written this way
- * both in the channel editor and in Mirth's exported serializationProperties.
- */
+/** Delimited settings are typed this way in the channel editor and in Mirth's exported serializationProperties. */
 export function unescapeControlChars(text: string): string {
   return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
 }

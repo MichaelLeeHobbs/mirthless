@@ -1,8 +1,3 @@
-// ===========================================
-// Connector Default Properties
-// ===========================================
-// Default property objects for each source connector type.
-
 import { KAFKA_CONNECTION_DEFAULTS, AMQP_CONNECTION_DEFAULTS } from '../common/queue-connection-defaults.js';
 import { NEW_SCRIPT_LANGUAGE } from '../../../lib/script-language.js';
 
@@ -27,10 +22,7 @@ export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   responseContentType: 'text/plain',
   errorStatusCode: 500,
   maxBodyBytes: 52428800,
-  // Transport mode. HTTPS makes the listener terminate TLS using a server
-  // certificate selected from the certificate store by ID; the server resolves
-  // IDs -> PEM at deploy time (readTlsServerOptions consumes the resolved
-  // cert/key/ca/requireClientCert bag). No raw PEM is stored here.
+  // HTTPS takes certificate-store IDs, which the server resolves to PEM at deploy. Never store raw PEM here.
   scheme: 'HTTP',
   tls: { serverCertId: '', caCertId: '', requireClientCert: false },
 };
@@ -100,10 +92,6 @@ export const EMAIL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   includeAttachments: false,
 };
 
-// Keys MUST match exactly what the SFTP source connector reads in
-// packages/connectors/src/sftp (host/port/username/password/privateKey/
-// passphrase/remoteDirectory/filePattern/pollingIntervalMs/afterProcessing/
-// moveToDirectory/minFileAgeMs/ignoreDot/strictHostKey/hostKey/charset).
 export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '',
   port: 22,
@@ -153,7 +141,6 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   AMQP: AMQP_SOURCE_DEFAULTS,
 };
 
-/** Get default properties for a connector type. Returns empty object for unknown types. */
 export function getDefaultProperties(connectorType: string): Record<string, unknown> {
   return { ...(DEFAULTS_MAP[connectorType] ?? {}) };
 }

@@ -5,14 +5,12 @@ import { noticeAuditUnavailable } from '../lib/audit-unavailable.js';
 
 const BASE_URL = '/api/v1';
 
-/** What a refresh gives back: the new token and the user as they are now. */
 interface RefreshResult {
   readonly accessToken: string;
   /** Null when the answer carries no usable user; the stored one is kept. */
   readonly user: { readonly profile: AuthUser; readonly mustChangePassword: boolean } | null;
 }
 
-/** Mutex to prevent concurrent token refresh attempts */
 let refreshPromise: Promise<RefreshResult | null> | null = null;
 
 interface FetchOptions {
@@ -23,9 +21,8 @@ interface FetchOptions {
 }
 
 /**
- * The grants in a refresh answer: each permission with every channel or its
- * group ids (D-310). Undefined when absent or malformed, so the UI falls back
- * to treating permissions as unscoped, and the server still judges each request.
+ * Undefined when absent or malformed: the UI then treats permissions as
+ * unscoped, and the server still judges each request (D-310).
  */
 export function readGrants(value: unknown): GrantEntry[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -40,7 +37,6 @@ export function readGrants(value: unknown): GrantEntry[] | undefined {
   return grants;
 }
 
-/** The user in a refresh answer, or null when it is missing or malformed. */
 export function readRefreshedUser(value: unknown): RefreshResult['user'] {
   if (!isPlainObject(value)) return null;
   const { id, username, email, role, permissions, mustChangePassword } = value;
@@ -55,7 +51,7 @@ export function readRefreshedUser(value: unknown): RefreshResult['user'] {
   };
 }
 
-/** What the access check compares: the grants, or the flat permissions from a server that sends none. */
+/** Falls back to the flat permissions for a server that sends no grants. */
 export function accessKey(user: AuthUser | null): string {
   if (!user) return '';
   const grants = user.grants?.map((g) => `${g.permission}=${g.scope === ALL_CHANNELS ? ALL_CHANNELS : [...g.scope].sort().join(',')}`).sort();
@@ -63,11 +59,8 @@ export function accessKey(user: AuthUser | null): string {
 }
 
 /**
- * Refresh the session, sharing one refresh among concurrent callers, and store
- * the result; sign out when the refresh is refused. Returns the new access
- * token, or null when signed out. A refresh rotates the session, so another
- * caller still holding the old token (a socket mid-handshake) comes here too
- * rather than signing out on the spot.
+ * A refresh rotates the session, so another caller still holding the old token
+ * (a socket mid-handshake) comes here too rather than signing out on the spot.
  */
 export async function refreshOrSignOut(): Promise<string | null> {
   if (!refreshPromise) {
@@ -82,7 +75,7 @@ export async function refreshOrSignOut(): Promise<string | null> {
   return null;
 }
 
-/** A request for one channel or a record in it: the routes that answer 404 outside the caller's access. */
+/** The routes that answer 404 outside the caller's access. */
 export function isChannelPath(path: string): boolean {
   return /^\/channels\/[0-9a-f-]{36}(\/|\?|$)/i.test(path);
 }
@@ -91,17 +84,15 @@ export function isChannelPath(path: string): boolean {
 const ACCESS_CHECK_INTERVAL_MS = 30_000;
 let lastAccessCheck = 0;
 
-/** Forget when the access was last checked (tests). */
+/** For tests. */
 export function resetAccessCheck(): void {
   lastAccessCheck = 0;
 }
 
 /**
- * Refresh the session and note when the user's access has changed (D-310,
- * plan section 4). A 403 or 404 from a scoped route may mean the record is
- * now outside the caller's access rather than deleted; the layout then says
- * "Your access changed" so nobody recreates a channel they merely lost.
- * `force` skips the throttle (an expiry timer).
+ * A 403 or 404 from a scoped route may mean the record is now outside the
+ * caller's access rather than deleted; the layout then says "Your access
+ * changed" so nobody recreates a channel they merely lost (D-310).
  */
 export async function checkAccess(force = false): Promise<void> {
   const now = Date.now();
@@ -117,7 +108,6 @@ export async function checkAccess(force = false): Promise<void> {
   if (accessKey(refreshed.user.profile) !== before) useAuthStore.getState().setAccessChanged(new Date().toISOString());
 }
 
-/** Attempt to refresh the session using the refresh endpoint */
 async function refreshSession(): Promise<RefreshResult | null> {
   try {
     const response = await fetch(`${BASE_URL}/auth/refresh`, {
@@ -140,10 +130,7 @@ async function refreshSession(): Promise<RefreshResult | null> {
   }
 }
 
-/**
- * Store a refreshed session. The refresh carries the user's current role and
- * permissions, so a role change shows in the UI at the next refresh (#219).
- */
+/** The refresh carries the user's current role and permissions, so a role change shows at the next refresh (#219). */
 function applyRefresh(refreshed: RefreshResult): void {
   const store = useAuthStore.getState();
   if (refreshed.user) {
@@ -153,11 +140,6 @@ function applyRefresh(refreshed: RefreshResult): void {
   }
 }
 
-/**
- * Core fetch wrapper for the API.
- * Attaches Bearer token, handles 401 with token refresh (mutex pattern),
- * and parses the standard ApiResponse JSON format.
- */
 export async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<ApiResponse<T>> {
   const { method = 'GET', body, headers = {}, signal } = options;
 
@@ -188,7 +170,6 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   const token = useAuthStore.getState().accessToken;
   let response = await makeRequest(token);
 
-  // Handle 401 — attempt token refresh with mutex
   if (response.status === 401 && token) {
     // A refresh that finished while this request was in flight rotated the session
     // and stored a new token: try that first rather than rotating again.
@@ -233,7 +214,7 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
     }
   }
 
-  // 204 No Content has no body — return a synthetic success
+  // 204 No Content has no body.
   if (response.status === 204) {
     return { success: true, data: undefined as T };
   }
@@ -248,8 +229,6 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
     };
   }
 }
-
-// ----- User API -----
 
 export interface UserSummary {
   readonly id: string;
@@ -273,9 +252,7 @@ export interface UserDetail extends UserSummary {
   readonly updatedAt: string;
 }
 
-// ----- Role Types -----
-
-/** A role (GET /roles, roles:read). The admin role is locked and holds every permission. */
+/** The admin role is locked and holds every permission. */
 export interface RoleSummary {
   readonly id: string;
   readonly name: string;
@@ -288,8 +265,6 @@ export interface RoleSummary {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
-
-// ----- Code Template Types -----
 
 export interface CodeTemplateLibrary {
   readonly id: string;
@@ -318,8 +293,6 @@ export interface CodeTemplateDetail {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
-
-// ----- Alert Types -----
 
 export interface AlertActionDetail {
   readonly id: string;
@@ -367,8 +340,6 @@ export interface AlertListResult {
   };
 }
 
-// ----- Event Types -----
-
 export interface EventSummary {
   readonly id: number;
   readonly level: string;
@@ -395,9 +366,6 @@ export interface EventListResult {
   };
 }
 
-// ----- Audit Types -----
-
-/** One row of the protected audit log (GET /audit, audit:read). */
 export interface AuditEntry {
   readonly id: number;
   readonly occurredAt: string;
@@ -419,8 +387,6 @@ export interface AuditListResult {
   };
 }
 
-// ----- Setting Types -----
-
 export interface SettingDetail {
   readonly id: string;
   readonly key: string;
@@ -432,8 +398,6 @@ export interface SettingDetail {
   readonly updatedAt: string;
 }
 
-// ----- Global Scripts Types -----
-
 export interface GlobalScriptsData {
   readonly deploy: string;
   readonly undeploy: string;
@@ -443,7 +407,6 @@ export interface GlobalScriptsData {
   readonly languages?: Readonly<Record<'deploy' | 'undeploy' | 'preprocessor' | 'postprocessor', string>>;
 }
 
-/** Convenience methods for common HTTP verbs */
 export const api = {
   get: <T>(path: string, signal?: AbortSignal): Promise<ApiResponse<T>> =>
     apiFetch<T>(path, signal ? { signal } : {}),

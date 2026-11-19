@@ -1,9 +1,4 @@
-// ===========================================
-// Lint: one permission check
-// ===========================================
-// eslint.config.js sends every permission check through holdsPermission or
-// can (core-models authz, D-310). This proves the rule fires on the forms a
-// caller writes and leaves the shared helper's own callers alone.
+// The eslint.config.js rule that sends every permission check through holdsPermission or can (D-310).
 
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';

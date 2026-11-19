@@ -1,7 +1,3 @@
-// ===========================================
-// Kafka Connector Exports
-// ===========================================
-
 export { KafkaReceiver, toRawMessage as kafkaRecordToRawMessage, type KafkaReceiverConfig } from './kafka-receiver.js';
 export { KafkaDispatcher, type KafkaDispatcherConfig } from './kafka-dispatcher.js';
 export {

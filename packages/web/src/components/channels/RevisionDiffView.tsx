@@ -1,8 +1,3 @@
-// ===========================================
-// Revision Diff View
-// ===========================================
-// Monaco DiffEditor showing JSON diff between two revisions.
-
 import { type ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';

@@ -1,19 +1,10 @@
-// ===========================================
-// Global Scripts API Hooks
-// ===========================================
-// TanStack Query hooks for global scripts GET/PUT.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UpdateGlobalScriptsInput } from '@galvanigraph/core-models';
 import { api, type GlobalScriptsData } from '../api/client.js';
 
-// ----- Query Keys -----
-
 const GS_KEYS = {
   all: ['global-scripts'] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useGlobalScripts(): ReturnType<typeof useQuery<GlobalScriptsData>> {
   return useQuery({

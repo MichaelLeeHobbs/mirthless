@@ -1,10 +1,3 @@
-// ===========================================
-// Key Token Dialog
-// ===========================================
-// Shows a key's token once, after an issue or a replace (D-313). The server
-// keeps only the secret's hash, so closing this dialog is the last chance to
-// copy it.
-
 import { useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
@@ -20,7 +13,6 @@ import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 import { formatTimestamp } from '../../lib/format.js';
 
 interface KeyTokenDialogProps {
-  /** The key's name, and its token; null when closed. */
   readonly shown: { readonly name: string; readonly token: string; readonly oldSecretUntil: string | null } | null;
   readonly onClose: () => void;
 }

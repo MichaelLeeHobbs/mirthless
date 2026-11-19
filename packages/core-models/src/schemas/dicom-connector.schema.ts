@@ -1,10 +1,4 @@
-// ===========================================
-// DICOM Connector Property Schemas
-// ===========================================
-// Properties of the DICOM Listener (source) and Sender (destination), as a
-// channel stores them. The server validates them at deploy and the connector
-// registry parses them, so defaults live here only. A key not listed here
-// fails validation, except the Mirth keys the importer copies.
+// Defaults live here only (D-274). An unlisted key fails the deploy, except the Mirth keys the importer copies.
 
 import { z } from 'zod/v4';
 import {
@@ -22,16 +16,15 @@ export const DICOM_DISPATCH_MODES = ['PER_FILE', 'PER_ASSOCIATION'] as const;
 export const DICOM_POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
 export const DICOM_SEND_MODES = ['single', 'multiple'] as const;
 
-/** A DICOM application entity title: at most 16 characters. */
+/** DICOM caps an application entity title at 16 characters. */
 const aeTitle = z.string().max(16);
 
-/** Milliseconds for a DICOM association; 0 means dcmjs-dimse's own default (180 s connect, 60 s association). */
+/** 0: dcmjs-dimse's own default (180 s connect, 60 s association). */
 const dicomTimeout = wholeNumberSchema(0, MAX_TIMER_DELAY_MS);
 
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const dicomSourceObjectSchema = z.strictObject({
   port: connectorPortSchema,
-  /** Where received files are written before they are dispatched. */
   storageDir: requiredTextSchema,
   aeTitle: aeTitle.default('GALVANIGRAPH'),
   minPoolSize: wholeNumberSchema(1).default(2),
@@ -96,7 +89,6 @@ function withoutMirthKeys(value: unknown, keys: ReadonlySet<string>, ctx: z.Refi
   return rest;
 }
 
-/** Destination props without the Mirth keys, and without a template that means the message itself. */
 function dropDestinationLegacy(value: unknown, ctx: z.RefinementCtx): unknown {
   const props = withoutMirthKeys(value, DESTINATION_LEGACY_KEYS, ctx);
   if (typeof props !== 'object' || props === null || Array.isArray(props)) return props;
@@ -104,7 +96,6 @@ function dropDestinationLegacy(value: unknown, ctx: z.RefinementCtx): unknown {
   return typeof template === 'string' && destinationTemplate('DICOM', { template }) === undefined ? rest : props;
 }
 
-/** The source schema: the pool's maximum at least its minimum, and a move-to directory for MOVE. */
 export const dicomSourcePropertiesSchema = z.preprocess(
   (value, ctx) => withoutMirthKeys(value, SOURCE_LEGACY_KEYS, ctx),
   dicomSourceObjectSchema.superRefine((props, ctx) => {

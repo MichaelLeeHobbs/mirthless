@@ -1,8 +1,3 @@
-// ===========================================
-// Connection Test Controller
-// ===========================================
-// Handles HTTP request for connector connection testing.
-
 import type { Request, Response } from 'express';
 import { ALL_CHANNELS, type ConnectionTestInput } from '@galvanigraph/core-models';
 import { ConnectionTestService } from '../services/connection-test.service.js';
@@ -14,7 +9,6 @@ import { deny, DENY_REASON } from '../middleware/permission.middleware.js';
 import { ServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
 
-/** Answer a refusal from the scope check with its status and message. */
 function refuse(res: Response, error: ServiceError): void {
   res.status(mapErrorToStatus(error)).json({ success: false, error: errorResponse(error) });
 }

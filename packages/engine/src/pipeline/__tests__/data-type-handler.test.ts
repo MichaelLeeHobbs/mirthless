@@ -1,7 +1,3 @@
-// ===========================================
-// Data Type Handler Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed, isHl7MessageProxy, isX12MessageProxy, createHl7Proxy } from '../data-type-handler.js';
 import { Hl7Message } from '@galvanigraph/core-util';
@@ -54,7 +50,6 @@ describe('parseForSandbox', () => {
 
   it('HL7V2 proxy supports messageType', () => {
     const msg = parseForSandbox(SAMPLE_HL7, 'HL7V2') as { messageType: string };
-    // messageType auto-resolves to first component of MSH.9
     expect(msg.messageType).toBe('ADT');
   });
 
@@ -68,7 +63,6 @@ describe('parseForSandbox', () => {
     expect(result).toHaveProperty('patient');
     const patient = (result as { patient: { name: string; mrn: string } }).patient;
     expect(patient.name).toBe('John Doe');
-    // Values are always text, even when they look like numbers.
     expect(patient.mrn).toBe('12345');
   });
 
@@ -115,7 +109,6 @@ describe('parseForSandbox', () => {
   });
 
   it('does not throw on lenient XML (fast-xml-parser is permissive)', () => {
-    // fast-xml-parser accepts most input without throwing
     expect(() => parseForSandbox('<<<>>>', 'XML')).not.toThrow();
   });
 });
@@ -180,7 +173,6 @@ describe('roundtrip: parse → serialize → parse', () => {
     const serialized = serializeFromSandbox(proxy1, 'HL7V2');
     const proxy2 = parseForSandbox(serialized, 'HL7V2') as { get: (p: string) => string | undefined };
     expect(proxy2.get('PID.3')).toBe('12345');
-    // get() auto-resolves to first component — DOE (not DOE^JOHN)
     expect(proxy2.get('PID.5')).toBe('DOE');
   });
 

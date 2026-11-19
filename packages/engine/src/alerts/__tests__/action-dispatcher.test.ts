@@ -1,20 +1,14 @@
-// ===========================================
-// Action Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { dispatchActions, substituteAlertTemplate, type ActionDispatcherDeps } from '../action-dispatcher.js';
 import type { LoadedAlert, ChannelErrorEvent } from '../alert-evaluator.js';
 import { ALERT_TEMPLATE_VARIABLES } from '@galvanigraph/core-models';
-
-// ----- Helpers -----
 
 function makeEvent(overrides?: Partial<ChannelErrorEvent>): ChannelErrorEvent {
   return {
     channelId: 'ch-001',
     errorType: 'SOURCE_CONNECTOR',
     errorMessage: 'Connection refused',
-    timestamp: 1709337600000, // fixed timestamp for deterministic tests
+    timestamp: 1709337600000,
     ...overrides,
   };
 }
@@ -42,13 +36,9 @@ function makeDeps(overrides?: Partial<ActionDispatcherDeps>): ActionDispatcherDe
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- substituteAlertTemplate -----
 
 describe('substituteAlertTemplate', () => {
   const alert = makeAlert({ name: 'My Alert' });
@@ -98,11 +88,7 @@ describe('substituteAlertTemplate', () => {
   });
 });
 
-// ----- dispatchActions -----
-
 describe('dispatchActions', () => {
-  // ----- EMAIL action -----
-
   it('sends email when emailSender is configured', async () => {
     const emailSender = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({ emailSender });
@@ -181,7 +167,7 @@ describe('dispatchActions', () => {
   });
 
   it('logs warning when emailSender is not configured', async () => {
-    const deps = makeDeps(); // No emailSender
+    const deps = makeDeps();
     const alert = makeAlert({
       actions: [{ id: 'a1', actionType: 'EMAIL', recipients: ['admin@test.com'], properties: null }],
     });
@@ -208,8 +194,6 @@ describe('dispatchActions', () => {
     expect(message).toContain('Failed to send alert email');
   });
 
-  // ----- CHANNEL action -----
-
   it('dispatches CHANNEL action to channelSender', async () => {
     const channelSender = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({ channelSender });
@@ -229,7 +213,7 @@ describe('dispatchActions', () => {
   });
 
   it('logs warning when CHANNEL action has no channelSender', async () => {
-    const deps = makeDeps(); // No channelSender
+    const deps = makeDeps();
     const alert = makeAlert({
       actions: [{
         id: 'a1',
@@ -276,8 +260,8 @@ describe('dispatchActions', () => {
 
     await dispatchActions(alert, makeEvent(), deps);
 
-    expect(emailSender).toHaveBeenCalledTimes(1); // EMAIL action
-    expect(channelSender).toHaveBeenCalledTimes(1); // CHANNEL action
+    expect(emailSender).toHaveBeenCalledTimes(1);
+    expect(channelSender).toHaveBeenCalledTimes(1);
   });
 
   it('uses bodyTemplate when available', async () => {
@@ -318,8 +302,6 @@ describe('dispatchActions', () => {
     expect(content).toContain('Channel: ch-001');
     expect(content).toContain('Error: Connection refused');
   });
-
-  // ----- LOG action -----
 
   it('handles LOG action by logging warning', async () => {
     const deps = makeDeps();

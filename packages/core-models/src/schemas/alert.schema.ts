@@ -1,10 +1,4 @@
-// ===========================================
-// Alert Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
-
-// ----- Trigger Types -----
 
 export const ALERT_TRIGGER_TYPES = ['CHANNEL_ERROR', 'NO_MESSAGES'] as const;
 
@@ -24,15 +18,12 @@ export const ERROR_EVENT_TYPES = [
 
 export const ALERT_ACTION_TYPES = ['EMAIL', 'CHANNEL'] as const;
 
-// ----- Trigger Schema -----
-
 export const channelErrorTriggerSchema = z.object({
   type: z.literal('CHANNEL_ERROR'),
   errorTypes: z.array(z.enum(ERROR_EVENT_TYPES)).min(1),
   regex: z.string().nullable().default(null),
 });
 
-/** Fires when a started channel has received no message for `windowMinutes`. */
 export const noMessagesTriggerSchema = z.object({
   type: z.literal('NO_MESSAGES'),
   windowMinutes: z.number().int().min(1).max(10_080),
@@ -44,8 +35,6 @@ export const alertTriggerSchema = z.discriminatedUnion('type', [
 ]);
 
 export type AlertTriggerInput = z.infer<typeof alertTriggerSchema>;
-
-// ----- Action Schema -----
 
 export const alertActionInputSchema = z.discriminatedUnion('type', [
   z.object({
@@ -60,8 +49,6 @@ export const alertActionInputSchema = z.discriminatedUnion('type', [
 ]);
 
 export type AlertActionInput = z.infer<typeof alertActionInputSchema>;
-
-// ----- Create Schema -----
 
 export const createAlertSchema = z.object({
   name: z.string().min(1).max(255),
@@ -78,15 +65,11 @@ export const createAlertSchema = z.object({
 
 export type CreateAlertInput = z.infer<typeof createAlertSchema>;
 
-// ----- Update Schema -----
-
 export const updateAlertSchema = createAlertSchema.partial().extend({
   revision: z.number().int().positive(),
 });
 
 export type UpdateAlertInput = z.infer<typeof updateAlertSchema>;
-
-// ----- Query Schema -----
 
 export const alertListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -94,8 +77,6 @@ export const alertListQuerySchema = z.object({
 });
 
 export type AlertListQuery = z.infer<typeof alertListQuerySchema>;
-
-// ----- Param / Patch Schemas -----
 
 export const patchAlertEnabledSchema = z.object({
   enabled: z.boolean(),

@@ -1,17 +1,3 @@
-// ===========================================
-// E2E Channel Harness
-// ===========================================
-// Reusable support for tests that ACTUALLY send messages through channels.
-// Assembles a real channel runtime (sandbox + 8-stage pipeline + real source
-// and destination connectors) backed by an in-memory message store, so a test
-// can: build a channel from a declarative spec, push a message in through the
-// source connector, and assert on the transformed output + persisted rows.
-//
-// Scripts (source filter/transformer, per-destination filter/transformer/
-// response-transformer) are written as TS/JS source and compiled through the
-// real esbuild-backed compiler with code-template injection — exercising the
-// same path production uses. No mocking of anything we own.
-
 import {
   VmSandboxExecutor,
   MessageProcessor,
@@ -41,16 +27,11 @@ import type {
 } from '../../../index.js';
 import type { Result } from '@galvanigraph/core-util';
 
-// ----- Result helper -----
-
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
 }
 
-/**
- * The pipeline's result as the source connector's dispatch result: SENT maps
- * to PROCESSED, as the server engine maps it under the default response mode.
- */
+/** Maps status as the server's `toDispatchStatus` does under the default response mode. */
 export function toDispatchResult(result: Result<ProcessedMessage>): Awaited<ReturnType<ChannelRuntimeConfig['onMessage']>> {
   if (!result.ok) return result;
   const { messageId, status, response } = result.value;
@@ -59,8 +40,6 @@ export function toDispatchResult(result: Result<ProcessedMessage>): Awaited<Retu
     ? { messageId, status: dispatchStatus, response }
     : { messageId, status: dispatchStatus });
 }
-
-// ----- In-memory message store -----
 
 export interface StoredContentRow {
   readonly channelId: string;
@@ -99,13 +78,10 @@ export interface InMemoryStore extends MessageStore {
   readonly contents: readonly StoredContentRow[];
   readonly connectorMessages: readonly StoredConnectorMessageRow[];
   readonly stats: readonly StoredStatRow[];
-  /** Number of source messages created. */
   messageCount(): number;
-  /** Content of a specific stored row, or null. */
   contentOf(messageId: number, metaDataId: number, contentType: number): string | null;
 }
 
-/** Build a fresh in-memory store fully satisfying the MessageStore contract. */
 export function createInMemoryStore(): InMemoryStore {
   let nextMessageId = 1;
   const messages: StoredMessageRow[] = [];
@@ -171,13 +147,11 @@ export function createInMemoryStore(): InMemoryStore {
   };
 }
 
-// ----- Channel spec -----
-
 export interface DestinationSpec {
   readonly metaDataId: number;
   readonly name: string;
   readonly connector: DestinationConnectorRuntime;
-  /** dataType tagged on the outbound ConnectorMessage; defaults to channel dataType. */
+  /** Defaults to the channel's dataType. */
   readonly dataType?: string;
   readonly filter?: string;
   readonly transformer?: string;
@@ -190,14 +164,12 @@ export interface ChannelSpec {
   readonly dataType: string;
   readonly source: SourceConnectorRuntime;
   readonly templates?: ReadonlyArray<CodeTemplateData>;
-  /** Channel preprocessor script. */
   readonly preprocessor?: string;
-  /** Source filter script (`return true` to pass). */
+  /** `return true` to pass. */
   readonly filter?: string;
-  /** Source transformer script. */
   readonly transformer?: string;
   readonly destinations: ReadonlyArray<DestinationSpec>;
-  /** Store to record into; a fresh in-memory store when absent. */
+  /** A fresh in-memory store when absent. */
   readonly store?: InMemoryStore;
 }
 
@@ -257,11 +229,6 @@ async function buildDestinationConfigs(
   return configs;
 }
 
-/**
- * Assemble, deploy, and start a channel from a declarative spec.
- * The returned channel is live: pushing a message through `spec.source`
- * runs the full pipeline and dispatches to the real destination connectors.
- */
 export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel> {
   const sandbox = new VmSandboxExecutor();
   const store = spec.store ?? createInMemoryStore();
@@ -349,22 +316,12 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
   };
 }
 
-/** Stop and undeploy several channels, ignoring already-stopped ones. */
 export async function teardownAll(channels: readonly DeployedChannel[]): Promise<void> {
   for (const c of channels) {
     await c.teardown();
   }
 }
 
-// ----- Capture destination (an in-memory sink connector) -----
-
-/**
- * A real DestinationConnectorRuntime that records every message it is sent.
- * Use as the terminal sink of a chain to assert on the final transformed output
- * without needing an external server. It IS a real connector (implements the
- * full lifecycle + send contract) — the message genuinely flows through the
- * pipeline and dispatch path to reach it.
- */
 export class CaptureDestination implements DestinationConnectorRuntime {
   readonly received: ConnectorMessage[] = [];
   private readonly reply: (msg: ConnectorMessage) => string;
@@ -373,7 +330,6 @@ export class CaptureDestination implements DestinationConnectorRuntime {
     this.reply = reply ?? (() => 'ACK');
   }
 
-  /** Content of the most recently received message, or null. */
   lastContent(): string | null {
     return this.received.at(-1)?.content ?? null;
   }

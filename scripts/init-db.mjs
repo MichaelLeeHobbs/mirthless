@@ -1,26 +1,5 @@
 #!/usr/bin/env node
-// ===========================================
-// Initialize GalvaniGraph Database (Cross-Platform)
-// ===========================================
-// Creates the galvanigraph database and user on a local PostgreSQL instance.
-// Safe to run multiple times — checks for existing user/database.
-//
-// Usage:
-//   node scripts/init-db.mjs                         # defaults
-//   pnpm db:init                                     # via npm script
-//
-// Environment variables (all optional):
-//   PGHOST       PostgreSQL host          (default: localhost)
-//   PGPORT       PostgreSQL port          (default: 5432)
-//   PGUSER       Superuser for setup      (default: postgres)
-//   PGPASSWORD   Superuser password       (default: postgres)
-//   DB_NAME      Database to create       (default: galvanigraph)
-//   DB_USER      App user to create       (default: galvanigraph)
-//   DB_PASSWORD  App user password        (default: galvanigraph_dev)
-//
-// Platform scripts also available:
-//   Linux/macOS:  ./scripts/init-db.sh
-//   Windows:      .\scripts\init-db.ps1
+// Same job as scripts/init-db.sh and scripts/init-db.ps1.
 
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../packages/server/package.json', import.meta.url));
@@ -42,7 +21,6 @@ async function main() {
   console.log(`  App user: ${DB_USER}`);
   console.log('');
 
-  // Connect as superuser to the default 'postgres' database
   const adminPool = new pg.Pool({
     host: PGHOST,
     port: Number(PGPORT),
@@ -53,13 +31,11 @@ async function main() {
   });
 
   try {
-    // Check connection
     const versionResult = await adminPool.query('SELECT version()');
     const version = versionResult.rows[0].version.split(',')[0];
     console.log(`  Connected: ${version}`);
     console.log('');
 
-    // 1. Create user
     process.stdout.write(`1. Creating user '${DB_USER}'...`);
     const userExists = await adminPool.query(
       "SELECT 1 FROM pg_roles WHERE rolname = $1", [DB_USER]
@@ -67,12 +43,11 @@ async function main() {
     if (userExists.rows.length > 0) {
       console.log(' already exists.');
     } else {
-      // Can't use $1 for role names in CREATE USER — but this is a setup script with controlled input
+      // CREATE USER can't bind a role name as $1; this setup script's input is controlled.
       await adminPool.query(`CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}'`);
       console.log(' created.');
     }
 
-    // 2. Create database
     process.stdout.write(`2. Creating database '${DB_NAME}'...`);
     const dbExists = await adminPool.query(
       "SELECT 1 FROM pg_database WHERE datname = $1", [DB_NAME]
@@ -84,7 +59,6 @@ async function main() {
       console.log(' created.');
     }
 
-    // 3. Grant privileges
     process.stdout.write('3. Granting privileges...');
     await adminPool.query(`GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER}`);
     console.log(' done.');

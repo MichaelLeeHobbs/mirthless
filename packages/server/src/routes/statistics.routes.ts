@@ -1,7 +1,3 @@
-// ===========================================
-// Statistics Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { StatisticsController } from '../controllers/statistics.controller.js';
@@ -16,14 +12,12 @@ const router: IRouter = Router();
 // Every route here that names a channel checks its permission on that channel (D-310).
 scopeToChannel(router);
 
-// All channels summary (must come before /:id to avoid route conflict)
 router.get(
   '/statistics',
   requirePermission('channels:read'),
   StatisticsController.getAllStats
 );
 
-// Per-channel statistics
 router.get(
   '/:id/statistics',
   requirePermission('channels:read'),
@@ -31,7 +25,6 @@ router.get(
   StatisticsController.getChannelStats
 );
 
-// Reset per-channel statistics
 router.post(
   '/:id/statistics/reset',
   requirePermission('channels:deploy'),

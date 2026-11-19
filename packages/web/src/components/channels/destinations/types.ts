@@ -1,11 +1,6 @@
-// ===========================================
-// Destination Connector Form Types
-// ===========================================
-
 import type { ScriptLanguageCode } from '@galvanigraph/core-models';
 import type { FilterFormValues, TransformerFormValues } from '../source/types.js';
 
-/** A single destination in the form state. */
 export interface DestinationFormValues {
   name: string;
   enabled: boolean;
@@ -19,17 +14,11 @@ export interface DestinationFormValues {
   waitForPrevious: boolean;
   filter: FilterFormValues;
   transformer: TransformerFormValues;
-  /**
-   * Per-destination response transformer script (CT_RESPONSE_TRANSFORMED). A
-   * single JavaScript/TypeScript body run against the destination's response
-   * after a successful send. Empty string = no response transformer.
-   */
+  /** Runs against the destination's response after a successful send (CT_RESPONSE_TRANSFORMED); empty for none. */
   responseTransformer: string;
-  /** The language of `responseTransformer`. */
   responseTransformerLanguage: ScriptLanguageCode;
 }
 
-/** Props for destination connector-specific settings forms. */
 export interface DestConnectorFormProps {
   readonly properties: Record<string, unknown>;
   readonly onChange: (properties: Record<string, unknown>) => void;

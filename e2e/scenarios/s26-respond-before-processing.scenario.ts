@@ -1,5 +1,4 @@
-// S26: a listener that responds before processing answers AA whatever happens next.
-// Found by the anti-gaming check. Mirth's "Auto-generate (Before processing)"
+// Mirth's "Auto-generate (Before processing)"
 // acknowledges the message as soon as it is received; the sender must not get
 // AE for a failure that happens later, or it resends and the message is
 // processed twice. The failure is still recorded on the message.

@@ -1,12 +1,5 @@
-// ===========================================
-// System Info API Hook
-// ===========================================
-// TanStack Query hook for system info with auto-refresh.
-
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface SystemInfo {
   readonly server: {
@@ -56,16 +49,12 @@ export interface SystemInfo {
   };
 }
 
-// ----- Query Keys -----
-
 const SYS_KEYS = {
   all: ['system-info'] as const,
   info: () => [...SYS_KEYS.all, 'info'] as const,
 } as const;
 
-// ----- Hooks -----
-
-/** Polls every 10 s while enabled; pass false to stop polling when the data isn't on screen. */
+/** Pass false when the data is not on screen, to stop the 10 s poll. */
 export function useSystemInfo(enabled = true): ReturnType<typeof useQuery<SystemInfo>> {
   return useQuery({
     enabled,

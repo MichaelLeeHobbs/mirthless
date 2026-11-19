@@ -1,12 +1,3 @@
-// ===========================================
-// System reads and Test Connection under a scope (real Postgres, #266 slice 10b)
-// ===========================================
-// A scoped holder of a system-read permission sees only the channels in scope
-// (or a count of the rest): an alert's channels, the pruner's per-channel
-// statistics, tag assignment counts and the all-channel statistics. A scoped
-// deployer's Test Connection names its channel, and may use only certificates
-// already used in their scope.
-
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -32,7 +23,6 @@ describeIntegration('system reads and Test Connection under a scope (real Postgr
   let alertId: string;
   let tagId: string;
 
-  /** A role holding exactly `permissions`, made directly; returns its name. */
   async function customRole(permissions: readonly string[]): Promise<string> {
     const name = `itest-role-${randomUUID().slice(0, 8)}`;
     const { rows } = await mods.pool.query<{ id: string }>('INSERT INTO roles (name) VALUES ($1) RETURNING id', [name]);
@@ -52,7 +42,7 @@ describeIntegration('system reads and Test Connection under a scope (real Postgr
     await insertTestChannel(mods, LAB_CHANNEL);
     await insertTestChannel(mods, RAD_CHANNEL);
     await mods.pool.query('INSERT INTO channel_group_members (channel_group_id, channel_id) VALUES ($1, $2), ($3, $4)', [lab, LAB_CHANNEL, rad, RAD_CHANNEL]);
-    // The Lab channel already uses a client certificate (by id; no such certificate needs to exist).
+    // By id only: no such certificate needs to exist.
     await mods.pool.query(`UPDATE channels SET source_connector_properties = $2::jsonb WHERE id = $1`, [LAB_CHANNEL, JSON.stringify({ tls: { clientCertId: USED_CERT, caCertId: CA_ONLY_CERT } })]);
     await mods.pool.query('UPDATE channels SET pruning_enabled = true WHERE id = ANY($1::uuid[])', [[LAB_CHANNEL, RAD_CHANNEL]]);
 

@@ -1,7 +1,3 @@
-// ===========================================
-// HL7v2 batch splitting tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { splitHl7Batch } from '../hl7-batch.js';
 import { Hl7Message } from '../hl7-message.js';

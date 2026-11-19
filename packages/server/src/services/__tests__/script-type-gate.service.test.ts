@@ -1,4 +1,3 @@
-// Which scripts deploy type-checks, on which surface, and how a refusal reads.
 // The type checker is real (a worker thread), so these also prove the checks
 // match what the engine runs.
 

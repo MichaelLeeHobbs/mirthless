@@ -1,14 +1,9 @@
-// ===========================================
-// Data Source Service Tests (unit)
-// ===========================================
-// The happy paths (CRUD, runQuery, read-only enforcement, row cap, redaction)
-// are covered by data-source.itest.ts against real Postgres. This unit test
-// covers the fail-loud-without-encryption-key guard, which integration (which
-// always has the key configured) cannot exercise.
+// The happy paths run against Postgres in data-source.itest.ts, which always has
+// the encryption key configured, so the missing-key guard is tested here.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const selectWhere = vi.fn().mockResolvedValue([]); // no duplicate name
+const selectWhere = vi.fn().mockResolvedValue([]);
 
 const mockDb = {
   select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: selectWhere }) }),
@@ -59,19 +54,19 @@ describe('DataSourceService.create — credential encryption guard', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'CONFIG_ERROR');
-    expect(mockDb.insert).not.toHaveBeenCalled(); // never wrote a row
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
   it('returns ALREADY_EXISTS when a data source with the same name already exists', async () => {
     mockIsConfigured.mockReturnValue(true);
-    selectWhere.mockResolvedValue([{ id: 'existing-id' }]); // dup-check select finds a row
+    selectWhere.mockResolvedValue([{ id: 'existing-id' }]);
 
     const result = await DataSourceService.create(input);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'ALREADY_EXISTS');
-    expect(mockDb.insert).not.toHaveBeenCalled(); // never wrote a row
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
   it('encrypts the password before inserting when a key is configured', async () => {
@@ -88,7 +83,6 @@ describe('DataSourceService.create — credential encryption guard', () => {
     expect(result.ok).toBe(true);
     const values = (mockDb.insert.mock.results[0]?.value as { values: ReturnType<typeof vi.fn> }).values;
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ passwordEncrypted: 'enc:secret' }));
-    // Response never carries the password.
     if (!result.ok) return;
     expect((result.value as unknown as Record<string, unknown>)['password']).toBeUndefined();
     expect((result.value as unknown as Record<string, unknown>)['passwordEncrypted']).toBeUndefined();

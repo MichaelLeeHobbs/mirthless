@@ -1,19 +1,4 @@
-// ===========================================
-// Script type gate
-// ===========================================
-// A user-started deploy refuses a channel whose TypeScript scripts have type
-// errors (saving them is allowed). JavaScript scripts are never type-checked.
-// The startup redeploy does not check at all: a channel that was running keeps
-// running after a restart even if a template change since broke its types.
-// Global scripts are not part of a channel's deploy check: a global script
-// with type errors cannot be saved (checkGlobalScriptTypes), so one bad global
-// script cannot stop every channel from deploying.
-//
-// Each script is checked on the same surface the editor uses (msg typed by the
-// channel's inbound data type, its code template context). A transformer's
-// steps are checked joined into one body, the way the engine compiles and runs
-// them, so a step can use what an earlier step declared. Checks run off the
-// main thread and are cached (checkScriptTypesBatch).
+// What is checked, when, and against which surface: D-285.
 
 import { checkScriptTypesBatch, onlySyntaxWhileBroken, type ScriptTypeError } from '@galvanigraph/engine';
 import { CODE_TEMPLATE_CONTEXT, toScriptLanguage, type ScriptSurface, type TemplateSource } from '@galvanigraph/core-models';
@@ -21,30 +6,25 @@ import { ServiceError } from '../lib/service-error.js';
 import type { ChannelDetail } from './channel.service.js';
 import type { GlobalScriptsData } from './global-script.service.js';
 
-/** A part of a checked script that the user knows by one name. */
 export interface ScriptSegment {
   readonly label: string;
-  /** 1-based first line of this part in the checked code. */
+  /** 1-based, in the checked code. */
   readonly startLine: number;
   readonly lineCount: number;
-  /** Errors are reported only for TypeScript parts; JavaScript is not type-checked. */
   readonly typescript: boolean;
 }
 
-/** One type check: a script (or a transformer's joined steps) and how to name its errors. */
 export interface TypedScript {
   readonly code: string;
   readonly surface: ScriptSurface;
   readonly segments: readonly ScriptSegment[];
 }
 
-/** One script's type errors. */
 export interface ScriptTypeFailure {
   readonly label: string;
   readonly errors: readonly ScriptTypeError[];
 }
 
-/** Most errors listed in the deploy refusal; the rest are counted. */
 export const MAX_LISTED_TYPE_ERRORS = 10;
 
 const isTypeScript = (language: string | undefined, code: string | null | undefined): code is string =>
@@ -52,7 +32,6 @@ const isTypeScript = (language: string | undefined, code: string | null | undefi
 
 const lineCount = (code: string): number => code.split('\n').length;
 
-/** A single script, all of it TypeScript. */
 function single(label: string, code: string, surface: ScriptSurface): TypedScript {
   return { code, surface, segments: [{ label, startLine: 1, lineCount: lineCount(code), typescript: true }] };
 }
@@ -79,10 +58,9 @@ function stageName(channel: ChannelDetail, connectorId: string | null): string {
 }
 
 /**
- * A transformer's steps as the engine runs them: every enabled step with a
- * script, joined in order into one body (compileTransformerStepsToScript), so
- * a later step can use what an earlier one declared. Checked only when at least
- * one of those steps is TypeScript.
+ * Joined in order into one body, as the engine runs them
+ * (compileTransformerStepsToScript), so a later step can use what an earlier
+ * one declared (D-285).
  */
 function joinedSteps(prefix: string, steps: ChannelDetail['transformers'][number]['steps'], surface: ScriptSurface): TypedScript | null {
   const segments: ScriptSegment[] = [];
@@ -100,14 +78,13 @@ function joinedSteps(prefix: string, steps: ChannelDetail['transformers'][number
   return { code: `${bodies.join('\n')}\nreturn msg;`, surface, segments };
 }
 
-/** Filter, transformer and response transformer scripts written in TypeScript. */
 function connectorScripts(channel: ChannelDetail): TypedScript[] {
   const dataType = channel.inboundDataType;
   const out: TypedScript[] = [];
   const stageSurface = (connectorId: string | null): ScriptSurface => (connectorId === null
     ? { dataType, destinationSet: true, templateContext: CODE_TEMPLATE_CONTEXT.SOURCE_FILTER_TRANSFORMER }
     : { dataType, templateContext: CODE_TEMPLATE_CONTEXT.DESTINATION_FILTER_TRANSFORMER });
-  // Filter rules are compiled each into its own function, so each is checked alone.
+  // Each filter rule compiles to its own function, so each is checked alone (D-285).
   for (const filter of channel.filters) {
     for (const [i, rule] of filter.rules.entries()) {
       if (!rule.enabled || rule.type !== 'JAVASCRIPT' || !isTypeScript(rule.language, rule.script)) continue;
@@ -126,10 +103,8 @@ function connectorScripts(channel: ChannelDetail): TypedScript[] {
 }
 
 /**
- * The JavaScript source's polling script and each JavaScript destination's
- * script, when written in TypeScript. Their language lives in the connector's
- * properties beside the script (`scriptLanguage`); missing means JavaScript.
- * The polling script runs with no message, like a deploy script; a
+ * Their language is `scriptLanguage` in the connector's properties, missing
+ * means JavaScript (D-296). The polling script runs with no message; a
  * destination's script also gets the connector message (engine.ts).
  */
 function javascriptConnectorScripts(channel: ChannelDetail): TypedScript[] {
@@ -147,12 +122,11 @@ function javascriptConnectorScripts(channel: ChannelDetail): TypedScript[] {
   return out;
 }
 
-/** A JavaScript connector's script property, '' when missing. */
 function connectorScript(properties: Readonly<Record<string, unknown>>): string {
   return typeof properties['script'] === 'string' ? properties['script'] : '';
 }
 
-/** Every TypeScript script that belongs to this channel (global scripts are checked when saved). */
+/** Global scripts are not included: they are checked when saved (D-285). */
 export function typeScriptScripts(channel: ChannelDetail): TypedScript[] {
   const own = channel.scripts.flatMap((s): TypedScript[] => {
     const meta = CHANNEL_SCRIPTS[s.scriptType];
@@ -165,10 +139,9 @@ export function typeScriptScripts(channel: ChannelDetail): TypedScript[] {
   return [...own, ...connectorScripts(channel), ...javascriptConnectorScripts(channel)];
 }
 
-/** Which global scripts: deploy, undeploy, preprocessor, postprocessor. */
 export type GlobalScriptKey = (typeof GLOBAL_SCRIPTS)[number]['key'];
 
-/** The TypeScript global scripts among `keys`. They run for every channel, so msg has no one data type. */
+/** Global scripts run for every channel, so msg has no one data type. */
 export function typeScriptGlobalScripts(globals: GlobalScriptsData, keys: readonly GlobalScriptKey[]): TypedScript[] {
   return GLOBAL_SCRIPTS.flatMap((g): TypedScript[] =>
     (keys.includes(g.key) && isTypeScript(globals.languages[g.key], globals[g.key])
@@ -176,7 +149,6 @@ export function typeScriptGlobalScripts(globals: GlobalScriptsData, keys: readon
       : []));
 }
 
-/** Errors grouped by the part they fall in, on that part's own line numbers; JavaScript parts dropped. */
 function attribute(script: TypedScript, errors: readonly ScriptTypeError[]): ScriptTypeFailure[] {
   const byLabel = new Map<string, ScriptTypeError[]>();
   for (const error of errors) {
@@ -187,18 +159,16 @@ function attribute(script: TypedScript, errors: readonly ScriptTypeError[]): Scr
     list.push({ ...error, line: error.line - segment.startLine + 1 });
     byLabel.set(segment.label, list);
   }
-  // Per part: a JavaScript step that TypeScript cannot parse (esbuild can, e.g.
-  // `010`) must not hide a TypeScript step's type errors.
+  // Per part, so a JavaScript step TypeScript cannot parse does not hide a
+  // TypeScript step's type errors (D-285).
   return [...byLabel]
     .map(([label, list]) => ({ label, errors: onlySyntaxWhileBroken(list) }))
     .filter((f) => f.errors.length > 0);
 }
 
 /**
- * Type-check scripts off the main thread and name each error by the part the
- * user wrote. When the checker itself fails (busy, overran, crashed) nothing is
- * known about the scripts, so the refusal is UNAVAILABLE (503), to try again,
- * not a 500 (#228).
+ * When the checker itself fails (busy, overran, crashed) nothing is known about
+ * the scripts, so the refusal is UNAVAILABLE (503), to try again, not a 500 (#228).
  */
 export async function findTypeFailures(scripts: readonly TypedScript[], templates: readonly TemplateSource[]): Promise<ScriptTypeFailure[]> {
   if (scripts.length === 0) return [];
@@ -210,7 +180,6 @@ export async function findTypeFailures(scripts: readonly TypedScript[], template
   return scripts.flatMap((script, i) => attribute(script, result.value[i]!));
 }
 
-/** The list of failures: what failed and where, most errors listed. */
 export function listTypeFailures(failures: readonly ScriptTypeFailure[]): string[] {
   const lines = failures.flatMap((f) => f.errors.map((e) => `- ${f.label}, line ${String(e.line)}: ${e.message}`));
   const shown = lines.slice(0, MAX_LISTED_TYPE_ERRORS);
@@ -218,7 +187,6 @@ export function listTypeFailures(failures: readonly ScriptTypeFailure[]): string
   return [...shown, ...(more > 0 ? [`- and ${String(more)} more`] : [])];
 }
 
-/** The deploy refusal. */
 export function formatTypeFailures(channelName: string, failures: readonly ScriptTypeFailure[]): string {
   const scripts = failures.length === 1 ? 'a TypeScript script has' : `${String(failures.length)} TypeScript scripts have`;
   return [
@@ -227,7 +195,6 @@ export function formatTypeFailures(channelName: string, failures: readonly Scrip
   ].join('\n');
 }
 
-/** Refuse the deploy (INVALID_INPUT) when any of the channel's TypeScript scripts has a type error. */
 export async function assertScriptsTypeCheck(channel: ChannelDetail, templates: readonly TemplateSource[]): Promise<void> {
   const failures = await findTypeFailures(typeScriptScripts(channel), templates);
   if (failures.length > 0) {
@@ -235,11 +202,7 @@ export async function assertScriptsTypeCheck(channel: ChannelDetail, templates: 
   }
 }
 
-/**
- * Refuse saving global scripts (INVALID_INPUT) when one of the scripts being
- * saved is TypeScript with a type error. Only those are checked, so an older
- * script saved before this rule cannot block an unrelated fix.
- */
+/** Only the scripts being saved are checked, so an older script saved before this rule cannot block an unrelated fix. */
 export async function assertGlobalScriptsTypeCheck(
   globals: GlobalScriptsData, keys: readonly GlobalScriptKey[], templates: readonly TemplateSource[],
 ): Promise<void> {

@@ -1,45 +1,23 @@
-// ===========================================
-// Base Connector Interfaces
-// ===========================================
-// All connectors implement ConnectorLifecycle.
-// Source connectors additionally dispatch messages into the pipeline.
-// Destination connectors send messages to external systems.
-
 import { fillPlaceholders, recordLookup, type Result } from '@galvanigraph/core-util';
 
-// ----- Lifecycle -----
-
-/** Lifecycle hooks for connector instances. */
 export interface ConnectorLifecycle {
-  /** Called when the channel is deployed. */
   onDeploy(): Promise<Result<void>>;
-  /** Called when the channel starts. */
   onStart(): Promise<Result<void>>;
-  /** Called when the channel stops gracefully. */
+  /** Graceful stop. */
   onStop(): Promise<Result<void>>;
-  /** Called when the channel force-stops. */
+  /** Forced stop. */
   onHalt(): Promise<Result<void>>;
-  /** Called when the channel is undeployed. */
   onUndeploy(): Promise<Result<void>>;
 }
 
-// ----- Raw Message -----
-
-/** An inbound message from a source connector. */
 export interface RawMessage {
   readonly content: string;
   readonly sourceMap: Readonly<Record<string, unknown>>;
 }
 
-// ----- Source Connector -----
-
 /**
- * Outcome of a message through the pipeline, used by source connectors
- * to decide how to acknowledge (e.g. MLLP ACK vs NAK).
- * - PROCESSED: filter passed and destinations completed.
- * - FILTERED: rejected by a filter. The message was received and deliberately
- *   not routed, so a source still acknowledges it (ACK AA, HTTP 200).
- * - ERROR: a processing error occurred (→ NAK AE).
+ * FILTERED was received and deliberately not routed, so a source still acknowledges it
+ * (ACK AA, HTTP 200). ERROR answers NAK AE.
  */
 export const DISPATCH_STATUS = {
   PROCESSED: 'PROCESSED',
@@ -48,14 +26,10 @@ export const DISPATCH_STATUS = {
 } as const;
 export type DispatchStatus = typeof DISPATCH_STATUS[keyof typeof DISPATCH_STATUS];
 
-/** Result of dispatching a message through the pipeline. */
 export interface DispatchResult {
   readonly messageId: number;
   readonly response?: string;
-  /**
-   * Pipeline outcome. Absent implies PROCESSED (backward compatible with
-   * callers that do not yet report status).
-   */
+  /** Absent means PROCESSED. */
   readonly status?: DispatchStatus | undefined;
 }
 
@@ -78,62 +52,42 @@ export function dispatchFailure(result: Result<DispatchResult>): Error | null {
   return null;
 }
 
-/** Callback provided by the engine to process incoming messages. */
 export type MessageDispatcher = (raw: RawMessage) => Promise<Result<DispatchResult>>;
 
 /**
- * Called by a source that has stopped itself because of an error it cannot
- * get past on its own (a message the pipeline never stores). The engine stops
- * the channel and raises an event and an alert; an operator fixes the cause
- * and starts the channel again.
+ * For a source that stopped itself on an error it cannot get past (a message the pipeline
+ * never stores). The engine stops the channel and raises an event and an alert.
  */
 export type SourceFatalHandler = (error: Error) => void;
 
-/** Source connector that receives messages and dispatches them into the pipeline. */
 export interface SourceConnectorRuntime extends ConnectorLifecycle {
-  /** Set the callback used to dispatch messages to the engine. */
   setDispatcher(dispatcher: MessageDispatcher): void;
-  /** Set the callback for a fatal error; only sources that can stop themselves have it. */
+  /** Only sources that can stop themselves have it. */
   setFatalHandler?(handler: SourceFatalHandler): void;
 }
 
-// ----- Destination Connector -----
-
-/** A message being sent to a destination. */
 export interface ConnectorMessage {
   readonly channelId: string;
   readonly messageId: number;
   readonly metaDataId: number;
   readonly content: string;
   readonly dataType: string;
-  /** Correlation ID for cross-channel tracing. */
   readonly correlationId?: string | undefined;
-  /**
-   * What scripts put in the message's maps, as this destination saw them
-   * (connector, channel and response maps; the first that has a name wins).
-   * A database writer binds `${name}` from them.
-   */
+  /** Script map values as this destination saw them (connector, channel, response maps; the first with a name wins). */
   readonly variables?: Readonly<Record<string, unknown>> | undefined;
 }
 
-/**
- * Fill each `${name}` in a connector setting from the message's variables, by
- * the shared rule in {@link fillPlaceholders}. A name the message does not
- * have is left as written, so a mistake shows in what is sent.
- */
+/** By {@link fillPlaceholders}. A name the message lacks is left as written, so a mistake shows in what is sent. */
 export function fillVariables(text: string, message: Pick<ConnectorMessage, 'variables'>): string {
   return message.variables ? fillPlaceholders(text, recordLookup(message.variables)) : text;
 }
 
-/** Response from a destination connector after sending. */
 export interface ConnectorResponse {
   readonly status: 'SENT' | 'ERROR';
   readonly content: string;
   readonly errorMessage?: string;
 }
 
-/** Destination connector that sends messages to external systems. */
 export interface DestinationConnectorRuntime extends ConnectorLifecycle {
-  /** Send a message and return the response. */
   send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>>;
 }

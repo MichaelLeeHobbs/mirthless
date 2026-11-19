@@ -1,11 +1,5 @@
-// ===========================================
-// Every channel router checks scope (D-310)
-// ===========================================
-// A route under /channels/:id acts on one channel, so its router must call
-// scopeToChannel(router), or a caller holding the permission on one group
-// reaches every channel. This reads the mounts in routes/index.ts, like the
-// route walk, and fails on any router mounted at /channels with a :id route
-// and no scope check, so a new router cannot forget it.
+// A /channels router with a :id route that skips scopeToChannel(router) lets a
+// caller holding the permission on one group reach every channel (D-310).
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';

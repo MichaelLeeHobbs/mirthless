@@ -1,10 +1,4 @@
-// ===========================================
-// Configuration Map Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -18,14 +12,12 @@ function pushResponse(value: unknown): void {
   selectResponses.push(() => value);
 }
 
-// For queries that chain .where().orderBy()
 function pushWhereOrderableResponse(value: unknown): void {
   selectResponses.push(() => ({
     orderBy: vi.fn().mockResolvedValue(value),
   }));
 }
 
-// For queries that call .orderBy() directly (no where)
 function pushOrderableResponse(value: unknown): void {
   selectResponses.push(() =>
     Object.assign(Promise.resolve(value), {
@@ -86,7 +78,6 @@ const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
-// Mock transaction
 const mockTransaction = vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<void>) => {
   const tx = {
     insert: vi.fn().mockReturnValue({
@@ -124,8 +115,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 
 const { ConfigMapService } = await import('../config-map.service.js');
 
-// ----- Fixtures -----
-
 function makeEntry(overrides?: Partial<Record<string, unknown>>): Record<string, unknown> {
   return {
     category: 'smtp',
@@ -134,8 +123,6 @@ function makeEntry(overrides?: Partial<Record<string, unknown>>): Record<string,
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();

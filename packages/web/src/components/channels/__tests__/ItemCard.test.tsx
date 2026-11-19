@@ -1,7 +1,3 @@
-// A filter rule or transformer step card. Open, its settings take the header row
-// itself, so the card spends one row on them instead of a title row plus a
-// settings row.
-
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';

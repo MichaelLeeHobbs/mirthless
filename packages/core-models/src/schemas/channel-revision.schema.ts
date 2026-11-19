@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Revision Schemas
-// ===========================================
-
 import { z } from 'zod';
 
 export const channelRevisionSummarySchema = z.object({

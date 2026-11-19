@@ -1,10 +1,3 @@
-// ===========================================
-// Test helper: a user's standing as the resolver returns it
-// ===========================================
-// Unit tests mock lib/principal.ts (the database boundary for who a user is and
-// what they hold) with this, giving the user one all-channel assignment of the
-// built-in role named in `role`, or none.
-
 import { ALL_CHANNELS, foldGrants, type ChannelGroupId } from '@galvanigraph/core-models';
 import { builtInRolePermissions } from '../src/db/seeds/roles.js';
 import type { UserStanding } from '../src/lib/principal.js';

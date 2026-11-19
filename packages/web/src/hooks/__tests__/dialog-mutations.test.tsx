@@ -1,12 +1,5 @@
-// ===========================================
-// Dialog mutations finish with the write, not the list reload (#241)
-// ===========================================
-// The Certificates, Data Sources and Global Map dialogs close in the
-// mutation's onSuccess and disable their buttons while it is pending. A
-// mutation that awaited the list's refetch held the dialog open, its button
-// disabled, for as long as that GET took: on a busy server, past the e2e
-// waits. Each mutation must resolve once its own request succeeds, and still
-// mark the list stale so it reloads.
+// #241: these dialogs close in the mutation's onSuccess, so a mutation that
+// awaited the list's refetch held the dialog open for as long as that GET took.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
@@ -34,10 +27,9 @@ function wrapper({ children }: { children: ReactNode }): ReactNode {
   return createElement(QueryClientProvider, { client }, children);
 }
 
-/** The first list load answers; every reload after it never does, like a stalled server. */
 function stallListReloads(): void {
   getMock.mockResolvedValueOnce({ success: true, data: [] });
-  getMock.mockReturnValue(new Promise(() => { /* never settles */ }));
+  getMock.mockReturnValue(new Promise(() => {}));
 }
 
 beforeEach(() => {

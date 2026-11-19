@@ -1,8 +1,3 @@
-// ===========================================
-// Server Backup Controller
-// ===========================================
-// Handles HTTP requests for server backup/restore.
-
 import type { Request, Response } from 'express';
 import type { BackupCollisionMode, BackupExportQuery, ServerBackup } from '@galvanigraph/core-models';
 import { exportHeader } from '../lib/export-header.js';

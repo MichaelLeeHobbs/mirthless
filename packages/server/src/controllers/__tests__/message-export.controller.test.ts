@@ -1,7 +1,3 @@
-// ===========================================
-// Message Export Controller Tests — PHI audit + headers
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 

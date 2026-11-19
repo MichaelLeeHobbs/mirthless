@@ -1,6 +1,3 @@
-// ===========================================
-// Alert templates: the placeholder rule
-// ===========================================
 // The six alert values are all strings, so the null, object and bigint rows of
 // the shared rule cannot occur here.
 

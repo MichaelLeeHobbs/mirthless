@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Filters and Filter Rules Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, boolean, integer, jsonb, index } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 import { channelConnectors } from './channel-connectors.js';
@@ -27,7 +23,7 @@ export const filterRules = pgTable('filter_rules', {
   type: varchar('type', { length: 30 }).notNull(),
   name: varchar('name', { length: 255 }),
   script: text('script'),
-  /** Language of `script`: JAVASCRIPT or TYPESCRIPT. Rows from before languages were stored are JavaScript. */
+  /** JAVASCRIPT or TYPESCRIPT. */
   language: varchar('language', { length: 20 }).notNull().default('JAVASCRIPT'),
 
   // Rule builder fields (null for JavaScript type)

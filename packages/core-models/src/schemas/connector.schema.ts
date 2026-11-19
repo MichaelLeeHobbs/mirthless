@@ -1,7 +1,3 @@
-// ===========================================
-// Connector Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
 import { destinationConnectorTypeSchema } from './channel.schema.js';
 

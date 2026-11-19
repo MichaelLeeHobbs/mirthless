@@ -1,10 +1,3 @@
-// ===========================================
-// Kafka and AMQP Connector Form Tests
-// ===========================================
-// The forms start from defaults the core-models schemas accept unchanged,
-// write the id-based tls shape the server resolves, and show SASL and TLS
-// fields only when they apply.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

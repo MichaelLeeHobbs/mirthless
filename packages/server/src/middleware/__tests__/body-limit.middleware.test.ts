@@ -1,7 +1,3 @@
-// ===========================================
-// Body Limit Middleware Tests
-// ===========================================
-
 import { describe, it, expect, afterEach } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';

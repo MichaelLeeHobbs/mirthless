@@ -1,8 +1,3 @@
-// ===========================================
-// Source Tab
-// ===========================================
-// Channel editor Source tab with connector settings, filter, transformer, and response configuration.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';

@@ -1,7 +1,3 @@
-// ===========================================
-// MLLP Mode Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES, framingFromHex } from '../mllp-mode.js';
 
@@ -116,8 +112,7 @@ describe('MllpParser', () => {
 
   it('handles split at FS boundary (FS arrives without CR)', () => {
     const frame = wrapMllp('BOUNDARY');
-    // Split right between FS and CR
-    const splitPoint = frame.length - 1; // CR is last byte
+    const splitPoint = frame.length - 1;
 
     const part1 = frame.subarray(0, splitPoint);
     const part2 = frame.subarray(splitPoint);
@@ -154,13 +149,11 @@ describe('MllpParser', () => {
   });
 
   it('reset clears internal state', () => {
-    // Feed partial frame
     const frame = wrapMllp('INCOMPLETE');
     parser.parse(frame.subarray(0, 5));
 
     parser.reset();
 
-    // New complete frame should work
     const messages = parser.parse(wrapMllp('FRESH'));
     expect(messages).toHaveLength(1);
     expect(messages[0]).toBe('FRESH');
@@ -174,11 +167,9 @@ describe('MllpParser DoS guard', () => {
 
   it('throws and resets when an unterminated frame exceeds the cap', () => {
     const parser = new MllpParser({ maxFrameBytes: 64 });
-    // Start-of-frame byte then 128 bytes with no end block.
     const chunk = Buffer.concat([Buffer.from([0x0b]), Buffer.alloc(128, 0x41)]);
     expect(() => parser.parse(chunk)).toThrow(/maximum size/);
 
-    // After reset a fresh, well-formed frame parses normally.
     const messages = parser.parse(wrapMllp('OK'));
     expect(messages).toEqual(['OK']);
   });
@@ -267,7 +258,6 @@ describe('MllpParser chunking', () => {
     const parser = new MllpParser({ maxFrameBytes: 100 });
     parser.parse(Buffer.concat([Buffer.from([VT_B]), Buffer.alloc(60, 0x41)]));
     expect(() => parser.parse(Buffer.alloc(60, 0x41))).toThrow(/maximum size/);
-    // And is usable again afterwards.
     expect(parser.parse(frame('MSH|ok'))).toEqual(['MSH|ok']);
   });
 });

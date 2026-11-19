@@ -1,13 +1,4 @@
-// ===========================================
-// Access changed E2E Tests (#266 slice 10e)
-// ===========================================
-// A user whose access is narrowed while they work sees "Your access changed"
-// and a channel that is now outside their access as "not found, or not in your
-// access", never as a deleted channel.
-//
-// Users can't be deleted, so each run uses names of its own (D-289). Cleanup
-// removes the channel, clears the user's access, disables them, and deletes
-// the groups.
+// Users can't be deleted, so each run uses names of its own (D-289).
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -59,7 +50,6 @@ test.describe.serial('Access changed', () => {
     await page.goto(`/channels/${channelId}`);
     await expect(page.getByRole('heading', { name: `e2e-changed-${RUN_ID}` })).toBeVisible();
 
-    // An admin moves the user to another group while they work.
     const moved = await api.put(`${API_BASE}/users/${userId}/assignments`, { data: { assignments: [{ roleId: viewerRoleId, groupIds: [radId] }] } });
     expect(moved.ok()).toBeTruthy();
 

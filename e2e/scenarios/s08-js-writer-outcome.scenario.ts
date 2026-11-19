@@ -1,8 +1,5 @@
-// S08: a JavaScript Writer reports its outcome.
-// Production pattern: "Propelyx Orders" writer, which returns
-// ResponseFactory.getSentResponse / getErrorResponse after calling an API.
-// Rewritten for GalvaniGraph (D-244): a returned value is the SENT response and
-// a thrown error makes the destination ERROR with that text.
+// Production pattern: "Propelyx Orders" writer, which returns ResponseFactory.getSentResponse /
+// getErrorResponse; rewritten as return / throw (D-244).
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, jsWriter } from './support/mirth-xml.js';

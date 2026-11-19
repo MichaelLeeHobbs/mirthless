@@ -1,11 +1,5 @@
-// ===========================================
-// Auth Service: lockout outcomes and rotated session metadata (#174)
-// ===========================================
-// A wrong password is counted by one UPDATE ... RETURNING; login answers from
-// the row it returns. The SQL itself (expired lock restarts the count,
-// concurrent guesses all count, a late write never clears a lock) is proven
-// against real Postgres in test/integration/auth-concurrency.itest.ts. A
-// rotated session keeps the client details of the request that rotated it.
+// Lockout outcomes and rotated session metadata (#174). The counting SQL is
+// proven against real Postgres in test/integration/auth-concurrency.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

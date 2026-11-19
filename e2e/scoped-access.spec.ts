@@ -1,13 +1,4 @@
-// ===========================================
-// Who can access a channel E2E Tests (#266 slice 11)
-// ===========================================
-// An admin opens a channel's Access tab and sees who can reach it through a
-// group-scoped assignment, exports the list as CSV, then looks back to a time
-// before that assignment, rebuilt from the audit log.
-//
-// Users can't be deleted, so each run uses names of its own (D-289). Cleanup
-// removes the channel, clears the user's access, disables them, and deletes
-// the group.
+// Users can't be deleted, so each run uses names of its own (D-289).
 
 import { readFile } from 'node:fs/promises';
 import { test, expect, type APIRequestContext } from '@playwright/test';
@@ -27,7 +18,7 @@ let channelId: string;
 /** A whole second after the user was created as a viewer and before the scoped assignment replaced that. */
 let whileViewer: Date;
 
-/** `when` as a datetime-local value to the second, in this machine's zone (the browser's). */
+// datetime-local takes local time; the browser runs in this machine's zone.
 function localInput(when: Date): string {
   return new Date(when.getTime() - when.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
 }
@@ -86,13 +77,11 @@ test.describe.serial('Who can access a channel', () => {
     const row = page.getByRole('row', { name: new RegExp(USERNAME) });
     await expect(row).toContainText('channel-viewer');
 
-    // Before the scoped assignment the user was a viewer on every channel.
     await page.getByLabel('As of').fill(localInput(whileViewer));
     await expect(page.getByText(/^Through GalvaniGraph, as of /)).toBeVisible();
     await expect(row).toContainText('viewer · All channels');
     await expect(row).not.toContainText('channel-viewer');
 
-    // Before any recorded history, the page says where the history starts.
     await page.getByLabel('As of').fill('2000-01-01T00:00:00');
     await expect(page.getByText(/history starts at/i)).toBeVisible();
 

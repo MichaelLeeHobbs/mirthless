@@ -1,10 +1,3 @@
-// ===========================================
-// System Overview
-// ===========================================
-// The System Information page's first tab: a status strip that answers "is
-// anything wrong, and where" in one glance, then dense fact panels for the
-// server process, database, memory and host.
-
 import type { ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router';
 import Box from '@mui/material/Box';
@@ -19,9 +12,6 @@ import {
   formatBytes, formatUptime, hasLoadAverage, healthCells, percentOf, usageLevel, type HealthCell,
 } from '../../lib/system-health.js';
 
-// ----- Status strip -----
-
-/** Where a strip cell leads, when there is somewhere more useful to look. */
 const CELL_LINK: Partial<Record<HealthCell['key'], string>> = { engine: '/' };
 
 function StripCell({ cell }: { readonly cell: HealthCell }): ReactNode {
@@ -71,8 +61,6 @@ function StatusStrip({ info }: { readonly info: SystemInfo }): ReactNode {
   );
 }
 
-// ----- Fact panels -----
-
 function Panel({ title, children }: { readonly title: string; readonly children: ReactNode }): ReactNode {
   return (
     <Paper component="section" aria-label={title} sx={{ p: 2.5 }}>
@@ -86,7 +74,6 @@ function Panel({ title, children }: { readonly title: string; readonly children:
   );
 }
 
-/** A term/definition pair: label left, machine value right in mono. */
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactNode {
   return (
     <>
@@ -102,7 +89,6 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
   );
 }
 
-/** A usage bar spanning both columns, coloured by the same thresholds as the strip. */
 function UsageBar({ label, used, total }: { readonly label: string; readonly used: number; readonly total: number }): ReactNode {
   const theme = useTheme();
   const percent = percentOf(used, total);
@@ -174,8 +160,6 @@ function HostPanel({ info }: { readonly info: SystemInfo }): ReactNode {
     </Panel>
   );
 }
-
-// ----- Overview -----
 
 export function SystemOverview({ info }: { readonly info: SystemInfo }): ReactNode {
   return (

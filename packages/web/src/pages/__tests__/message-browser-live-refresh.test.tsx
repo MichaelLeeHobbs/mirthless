@@ -1,10 +1,5 @@
-// ===========================================
-// Message browser live refresh (#231, D-306)
-// ===========================================
-// A message:new event refreshes the channel's message list, through the
-// throttled socket hook, and leaves an open message's detail alone: the detail
-// does not change when other messages arrive, and refetching it on every event
-// re-reads PHI content for nothing.
+// #231, D-306: an open message's detail is not refetched on live events: it does
+// not change when other messages arrive, and refetching it re-reads PHI content.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';

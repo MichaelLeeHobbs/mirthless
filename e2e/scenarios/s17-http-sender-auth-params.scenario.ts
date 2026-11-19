@@ -1,6 +1,4 @@
-// S17: HTTP Sender with Basic auth, query parameters, headers and ${} values.
-// Gap doc 12 rank 5. The URL path and a query parameter come from the channel
-// map, as Mirth substitutes ${var} in every HTTP Sender field.
+// Gap doc 12 rank 5. Mirth substitutes ${var} in every HTTP Sender field.
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, httpSender } from './support/mirth-xml.js';

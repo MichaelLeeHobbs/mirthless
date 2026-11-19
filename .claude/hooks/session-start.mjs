@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Session start hook. In cloud sessions only (a fresh container with no
-// node_modules), install dependencies and build core-models and core-util,
-// which the other packages import from dist, so they typecheck. Local sessions are left alone.
+// core-models and core-util are built because the other packages import them from dist.
 
 import { execSync } from 'node:child_process';
 

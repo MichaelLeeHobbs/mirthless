@@ -1,9 +1,4 @@
-// ===========================================
-// FHIR Connector Property Schemas
-// ===========================================
-// Properties of the FHIR destination, as a channel stores them. The server
-// validates them at deploy and the connector registry parses them, so
-// defaults live here only. A key not listed here fails validation.
+// Defaults live here only (D-274).
 
 import { z } from 'zod/v4';
 import {
@@ -18,7 +13,6 @@ export const FHIR_METHODS = ['POST', 'PUT'] as const;
 export const FHIR_AUTH_TYPES = ['NONE', 'BASIC', 'BEARER', 'API_KEY'] as const;
 export const FHIR_FORMATS = ['json', 'xml'] as const;
 
-/** True when `value` parses as an absolute URL. */
 function isUrl(value: string): boolean {
   try {
     new URL(value);
@@ -40,14 +34,13 @@ export const fhirDestinationObjectSchema = z.strictObject({
   authHeaderName: z.string().optional(),
   authApiKey: z.string().optional(),
   format: z.enum(FHIR_FORMATS).default('json'),
-  /** Milliseconds before a send fails; 0 would fail every send at once. */
+  /** Milliseconds; 0 would fail every send at once. */
   timeout: wholeNumberSchema(1, MAX_TIMER_DELAY_MS).default(30_000),
   headers: headerMapSchema.default({}),
   ...destinationCommonProperties,
 });
 export type FhirDestinationProperties = z.infer<typeof fhirDestinationObjectSchema>;
 
-/** The credentials each auth type sends; an empty one fails the deploy. */
 const AUTH_CREDENTIALS: Readonly<Record<(typeof FHIR_AUTH_TYPES)[number], ReadonlyArray<keyof FhirDestinationProperties>>> = {
   NONE: [],
   BASIC: ['authUsername', 'authPassword'],
@@ -55,7 +48,6 @@ const AUTH_CREDENTIALS: Readonly<Record<(typeof FHIR_AUTH_TYPES)[number], Readon
   API_KEY: ['authHeaderName', 'authApiKey'],
 };
 
-/** The destination schema, needing the credentials its auth type sends. */
 export const fhirDestinationPropertiesSchema = fhirDestinationObjectSchema.superRefine((props, ctx) => {
   for (const key of AUTH_CREDENTIALS[props.authType]) {
     const value = props[key];

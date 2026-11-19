@@ -1,6 +1,3 @@
-// Test setup for @galvanigraph/web
-// Add global test utilities, mocks, or polyfills here as needed.
-
 import { vi } from 'vitest';
 
 // Monaco cannot run in jsdom (it needs real layout and web workers). Components

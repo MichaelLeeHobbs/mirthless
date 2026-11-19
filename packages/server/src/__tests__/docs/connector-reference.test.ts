@@ -1,11 +1,5 @@
-// ===========================================
-// Docs guard: docs/user/connector-reference.md
-// ===========================================
-// The connector reference answers "can this connector be a source, a
-// destination, or both?" These tests fail when the page and the core-models
-// connector lists disagree, so adding a connector without documenting it
-// fails pnpm gate. (The registry is checked against the same lists in
-// packages/connectors/src/__tests__/registry-types.test.ts.)
+// The registry is checked against the same connector lists in
+// packages/connectors/src/__tests__/registry-types.test.ts.
 
 import { describe, it, expect } from 'vitest';
 import { CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '@galvanigraph/core-models';
@@ -26,7 +20,6 @@ function glanceTable(): { readonly rows: readonly (readonly string[])[] } {
   return table;
 }
 
-/** The headings under `## TYPE`, up to the next level-2 heading. */
 function subheadings(type: string): readonly string[] {
   const all = headings(markdown);
   const start = all.findIndex((h) => h.level === 2 && h.text === type);

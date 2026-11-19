@@ -1,8 +1,3 @@
-// ===========================================
-// Global Map Page
-// ===========================================
-// Key-value table for the persistent global map store.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -186,7 +181,6 @@ export function GlobalMapPage(): ReactNode {
         </TableContainer>
       </Paper>
 
-      {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingKey ? 'Edit Entry' : 'Add Entry'}</DialogTitle>
         <DialogContent>
@@ -221,7 +215,6 @@ export function GlobalMapPage(): ReactNode {
         </DialogActions>
       </Dialog>
 
-      {/* Confirm Clear Dialog */}
       <ConfirmDialog
         open={confirmClear}
         title="Clear All Entries?"
@@ -233,7 +226,6 @@ export function GlobalMapPage(): ReactNode {
         onCancel={() => setConfirmClear(false)}
       />
 
-      {/* Confirm Single Delete Dialog */}
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete Entry"

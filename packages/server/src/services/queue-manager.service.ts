@@ -1,32 +1,16 @@
-// ===========================================
-// Queue Manager Service
-// ===========================================
-// Requeues failed messages and reports queue depth.
-// Dequeue and release live in MessageService.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { sql } from 'drizzle-orm';
 import { db } from '../lib/db.js';
 
-// ----- Types -----
-
-/** Result of a requeue operation. */
 export interface RequeueResult {
   readonly requeuedCount: number;
 }
 
-/** Result of a queue depth query. */
 export interface QueueDepthResult {
   readonly depth: number;
 }
 
-// ----- Service -----
-
 export class QueueManagerService {
-  /**
-   * Requeue failed connector messages that are below the retry limit.
-   * Increments send_attempts and resets status to QUEUED.
-   */
   static async requeueFailed(
     channelId: string,
     maxRetries: number,
@@ -47,9 +31,6 @@ export class QueueManagerService {
     });
   }
 
-  /**
-   * Get the number of QUEUED connector messages for a channel/connector.
-   */
   static async getQueueDepth(
     channelId: string,
     metaDataId: number,

@@ -1,8 +1,4 @@
-// ===========================================
-// Audit Log Table Schema
-// ===========================================
-// The protected audit record (#264, D-312): access to PHI, grant changes,
-// sign-ins and refusals. Insert-only. Migration 0017 makes it a table
+// The protected audit record (#264, D-312). Insert-only. Migration 0017 makes it a table
 // partitioned by month on occurred_at, with triggers that refuse UPDATE,
 // DELETE and TRUNCATE; the server's role holds SELECT and INSERT only
 // (db/runtime-role.ts). Drizzle sees an ordinary table: the partitions,

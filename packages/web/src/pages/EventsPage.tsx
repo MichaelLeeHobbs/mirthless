@@ -1,8 +1,3 @@
-// ===========================================
-// Events Page
-// ===========================================
-// Audit log browser with filters, pagination, and detail expansion.
-
 import { Fragment, useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -149,10 +144,8 @@ export function EventsPage(): ReactNode {
 
       {!onEvents ? <AccessRecords /> : (
       <>
-      {/* Filters */}
       <EventFilterBar filters={filters} onFilterChange={setFilters} />
 
-      {/* Errors */}
       {error && (
         <ErrorState title="Couldn't load events" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
       )}
@@ -255,7 +248,6 @@ export function EventsPage(): ReactNode {
       </>
       )}
 
-      {/* Export Dialog */}
       <Dialog open={exportDialogOpen} onClose={() => { setExportDialogOpen(false); }}>
         <DialogTitle>Export Events</DialogTitle>
         <DialogContent>
@@ -288,7 +280,6 @@ export function EventsPage(): ReactNode {
         </DialogActions>
       </Dialog>
 
-      {/* Purge Dialog */}
       <Dialog open={purgeDialogOpen} onClose={() => { setPurgeDialogOpen(false); }}>
         <DialogTitle>Purge Old Events</DialogTitle>
         <DialogContent>

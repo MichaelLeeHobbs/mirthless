@@ -1,12 +1,4 @@
-// ===========================================
-// Data Source Pool Manager Tests
-// ===========================================
-// Read-only enforcement, row cap, pool reuse/rebuild, and invalidation — with a
-// mocked ConnectionPool (no real database).
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock ConnectionPool -----
 
 interface MockState {
   rows: Record<string, unknown>[];
@@ -52,8 +44,6 @@ vi.mock('@galvanigraph/connectors', () => ({ ConnectionPool: MockConnectionPool 
 const { DataSourcePoolManager } = await import('../data-source-pool-manager.js');
 type PooledDataSource = import('../data-source-pool-manager.js').PooledDataSource;
 
-// ----- Fixtures -----
-
 function makeSource(overrides?: Partial<PooledDataSource>): PooledDataSource {
   return {
     id: 'ds-1', host: 'db.internal', port: 5432, database: 'reports', user: 'ro', password: 'pw',
@@ -70,8 +60,6 @@ beforeEach(() => {
   state.readOnlyStatements = [];
 });
 
-// ----- Tests -----
-
 describe('DataSourcePoolManager', () => {
   it('runs a read-only query through the single-statement read-only path', async () => {
     state.rows = [{ id: 1 }];
@@ -81,7 +69,7 @@ describe('DataSourcePoolManager', () => {
 
     expect(rows).toEqual([{ id: 1 }]);
     expect(state.readOnlyStatements).toEqual(['SELECT 1']);
-    expect(state.directStatements).toHaveLength(0); // did not use the read-write path
+    expect(state.directStatements).toHaveLength(0);
   });
 
   it('runs a read-write query directly (no read-only transaction)', async () => {
@@ -118,7 +106,7 @@ describe('DataSourcePoolManager', () => {
     await mgr.runQuery(makeSource({ host: 'b' }), 'SELECT 1', []);
 
     expect(state.created).toBe(2);
-    expect(state.destroyed).toBe(1); // old pool torn down
+    expect(state.destroyed).toBe(1);
   });
 
   it('invalidate() destroys the cached pool', async () => {

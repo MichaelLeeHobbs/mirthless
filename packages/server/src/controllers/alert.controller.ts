@@ -1,8 +1,3 @@
-// ===========================================
-// Alert Controller
-// ===========================================
-// Handles HTTP requests for alert CRUD operations.
-
 import type { Request, Response } from 'express';
 import type {
   CreateAlertInput,

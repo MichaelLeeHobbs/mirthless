@@ -1,8 +1,3 @@
-// ===========================================
-// Source Transformer Section
-// ===========================================
-// Collapsible section for editing source transformer steps within the Source tab.
-
 import { useCallback, type ReactNode, type ChangeEvent } from 'react';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
@@ -21,7 +16,6 @@ import { earlierStepNames } from '../../editors/surface-state.js';
 import { DelimitedSettings } from './DelimitedSettings.js';
 import { useListKeys } from '../../../hooks/use-list-keys.js';
 
-/** The source transformer's saved Delimited settings, or none. */
 function delimitedSettings(inboundProperties: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const saved = inboundProperties['delimited'];
   return saved !== null && typeof saved === 'object' && !Array.isArray(saved) ? saved as Record<string, unknown> : {};
@@ -120,7 +114,6 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
             ))}
           </Box>
         )}
-        {/* Add Step and the data types share one row instead of each taking a row. */}
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
           <Button startIcon={<AddIcon />} onClick={handleAdd} size="small" sx={{ mr: 'auto' }}>
             Add Step
@@ -154,7 +147,6 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
             ))}
           </TextField>
         </Box>
-        {/* Delimited needs column settings to parse the message; they belong under the data type that asks for them. */}
         {transformer.inboundDataType === 'DELIMITED' && (
           <Box sx={{ mt: 2 }}>
             <DelimitedSettings

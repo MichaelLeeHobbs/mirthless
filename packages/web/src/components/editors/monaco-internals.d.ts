@@ -1,9 +1,6 @@
-// Types for the two Monaco internals monaco.ts uses to show documentation
-// beside completion suggestions by default. Monaco ships no declarations for
-// these deep paths; only what is used is declared.
+// Monaco ships no declarations for these deep paths; only what monaco.ts uses is declared.
 
 declare module 'monaco-editor/esm/vs/platform/storage/common/storage.js' {
-  /** Service identifier for Monaco's storage service. */
   export const IStorageService: unknown;
 }
 

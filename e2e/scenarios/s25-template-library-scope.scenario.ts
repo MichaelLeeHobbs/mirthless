@@ -1,4 +1,3 @@
-// S25: code template libraries apply only to the channels Mirth enabled them for.
 // Found by the anti-gaming check: in the production backup a customer library
 // and the core library both declare the same const, and Mirth enables the
 // customer one for a single channel. Loaded into every channel, the two
@@ -28,10 +27,7 @@ const channel = (name: string, id: string, port: number): ChannelSpec => ({
 
 const orm = (ctl: string): string => `MSH|^~\\&|RIS|SITE25|HUB|HUB|20261110120000||ORM^O01|${ctl}|P|2.3\rORC|NW|ACC025`;
 
-/**
- * Remove this scenario's libraries. While templates are not scoped, their
- * colliding declarations would break every channel deployed after this one.
- */
+// While templates are not scoped, these colliding declarations would break every channel deployed after this one.
 async function removeLibraries(api: Api): Promise<void> {
   const libraries = await api.get<ReadonlyArray<{ id: string; name: string }>>('/code-templates/libraries');
   for (const lib of libraries.filter((l) => l.name.startsWith('S25 '))) {

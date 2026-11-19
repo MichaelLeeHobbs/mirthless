@@ -1,10 +1,3 @@
-// ===========================================
-// Dispatch Status Mapping Tests
-// ===========================================
-// toDispatchStatus decides what a source connector tells the sender (MLLP
-// ACK/NAK, HTTP status, whether a file or row is marked done). The channel's
-// response mode decides whether a destination failure counts against the sender.
-
 import { describe, it, expect } from 'vitest';
 import { toDispatchStatus, toResponseSource } from '../engine.js';
 

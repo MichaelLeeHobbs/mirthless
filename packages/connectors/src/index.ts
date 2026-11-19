@@ -1,8 +1,3 @@
-// ===========================================
-// @galvanigraph/connectors
-// ===========================================
-// Protocol adapters: TCP/MLLP, HTTP, File, Database, DICOM, FHIR, SMTP, JavaScript, SFTP, Kafka, AMQP.
-
 export type {
   ConnectorLifecycle,
   SourceConnectorRuntime,

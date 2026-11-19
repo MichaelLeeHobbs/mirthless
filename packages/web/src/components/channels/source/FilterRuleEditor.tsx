@@ -1,9 +1,3 @@
-// ===========================================
-// Filter Rule Editor
-// ===========================================
-// Shared component for editing a single filter rule.
-// Used by both source and destination filter sections.
-
 import { type ReactNode, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';

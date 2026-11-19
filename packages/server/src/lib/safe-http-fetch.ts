@@ -1,16 +1,7 @@
-// ===========================================
-// SSRF-safe HTTP fetch for the httpFetch() script bridge
-// ===========================================
-// Scripts may call public HTTP(S) endpoints but must not reach loopback, private,
-// link-local (cloud metadata) or other reserved addresses. Three holes a
-// hostname-only check leaves open are closed here:
-//   * DNS names that resolve to blocked addresses: every resolved address is
-//     checked inside the socket's `lookup`, and the connection uses exactly the
-//     address that was checked (no second lookup, so no DNS rebinding);
-//   * redirects: never followed — a 3xx is returned to the script as-is;
-//   * unbounded responses: the body is capped at MAX_RESPONSE_BYTES.
-// An administrator can open named internal hosts with SCRIPT_HTTP_ALLOWED_HOSTS;
-// redirects are still not followed and the size cap still applies to them.
+// SSRF guard for the httpFetch() script bridge. Every resolved address is
+// checked inside the socket's `lookup`, and the connection uses exactly the
+// address that was checked (no second lookup, so no DNS rebinding). Redirects
+// are never followed and the body is capped, for allowlisted hosts too.
 
 import * as dns from 'node:dns';
 import * as http from 'node:http';
@@ -18,12 +9,10 @@ import * as https from 'node:https';
 import type { LookupFunction } from 'node:net';
 import { isAllowedHost, isBlockedAddress, isBlockedHostname, type HttpFetchOptions, type HttpFetchResult } from '@galvanigraph/engine';
 
-/** Cap on a response body read into a script (bytes). */
 export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** A `lookup` that refuses to connect when any resolved address is blocked. */
 const guardedLookup: LookupFunction = (hostname, options, callback) => {
   dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
     if (err) { callback(err, '', 0); return; }
@@ -38,10 +27,7 @@ const guardedLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
-/**
- * Parse and vet the URL before any network activity. A host on the
- * administrator's allowlist skips the address checks, here and in the lookup.
- */
+/** An allowlisted host skips the address checks, here and in the lookup. */
 function vetUrl(url: string, allowedHosts: ReadonlyArray<string>): URL {
   const parsed = new URL(url);
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -53,7 +39,6 @@ function vetUrl(url: string, allowedHosts: ReadonlyArray<string>): URL {
   return parsed;
 }
 
-/** Read a response body as UTF-8, failing once it exceeds the cap. */
 function readCapped(res: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -79,11 +64,7 @@ function toHeaders(res: http.IncomingMessage): Record<string, string> {
   return headers;
 }
 
-/**
- * Perform one outbound request for a script under the SSRF policy above.
- * `allowedHosts` are host names or IP literals an administrator has opened to
- * scripts (`SCRIPT_HTTP_ALLOWED_HOSTS`): internal systems a channel has to call.
- */
+/** `allowedHosts`: host names or IP literals from SCRIPT_HTTP_ALLOWED_HOSTS. */
 export function safeHttpFetch(
   url: string,
   options: HttpFetchOptions,

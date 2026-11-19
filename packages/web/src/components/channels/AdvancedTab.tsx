@@ -1,7 +1,4 @@
-// ===========================================
-// Advanced Tab Types
-// ===========================================
-// Type exports only — the UI is now in SummaryTab (Channel Settings).
+// Types only; the UI is in SummaryTab.
 
 export interface MetadataColumnFormValues {
   name: string;

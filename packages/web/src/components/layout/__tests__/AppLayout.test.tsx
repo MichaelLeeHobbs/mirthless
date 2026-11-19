@@ -1,7 +1,3 @@
-// ===========================================
-// AppLayout Tests
-// ===========================================
-
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router';
@@ -11,7 +7,6 @@ import { lightTheme } from '../../../styles/theme.js';
 import { AppLayout } from '../AppLayout.js';
 import { useUiStore } from '../../../stores/ui.store.js';
 
-/** Make every media query match (or not), so useMediaQuery sees a phone or a desktop. */
 function setViewport(matches: boolean): void {
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches, media: query, onchange: null,

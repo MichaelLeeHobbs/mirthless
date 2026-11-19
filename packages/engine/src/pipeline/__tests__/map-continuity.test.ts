@@ -1,16 +1,9 @@
-// ===========================================
-// Pipeline Map Continuity Tests
-// ===========================================
-// Tests that channelMap, responseMap, and globalMap state persists across pipeline stages.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
 import { compileScript } from '../../sandbox/script-compiler.js';
 import { MessageProcessor, type PipelineConfig, type MessageStore, type SendToDestination, type ChannelScripts } from '../message-processor.js';
 import { GlobalChannelMap } from '../../runtime/global-channel-map.js';
 import { GlobalMapProxy } from '../../runtime/global-map-proxy.js';
-
-// ----- Helpers -----
 
 /** Generous: these tests check the maps, not speed, and compile and run several scripts each (#125). */
 const MESSAGE_BUDGET_MS = 20_000;
@@ -43,8 +36,6 @@ async function compile(code: string): Promise<{ code: string }> {
   if (!result.ok) throw new Error('Compile failed');
   return result.value;
 }
-
-// ----- Tests -----
 
 let executor: VmSandboxExecutor;
 
@@ -114,7 +105,6 @@ describe('Pipeline Map Continuity', () => {
       error: null,
     });
 
-    // Postprocessor reads responseMap to verify it's populated
     const postprocessor = await compile('return responseMap;');
 
     const scripts: ChannelScripts = { postprocessor };
@@ -162,7 +152,6 @@ describe('Pipeline Map Continuity', () => {
       AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
-    // GlobalChannelMap should have the accumulated value
     expect(gcm.get('counter')).toBe(2);
   });
 
@@ -188,8 +177,6 @@ describe('Pipeline Map Continuity', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The transformer returns the configMap value as content
-    // Verify via the storeContent call for CT_TRANSFORMED
     const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const transformedCall = storeContentCalls.find((c: unknown[]) => c[3] === 3); // CT_TRANSFORMED=3
     expect(transformedCall).toBeDefined();

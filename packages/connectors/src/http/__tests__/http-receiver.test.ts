@@ -1,7 +1,3 @@
-// ===========================================
-// HTTP Receiver Tests
-// ===========================================
-
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   HttpReceiver,
@@ -11,8 +7,6 @@ import {
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
-
-// ----- Helpers -----
 
 const TEST_PORT = 18661;
 
@@ -42,7 +36,6 @@ function makeDispatcher(
   });
 }
 
-/** Dispatcher that always returns a failed Result. */
 function failingDispatcher(): (raw: RawMessage) => Promise<Result<DispatchResult>> {
   return async () => ({ ok: false as const, value: null, error: stderr('pipeline down') });
 }
@@ -75,8 +68,6 @@ async function sendRequest(
   return { status: response.status, body: responseBody, headers: responseHeaders };
 }
 
-// ----- Lifecycle -----
-
 let receiver: HttpReceiver | null = null;
 
 afterEach(async () => {
@@ -86,8 +77,6 @@ afterEach(async () => {
     receiver = null;
   }
 });
-
-// ----- Tests -----
 
 describe('HttpReceiver', () => {
   it('validates port on deploy', async () => {
@@ -139,7 +128,7 @@ describe('HttpReceiver', () => {
     const stopResult = await receiver.onStop();
     expect(stopResult.ok).toBe(true);
 
-    receiver = null; // Already stopped
+    receiver = null;
   });
 
   it('errors on start if dispatcher not set', async () => {
@@ -284,7 +273,7 @@ describe('HttpReceiver', () => {
     const haltResult = await receiver.onHalt();
     expect(haltResult.ok).toBe(true);
 
-    receiver = null; // Already halted
+    receiver = null;
   });
 
   it('returns 500 when the pipeline dispatch fails (never a false 200)', async () => {
@@ -414,7 +403,6 @@ describe('HttpReceiver TLS', () => {
   });
 });
 
-/** POST over HTTPS trusting the test CA. */
 function httpsPost(port: number, body: string): Promise<{ status: number; body: string }> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const https = require('node:https') as typeof import('node:https');

@@ -1,13 +1,7 @@
-// ===========================================
-// Connection Test Service Tests
-// ===========================================
-
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// The HTTPS-source handshake tester resolves the selected server cert via
-// CertificateService.getMaterialById; mock it so no DB is touched. The real
-// source resolver (id -> PEM) still runs, so this exercises the full path.
+// Only the DB lookup is mocked; the real source resolver (id -> PEM) still runs.
 const mockGetMaterialById = vi.fn();
 vi.mock('../certificate.service.js', () => ({
   CertificateService: { getMaterialById: (...args: unknown[]) => mockGetMaterialById(...args) },
@@ -23,8 +17,7 @@ import {
 } from '../connection-test.service.js';
 import type { SftpClient, SftpConnectionOptions, SftpPathKind } from '@galvanigraph/connectors';
 
-// ----- TLS fixtures (self-signed CN=localhost pair; test-only) -----
-
+// Self-signed CN=localhost pair, test-only.
 const TEST_CERT_PEM = `-----BEGIN CERTIFICATE-----
 MIIDJTCCAg2gAwIBAgIUfbslPxwZsvZjSNfAld+jrNGfqKEwDQYJKoZIhvcNAQEL
 BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDcxMjE5NDk0M1oXDTM2MDcw
@@ -76,14 +69,11 @@ z8TUGLdfPd3GIW0L25VlWaF7mXgJwASllxVdUNA7uamUhYkTcZDzzTZlLSVmyqCG
 -----END PRIVATE KEY-----
 `;
 
-// A different, valid key that does NOT match TEST_CERT_PEM (generated per run).
 const MISMATCHED_KEY_PEM = generateKeyPairSync('rsa', {
   modulusLength: 2048,
   publicKeyEncoding: { type: 'spki', format: 'pem' },
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
 }).privateKey;
-
-// ----- Mocks -----
 
 // Mock only net.connect for TCP tests; the SSRF guard needs the real isIP and BlockList.
 const mockConnect = vi.fn();
@@ -92,14 +82,12 @@ vi.mock('node:net', async (importOriginal) => ({
   connect: (...args: unknown[]) => mockConnect(...args),
 }));
 
-// Mock DNS so the SSRF guard resolves test hostnames to a public IP (allowed)
-// without real network I/O.
+// Test hostnames resolve to a public IP, so the SSRF guard allows them.
 const mockDnsLookup = vi.fn(async (..._args: unknown[]) => [{ address: '93.184.216.34', family: 4 }]);
 vi.mock('node:dns/promises', () => ({
   lookup: (...args: unknown[]) => mockDnsLookup(...args),
 }));
 
-// Mock node:fs/promises for File tests
 const mockAccess = vi.fn();
 vi.mock('node:fs/promises', () => ({
   default: { access: (...args: unknown[]) => mockAccess(...args) },
@@ -117,11 +105,8 @@ vi.mock('../../config/index.js', async (importOriginal) => {
   return { ...actual, config: { ...actual.config, FILE_CONNECTOR_ROOTS: ['/data', INSTALL_ROOT] } };
 });
 
-// Mock global fetch for HTTP and FHIR tests
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
-
-// ----- DB/SMTP factory mocks -----
 
 const mockPoolVendor = vi.fn();
 const mockPoolCreate = vi.fn();
@@ -130,9 +115,6 @@ const mockPoolDestroy = vi.fn();
 const mockTransportVerify = vi.fn();
 const mockTransportClose = vi.fn();
 
-// ----- Helpers -----
-
-/** Create a fake socket event emitter for TCP mock. */
 function createFakeSocket(outcome: 'connect' | 'error', errorMsg?: string): Record<string, unknown> {
   const handlers: Record<string, (...args: unknown[]) => void> = {};
   const socket = {
@@ -143,7 +125,6 @@ function createFakeSocket(outcome: 'connect' | 'error', errorMsg?: string): Reco
     destroy: vi.fn(),
   };
 
-  // net.connect callback is the second argument
   mockConnect.mockImplementation((_opts: unknown, connectCb?: () => void) => {
     if (outcome === 'connect') {
       setTimeout(() => connectCb?.(), 0);
@@ -156,13 +137,10 @@ function createFakeSocket(outcome: 'connect' | 'error', errorMsg?: string): Reco
   return socket;
 }
 
-// ----- Tests -----
-
 describe('ConnectionTestService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Inject mock factories for DATABASE and SMTP
     mockPoolCreate.mockResolvedValue({ ok: true, value: undefined, error: null });
     mockPoolDestroy.mockResolvedValue({ ok: true, value: undefined, error: null });
     setPoolFactory((vendor) => {
@@ -180,8 +158,6 @@ describe('ConnectionTestService', () => {
     vi.restoreAllMocks();
     resetFactories();
   });
-
-  // ----- TCP/MLLP -----
 
   describe('TCP_MLLP', () => {
     it('returns success when TCP connection succeeds', async () => {
@@ -234,8 +210,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- HTTP -----
-
   describe('HTTP', () => {
     it('returns success when HTTP HEAD request succeeds', async () => {
       mockFetch.mockResolvedValueOnce({ status: 200, statusText: 'OK' });
@@ -276,9 +250,7 @@ describe('ConnectionTestService', () => {
     });
 
     it('resolves the server cert and does a real TLS handshake for an HTTPS SOURCE', async () => {
-      // scheme HTTPS + mode SOURCE resolves the selected server cert (by id) and
-      // handshakes over loopback — a listener has no outbound url, so requiring
-      // one (the old behavior) was wrong.
+      // A listener has no outbound url, so none is required.
       mockGetMaterialById.mockResolvedValueOnce({
         ok: true, value: { certificatePem: TEST_CERT_PEM, privateKeyPem: TEST_KEY_PEM }, error: null,
       });
@@ -328,8 +300,6 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('resolution failed');
     });
   });
-
-  // ----- FILE -----
 
   describe('FILE', () => {
     it('returns success when directory is accessible for SOURCE', async () => {
@@ -401,8 +371,6 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('directory');
     });
   });
-
-  // ----- DATABASE -----
 
   describe('DATABASE', () => {
     it('returns success when the connector pool connects', async () => {
@@ -487,8 +455,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- SMTP -----
-
   describe('SMTP', () => {
     it('returns success when SMTP verify succeeds', async () => {
       mockTransportVerify.mockResolvedValueOnce(true);
@@ -567,8 +533,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- FHIR -----
-
   describe('FHIR', () => {
     it('returns success when /metadata returns 200', async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
@@ -638,8 +602,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- DICOM -----
-
   describe('DICOM', () => {
     it('returns success when TCP connection to DICOM host succeeds', async () => {
       createFakeSocket('connect');
@@ -669,8 +631,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- CHANNEL -----
-
   describe('CHANNEL', () => {
     it('returns immediate success for CHANNEL connector', async () => {
       const result = await ConnectionTestService.testConnection('CHANNEL', 'SOURCE', {
@@ -685,8 +645,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- JAVASCRIPT -----
-
   describe('JAVASCRIPT', () => {
     it('returns immediate success for JAVASCRIPT connector', async () => {
       const result = await ConnectionTestService.testConnection('JAVASCRIPT', 'DESTINATION', {
@@ -700,8 +658,6 @@ describe('ConnectionTestService', () => {
       expect(result.value.message).toContain('script-based');
     });
   });
-
-  // ----- EMAIL (IMAP) -----
 
   describe('EMAIL', () => {
     it('returns success when TCP connection to IMAP host succeeds', async () => {
@@ -732,8 +688,6 @@ describe('ConnectionTestService', () => {
       expect(result.value.message).toContain('ECONNREFUSED');
     });
   });
-
-  // ----- SFTP -----
 
   describe('SFTP', () => {
     const SFTP_PROPS = {
@@ -916,8 +870,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- Unknown Connector Type -----
-
   describe('unknown connector type', () => {
     it('returns error for unrecognized connector type', async () => {
       const result = await ConnectionTestService.testConnection('UNKNOWN_TYPE', 'DESTINATION', {});
@@ -928,8 +880,6 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('UNKNOWN_TYPE');
     });
   });
-
-  // ----- SSRF Protection -----
 
   describe('SSRF protection', () => {
     it('blocks localhost connections', async () => {
@@ -1020,8 +970,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- Latency -----
-
   describe('latency measurement', () => {
     it('includes latencyMs in successful result', async () => {
       const result = await ConnectionTestService.testConnection('CHANNEL', 'SOURCE', {});
@@ -1046,15 +994,11 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- Timeout Constant -----
-
   describe('timeout configuration', () => {
     it('has a 10-second default timeout', () => {
       expect(_testing.TEST_TIMEOUT_MS).toBe(10_000);
     });
   });
-
-  // ----- SSRF Guard (DNS-aware) -----
 
   describe('SSRF guard', () => {
     // Integration endpoints (MLLP, databases, SFTP) live on private networks, so

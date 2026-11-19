@@ -1,10 +1,3 @@
-// ===========================================
-// DICOM Receiver (Source Connector)
-// ===========================================
-// A dcmjs-dimse DICOM SCP that receives C-STORE associations and dispatches each
-// received instance as a message into the pipeline.
-// Content = file path; metadata goes into sourceMap.
-
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
@@ -12,8 +5,6 @@ import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../b
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { createDimseReceiver } from './dcmjs-dimse-adapter.js';
-
-// ----- Constants -----
 
 const DICOM_POST_ACTION = {
   DELETE: 'DELETE',
@@ -28,8 +19,6 @@ const DICOM_DISPATCH_MODE = {
 } as const;
 type DicomDispatchMode = typeof DICOM_DISPATCH_MODE[keyof typeof DICOM_DISPATCH_MODE];
 
-// ----- Config -----
-
 export interface DicomReceiverConfig {
   readonly port: number;
   readonly storageDir: string;
@@ -42,9 +31,6 @@ export interface DicomReceiverConfig {
   readonly moveToDirectory: string;
 }
 
-// ----- dcmtk abstraction (for testability) -----
-
-/** Data emitted by the underlying receiver on FILE_RECEIVED. */
 export interface DcmtkFileData {
   readonly filePath: string;
   readonly associationId: string;
@@ -57,7 +43,6 @@ export interface DcmtkFileData {
   };
 }
 
-/** Data emitted by the underlying receiver on ASSOCIATION_COMPLETE. */
 export interface DcmtkAssociationData {
   readonly associationId: string;
   readonly associationDir: string;
@@ -68,7 +53,6 @@ export interface DcmtkAssociationData {
   readonly durationMs: number;
 }
 
-/** Minimal interface for the underlying DICOM receiver. */
 export interface DcmtkReceiver {
   onFileReceived(listener: (data: DcmtkFileData) => void): void;
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void;
@@ -77,7 +61,6 @@ export interface DcmtkReceiver {
   stop(): Promise<void>;
 }
 
-/** Factory that creates a DcmtkReceiver. */
 export type ReceiverFactory = (options: {
   readonly port: number;
   readonly storageDir: string;
@@ -86,8 +69,6 @@ export type ReceiverFactory = (options: {
   readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
 }) => Result<DcmtkReceiver>;
-
-// ----- Receiver -----
 
 export { DICOM_POST_ACTION, DICOM_DISPATCH_MODE };
 export type { DicomPostAction, DicomDispatchMode };
@@ -197,8 +178,6 @@ export class DicomReceiver implements SourceConnectorRuntime {
     });
   }
 
-  // ----- Event handlers -----
-
   private async handleFileReceived(data: DcmtkFileData): Promise<void> {
     if (!this.dispatcher) return;
 
@@ -217,9 +196,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
     if (failure === null) {
       await this.applyPostAction(data.filePath);
     } else {
-      // Pipeline rejected the file. This is event-driven (not polled), so the file
-      // is never re-dispatched — surface it loudly and leave the file in place
-      // (no post-action) for manual recovery instead of losing it silently.
+      // Event-driven, so never re-dispatched: leave the file in place (no post-action)
+      // for manual recovery rather than lose it.
       this.logger.error(
         { ...errorInfo(failure), filePath: data.filePath, callingAE: data.callingAE },
         'DICOM file dispatch failed; file retained for manual recovery',

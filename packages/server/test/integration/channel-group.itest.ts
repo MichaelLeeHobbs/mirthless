@@ -1,35 +1,8 @@
-// ===========================================
-// Channel Group Service — real Postgres integration
-// ===========================================
-// Both suites force a concurrent writer into a set point with a row lock instead
-// of hoping two calls overlap.
-//
-// update: the optimistic lock on a group update must hold when another writer
-// changes the row between the service's revision check and its UPDATE.
-//
-//   1. A separate connection locks the group row (SELECT ... FOR UPDATE).
-//   2. The service update reads revision N (plain reads are not blocked), passes
-//      its early check, and blocks on its UPDATE.
-//   3. The locking connection bumps the revision to N+1 and commits.
-//   4. Postgres re-checks the blocked UPDATE's WHERE against the new row. With
-//      the revision in the WHERE nothing matches and the service answers
-//      CONFLICT; with the id alone (the old code) it overwrote the other write.
-//
-// setChannelGroups (#223): a set that fails after it removed the old
-// memberships must leave them in place.
-//
-//   1. A separate connection inserts the same membership the service will
-//      insert and holds its transaction open (a writer that bypasses the
-//      service, so the channel lock does not order it).
-//   2. The service locks the channel and groups, removes the channel's
-//      memberships, and blocks on the primary key of its INSERT.
-//   3. The other connection commits, the INSERT fails on the duplicate key, and
-//      the transaction rolls back, so the channel keeps its old group. Run as
-//      separate calls (the old web code), the old group would be gone.
-//
-// A group deleted during a set: the service locks the groups FOR KEY SHARE
-// before it removes anything, so it waits for the delete and answers NOT_FOUND
-// with the memberships untouched, instead of failing the INSERT later.
+// The concurrency tests force the other writer into a set point with a row lock
+// instead of hoping two calls overlap. Postgres re-checks a blocked UPDATE's
+// WHERE against the committed row, so the revision in the WHERE is what turns
+// the race into CONFLICT. #223: a set that fails after removing the old
+// memberships must roll back and leave them in place.
 
 import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -67,11 +40,7 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
     await pool?.end();
   });
 
-  /**
-   * Wait until a statement starting with `queryPrefix` is blocked on a lock. A
-   * blocked statement waits on the locker's transaction id, so it shows in
-   * pg_stat_activity as a Lock wait with the statement as its query.
-   */
+  /** A blocked statement shows in pg_stat_activity as a Lock wait with the statement as its query. */
   async function waitForBlocked(queryPrefix: string): Promise<void> {
     const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
     while (Date.now() < deadline) {

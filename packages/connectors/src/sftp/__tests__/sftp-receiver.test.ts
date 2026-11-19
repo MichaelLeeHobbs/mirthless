@@ -1,7 +1,3 @@
-// ===========================================
-// SFTP Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
@@ -9,8 +5,6 @@ import { SftpReceiver, joinRemote, SFTP_POST_ACTION, type SftpReceiverConfig } f
 import type { SftpClientFactory } from '../sftp-client.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import { LEGACY_LEDGER_NAMES, RemoteState, makeMockSftpClient, type MockFailures } from '../../__fixtures__/mock-sftp-client.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<SftpReceiverConfig>): SftpReceiverConfig {
   return {
@@ -44,8 +38,6 @@ function factoryFor(state: RemoteState, failures?: MockFailures): SftpClientFact
   return () => makeMockSftpClient(state, failures ?? {});
 }
 
-// ----- Lifecycle -----
-
 let receiver: SftpReceiver | null = null;
 
 beforeEach(() => {
@@ -62,8 +54,6 @@ afterEach(async () => {
   }
 });
 
-// ----- joinRemote -----
-
 describe('joinRemote', () => {
   it('joins with a single slash', () => {
     expect(joinRemote('/inbound', 'a.hl7')).toBe('/inbound/a.hl7');
@@ -73,8 +63,6 @@ describe('joinRemote', () => {
     expect(joinRemote('/inbound/', 'a.hl7')).toBe('/inbound/a.hl7');
   });
 });
-
-// ----- onDeploy -----
 
 describe('onDeploy', () => {
   it('validates host is required', async () => {
@@ -133,8 +121,6 @@ describe('onDeploy', () => {
   });
 });
 
-// ----- onStart -----
-
 describe('onStart', () => {
   it('errors if dispatcher not set', async () => {
     receiver = new SftpReceiver(makeConfig(), factoryFor(new RemoteState()));
@@ -150,8 +136,6 @@ describe('onStart', () => {
     expect(state.connectCount).toBe(1);
   });
 });
-
-// ----- Poll cycle -----
 
 describe('poll cycle', () => {
   it('downloads and dispatches files matching the glob', async () => {
@@ -176,8 +160,8 @@ describe('poll cycle', () => {
   it('skips files younger than minFileAgeMs (still being written)', async () => {
     const state = new RemoteState();
     const pollTime = Date.now() + 5_000;
-    state.addFile('old.hl7', 'aged', pollTime - 5_000);   // passes 1s threshold
-    state.addFile('fresh.hl7', 'writing', pollTime - 200); // fails threshold
+    state.addFile('old.hl7', 'aged', pollTime - 5_000);
+    state.addFile('fresh.hl7', 'writing', pollTime - 200);
 
     const captured: RawMessage[] = [];
     receiver = new SftpReceiver(makeConfig({ minFileAgeMs: 1_000 }), factoryFor(state));
@@ -221,8 +205,6 @@ describe('poll cycle', () => {
     expect(capturedRaw!.sourceMap['lastModified']).toBe(mtime);
   });
 });
-
-// ----- Post-processing -----
 
 describe('post-processing', () => {
   it('deletes the file when afterProcessing is DELETE', async () => {
@@ -283,8 +265,6 @@ describe('post-processing', () => {
   });
 });
 
-// ----- Quarantine (durable, no re-dispatch) -----
-
 describe('durable quarantine', () => {
   it('quarantines a file whose post-action fails and does not re-dispatch it', async () => {
     const state = new RemoteState();
@@ -292,13 +272,12 @@ describe('durable quarantine', () => {
     const { logger, errors } = makeMockLogger();
 
     let dispatchCount = 0;
-    // delete fails → post-action fails after successful dispatch.
     receiver = new SftpReceiver(makeConfig(), factoryFor(state, { delete: true }), logger);
     receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
     await receiver.onStart();
 
-    await vi.advanceTimersByTimeAsync(5_000); // cycle 1: dispatch + failed delete → quarantine
-    await vi.advanceTimersByTimeAsync(5_000); // cycle 2: same file present, must not re-dispatch
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5_000);
 
     expect(dispatchCount).toBe(1);
     expect(errors.some((e) => e.msg.includes('quarantining'))).toBe(true);
@@ -326,7 +305,7 @@ describe('durable quarantine', () => {
     let dispatchCount = 0;
     receiver = new SftpReceiver(makeConfig(), factoryFor(state));
     receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
-    await receiver.onStart(); // loads ledger → key already quarantined
+    await receiver.onStart();
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(dispatchCount).toBe(0);
@@ -377,7 +356,7 @@ describe('durable quarantine', () => {
     await receiver.onStart();
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(dispatchCount).toBe(1); // ledger ignored, file still dispatched
+    expect(dispatchCount).toBe(1);
     expect(errors.some((e) => e.msg.includes('corrupt'))).toBe(true);
   });
 
@@ -409,13 +388,13 @@ describe('durable quarantine', () => {
     receiver = new SftpReceiver(makeConfig(), factoryFor(state, { delete: true }));
     receiver.setDispatcher(makeDispatcher((raw) => { captured.push(raw); return { messageId: 1 }; }));
     await receiver.onStart();
-    await vi.advanceTimersByTimeAsync(5_000); // d.hl7 dispatched, delete fails → quarantined
+    await vi.advanceTimersByTimeAsync(5_000);
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(captured.map((r) => r.sourceMap['originalFilename'])).toEqual(['d.hl7']);
     const written = JSON.parse(state.ledger) as string[];
     expect([...written].sort()).toEqual(['a.hl7', 'b.hl7', 'c.hl7', 'd.hl7'].map((n) => `${n}:${String(mtime)}`));
-    expect(state.legacyLedgers).toEqual(legacyBefore); // legacy files never written
+    expect(state.legacyLedgers).toEqual(legacyBefore);
   });
 
   it('never dispatches a legacy ledger sidecar even when the pattern matches it', async () => {
@@ -434,10 +413,7 @@ describe('durable quarantine', () => {
   });
 });
 
-// ----- File names a Mirth File Reader (sftp scheme) leaves alone (#244) -----
-
 describe('file names a Mirth File Reader leaves alone (#244)', () => {
-  /** Poll once over a remote folder of these names; return the names dispatched and deleted. */
   async function pollOnce(
     names: readonly string[],
     overrides?: Partial<SftpReceiverConfig>,
@@ -470,15 +446,12 @@ describe('file names a Mirth File Reader leaves alone (#244)', () => {
   });
 });
 
-// ----- Connection loss / reconnect -----
-
 describe('connection loss', () => {
   it('logs the poll-cycle failure and reconnects on the next cycle', async () => {
     const state = new RemoteState();
     state.addFile('a.hl7', 'X', Date.now() - 10_000);
     const { logger, errors } = makeMockLogger();
 
-    // First list fails (dropped connection), subsequent clients succeed.
     let clientIdx = 0;
     const factory: SftpClientFactory = () => {
       clientIdx++;
@@ -490,16 +463,14 @@ describe('connection loss', () => {
     receiver.setDispatcher(makeDispatcher((raw) => { captured.push(raw); return { messageId: 1 }; }));
     await receiver.onStart();
 
-    await vi.advanceTimersByTimeAsync(5_000); // cycle 1: list fails → logged, client dropped
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(captured).toHaveLength(0);
     expect(errors.some((e) => e.msg.includes('poll cycle failed'))).toBe(true);
 
-    await vi.advanceTimersByTimeAsync(5_000); // cycle 2: reconnect, succeeds
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(captured).toHaveLength(1);
   });
 });
-
-// ----- Lifecycle -----
 
 describe('lifecycle', () => {
   it('stops and clears the interval and disconnects', async () => {
@@ -537,8 +508,6 @@ describe('SftpReceiver when the pipeline recorded an error', () => {
     expect(dispatches).toBe(1);
   });
 });
-
-// ----- Robustness (L16, L18) -----
 
 describe('robustness', () => {
   it('refuses to deploy with a charset it cannot decode', async () => {

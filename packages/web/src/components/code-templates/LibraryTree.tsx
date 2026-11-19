@@ -1,8 +1,3 @@
-// ===========================================
-// Library Tree
-// ===========================================
-// Collapsible list of libraries with their templates.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import List from '@mui/material/List';
@@ -31,9 +26,9 @@ interface LibraryTreeProps {
   readonly onCreateTemplate: (libraryId: string) => void;
   readonly onEditLibrary: (library: CodeTemplateLibrary) => void;
   readonly onDeleteLibrary: (library: CodeTemplateLibrary) => void;
-  /** Hide add/edit buttons for users without code_templates:write. */
+  /** True without code_templates:write. */
   readonly readOnly: boolean;
-  /** Show the delete library button only to users with code_templates:delete. */
+  /** True with code_templates:delete. */
   readonly canDelete: boolean;
 }
 

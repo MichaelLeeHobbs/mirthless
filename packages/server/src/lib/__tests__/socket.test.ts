@@ -1,11 +1,5 @@
-// ===========================================
-// Socket.IO Auth & Room Management Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import jwt from 'jsonwebtoken';
-
-// ----- Hoisted Mocks -----
 
 const { mockConfig } = vi.hoisted(() => ({
   mockConfig: {
@@ -27,15 +21,13 @@ vi.mock('../logger.js', () => ({
   },
 }));
 
-// The resolver (lib/principal.ts) is the database boundary here: the user as
-// it would load them, holding the built-in role named in `userRow.role`.
+// The resolver (lib/principal.ts) is the database boundary here.
 let userRow: import('../../../test/standing.js').StandingRow | undefined = { id: 'user-1', enabled: true, role: 'viewer' };
 vi.mock('../principal.js', async () => {
   const { standingFor } = await import('../../../test/standing.js');
   return { loadUserStanding: vi.fn(() => Promise.resolve(userRow ? standingFor(userRow) : null)) };
 });
 
-// A channel's groups (lib/channel-scope.ts), by channel id.
 const channelGroups = vi.hoisted(() => new Map<string, string[]>());
 vi.mock('../channel-scope.js', async () => {
   const { ALL_CHANNELS, can } = await import('@galvanigraph/core-models');
@@ -51,12 +43,9 @@ vi.mock('../channel-scope.js', async () => {
   };
 });
 
-// Session liveness is its own module (shared with the REST middleware).
 const session = vi.hoisted(() => ({ live: true }));
 const { mockIsSessionLive } = vi.hoisted(() => ({ mockIsSessionLive: vi.fn() }));
 vi.mock('../session-live.js', () => ({ isSessionLive: mockIsSessionLive }));
-
-// ----- Import after mocks -----
 
 import {
   authMiddleware, revalidateSocket, emitToRoom, emitToRoomCoalesced, emitToChannelAudience, shutdownSocketIO,
@@ -64,8 +53,6 @@ import {
 } from '../socket.js';
 import { builtInRolePermissions } from '../../db/seeds/roles.js';
 import type { Server as SocketIOServer } from 'socket.io';
-
-// ----- Helpers -----
 
 function createValidToken(payload: { userId: string; sessionId?: string; type: string }): string {
   return jwt.sign(payload, mockConfig.JWT_SECRET, { expiresIn: '15m' });
@@ -83,8 +70,6 @@ function createMockSocket(token?: string): {
   };
 }
 
-// ----- Tests -----
-
 describe('Socket.IO Auth & Room Management', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -93,8 +78,6 @@ describe('Socket.IO Auth & Room Management', () => {
     session.live = true;
     mockIsSessionLive.mockImplementation(async () => session.live);
   });
-
-  // ----- Auth Middleware -----
 
   describe('authMiddleware', () => {
     it('rejects connection when token is missing', () => {
@@ -203,8 +186,6 @@ describe('Socket.IO Auth & Room Management', () => {
     });
 
     it('stores user data and permissions resolved live from the role after successful auth', async () => {
-      // Permissions are resolved from the user's role (single source of truth),
-      // not a per-user snapshot — a viewer gets exactly the viewer role's set.
       userRow = { id: 'user-42', enabled: true, role: 'viewer' };
       const token = createValidToken({ userId: 'user-42', sessionId: 'sess-7', type: 'access' });
       const socket = createMockSocket(token);
@@ -306,8 +287,6 @@ describe('Socket.IO Auth & Room Management', () => {
     });
   });
 
-  // ----- Room Join/Leave -----
-
   describe('room join/leave via connection handler', () => {
     // We test room behavior indirectly through emitToRoom by setting up a mock io.
     // The connection handlers are registered inside initializeSocketIO, which is
@@ -321,7 +300,6 @@ describe('Socket.IO Auth & Room Management', () => {
       const socket = createMockSocket();
       const next = vi.fn();
 
-      // Non-string token should be rejected
       socket.handshake.auth['token'] = 12345;
       authMiddleware(socket, next);
 
@@ -330,11 +308,8 @@ describe('Socket.IO Auth & Room Management', () => {
     });
   });
 
-  // ----- emitToRoom -----
-
   describe('emitToRoom', () => {
     it('no-ops when io is null', () => {
-      // Should not throw
       expect(() => emitToRoom('dashboard', 'test:event', { foo: 'bar' })).not.toThrow();
     });
 
@@ -365,7 +340,7 @@ describe('Socket.IO Auth & Room Management', () => {
     });
   });
 
-  // ----- emitToRoomCoalesced (#231, D-306) -----
+  // #231, D-306.
 
   describe('emitToRoomCoalesced', () => {
     beforeEach(() => { vi.useFakeTimers(); });
@@ -486,8 +461,6 @@ describe('Socket.IO Auth & Room Management', () => {
     });
   });
 
-  // ----- emitToChannelAudience -----
-
   describe('emitToChannelAudience', () => {
     it('sends a channel\'s event to the all-channel room and the rooms of its groups only', async () => {
       const CHANNEL = '5f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0e';
@@ -527,8 +500,6 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(to).not.toHaveBeenCalled();
     });
   });
-
-  // ----- Cleanup -----
 
   afterEach(() => {
     _resetIO(null);

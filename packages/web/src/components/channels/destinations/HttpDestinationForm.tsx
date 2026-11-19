@@ -1,8 +1,3 @@
-// ===========================================
-// HTTP Destination Connector Form
-// ===========================================
-// Configuration form for HTTP client destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -38,7 +33,6 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Request settings */}
       <Grid
         size={{
           xs: 12,
@@ -91,7 +85,6 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
         />
       </Grid>
 
-      {/* Right column — Response settings */}
       <Grid
         size={{
           xs: 12,
@@ -118,7 +111,6 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
         />
       </Grid>
 
-      {/* Transport mode — HTTP or HTTPS (TLS material selected from the cert store) */}
       <Grid size={12}>
         <Divider sx={{ mb: 2 }} />
         <Typography

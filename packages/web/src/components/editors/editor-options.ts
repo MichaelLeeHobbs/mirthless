@@ -1,12 +1,7 @@
-// ===========================================
-// Shared editor options
-// ===========================================
-
 import type { editor } from 'monaco-editor';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 import { overflowWidgetsHost } from './monaco.js';
 
-/** Options every editor shares, so they type and look the same everywhere. */
 export const BASE_EDITOR_OPTIONS: editor.IStandaloneEditorConstructionOptions = {
   automaticLayout: true,
   // Popups (completion, hover) render at the end of <body>, so they are never clipped.

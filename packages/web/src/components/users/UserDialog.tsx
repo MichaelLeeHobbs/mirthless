@@ -1,9 +1,3 @@
-// ===========================================
-// User Create/Edit Dialog
-// ===========================================
-// A new user gets one role on every channel; an existing user's access is the
-// list of assignments (a role on every channel or on chosen groups, D-310).
-
 import { useState, useEffect, type ReactNode, type ChangeEvent } from 'react';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
@@ -35,9 +29,9 @@ export interface UserFormData {
   readonly password: string;
   readonly firstName: string;
   readonly lastName: string;
-  /** The one role a new user gets; an existing user keeps theirs here. */
+  /** Applies only to a new user. */
   readonly role: string;
-  /** An existing user's access after the edit, or null when it did not change. */
+  /** null when the access list did not change. */
   readonly assignments: readonly AssignmentDraft[] | null;
 }
 
@@ -50,7 +44,6 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
   const [lastName, setLastName] = useState('');
   const [role, setRole] = useState('viewer');
   const held = useAssignments(open && user ? user.id : null);
-  // The list being edited, and the list it started from: what Save compares against.
   const [access, setAccess] = useState<readonly AssignmentDraft[] | null>(null);
   const [baseline, setBaseline] = useState<readonly AssignmentDraft[] | null>(null);
   const [openedAt, setOpenedAt] = useState(0);

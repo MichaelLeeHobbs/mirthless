@@ -1,7 +1,3 @@
-// ===========================================
-// DICOM Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { stderr } from '@galvanigraph/core-util';
 import type { ConnectorMessage } from '../../base.js';
@@ -12,8 +8,6 @@ import {
   type DcmtkSendResult,
   type SenderFactory,
 } from '../dicom-dispatcher.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<DicomDispatcherConfig>): DicomDispatcherConfig {
   return {
@@ -66,13 +60,9 @@ function makeFailingFactory(message: string): SenderFactory {
   return () => ({ ok: false as const, value: null, error: stderr(message) });
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- onDeploy -----
 
 describe('DicomDispatcher.onDeploy', () => {
   it('succeeds with valid config', async () => {
@@ -112,8 +102,6 @@ describe('DicomDispatcher.onDeploy', () => {
   });
 });
 
-// ----- onStart -----
-
 describe('DicomDispatcher.onStart', () => {
   it('creates sender and starts successfully', async () => {
     const sender = makeMockSender();
@@ -128,8 +116,6 @@ describe('DicomDispatcher.onStart', () => {
     expect(result.ok).toBe(false);
   });
 });
-
-// ----- send -----
 
 describe('DicomDispatcher.send', () => {
   it('sends file and returns SENT on success', async () => {
@@ -200,8 +186,6 @@ describe('DicomDispatcher.send', () => {
     expect(sendFn).toHaveBeenCalledWith(['/data/file.dcm']);
   });
 });
-
-// ----- Lifecycle -----
 
 describe('DicomDispatcher lifecycle', () => {
   it('stops sender', async () => {

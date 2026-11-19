@@ -1,9 +1,4 @@
-// ===========================================
-// Server Backup/Restore Service
-// ===========================================
-// Exports full server configuration as JSON and restores from backup.
-// Messages, statistics, and events are excluded (transient operational data).
-// All methods return Result<T> using tryCatch from stderr-lib.
+// Messages, statistics and events are left out: operational data, not configuration.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and } from 'drizzle-orm';
@@ -47,13 +42,9 @@ import {
   channelTags,
 } from '../db/schema/index.js';
 
-// ----- Service -----
-
 export class ServerBackupService {
-  /** Export full server configuration as a backup payload. */
   /**
-   * Export the server configuration. The export holds credentials and PHI, so
-   * it is recorded in the audit log with its SHA-256 before it is returned,
+   * The export holds credentials and PHI, so it is recorded in the audit log with its SHA-256 before it is returned,
    * and refused (AUDIT_UNAVAILABLE) when the record cannot be written (D-312).
    */
   static async exportBackup(reason: string, context?: AuditContext): Promise<Result<{ readonly backup: ServerBackup; readonly auditRecordId: number }>> {
@@ -74,7 +65,6 @@ export class ServerBackupService {
 
   private static async buildBackup(): Promise<Result<ServerBackup>> {
     return tryCatch(async () => {
-      // Gather all entity data in parallel where possible
       const [
         channelResult,
         librariesResult,
@@ -116,7 +106,6 @@ export class ServerBackupService {
       if (!settingsResult.ok) throw settingsResult.error;
       if (!resourcesResult.ok) throw resourcesResult.error;
 
-      // Fetch full resource details (with content) for each resource
       const resourceDetails = await Promise.all(
         resourcesResult.value.map(async (r) => {
           const detail = await ResourceService.getById(r.id);
@@ -130,13 +119,11 @@ export class ServerBackupService {
       if (!membershipsResult.ok) throw membershipsResult.error;
       if (!assignmentsResult.ok) throw assignmentsResult.error;
 
-      // Fetch full alert details in batch
       const alertIds = alertsResult.value.data.map((a) => a.id);
       const alertDetailsResult = await AlertService.getByIds(alertIds);
       if (!alertDetailsResult.ok) throw alertDetailsResult.error;
       const alertDetails = alertDetailsResult.value;
 
-      // Fetch all channel dependencies
       const depRows = await db
         .select({
           channelId: channelDependencies.channelId,
@@ -247,7 +234,6 @@ export class ServerBackupService {
     });
   }
 
-  /** Restore server configuration from a backup payload. */
   static async restoreBackup(
     backup: ServerBackup,
     collisionMode: BackupCollisionMode,
@@ -265,7 +251,6 @@ export class ServerBackupService {
       sections.push(await restoreCodeTemplates(backup.codeTemplates, collisionMode));
       sections.push(await restoreGlobalScripts(backup.globalScripts));
 
-      // Channels use existing import service
       const channelResult = await ChannelImportService.importChannels(
         backup.channels,
         collisionMode === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP',
@@ -317,8 +302,6 @@ export class ServerBackupService {
   }
 }
 
-// ----- Restore Helpers -----
-
 async function restoreSettings(
   items: ServerBackup['settings'],
   mode: BackupCollisionMode,
@@ -329,9 +312,9 @@ async function restoreSettings(
   for (const item of items) {
     try {
       const existing = await SettingsService.getByKey(item.key);
-      // A backup masks secret values as REDACTED. Never write that marker back as
-      // a live secret: if the setting already exists keep its current (real) value
-      // untouched; if it is new, store empty so the operator must re-enter it.
+      // A backup masks secrets as REDACTED. Never write the marker back as a live
+      // secret: keep an existing setting's real value; store a new one empty so
+      // the operator must re-enter it.
       const isRedacted = item.value === REDACTED;
       if (existing.ok) {
         if (mode === 'SKIP') { skipped++; continue; }
@@ -352,13 +335,8 @@ async function restoreSettings(
   return { section: 'settings', created, updated, skipped, errors };
 }
 
-/** What restoring one backup item did; each value is a count in the section result. */
 type RestoreOutcome = 'created' | 'updated' | 'skipped';
 
-/**
- * Restore `items` one at a time with `restoreOne` and count the outcomes. A
- * thrown error is recorded as `<label>: <message>` and the next item still runs.
- */
 async function restoreEach<T>(
   section: string,
   items: readonly T[],
@@ -379,17 +357,13 @@ async function restoreEach<T>(
   return { section, ...counts, errors };
 }
 
-/** The queries that restore one table row from a backup. */
 interface RowRestore {
-  /** Select the row by its key; any row returned means it exists. */
   readonly find: () => PromiseLike<readonly unknown[]>;
-  /** Insert the row with the key the backup carries. */
   readonly insert: () => PromiseLike<unknown>;
-  /** Overwrite an existing row unless the mode is SKIP. Absent for a key-only row (a pair), which is always skipped. */
+  /** Absent for a key-only row (a pair): an existing one is skipped in every mode. */
   readonly overwrite?: { readonly mode: BackupCollisionMode; readonly update: () => PromiseLike<unknown> };
 }
 
-/** Insert a missing row; skip or overwrite an existing one. */
 async function restoreRow(row: RowRestore): Promise<RestoreOutcome> {
   const [existing] = await row.find();
   if (!existing) {
@@ -401,10 +375,6 @@ async function restoreRow(row: RowRestore): Promise<RestoreOutcome> {
   return 'updated';
 }
 
-/**
- * Restore one config or global map entry through its service upsert. SKIP
- * leaves an entry the lookup finds alone; any failed lookup counts as created.
- */
 async function upsertMapEntry(
   mode: BackupCollisionMode,
   lookup: () => Promise<Result<unknown>>,
@@ -510,13 +480,8 @@ const ALL_JAVASCRIPT = { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preproces
 const GLOBAL_SCRIPT_KEYS = ['deploy', 'undeploy', 'preprocessor', 'postprocessor'] as const;
 
 /**
- * Restore one global script. A TypeScript script the save refuses as invalid
- * (a backup can hold one with type errors, saved before saves were
- * type-checked) is restored as JavaScript, which the engine runs the same, and
- * reported. Any other refusal (the type checker timed out, crashed or was busy)
- * says nothing about the script, so it is not restored and is reported: falling
- * back would drop the type check of a script that may have no errors (#228).
- * Returns the error to report, or null.
+ * Falls back to JavaScript only when the save refused the script itself
+ * (INVALID_INPUT); after a type checker failure the script is not restored (D-303, #228).
  */
 async function restoreGlobalScript(
   key: (typeof GLOBAL_SCRIPT_KEYS)[number], script: string, language: ScriptLanguageCode,
@@ -552,17 +517,13 @@ async function restoreGlobalScripts(
   return { section: 'globalScripts', created: 0, updated, skipped: 0, errors };
 }
 
-/**
- * Rebuild an alert trigger from a backup, validated so a malformed entry fails
- * that alert's restore instead of saving a broken trigger.
- */
+/** Validated so a malformed entry fails that alert's restore instead of saving a broken trigger. */
 function restoreAlertTrigger(t: ServerBackup['alerts'][number]['trigger']): AlertTriggerInput {
   return alertTriggerSchema.parse(t.type === 'NO_MESSAGES'
     ? { type: 'NO_MESSAGES', windowMinutes: t.windowMinutes }
     : { type: t.type, errorTypes: t.errorTypes, regex: t.regex });
 }
 
-/** Rebuild an alert action from a backup; CHANNEL actions keep their target channel. */
 function restoreAlertAction(a: ServerBackup['alerts'][number]['actions'][number]): AlertActionInput {
   return alertActionInputSchema.parse(a.actionType === 'CHANNEL'
     ? { type: 'CHANNEL', channelId: a.properties?.['channelId'], recipients: a.recipients }
@@ -610,7 +571,6 @@ async function restoreAlerts(
   return { section: 'alerts', created, updated, skipped, errors };
 }
 
-/** Dependencies are key-only pairs: an existing one has nothing to overwrite, so it is skipped in every mode. */
 async function restoreChannelDependencies(
   items: ServerBackup['channelDependencies'],
 ): Promise<RestoreSectionResult> {

@@ -1,26 +1,15 @@
-// ===========================================
-// User Preference Service
-// ===========================================
-// Business logic for per-user preferences key-value store.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { and, eq, asc, sql } from 'drizzle-orm';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { userPreferences } from '../db/schema/index.js';
 
-// ----- Response Types -----
-
 export interface UserPreferenceEntry {
   readonly key: string;
   readonly value: string | null;
 }
 
-// ----- Service -----
-
 export class UserPreferenceService {
-  /** List all preferences for a user, sorted by key. */
   static async list(userId: string): Promise<Result<readonly UserPreferenceEntry[]>> {
     return tryCatch(async () => {
       const rows = await db
@@ -36,7 +25,6 @@ export class UserPreferenceService {
     });
   }
 
-  /** Get a single preference by key. */
   static async getByKey(userId: string, key: string): Promise<Result<UserPreferenceEntry>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -57,7 +45,6 @@ export class UserPreferenceService {
     });
   }
 
-  /** Create or update a preference. */
   static async upsert(
     userId: string,
     key: string,
@@ -77,7 +64,6 @@ export class UserPreferenceService {
     });
   }
 
-  /** Delete a preference by key. */
   static async delete(userId: string, key: string): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -106,9 +92,8 @@ export class UserPreferenceService {
   }
 
   /**
-   * Bulk upsert multiple preferences. An empty list is a no-op, and a key
-   * repeated in one batch takes its last value (Postgres rejects an INSERT ...
-   * ON CONFLICT that touches the same row twice).
+   * A key repeated in one batch takes its last value: Postgres rejects an
+   * INSERT ... ON CONFLICT that touches the same row twice.
    */
   static async bulkUpsert(
     userId: string,

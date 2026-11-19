@@ -1,13 +1,6 @@
-// ===========================================
-// User API Hooks
-// ===========================================
-// TanStack Query hooks for user CRUD operations.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateUserInput, TakenOverKey, UpdateUserInput } from '@galvanigraph/core-models';
 import { api, type UserSummary, type UserDetail } from '../api/client.js';
-
-// ----- Query Keys -----
 
 const USER_KEYS = {
   all: ['users'] as const,
@@ -16,9 +9,6 @@ const USER_KEYS = {
   detail: (id: string) => [...USER_KEYS.details(), id] as const,
 } as const;
 
-// ----- Queries -----
-
-/** Fetch all users. */
 export function useUsers(): ReturnType<typeof useQuery<readonly UserSummary[]>> {
   return useQuery({
     queryKey: USER_KEYS.lists(),
@@ -32,7 +22,6 @@ export function useUsers(): ReturnType<typeof useQuery<readonly UserSummary[]>> 
   });
 }
 
-/** Fetch a single user's detail. */
 export function useUser(id: string | null): ReturnType<typeof useQuery<UserDetail>> {
   return useQuery({
     queryKey: USER_KEYS.detail(id ?? ''),
@@ -47,9 +36,6 @@ export function useUser(id: string | null): ReturnType<typeof useQuery<UserDetai
   });
 }
 
-// ----- Mutations -----
-
-/** Create a new user. */
 export function useCreateUser(): ReturnType<typeof useMutation<UserDetail, Error, CreateUserInput>> {
   const queryClient = useQueryClient();
 
@@ -69,7 +55,6 @@ export function useCreateUser(): ReturnType<typeof useMutation<UserDetail, Error
   });
 }
 
-/** Update a user. */
 export function useUpdateUser(): ReturnType<typeof useMutation<UserDetail, Error, { id: string; input: UpdateUserInput }>> {
   const queryClient = useQueryClient();
 
@@ -91,9 +76,9 @@ export function useUpdateUser(): ReturnType<typeof useMutation<UserDetail, Error
 }
 
 /**
- * Disable (delete) a user. Every working API key they issued is disabled with
- * them (D-322), except those in `takeOwnership`, which the caller takes over:
- * their new tokens come back, once. The result is not kept in the cache.
+ * D-322: every working key the user issued is disabled with them, except those
+ * in `takeOwnership`, whose new tokens come back once (gcTime 0 keeps them out
+ * of the cache).
  */
 export function useDeleteUser(): ReturnType<typeof useMutation<readonly TakenOverKey[], Error, { id: string; takeOwnership?: readonly string[] }>> {
   const queryClient = useQueryClient();
@@ -114,13 +99,7 @@ export function useDeleteUser(): ReturnType<typeof useMutation<readonly TakenOve
   });
 }
 
-/**
- * Change the CURRENT user's own password (self-service).
- *
- * Targets `POST /users/me/password` with `{ currentPassword, newPassword }`
- * (auth-only, no `users:write`). Verifies the current password server-side and
- * invalidates the user's other sessions.
- */
+/** Needs no users:write. The server signs out the user's other sessions. */
 export function useChangeOwnPassword(): ReturnType<typeof useMutation<void, Error, { currentPassword: string; newPassword: string }>> {
   return useMutation({
     mutationFn: async ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) => {
@@ -132,7 +111,6 @@ export function useChangeOwnPassword(): ReturnType<typeof useMutation<void, Erro
   });
 }
 
-/** Change a user's password. */
 export function useChangePassword(): ReturnType<typeof useMutation<void, Error, { id: string; newPassword: string }>> {
   return useMutation({
     mutationFn: async ({ id, newPassword }: { id: string; newPassword: string }) => {
@@ -144,7 +122,6 @@ export function useChangePassword(): ReturnType<typeof useMutation<void, Error, 
   });
 }
 
-/** Unlock a locked user account. */
 export function useUnlockUser(): ReturnType<typeof useMutation<void, Error, string>> {
   const queryClient = useQueryClient();
 

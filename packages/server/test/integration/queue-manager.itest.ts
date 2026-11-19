@@ -1,9 +1,5 @@
-// ===========================================
-// Queue Manager — real Postgres integration
-// ===========================================
-// Exercises the FOR UPDATE SKIP LOCKED claim path against a real database.
-// Unit tests mock db.execute and can't prove the SQL is valid Postgres or that
-// concurrent pollers never double-claim a queued message — this suite does.
+// Unit tests mock db.execute, so only this suite shows the SQL is valid Postgres
+// and that concurrent pollers never double-claim a queued message.
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -20,7 +16,6 @@ describeIntegration('QueueManager (real Postgres)', () => {
     await mods?.pool.end();
   });
 
-  /** Seed `count` QUEUED destination connector rows for a fresh channel. */
   async function seedQueued(channelId: string, metaDataId: number, count: number): Promise<void> {
     const { MessageService } = mods;
     for (let i = 0; i < count; i++) {
@@ -49,7 +44,6 @@ describeIntegration('QueueManager (real Postgres)', () => {
     expect(claimed).toHaveLength(3);
     expect(claimed.every((m) => m.status === 'PENDING')).toBe(true);
 
-    // Claimed rows are no longer QUEUED, so queue depth drops.
     const depthAfter = unwrap(await QueueManagerService.getQueueDepth(channelId, metaDataId));
     expect(depthAfter.depth).toBe(2);
   });
@@ -60,7 +54,6 @@ describeIntegration('QueueManager (real Postgres)', () => {
     const metaDataId = 1;
     await seedQueued(channelId, metaDataId, 10);
 
-    // Two pollers race for the same queue. SKIP LOCKED must partition the rows.
     const [batchA, batchB] = await Promise.all([
       MessageService.dequeue(channelId, metaDataId, 10),
       MessageService.dequeue(channelId, metaDataId, 10),
@@ -70,7 +63,6 @@ describeIntegration('QueueManager (real Postgres)', () => {
     const idsB = unwrap(batchB).map((m) => m.messageId);
     const all = [...idsA, ...idsB];
 
-    // No message claimed by both pollers, and no more than the 10 that existed.
     expect(new Set(all).size).toBe(all.length);
     expect(all.length).toBeLessThanOrEqual(10);
     expect(all.length).toBeGreaterThan(0);

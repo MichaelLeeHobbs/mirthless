@@ -1,6 +1,3 @@
-// ===========================================
-// Message Delete Helper Tests
-// ===========================================
 // An empty id batch would render `IN ()`, a SQL syntax error, so no batch may
 // ever be empty.
 

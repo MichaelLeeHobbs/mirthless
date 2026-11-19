@@ -1,6 +1,3 @@
-// ===========================================
-// Global Map Service — real Postgres integration
-// ===========================================
 // Checks the is_json column round trip that the engine relies on to give a
 // script back the same type it stored.
 

@@ -1,8 +1,4 @@
-// ===========================================
-// Error Boundary
-// ===========================================
-// Catches render errors and shows a fallback UI.
-// React requires class components for componentDidCatch.
+// A class because React has no hook for componentDidCatch.
 
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import Box from '@mui/material/Box';
@@ -11,7 +7,6 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import { errorMessage } from '../../lib/error-message.js';
 
-/** Shown when the caught error carries no message. */
 const ERROR_BOUNDARY_FALLBACK = 'An unexpected error occurred';
 
 interface ErrorBoundaryProps {

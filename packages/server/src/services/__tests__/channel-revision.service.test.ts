@@ -1,10 +1,5 @@
-// ===========================================
-// Channel Revision Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the DB
 vi.mock('../../lib/db.js', () => ({
   db: {
     insert: vi.fn(),
@@ -17,8 +12,6 @@ import { db } from '../../lib/db.js';
 
 const mockInsert = vi.mocked(db.insert);
 const mockSelect = vi.mocked(db.select);
-
-// ----- Helpers -----
 
 function makeRevisionRow(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -33,14 +26,10 @@ function makeRevisionRow(overrides?: Record<string, unknown>): Record<string, un
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   mockInsert.mockReset();
   mockSelect.mockReset();
 });
-
-// ----- saveRevision -----
 
 describe('ChannelRevisionService.saveRevision', () => {
   it('saves a revision and returns summary', async () => {
@@ -93,8 +82,6 @@ describe('ChannelRevisionService.saveRevision', () => {
   });
 });
 
-// ----- listRevisions -----
-
 describe('ChannelRevisionService.listRevisions', () => {
   it('returns revisions newest first', async () => {
     const rows = [
@@ -142,8 +129,6 @@ describe('ChannelRevisionService.listRevisions', () => {
     expect(result.ok).toBe(false);
   });
 });
-
-// ----- getRevision -----
 
 describe('ChannelRevisionService.getRevision', () => {
   it('returns revision detail for valid channel and revision', async () => {

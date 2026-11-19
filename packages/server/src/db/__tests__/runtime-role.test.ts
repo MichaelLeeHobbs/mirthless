@@ -1,8 +1,4 @@
-// ===========================================
-// Runtime database role: unit tests
-// ===========================================
 // The SQL itself runs against real Postgres in test/integration/runtime-role.itest.ts.
-// These cover the decisions around it with a fake pg client.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -19,7 +15,6 @@ const QUOTED: QuoteRow = {
   is_owner: false, exists: false, too_powerful: false, member_of: null,
 };
 
-/** A pg client that answers the role lookup with `rows`, records every statement and its values, and fails on `failOn`. */
 function fakeClient(rows: readonly object[], failOn?: string): { client: SqlClient; statements: string[]; values: unknown[] } {
   const statements: string[] = [];
   const values: unknown[] = [];
@@ -64,7 +59,6 @@ describe('provisionRuntimeRole', () => {
       expect(statements).toContain(`GRANT EXECUTE ON FUNCTION ${fn} TO galvanigraph_app`);
     }
     expect(statements.at(-3)).toMatch(/^DO \$pgboss\$/);
-    // The audit log's UPDATE and DELETE come back off it and every partition, after the table-wide grant.
     expect(statements.at(-2)).toMatch(/^DO \$audit\$[\s\S]*REVOKE UPDATE, DELETE ON TABLE public\.audit_log[\s\S]*pg_inherits/);
     expect(statements.at(-1)).toBe('COMMIT');
     expect(statements.some((s) => /TRUNCATE|REFERENCES|TRIGGER|CREATE ON SCHEMA/.test(s) && s.startsWith('GRANT'))).toBe(false);

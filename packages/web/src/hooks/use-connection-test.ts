@@ -1,8 +1,3 @@
-// ===========================================
-// Connection Test Hook
-// ===========================================
-// Mutation hook for testing connector connectivity.
-
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 
@@ -10,7 +5,7 @@ interface ConnectionTestInput {
   readonly connectorType: string;
   readonly mode: 'SOURCE' | 'DESTINATION';
   readonly properties: Record<string, unknown>;
-  /** The channel the test is for; required of a deployer scoped to some groups. */
+  /** Required of a deployer scoped to some groups. */
   readonly channelId?: string;
 }
 
@@ -20,7 +15,6 @@ interface ConnectionTestResult {
   readonly latencyMs: number;
 }
 
-/** Test a connector's connection settings. */
 export function useTestConnection(): ReturnType<typeof useMutation<ConnectionTestResult, Error, ConnectionTestInput>> {
   return useMutation({
     mutationFn: async (input: ConnectionTestInput) => {

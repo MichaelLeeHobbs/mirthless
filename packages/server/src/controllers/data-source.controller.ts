@@ -1,7 +1,4 @@
-// ===========================================
-// Data Source Controller
-// ===========================================
-// HTTP for data source CRUD + connection test. Passwords are never returned.
+// Passwords are never returned.
 
 import type { Request, Response } from 'express';
 import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvanigraph/core-models';

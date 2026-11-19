@@ -1,7 +1,3 @@
-// ===========================================
-// errorMessage Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { errorMessage } from '../error-message.js';
 

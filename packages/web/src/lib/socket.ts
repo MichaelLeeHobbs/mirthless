@@ -1,16 +1,9 @@
-// ===========================================
-// Socket.IO Client Singleton
-// ===========================================
-// Manages a single socket.io-client instance with JWT authentication.
-// Subscribes to auth store changes to update the token on refresh.
-
 import { io, type Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/auth.store.js';
 
 let socket: Socket | null = null;
 let unsubscribeAuth: (() => void) | null = null;
 
-/** Resolve the server URL for socket.io connection */
 function getServerUrl(): string {
   const envUrl: string | undefined = import.meta.env['VITE_API_URL'] as string | undefined;
   if (envUrl) {
@@ -19,10 +12,6 @@ function getServerUrl(): string {
   return window.location.origin;
 }
 
-/**
- * Create and connect the socket.io singleton with JWT auth.
- * If a socket already exists, disconnects it first.
- */
 export function connectSocket(token: string): Socket {
   if (socket) {
     disconnectSocket();
@@ -46,7 +35,6 @@ export function connectSocket(token: string): Socket {
     });
   }
 
-  // Subscribe to auth store token changes for transparent token refresh
   unsubscribeAuth = useAuthStore.subscribe((state, prevState) => {
     if (
       state.accessToken &&
@@ -54,9 +42,8 @@ export function connectSocket(token: string): Socket {
       socket
     ) {
       socket.auth = { token: state.accessToken };
-      // Reconnect with the new token. A socket the server refused (e.g. while a
-      // password change was required) is not connected and does not retry on its
-      // own, so connect it too.
+      // A socket the server refused (e.g. while a password change was required)
+      // does not retry on its own, so connect it too.
       if (socket.connected) {
         socket.disconnect().connect();
       } else {
@@ -68,7 +55,6 @@ export function connectSocket(token: string): Socket {
   return socket;
 }
 
-/** Disconnect and destroy the socket singleton */
 export function disconnectSocket(): void {
   if (unsubscribeAuth) {
     unsubscribeAuth();
@@ -81,7 +67,6 @@ export function disconnectSocket(): void {
   }
 }
 
-/** Get the current socket instance, or null if not connected */
 export function getSocket(): Socket | null {
   return socket;
 }

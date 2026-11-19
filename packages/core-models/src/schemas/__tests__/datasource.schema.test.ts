@@ -1,7 +1,3 @@
-// ===========================================
-// Data Source Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   createDataSourceSchema,
@@ -18,7 +14,7 @@ describe('createDataSourceSchema', () => {
     if (!result.success) return;
     expect(result.data.driver).toBe('postgres');
     expect(result.data.port).toBe(5432);
-    expect(result.data.readOnly).toBe(true); // read-only by default
+    expect(result.data.readOnly).toBe(true);
     expect(result.data.maxConnections).toBe(5);
     expect(result.data.statementTimeoutMs).toBe(30_000);
     expect(result.data.maxRows).toBe(10_000);

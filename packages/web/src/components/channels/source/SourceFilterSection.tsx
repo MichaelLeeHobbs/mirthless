@@ -1,8 +1,3 @@
-// ===========================================
-// Source Filter Section
-// ===========================================
-// Collapsible section for editing source filter rules within the Source tab.
-
 import { useCallback, type ReactNode } from 'react';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';

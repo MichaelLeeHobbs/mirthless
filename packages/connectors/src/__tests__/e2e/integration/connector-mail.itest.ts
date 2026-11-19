@@ -1,11 +1,3 @@
-// ===========================================
-// SMTP + IMAP connector cascade — real GreenMail server
-// ===========================================
-//   Channel A: TCP source → SMTP destination (sends an email).
-//   Channel B: Email (IMAP) source polls the inbox → transform → sink.
-// A message pushed into A is emailed, picked up over IMAP by B, and delivered.
-// Runs only when SMTP_TEST_HOST is set (docker compose --profile test up mail-test).
-
 import { it, expect, afterEach, vi } from 'vitest';
 import nodemailer from 'nodemailer';
 import {
@@ -29,11 +21,10 @@ afterEach(async () => {
 describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
   it('Channel A emails the message via SMTP; Channel B\'s IMAP source picks it up', async () => {
     const cfg = requireMail();
-    const address = cfg.address; // envelope email, e.g. mirth@example.com
+    const address = cfg.address;
 
     const sink = new CaptureDestination();
 
-    // Channel B: IMAP source polls INBOX for our subject.
     const channelB = await deployChannel({
       channelId: '00000000-0000-0000-0000-connmail000b',
       dataType: 'RAW',
@@ -55,7 +46,6 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
 
-    // Channel A: TCP source → SMTP destination emails ${msg}.
     const channelA = await deployChannel({
       channelId: '00000000-0000-0000-0000-connmail000a',
       dataType: 'RAW',
@@ -83,7 +73,6 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
 
     await sendMllp(TCP_PORT, 'MAILTEST-PAYLOAD');
 
-    // Wait for SMTP delivery + the 1s IMAP poll to pick it up.
     for (let i = 0; i < 300 && sink.received.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -99,8 +88,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
     await nodemailer.createTransport({ host: cfg.host, port: cfg.smtpPort, secure: false })
       .sendMail({ from: cfg.address, to: cfg.address, subject, text: 'RESTART-PAYLOAD' });
 
-    // MOVE to a folder that does not exist: dispatch succeeds, the post-action fails,
-    // and the email stays unread in INBOX.
+    // MOVE to a missing folder fails the post-action and leaves the email unread in INBOX.
     const deployReceiver = async (n: number, sink: CaptureDestination): Promise<DeployedChannel> => {
       const channel = await deployChannel({
         channelId: `00000000-0000-0000-0000-connmailrst${n}`,

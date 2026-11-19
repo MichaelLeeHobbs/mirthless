@@ -1,12 +1,6 @@
-// ===========================================
-// API Keys Schema
-// ===========================================
-// A key is its own principal (D-313, RBAC plan section 7): a users row of kind
-// 'api_key' that holds one assignment of a private key role, so the resolver,
-// the guards, the audit log and the access views treat it like any principal.
-// This row holds what only a key has: its secret's hash, who issued it, when it
-// ends, and its revocation. Enabling and disabling a key is its user's enabled
-// flag. Written only by services/api-key.service.ts.
+// A key is its own principal (D-313): a users row of kind 'api_key' holding one
+// assignment of a private key role. Enabling and disabling a key is that user's
+// enabled flag. Written only by services/api-key.service.ts.
 
 import { pgTable, uuid, varchar, text, timestamp, index } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
@@ -14,7 +8,6 @@ import { users } from './users.js';
 export const apiKeys = pgTable('api_keys', {
   /** The key id, the middle of gf_<keyId>_<secret>. */
   id: uuid('id').primaryKey().defaultRandom(),
-  /** The principal: a users row of kind 'api_key', one per key. */
   userId: uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description').notNull().default(''),

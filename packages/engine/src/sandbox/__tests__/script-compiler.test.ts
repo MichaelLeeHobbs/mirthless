@@ -1,7 +1,3 @@
-// ===========================================
-// Script Compiler Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   compileScript,
@@ -135,7 +131,6 @@ describe('compileScript', () => {
     expect(result1.ok).toBe(true);
     expect(result2.ok).toBe(true);
     if (!result1.ok || !result2.ok) return;
-    // Same reference from cache
     expect(result1.value).toBe(result2.value);
   });
 
@@ -165,7 +160,6 @@ describe('compileScript', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Source file name is embedded in the base64-encoded inline source map
     const match = result.value.code.match(/sourceMappingURL=data:[^,]+,(.+)/);
     expect(match).toBeTruthy();
     const decoded = Buffer.from(match![1]!, 'base64').toString('utf-8');
@@ -181,20 +175,16 @@ describe('compileScript', () => {
     expect(result1.ok).toBe(true);
     expect(result2.ok).toBe(true);
     if (!result1.ok || !result2.ok) return;
-    // After clearing, should be a new object
     expect(result1.value).not.toBe(result2.value);
-    // But same content
     expect(result1.value.code).toBe(result2.value.code);
   });
 });
 
-/** Unwrap a successful compile, failing the test otherwise. */
 function script(result: ReturnType<typeof compileFilterRulesToScript>): string | null {
   if (!result.ok) throw new Error(`expected ok, got: ${result.error.message}`);
   return result.value;
 }
 
-/** Run a generated filter script against a message and return its verdict. */
 async function runFilter(code: string | null, msg: unknown): Promise<unknown> {
   if (code === null) throw new Error('no script generated');
   const executor = new VmSandboxExecutor();

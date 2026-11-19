@@ -1,10 +1,3 @@
-// ===========================================
-// Data Pruner Service
-// ===========================================
-// Bulk deletion of old messages by channel pruning configuration.
-// Deletes messages older than the configured retention period.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, isNull, sql, type SQL } from 'drizzle-orm';
 import { db } from '../lib/db.js';
@@ -15,12 +8,8 @@ import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import { deleteMessagesByIds, DELETE_BATCH_SIZE } from './message-delete-helper.js';
 
-// ----- Constants -----
-
 const DEFAULT_MAX_AGE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-// ----- Response Types -----
 
 export interface PruneChannelResult {
   readonly deletedCount: number;
@@ -29,7 +18,6 @@ export interface PruneChannelResult {
 export interface PruneAllResult {
   readonly channelsPruned: number;
   readonly totalDeleted: number;
-  /** Channels whose prune failed. The others were still pruned. */
   readonly failedChannelIds: readonly string[];
 }
 
@@ -38,16 +26,13 @@ export interface PrunableChannelStats {
   readonly prunableCount: number;
 }
 
-// ----- Private Helpers -----
-
 function computeCutoffDate(maxAgeDays: number): Date {
   return new Date(Date.now() - maxAgeDays * MS_PER_DAY);
 }
 
 /**
- * Messages of a channel that are old enough AND finished. A message that is still
- * unprocessed, or has a destination waiting in the queue, is never pruned however
- * old it is: deleting it would silently lose a message that was never delivered.
+ * An unprocessed message, or one with a destination still queued, is never pruned however
+ * old: deleting it would silently lose a message that was never delivered.
  */
 function prunableWhere(channelId: string, cutoffDate: Date): SQL {
   return sql`
@@ -63,10 +48,7 @@ function prunableWhere(channelId: string, cutoffDate: Date): SQL {
   `;
 }
 
-/**
- * Delete finished messages older than cutoffDate for a channel, one bounded batch
- * at a time, so the work never depends on how many messages there are.
- */
+/** Bounded batches, so the work never depends on how many messages there are. */
 async function deleteOldMessages(
   channelId: string,
   cutoffDate: Date,
@@ -88,13 +70,7 @@ async function deleteOldMessages(
   }
 }
 
-// ----- Service -----
-
 export class DataPrunerService {
-  /**
-   * Prune messages older than maxAgeDays for a specific channel.
-   * Deletes all related records (content, connector messages, attachments, custom metadata).
-   */
   static async pruneChannel(
     channelId: string,
     maxAgeDays: number,
@@ -119,10 +95,6 @@ export class DataPrunerService {
     });
   }
 
-  /**
-   * Prune all channels that have pruning enabled.
-   * Uses each channel's configured maxAgeDays (or default 30 days).
-   */
   static async pruneAll(
     context?: AuditContext,
   ): Promise<Result<PruneAllResult>> {
@@ -175,13 +147,9 @@ export class DataPrunerService {
     });
   }
 
-  /**
-   * Get prunable message counts per channel.
-   * Returns counts of messages older than each channel's pruning threshold.
-   */
   static async getStatistics(scope: ChannelScope = ALL_CHANNELS): Promise<Result<ReadonlyArray<PrunableChannelStats>>> {
     return tryCatch(async () => {
-      // Only the channels inside `scope` (the reader's settings:read channels, D-310).
+      // `scope`: the reader's settings:read channels (D-310).
       const prunableChannels = await db
         .select({
           id: channels.id,

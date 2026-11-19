@@ -1,17 +1,9 @@
-// ===========================================
-// API keys (UI)
-// ===========================================
-// What the keys page and the user dialog work out from a key (D-313, D-322):
-// the keys a leaver issued, whether the signed-in admin could take one over,
-// the scope as words, and the issue request from the form.
-
 import { ALL_CHANNELS, type ApiKeyView, type CreateApiKeyInput, type GrantEntry } from '@galvanigraph/core-models';
 import { fromDateTimeLocal } from './collections.js';
 
 /**
- * Whether `grants` hold every permission `key` holds over the key's scope:
- * who may take a leaver's key over (D-322). The server also checks the
- * holder keeps it until the key ends, which the web cannot see.
+ * Who may take a leaver's key over (D-322). The server also checks the holder
+ * keeps these grants until the key ends, which the web cannot see.
  */
 export function coversKey(grants: readonly GrantEntry[] | undefined, key: Pick<ApiKeyView, 'permissions' | 'groupIds'>): boolean {
   if (grants === undefined) return false;
@@ -23,17 +15,14 @@ export function coversKey(grants: readonly GrantEntry[] | undefined, key: Pick<A
   });
 }
 
-/** The working keys `userId` issued: what disabling them stops. */
 export function liveKeysIssuedBy(keys: readonly ApiKeyView[], userId: string): readonly ApiKeyView[] {
   return keys.filter((k) => k.issuedBy.id === userId && k.status === 'active');
 }
 
-/** "All channels", or the group names joined. */
 export function keyScopeLabel(groupIds: readonly string[] | null, groupName: (id: string) => string): string {
   return groupIds === null ? 'All channels' : groupIds.map(groupName).join(', ');
 }
 
-/** The issue form as typed. */
 export interface KeyDraft {
   readonly name: string;
   readonly description: string;
@@ -50,7 +39,6 @@ export function needsReason(draft: Pick<KeyDraft, 'groupIds' | 'permissions'>): 
   return draft.groupIds === null && draft.permissions.some((p) => p === 'messages:read');
 }
 
-/** Why the form cannot be sent yet, or null when it can. */
 export function draftProblem(draft: KeyDraft, now: number): string | null {
   if (draft.name.trim() === '') return 'Name the key.';
   if (draft.permissions.length === 0) return 'Give the key at least one permission.';

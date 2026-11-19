@@ -1,10 +1,3 @@
-// ===========================================
-// Message Export Controller
-// ===========================================
-// Streams channel message metadata as CSV or JSON. This is a PHI read (the
-// export lists message metadata, and optionally raw content), so every export
-// is recorded as MESSAGES_EXPORTED in the audit log before the file is sent.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type MessageExportQuery } from '@galvanigraph/core-models';
 import { MessageExportService } from '../services/message-export.service.js';
@@ -14,7 +7,6 @@ import { csvHeaderLines, exportHeader, wrapJsonExport } from '../lib/export-head
 import logger from '../lib/logger.js';
 
 export class MessageExportController {
-  /** GET /channels/:id/messages/export — CSV/JSON metadata export. */
   static async exportMessages(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const query = req.query as unknown as MessageExportQuery;

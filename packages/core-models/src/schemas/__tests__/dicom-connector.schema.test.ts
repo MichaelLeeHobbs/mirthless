@@ -1,7 +1,3 @@
-// ===========================================
-// DICOM Connector Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   dicomSourcePropertiesSchema,
@@ -75,7 +71,6 @@ describe('dicomDestinationPropertiesSchema', () => {
     expect(dicomDestinationPropertiesSchema.parse(DEST_SAVED)).toEqual(DEST_SAVED);
   });
 
-  // An imported DICOM Sender keeps Mirth's host and port and deploys unedited.
   it('drops the Mirth keys the importer copies, keeping host and port', () => {
     expect(dicomDestinationPropertiesSchema.parse({ ...MIRTH_SENDER, host: 'pacs', port: '104' })).toEqual({
       host: 'pacs', port: 104, calledAETitle: 'PACS', callingAETitle: 'GALVANIGRAPH', mode: 'multiple', maxAssociations: 4,
@@ -89,7 +84,7 @@ describe('dicomDestinationPropertiesSchema', () => {
     expect(dicomDestinationPropertiesSchema.parse({ ...DEST_SAVED, template: '${message.encodedData}' })).toEqual({ ...DEST_SAVED, template: '${message.encodedData}' });
   });
 
-  // Mirth's DICOM `tls` is `notls` unless TLS is on; this connector has no TLS, so dropping it would send PHI in plaintext.
+  // Mirth's DICOM `tls` is `notls` unless TLS is on; this connector has no TLS.
   it.each([['aes'], ['3des'], ['without']])("refuses Mirth's tls = %s, naming the key, instead of sending in plaintext", (tls) => {
     const sender = dicomDestinationPropertiesSchema.safeParse({ ...MIRTH_SENDER, host: 'pacs', port: '104', tls });
     expect(sender.success ? [] : sender.error.issues.map((i) => i.path)).toEqual([['tls']]);

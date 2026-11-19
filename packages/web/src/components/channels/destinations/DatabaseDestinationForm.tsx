@@ -1,8 +1,3 @@
-// ===========================================
-// Database Destination Connector Form
-// ===========================================
-// Configuration form for database writer destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -33,7 +28,6 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Connection settings */}
       <Grid
         size={{
           xs: 12,
@@ -105,7 +99,6 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
         />
       </Grid>
 
-      {/* Right column — Query settings */}
       <Grid
         size={{
           xs: 12,

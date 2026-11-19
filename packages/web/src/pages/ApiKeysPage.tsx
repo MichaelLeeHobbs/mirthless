@@ -1,10 +1,3 @@
-// ===========================================
-// API Keys Page
-// ===========================================
-// Keys for machine callers (D-313, RBAC plan section 7): what each holds and
-// where, who issued it, when it ends and was last used. Holders of
-// api_keys:manage issue, replace, disable and revoke keys here.
-
 import { useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -49,7 +42,6 @@ import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { IssueKeyDialog } from '../components/api-keys/IssueKeyDialog.js';
 import { KeyTokenDialog } from '../components/api-keys/KeyTokenDialog.js';
 
-/** Columns a phone has no room for. */
 const WIDE_ONLY = { display: { xs: 'none', md: 'table-cell' } } as const;
 const MANAGE_REASON = 'Requires api_keys:manage permission';
 
@@ -87,7 +79,6 @@ function KeyRow({ apiKey: k, canManage, groupName, onToggle, replacing, onReplac
       <TableCell sx={WIDE_ONLY}>{formatTimestamp(k.expiresAt)}</TableCell>
       <TableCell sx={WIDE_ONLY}>{formatTimestamp(k.lastUsedAt, { empty: 'Never' })}</TableCell>
       <TableCell align="right">
-        {/* A column on a phone, so the row fits its width. */}
         <Stack direction={{ xs: 'column', md: 'row' }} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
         <Tooltip title={!canManage ? MANAGE_REASON : ended ? 'It cannot work again' : k.status === 'active' ? 'Disable' : 'Enable'}>
           <span>
@@ -115,11 +106,7 @@ function KeyRow({ apiKey: k, canManage, groupName, onToggle, replacing, onReplac
   );
 }
 
-/** Ask how a key is being replaced: a leak ends the old secret now, a planned change keeps it for 7 days. */
-/**
- * Ask how a key is being replaced. Only its own issuer may keep the old secret
- * for 7 days: anyone else may be replacing it because its owner is leaving (D-322).
- */
+/** Only the key's issuer may keep the old secret 7 days: anyone else may be replacing it because its owner is leaving (D-322). */
 function ReplaceDialog({ target, isOwner, onChoose, onCancel }: { readonly target: ApiKeyView | null; readonly isOwner: boolean; readonly onChoose: (mode: 'leak' | 'planned') => void; readonly onCancel: () => void }): ReactNode {
   return (
     <Dialog open={target !== null} onClose={onCancel} maxWidth="sm" fullWidth>

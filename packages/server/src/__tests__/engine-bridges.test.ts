@@ -1,14 +1,7 @@
-// ===========================================
-// Engine IO Bridge Wiring Tests
-// ===========================================
-// Host-side behaviour of the getResource/httpFetch/routeMessage bridges wired
-// into EngineManager. The sandbox-side mechanism is covered separately in
-// packages/engine .../bridge-io-functions.test.ts.
+// The sandbox side is tested in packages/engine/src/sandbox/__tests__/bridge-io-functions.test.ts.
 
 import { describe, it, expect, vi } from 'vitest';
 import { EngineManager, type DeployedChannel } from '../engine.js';
-
-// ----- routeMessage -----
 
 function fakeDeployed(name: string, state = 'STARTED'): { deployed: DeployedChannel; processMessage: ReturnType<typeof vi.fn> } {
   const processMessage = vi.fn().mockResolvedValue({ ok: true, value: { messageId: 42 } });
@@ -21,7 +14,7 @@ function fakeDeployed(name: string, state = 'STARTED'): { deployed: DeployedChan
   return { deployed, processMessage };
 }
 
-/** Access the private runtimes map for test setup. */
+/** The private runtimes map, for test setup. */
 function internals(engine: EngineManager): { runtimes: Map<string, DeployedChannel> } {
   return engine as unknown as { runtimes: Map<string, DeployedChannel> };
 }
@@ -77,7 +70,6 @@ describe('EngineManager.routeMessage', () => {
     let hops = 0;
     const processMessage = vi.fn(async () => {
       hops++;
-      // Each hop's script routes the message on again: a loop A -> A -> A ...
       const next = await engine.routeMessage('Loop', 'x');
       if (!next.ok) throw new Error(next.error.message);
       return { ok: true, value: { messageId: hops }, error: null };

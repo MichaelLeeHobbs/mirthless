@@ -1,7 +1,3 @@
-// ===========================================
-// Message Reprocess Controller Tests — bulk reprocess + resend
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 

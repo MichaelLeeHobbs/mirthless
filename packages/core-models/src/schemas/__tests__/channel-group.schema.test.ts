@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Group Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { setChannelGroupsSchema, SET_CHANNEL_GROUPS_MAX } from '../channel-group.schema.js';
 

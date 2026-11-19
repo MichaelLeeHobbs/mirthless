@@ -1,9 +1,3 @@
-// ===========================================
-// Engine Manager
-// ===========================================
-// Singleton that manages all channel runtimes.
-// Bridges the Express server to the engine package.
-
 import {
   ChannelRuntime,
   VmSandboxExecutor,
@@ -75,8 +69,6 @@ import { emitAuditEvent, emitEvent } from './lib/event-emitter.js';
 import { emitToChannelAudience } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
-// ----- Types -----
-
 /** The maps a channel's own scripts (deploy, undeploy, JavaScript connectors) share with its pipeline. */
 interface ChannelMaps {
   readonly gcm: GlobalChannelMap;
@@ -121,12 +113,9 @@ export interface SourceDispatchOutcome {
   readonly response?: string;
 }
 
-/** Response modes that answer the sender once the source has accepted the message. */
 const RESPOND_BEFORE_DESTINATIONS: ReadonlySet<string> = new Set(['AUTO_BEFORE', 'AUTO_AFTER_TRANSFORMER']);
 
 /**
- * Map the pipeline's outcome to what the source connector tells the sender.
- *
  * The channel's response mode decides whether a destination failure counts:
  * - AUTO_BEFORE / AUTO_AFTER_TRANSFORMER: no. The message was accepted and
  *   recorded, so the sender gets a success and does not resend (a resend would
@@ -150,7 +139,6 @@ export function toDispatchStatus(
   return DISPATCH_STATUS.ERROR;
 }
 
-/** What a deploy, JavaScript Reader or JavaScript Writer script runs on. */
 interface ChannelScriptInput {
   /** The raw text (`rawData`). */
   readonly content: string;
@@ -159,10 +147,7 @@ interface ChannelScriptInput {
   readonly channelMap?: Readonly<Record<string, unknown>>;
 }
 
-/**
- * Content parsed for its data type, as the pipeline gives it to scripts; the
- * raw text when it does not parse (the pipeline falls back the same way).
- */
+/** The raw text when it does not parse, as the pipeline falls back. */
 export function parsedOrRaw(content: string, dataType: string, options?: DataTypeOptions): unknown {
   try {
     return parseForSandbox(content, dataType, options);
@@ -172,9 +157,8 @@ export function parsedOrRaw(content: string, dataType: string, options?: DataTyp
 }
 
 /**
- * The data type settings a channel reads its messages with, from its source
- * transformer. Throws a ServiceError on settings that do not validate, so the
- * channel refuses to deploy instead of splitting rows the wrong way.
+ * Throws a ServiceError on settings that do not validate, so the channel
+ * refuses to deploy instead of splitting rows the wrong way.
  */
 export function dataTypeOptionsFor(channel: ChannelDetail): DataTypeOptions {
   if (channel.inboundDataType !== 'DELIMITED') return {};
@@ -212,7 +196,6 @@ export async function processBatch(
   return failure ?? outcome!;
 }
 
-/** Where a channel's response to the sender comes from, by its response mode. */
 export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
   if (responseMode === 'POSTPROCESSOR') return { kind: 'POSTPROCESSOR' };
   if (responseMode === 'DESTINATION' && responseConnectorName) {
@@ -221,25 +204,19 @@ export function toResponseSource(responseMode: string, responseConnectorName: st
   return undefined;
 }
 
-// ----- Storage Policy -----
-
-/** Per-channel storage configuration captured from channel settings. */
 export interface StorageConfig {
   readonly messageStorageMode: MessageStorageMode;
   readonly removeContentOnCompletion: boolean;
   readonly removeAttachmentsOnCompletion: boolean;
-  /** When true, encrypt content at rest (AES-256-GCM) before persisting. */
   readonly encryptData: boolean;
 }
 
 const OK_VOID = { ok: true as const, value: undefined, error: null } as Result<void>;
 
-/** Build a failure Result carrying the given error. */
 function fail<T>(error: Result<T>['error'] & object): Result<T> {
   return { ok: false, value: null, error } as Result<T>;
 }
 
-/** Error content types (always stored except in METADATA/DISABLED). */
 const ERROR_CONTENT_TYPES: ReadonlySet<number> = new Set([
   CONTENT_TYPE.ERROR, CONTENT_TYPE.RESPONSE_ERROR, CONTENT_TYPE.PROCESSING_ERROR,
 ]);
@@ -265,15 +242,10 @@ const RAW_CONTENT_TYPES: ReadonlySet<number> = new Set([
   CONTENT_TYPE.RAW, ...ERROR_CONTENT_TYPES,
 ]);
 
-/**
- * Determines whether a given content type should be stored based on the storage mode.
- * Error content types are stored in every mode except METADATA/DISABLED.
- */
 export function shouldStoreContent(mode: MessageStorageMode, contentType: number): boolean {
   if (mode === MESSAGE_STORAGE_MODE.DEVELOPMENT) return true;
   if (mode === MESSAGE_STORAGE_MODE.PRODUCTION) return PRODUCTION_CONTENT_TYPES.has(contentType);
   if (mode === MESSAGE_STORAGE_MODE.RAW) return RAW_CONTENT_TYPES.has(contentType);
-  // METADATA, DISABLED: no content stored
   return false;
 }
 
@@ -287,18 +259,10 @@ export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
   return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
 }
 
-// ----- Message Store Adapter -----
-
-/**
- * Adapts MessageService (static methods) to the MessageStore interface.
- * When a StorageConfig is provided, filters storeContent calls by storage mode
- * and handles content/attachment cleanup on completion.
- */
 export function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
   const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
   const encrypt = config?.encryptData ?? false;
   const removesOnCompletion = Boolean(config?.removeContentOnCompletion) || Boolean(config?.removeAttachmentsOnCompletion);
-  /** Apply the channel's remove-on-completion settings to one finished message. */
   const removeContent = async (channelId: string, messageId: number): Promise<Result<void>> => {
     const deletes: Promise<Result<void>>[] = [];
     if (config?.removeContentOnCompletion) deletes.push(MessageService.deleteContent(channelId, messageId));
@@ -326,11 +290,10 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       }
       return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
     },
-    // markProcessed is used on both success and error/recovery paths, so it must
-    // NOT delete content (error content is needed for investigation, and a message
-    // with a still-queued destination must keep its content to deliver). Content
-    // removal happens via removeCompletedContent, called by the pipeline only on
-    // full successful completion.
+    // markProcessed runs on success and on error/recovery paths, so it must NOT
+    // delete content: error content is needed for investigation, and a still-queued
+    // destination needs its content to deliver. The pipeline calls
+    // removeCompletedContent only on full successful completion.
     markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
     removeCompletedContent: (channelId, messageId) => removeContent(channelId, messageId),
     // A queued delivery finished. The consumer knows one destination, so check
@@ -359,14 +322,12 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
     storeCustomMetadata: (channelId, messageId, metaDataId, metadata) =>
       MessageService.storeCustomMetadata(channelId, messageId, metaDataId, metadata),
     initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId) => {
-      // Filter content rows by storage policy before sending to batch
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
       if (!encrypt) {
         return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId, false);
       }
-      // Encrypt each surviving content row before it is persisted. Fail loud on
-      // any encryption error so the whole message init fails rather than storing
-      // PHI in plaintext under an encryptData channel.
+      // Fail loud: the whole message init fails rather than storing PHI in
+      // plaintext under an encryptData channel.
       const encRows: { metaDataId: number; contentType: number; content: string; dataType: string }[] = [];
       for (const r of filtered) {
         const enc = encryptContent(r.content);
@@ -382,9 +343,6 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
   };
 }
 
-// ----- Sandbox bridges -----
-
-/** Shape a service record for the sandbox bridge (dates as ISO strings). */
 function toBridgeRecord(v: CollectionRecordResult): {
   id: string; fields: Record<string, string>; payload: string | null; expireAt: string | null; createdAt: string;
 } {
@@ -397,11 +355,7 @@ function toBridgeRecord(v: CollectionRecordResult): {
   };
 }
 
-/**
- * getCollection() script bridge: store/find/update/delete against CollectionService. Inputs
- * from user scripts are Zod-validated at this boundary (fail loud on bad input);
- * service errors surface as thrown errors inside the script.
- */
+/** Validates script input with Zod; service errors are thrown into the script. */
 export function createCollectionBridge(): NonNullable<BridgeDependencies['collections']> {
   return {
     store: async (name, fields, payload, options) => {
@@ -435,7 +389,6 @@ export function createCollectionBridge(): NonNullable<BridgeDependencies['collec
   };
 }
 
-/** getResource() script bridge: read a resource's content by name (null if absent). */
 export function createResourceBridge(): NonNullable<BridgeDependencies['getResource']> {
   return async (name) => {
     const result = await ResourceService.getByName(name);
@@ -444,7 +397,6 @@ export function createResourceBridge(): NonNullable<BridgeDependencies['getResou
   };
 }
 
-/** dbQuery() script bridge: parameterized query against a named Data Source (read-only by default). */
 function createDbQueryBridge(): NonNullable<BridgeDependencies['dbQuery']> {
   return async (dataSourceName, sql, params) => {
     const result = await DataSourceService.runQuery(dataSourceName, sql, params);
@@ -454,31 +406,25 @@ function createDbQueryBridge(): NonNullable<BridgeDependencies['dbQuery']> {
 }
 
 /**
- * httpFetch() script bridge. The transport (safeHttpFetch) re-checks every
- * resolved address, never follows redirects and caps the response size, so a
- * DNS name or redirect cannot reach a blocked address the hostname check missed.
+ * safeHttpFetch re-checks every resolved address, never follows redirects and
+ * caps the response size, so a DNS name or redirect cannot reach a blocked
+ * address the hostname check missed.
  */
 export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFetch']> {
   return (url, options) => safeHttpFetch(url, options, config.SCRIPT_HTTP_ALLOWED_HOSTS);
 }
 
-// ----- Engine Manager -----
-
-/** Max routeMessage hops in a single message's processing chain (loop guard). */
+/** Loop guard: routeMessage hops per message chain. */
 const MAX_ROUTE_DEPTH = 25;
 
-/** routeMessage hop depth of the message chain currently executing. */
 const routeDepthStore = new AsyncLocalStorage<number>();
 
-/** How often deployed channels are checked for NO_MESSAGES alerts. */
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
 const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destination ran. Reprocess the message to deliver it.';
 
 type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
-/** Connector types whose certificate-id references are resolved to PEM before the connector is built. */
-/** A source's report that it stopped itself, with the deployment it came from. */
 interface SourceFailureReport {
   readonly channelId: string;
   readonly runtime: ChannelRuntime;
@@ -493,11 +439,9 @@ export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
   private readonly serverId: string;
-  /** Periodic NO_MESSAGES alert check; started on first deploy, cleared on dispose. */
   private silenceTimer: ReturnType<typeof setInterval> | undefined;
-  /** The one global map every channel shares; loaded on first deploy, flushed on dispose. */
+  /** Shared by every channel. */
   private globalMap: Promise<GlobalMapProxy> | undefined;
-  /** Channels with a deploy in progress. */
   private readonly deploying = new Set<string>();
 
   constructor(serverId?: string) {
@@ -512,7 +456,6 @@ export class EngineManager {
     this.serverId = serverId ?? 'server-01';
   }
 
-  /** Resolve a deployed channel's id by its name (in-memory; deployed channels only). */
   private resolveChannelIdByName(name: string): string | undefined {
     for (const [id, deployed] of this.runtimes) {
       if (deployed.config.name === name) return id;
@@ -549,7 +492,6 @@ export class EngineManager {
     });
   }
 
-  /** routeMessage() script bridge: cross-channel routing with a loop guard. */
   private createRouteMessageBridge(): NonNullable<BridgeDependencies['routeMessage']> {
     return async (channelName, rawData) => {
       const result = await this.routeMessage(channelName, rawData);
@@ -560,7 +502,6 @@ export class EngineManager {
     };
   }
 
-  /** Deploy a channel from its stored configuration. */
   async deploy(channel: ChannelDetail): Promise<void> {
     if (this.runtimes.has(channel.id)) {
       throw new Error(`Channel ${channel.id} is already deployed`);
@@ -607,7 +548,6 @@ export class EngineManager {
     const runtime = new ChannelRuntime();
     const gcm = new GlobalChannelMap();
 
-    // Create per-channel message store adapter with storage policy
     const store = createMessageStoreAdapter({
       messageStorageMode: storageMode,
       removeContentOnCompletion: channel.removeContentOnCompletion,
@@ -615,9 +555,8 @@ export class EngineManager {
       encryptData: channel.encryptData,
     });
 
-    // Create source connector. For HTTP, Kafka and AMQP, resolve cert-ID references
-    // to PEM material server-side (connectors have no DB access). Fail loud so a
-    // channel never deploys silently without the TLS it was configured for.
+    // Cert-ID references resolve to PEM here, since connectors have no DB access.
+    // Fail loud: a channel never deploys without the TLS it was configured for.
     let sourceProperties: Record<string, unknown> = channel.sourceConnectorProperties;
     const resolveSourceTls = SOURCE_TLS_RESOLVERS[channel.sourceConnectorType];
     if (resolveSourceTls) {
@@ -634,7 +573,6 @@ export class EngineManager {
       connectorEnv,
     ) as SourceConnectorRuntime;
 
-    // Create destination connectors (HTTP, Kafka and AMQP resolve cert-IDs too).
     const destinations = new Map<number, DestinationConnectorRuntime>();
     for (const dest of channel.destinations) {
       let destProperties: Record<string, unknown> = dest.properties;
@@ -654,7 +592,6 @@ export class EngineManager {
       destinations.set(dest.metaDataId, connector);
     }
 
-    // Load code templates, global scripts, alerts, filter/transformer data, configMap, and globalMap in parallel
     const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
       CodeTemplateService.listTemplatesForChannel(channel.id),
       GlobalScriptService.getAll(),
@@ -674,17 +611,14 @@ export class EngineManager {
     const templates: ReadonlyArray<CodeTemplateData> = templatesResult.value
       .map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
 
-    // Compile all channel scripts (source + destinations + global)
     const scripts = await this.compileChannelScripts(
       channel, templates, globalScriptsResult.value, filterTransformerData,
     );
 
-    // Build destination configs with compiled scripts
     const destConfigs: DestinationConfig[] = await this.buildDestinationConfigs(
       channel, templates, filterTransformerData,
     );
 
-    // Create email sender callback for alert actions
     const emailSender = async (to: readonly string[], subject: string, body: string): Promise<void> => {
       const result = await EmailService.sendMail(to, subject, body);
       if (!result.ok) {
@@ -697,8 +631,6 @@ export class EngineManager {
       });
     };
 
-    // Create alert manager and load alerts for this channel
-    // CHANNEL alert action: hand the alert text to another deployed channel.
     const channelSender = async (targetChannelId: string, content: string): Promise<void> => {
       if (targetChannelId === channel.id) {
         throw new Error('An alert cannot be sent into the channel it is about');
@@ -729,7 +661,6 @@ export class EngineManager {
     // arrives after an undeploy and redeploy must not stop the new one.
     source.setFatalHandler?.((error) => { void this.stopAfterSourceFailure({ channelId: channel.id, runtime, error, raiseAlert }); });
 
-    // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
     for (const entry of configMapResult.value) {
       configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
@@ -750,7 +681,6 @@ export class EngineManager {
       await this.runDeployScript(scripts.deploy, channel, maps, 'deploy');
     }
 
-    // Build pipeline config
     const pipelineConfig: PipelineConfig = {
       channelId: channel.id,
       serverId: this.serverId,
@@ -782,7 +712,6 @@ export class EngineManager {
         : undefined,
     };
 
-    // Build send function
     const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId, variables) => {
       const connector = destinations.get(metaDataId);
       if (!connector) {
@@ -796,7 +725,6 @@ export class EngineManager {
       }, AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]));
     };
 
-    // Create queue consumers for queued destinations
     const queueConsumers: QueueConsumer[] = [];
     for (const dest of channel.destinations) {
       if (dest.queueMode === 'NEVER') continue;
@@ -814,7 +742,6 @@ export class EngineManager {
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
 
-    // Create message processor
     const processor = new MessageProcessor(
       this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
@@ -832,11 +759,11 @@ export class EngineManager {
       throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: batch processing is only supported for HL7V2, not ${channel.inboundDataType}`);
     }
 
-    // Build the processMessage callback (used by both source connector and sendMessage API)
+    // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
     const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
       activity.lastAt = Date.now();
-      // Extract correlationId from sourceMap if present (channel-to-channel routing)
+      // Channel-to-channel routing sets it.
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
         : undefined;
@@ -857,7 +784,6 @@ export class EngineManager {
       return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
     };
 
-    // Build runtime config
     const runtimeConfig: ChannelRuntimeConfig = {
       channelId: channel.id,
       source,
@@ -906,11 +832,9 @@ export class EngineManager {
   }
 
   /**
-   * Fail loudly after the source stopped itself on an error it cannot get past:
-   * record an ERROR event, raise a SOURCE_CONNECTOR alert and stop the channel
-   * (queue consumers too, as a stop from the UI does), so the dashboard shows
-   * it stopped. The message that failed is still on its queue or topic; an
-   * operator fixes the cause and starts the channel again.
+   * Stops the channel (queue consumers too, as a stop from the UI does) so the
+   * dashboard shows it stopped. The failed message stays on its queue or topic
+   * until an operator fixes the cause and starts the channel again.
    */
   private async stopAfterSourceFailure(report: SourceFailureReport): Promise<void> {
     const { channelId, runtime, error, raiseAlert } = report;
@@ -938,9 +862,8 @@ export class EngineManager {
   }
 
   /**
-   * Fire NO_MESSAGES alerts for started channels that have gone quiet. A channel
-   * that is not STARTED restarts its silence clock, so stopping it never alerts
-   * and a restart gets a full window before the first alert.
+   * A channel that is not STARTED restarts its silence clock, so stopping it
+   * never alerts and a restart gets a full window before the first alert.
    */
   async checkSilentChannels(now: number = Date.now()): Promise<void> {
     for (const deployed of this.runtimes.values()) {
@@ -956,22 +879,15 @@ export class EngineManager {
     }
   }
 
-  /** Get a deployed channel runtime. */
   getRuntime(channelId: string): DeployedChannel | undefined {
     return this.runtimes.get(channelId);
   }
 
-  /** Get all deployed channel runtimes. */
   getAll(): ReadonlyMap<string, DeployedChannel> {
     return this.runtimes;
   }
 
-  /**
-   * Send a raw message to a deployed, started channel. Fails with a ServiceError:
-   * NOT_FOUND when the channel is not deployed, CONFLICT when it is not STARTED
-   * or could not process the message. The send-message API maps these codes to
-   * HTTP statuses.
-   */
+  /** The send-message API maps these ServiceError codes to HTTP statuses. */
   async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return tryCatch(async () => {
       const deployed = this.runtimes.get(channelId);
@@ -990,7 +906,6 @@ export class EngineManager {
     });
   }
 
-  /** Undeploy a channel and remove it from management. */
   async undeploy(channelId: string): Promise<void> {
     const deployed = this.runtimes.get(channelId);
     if (!deployed) {
@@ -1002,10 +917,9 @@ export class EngineManager {
     // destination was stopped underneath it.
     await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
-    // Stop the running channel first — runtime.undeploy() requires STOPPED, and
-    // shutdown/undeploy must never throw on a STARTED channel (that would sever
-    // in-flight messages and skip the rest of the teardown). Stopping first
-    // drains the source connector cleanly. Idempotent for already-STOPPED channels.
+    // Stop first: runtime.undeploy() requires STOPPED, and undeploy must never
+    // throw on a STARTED channel (that would sever in-flight messages and skip
+    // the rest of the teardown).
     const state = deployed.runtime.getState();
     if (state === 'STARTED' || state === 'PAUSED') {
       const stopResult = await deployed.runtime.stop();
@@ -1015,7 +929,6 @@ export class EngineManager {
       }
     }
 
-    // Execute channel undeploy script (before cleanup)
     // A failing undeploy script is logged and the teardown carries on: refusing
     // to undeploy would leave a channel nobody can stop.
     const maps: ChannelMaps = { gcm: deployed.globalChannelMap, globalMap: deployed.globalMapProxy, configMap: deployed.configMap };
@@ -1169,7 +1082,6 @@ export class EngineManager {
     }
   }
 
-  /** Compile a script with optional template prepending. */
   private async compileWithTemplates(
     source: string,
     context: string,
@@ -1186,7 +1098,6 @@ export class EngineManager {
     return result.value;
   }
 
-  /** Compile channel scripts from stored configuration + DB filter/transformer data + global scripts. */
   private async compileChannelScripts(
     channel: ChannelDetail,
     templates: ReadonlyArray<CodeTemplateData>,
@@ -1195,7 +1106,6 @@ export class EngineManager {
   ): Promise<ChannelScripts> {
     const scripts: Record<string, CompiledScript | undefined> = {};
 
-    // Channel preprocessor/postprocessor/deploy/undeploy from channel_scripts table
     for (const script of channel.scripts) {
       if (!script.script) continue;
       const key = script.scriptType.toLowerCase();
@@ -1206,7 +1116,6 @@ export class EngineManager {
       }
     }
 
-    // Source filter from filter rules (connectorId IS NULL)
     const sourceFilterScript = unwrapGenerated(compileFilterRulesToScript(ftData.sourceFilterRules), `${channel.name} source filter`);
     if (sourceFilterScript) {
       scripts['sourceFilter'] = await this.compileWithTemplates(
@@ -1214,7 +1123,6 @@ export class EngineManager {
       );
     }
 
-    // Source transformer from transformer steps (connectorId IS NULL)
     const sourceTransformerScript = unwrapGenerated(compileTransformerStepsToScript(ftData.sourceTransformerSteps), `${channel.name} source transformer`);
     if (sourceTransformerScript) {
       scripts['sourceTransformer'] = await this.compileWithTemplates(
@@ -1222,7 +1130,6 @@ export class EngineManager {
       );
     }
 
-    // Global preprocessor/postprocessor/deploy/undeploy
     if (gs.preprocessor) {
       scripts['globalPreprocessor'] = await this.compileWithTemplates(
         gs.preprocessor, 'globalPreprocessor', templates, 'global/preprocessor.ts',
@@ -1244,7 +1151,6 @@ export class EngineManager {
       );
     }
 
-    // Remove undefined entries
     const result: Record<string, CompiledScript> = {};
     for (const [key, value] of Object.entries(scripts)) {
       if (value) result[key] = value;
@@ -1252,7 +1158,6 @@ export class EngineManager {
     return result as ChannelScripts;
   }
 
-  /** Build destination configs with compiled filter/transformer scripts. */
   private async buildDestinationConfigs(
     channel: ChannelDetail,
     templates: ReadonlyArray<CodeTemplateData>,
@@ -1263,7 +1168,6 @@ export class EngineManager {
     for (const d of channel.destinations) {
       const destScripts: Record<string, CompiledScript | undefined> = {};
 
-      // Destination filter
       const destFilterRules = ftData.destinationFilterRules.get(d.id);
       if (destFilterRules) {
         const filterScript = unwrapGenerated(compileFilterRulesToScript(destFilterRules), `${channel.name}/${d.name} filter`);
@@ -1274,7 +1178,6 @@ export class EngineManager {
         }
       }
 
-      // Destination transformer
       const destTransformerSteps = ftData.destinationTransformerSteps.get(d.id);
       if (destTransformerSteps) {
         const txScript = unwrapGenerated(compileTransformerStepsToScript(destTransformerSteps), `${channel.name}/${d.name} transformer`);
@@ -1285,14 +1188,12 @@ export class EngineManager {
         }
       }
 
-      // Destination response transformer (runs on the send response)
       if (d.responseTransformer && d.responseTransformer.trim().length > 0) {
         destScripts['responseTransformer'] = await this.compileWithTemplates(
           d.responseTransformer, 'destinationResponseTransformer', templates, `${channel.name}/${d.name}/response-transformer.ts`,
         );
       }
 
-      // Remove undefined entries
       const cleanScripts: Record<string, CompiledScript> = {};
       for (const [key, value] of Object.entries(destScripts)) {
         if (value) cleanScripts[key] = value;
@@ -1314,7 +1215,6 @@ export class EngineManager {
     return configs;
   }
 
-  /** Wire JavaScript source connector ScriptRunner if applicable. Compiles script once at deploy time. */
   private async wireJavaScriptSource(
     channel: ChannelDetail,
     source: SourceConnectorRuntime,
@@ -1332,7 +1232,6 @@ export class EngineManager {
     });
   }
 
-  /** Wire JavaScript destination connector ScriptRunners if applicable. Compiles scripts once at deploy time. */
   private async wireJavaScriptDestinations(
     channel: ChannelDetail,
     destinations: Map<number, DestinationConnectorRuntime>,
@@ -1363,10 +1262,7 @@ export class EngineManager {
     }
   }
 
-  /**
-   * The global map shared by every channel. Loaded from the database once; a
-   * failed load is not cached, so the next deploy tries again.
-   */
+  /** A failed load is not cached, so the next deploy tries again. */
   private async sharedGlobalMap(channelId: string): Promise<GlobalMapProxy> {
     this.globalMap ??= loadGlobalMap();
     const pending = this.globalMap;
@@ -1379,9 +1275,8 @@ export class EngineManager {
   }
 
   /**
-   * Run one of a channel's own scripts (deploy, undeploy, JavaScript connector)
-   * with the channel's maps. Changes the script makes to the global and global
-   * channel maps are kept, key by key, as they are for pipeline scripts.
+   * Changes the script makes to the global and global channel maps are kept,
+   * key by key, as they are for pipeline scripts.
    */
   private async runChannelScript(
     script: CompiledScript,
@@ -1407,7 +1302,6 @@ export class EngineManager {
     return result;
   }
 
-  /** Run a deploy or undeploy script. Throws when the script fails. */
   private async runDeployScript(script: CompiledScript, channel: ChannelDetail, maps: ChannelMaps, name: string): Promise<void> {
     const result = await this.runChannelScript(script, channel, maps, { content: '' }, {});
     if (!result.ok) {
@@ -1416,8 +1310,7 @@ export class EngineManager {
   }
 
   /**
-   * Compile every script a channel would deploy with, without deploying it.
-   * Throws the same error deploy would. Used before a running channel is
+   * Throws the same error deploy would. Runs before a running channel is
    * stopped for a redeploy, so a script that does not compile cannot take a
    * working channel offline.
    */
@@ -1444,7 +1337,6 @@ export class EngineManager {
     }
   }
 
-  /** Load alerts applicable to a channel from the database. */
   private async loadAlertsForChannel(channelId: string): Promise<readonly LoadedAlert[]> {
     const listResult = await AlertService.list({ page: 1, pageSize: 1000 });
     if (!listResult.ok) throw deployLoadError(channelId, 'alerts', listResult.error);
@@ -1452,7 +1344,6 @@ export class EngineManager {
     const enabledAlerts = listResult.value.data.filter((a) => a.enabled);
     if (enabledAlerts.length === 0) return [];
 
-    // Batch fetch all enabled alert details in a single query
     const ids = enabledAlerts.map((a) => a.id);
     const detailsResult = await AlertService.getByIds(ids);
     if (!detailsResult.ok) throw deployLoadError(channelId, 'alerts', detailsResult.error);
@@ -1460,7 +1351,6 @@ export class EngineManager {
     return this.filterAlertsForChannel(detailsResult.value, channelId);
   }
 
-  /** Filter alert details to those applicable to a specific channel. */
   private filterAlertsForChannel(
     details: readonly import('./services/alert.service.js').AlertDetail[],
     channelId: string,
@@ -1489,7 +1379,6 @@ export class EngineManager {
     return loaded;
   }
 
-  /** Load filter rules and transformer steps for a channel, grouped by connector. */
   private async loadFilterTransformerData(channelId: string): Promise<FilterTransformerData> {
     const [filterRows, transformerRows] = await Promise.all([
       db
@@ -1576,7 +1465,6 @@ export class EngineManager {
     return { sourceFilterRules, destinationFilterRules, sourceTransformerSteps, destinationTransformerSteps };
   }
 
-  /** Dispose all resources. */
   async dispose(): Promise<void> {
     if (this.silenceTimer) clearInterval(this.silenceTimer);
     this.silenceTimer = undefined;
@@ -1589,8 +1477,6 @@ export class EngineManager {
   }
 }
 
-// ----- Internal Types -----
-
 interface FilterRuleRow {
   readonly enabled: boolean;
   readonly operator: string;
@@ -1601,7 +1487,6 @@ interface FilterRuleRow {
   readonly values: ReadonlyArray<string> | null;
 }
 
-/** The four global scripts, as GlobalScriptService returns them. */
 interface GlobalScripts {
   readonly preprocessor: string;
   readonly postprocessor: string;
@@ -1609,12 +1494,10 @@ interface GlobalScripts {
   readonly undeploy: string;
 }
 
-/** Error for configuration a deploy depends on and could not load. */
 function deployLoadError(channelId: string, what: string, cause: Error): Error {
   return new Error(`Channel ${channelId} cannot deploy: failed to load ${what}: ${cause.message}`);
 }
 
-/** Unwrap a generated filter/transformer script, refusing to deploy when a rule or step cannot run. */
 function unwrapGenerated(result: Result<string | null>, where: string): string | null {
   if (!result.ok) throw new ServiceError('INVALID_INPUT', `${where}: ${result.error.message}`);
   return result.value;
@@ -1633,7 +1516,6 @@ interface FilterTransformerData {
   readonly destinationTransformerSteps: ReadonlyMap<string, ReadonlyArray<TransformerStepRow>>;
 }
 
-/** Load the global map and keep it in step with edits made through the API. */
 async function loadGlobalMap(): Promise<GlobalMapProxy> {
   const rows = await GlobalMapService.list();
   if (!rows.ok) throw rows.error;
@@ -1660,11 +1542,8 @@ async function loadGlobalMap(): Promise<GlobalMapProxy> {
   return proxy;
 }
 
-// ----- Singleton -----
-
 let engineInstance: EngineManager | null = null;
 
-/** Get or create the engine manager singleton. */
 export function getEngine(): EngineManager {
   if (!engineInstance) {
     engineInstance = new EngineManager();

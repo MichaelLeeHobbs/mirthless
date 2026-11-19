@@ -1,11 +1,6 @@
-// ===========================================
-// Map Diff
-// ===========================================
-// Works out which keys a script changed in a shared map, so only those keys
-// are written back. Writing the whole map back would overwrite keys another
-// message changed while the script was running.
+// Only the keys a script changed in a shared map are written back: writing the
+// whole map would overwrite keys another message changed while the script ran.
 
-/** The keys a script set or removed. */
 export interface MapChanges {
   readonly set: ReadonlyArray<readonly [string, unknown]>;
   readonly removed: ReadonlyArray<string>;
@@ -21,7 +16,6 @@ function sameValue(a: unknown, b: unknown): boolean {
   }
 }
 
-/** Compare the map a script was given with the map it left behind. */
 export function diffMap(
   before: Readonly<Record<string, unknown>>,
   after: Readonly<Record<string, unknown>>,

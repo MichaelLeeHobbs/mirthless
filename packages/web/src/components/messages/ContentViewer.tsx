@@ -1,8 +1,3 @@
-// ===========================================
-// Content Viewer
-// ===========================================
-// Monospace display with basic syntax detection and copy-to-clipboard.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
@@ -35,7 +30,7 @@ function formatContent(content: string): string {
     }
   }
   if (format === 'hl7') {
-    // HL7: split segments by \r for readability
+    // HL7 segments end in \r.
     return content.replace(/\r/g, '\n');
   }
   return content;

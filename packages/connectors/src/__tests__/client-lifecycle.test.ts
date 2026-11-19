@@ -1,7 +1,3 @@
-// ===========================================
-// Client Lifecycle Helper Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { connectFresh, closeQuietly } from '../client-lifecycle.js';
 import { makeMockLogger } from '../__fixtures__/mock-logger.js';

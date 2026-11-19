@@ -1,8 +1,3 @@
-// ===========================================
-// Scripts Tab
-// ===========================================
-// Channel scripts editor with Monaco Editor instances in collapsible accordions.
-
 import { type ReactNode } from 'react';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
@@ -27,7 +22,6 @@ export interface ScriptsFormValues {
   undeploy: string;
   preprocessor: string;
   postprocessor: string;
-  /** The language each script is written in. */
   languages: Record<ScriptKey, ScriptLanguageCode>;
 }
 

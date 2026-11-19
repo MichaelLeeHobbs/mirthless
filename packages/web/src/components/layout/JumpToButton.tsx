@@ -1,10 +1,3 @@
-// ===========================================
-// Jump To Button
-// ===========================================
-// The header's entry point to the command palette. It looks like a search box
-// so people find it without knowing the shortcut, and it shows the shortcut
-// so they learn it.
-
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -13,13 +6,12 @@ import Tooltip from '@mui/material/Tooltip';
 import SearchIcon from '@mui/icons-material/Search';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
-/** "⌘K" on a Mac, "Ctrl K" everywhere else. */
 export function shortcutLabel(platform: string): string {
   return /mac|iphone|ipad/i.test(platform) ? '⌘K' : 'Ctrl K';
 }
 
 interface JumpToButtonProps {
-  /** Phones get an icon button; the header has no room for the search-box look. */
+  /** For phones: the header has no room for the search-box look. */
   readonly compact: boolean;
   readonly onClick: () => void;
 }

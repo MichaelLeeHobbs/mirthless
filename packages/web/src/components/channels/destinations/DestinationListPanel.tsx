@@ -1,8 +1,3 @@
-// ===========================================
-// Destination List Panel
-// ===========================================
-// Left sidebar showing the list of destinations with add/remove/reorder controls.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import List from '@mui/material/List';
@@ -38,7 +33,6 @@ export function DestinationListPanel({
 }: DestinationListPanelProps): ReactNode {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 1 }}>
         <Typography variant="subtitle2" sx={{
           color: 'text.secondary'
@@ -52,7 +46,6 @@ export function DestinationListPanel({
         </Tooltip>
       </Box>
 
-      {/* List */}
       <List dense sx={{ flexGrow: 1, overflow: 'auto', minHeight: 0 }}>
         {destinations.map((dest, index) => (
           <ListItemButton
@@ -88,7 +81,6 @@ export function DestinationListPanel({
         ))}
       </List>
 
-      {/* Bottom controls */}
       {destinations.length > 0 ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, py: 1, borderTop: 1, borderColor: 'divider' }}>
           <Tooltip title="Move up">

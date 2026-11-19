@@ -1,9 +1,3 @@
-// ===========================================
-// Keyboard Shortcuts Hook
-// ===========================================
-// Global keyboard shortcuts: Ctrl/Cmd+K jump to, ? for help, g+d dashboard,
-// g+c channels, g+s settings, Escape close.
-
 import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { isPaletteShortcut } from '../lib/command-search.js';
@@ -13,7 +7,6 @@ interface UseKeyboardShortcutsOptions {
   readonly onPaletteOpen: () => void;
 }
 
-/** Returns true if focus is on an input element that captures typing. */
 function isInputFocused(): boolean {
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
@@ -39,17 +32,15 @@ export function useKeyboardShortcuts({ onHelpOpen, onPaletteOpen }: UseKeyboardS
 
     if (isInputFocused()) return;
 
-    // Escape — close any open dialogs (browser-native for MUI)
+    // MUI dialogs handle Escape themselves.
     if (e.key === 'Escape') return;
 
-    // ? — open help dialog
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       onHelpOpen();
       return;
     }
 
-    // g prefix — navigation shortcuts
     if (e.key === 'g' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       pendingGRef.current = true;
       clearTimeout(timerRef.current);

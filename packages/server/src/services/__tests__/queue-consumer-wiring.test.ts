@@ -1,12 +1,4 @@
-// ===========================================
-// Queue Consumer Wiring Tests
-// ===========================================
-// Tests that QueueConsumer instances are created during deploy()
-// and their lifecycle is managed with start()/stop()/halt()/undeploy().
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock QueueConsumer -----
 
 const mockQueueConsumerInstances: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; config: Record<string, unknown> }> = [];
 
@@ -20,7 +12,6 @@ const MockQueueConsumerCtor = vi.fn().mockImplementation(function (config: Recor
   return instance;
 });
 
-// Mock AlertManager
 const mockAlertManager = {
   loadAlerts: vi.fn(),
   handleEvent: vi.fn(),
@@ -30,7 +21,6 @@ const mockAlertManager = {
 
 const MockAlertManagerCtor = vi.fn().mockImplementation(function () { return mockAlertManager; });
 
-// Mock ChannelRuntime
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockChannelRuntime = {
@@ -42,11 +32,9 @@ const mockChannelRuntime = {
 };
 const MockChannelRuntime = vi.fn().mockImplementation(function () { return mockChannelRuntime; });
 
-// Mock GlobalChannelMap
 const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn() };
 const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return mockGcm; });
 
-// Mock SandboxExecutor
 const MockVmSandboxExecutor = vi.fn().mockImplementation(function () {
   return {
     execute: vi.fn().mockResolvedValue({
@@ -105,7 +93,6 @@ vi.mock('@galvanigraph/connectors', () => ({
   JavaScriptDispatcher: vi.fn(),
 }));
 
-// Mock services
 vi.mock('../message.service.js', () => ({
   MessageService: {
     createMessage: vi.fn().mockResolvedValue({ ok: true, value: { messageId: 1, correlationId: '00000000-0000-0000-0000-000000000099' }, error: null }),
@@ -165,7 +152,6 @@ vi.mock('../email.service.js', () => ({
   },
 }));
 
-// Mock DB
 const mockSelectFrom = vi.fn().mockReturnValue({
   leftJoin: vi.fn().mockReturnValue({
     where: vi.fn().mockReturnValue({
@@ -212,8 +198,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 const { EngineManager } = await import('../../engine.js');
 const { DeploymentService } = await import('../deployment.service.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 
 function makeDest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -251,14 +235,10 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   mockQueueConsumerInstances.length = 0;
 });
-
-// ----- Tests -----
 
 describe('QueueConsumer wiring', () => {
   describe('deploy', () => {
@@ -356,7 +336,7 @@ describe('QueueConsumer wiring', () => {
 
     it('refuses to deploy a queued destination on a non-storing storage mode', async () => {
       // METADATA/DISABLED/RAW never persist CT_SENT, so a queued destination would
-      // reload null content and error 100% of messages. Reject loudly at deploy.
+      // reload null content and error 100% of messages.
       for (const mode of ['METADATA', 'DISABLED', 'RAW']) {
         const channel = makeChannel({
           messageStorageMode: mode,
@@ -392,7 +372,6 @@ describe('QueueConsumer wiring', () => {
 
       await engine.undeploy(CHANNEL_ID);
 
-      // Both consumers should have stop() called
       expect(mockQueueConsumerInstances).toHaveLength(2);
       for (const instance of mockQueueConsumerInstances) {
         expect(instance.stop).toHaveBeenCalledOnce();

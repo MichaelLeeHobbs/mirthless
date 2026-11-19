@@ -1,20 +1,10 @@
-// ===========================================
-// Secret Redaction
-// ===========================================
-// Masks secret-typed setting values and secret connector properties before they
-// leave the server in GET / export responses. Values are never returned in the
-// clear to a read-level caller — only overwritten via explicit writes.
+// A secret never leaves the server in the clear to a read-level caller; it is
+// only overwritten by an explicit write.
 
 import { isPlainObject, isSecretSetting } from '@galvanigraph/core-util';
 
-/** Masked stand-in returned in place of a real secret that has a value. */
 export const REDACTED = '__REDACTED__';
 
-/**
- * Connector property keys (case-insensitive) that hold credentials. Matched as a
- * substring so `authPass`, `smtpPassword`, `privateKeyPem`, `apiSecret`, etc. are
- * all covered.
- */
 const SECRET_KEY_FRAGMENTS: readonly string[] = [
   'pass', // covers password, passwd, authPass, passphrase
   'secret',
@@ -22,27 +12,18 @@ const SECRET_KEY_FRAGMENTS: readonly string[] = [
   'apikey', // also X-API-Key once separators are stripped
   'token',
   'credential',
-  'authorization', // HTTP header values
+  'authorization',
   'cookie',
 ];
 
-/**
- * Keys that are secrets only as an exact match: `key` is the inline TLS private
- * key PEM (`tls.key`); as a fragment it would also hit `keyColumn` and friends.
- */
+/** `key` is the inline TLS private key PEM; as a fragment it would also hit `keyColumn`. */
 const SECRET_EXACT_KEYS: ReadonlySet<string> = new Set(['key']);
 
-/** True when a connector property key looks like a credential field. */
 export function isSecretPropertyKey(key: string): boolean {
   const lower = key.toLowerCase().replace(/[-_]/g, '');
   return SECRET_EXACT_KEYS.has(lower) || SECRET_KEY_FRAGMENTS.some((fragment) => lower.includes(fragment));
 }
 
-/**
- * Redact a single setting value: mask a present secret value, pass through empty
- * / null (nothing to hide) and non-secret values unchanged. A setting is secret
- * by its `type` OR by its key naming.
- */
 export function redactSettingValue(key: string, type: string | null | undefined, value: string | null): string | null {
   if (!isSecretSetting(key, type)) {
     return value;
@@ -50,13 +31,7 @@ export function redactSettingValue(key: string, type: string | null | undefined,
   return value !== null && value.length > 0 ? REDACTED : value;
 }
 
-/**
- * Return a deep copy of connector `properties` with every secret-looking value
- * replaced by the REDACTED marker, at any depth (nested `auth.password`, inline
- * `tls.key` PEMs, `headers.Authorization`). Non-string secrets that are present
- * are also masked; empty/nullish values pass through so the caller can see
- * "unset". Iterative (explicit stack) per the coding standard.
- */
+/** Empty and nullish secrets pass through so the caller can see "unset". */
 export function redactConnectorProperties(
   properties: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
@@ -83,11 +58,7 @@ export function redactConnectorProperties(
   return root;
 }
 
-/**
- * Redact the connector properties in a channel detail (or a revision snapshot,
- * which has the same shape): the source connector properties and each
- * destination's properties.
- */
+/** Also takes a revision snapshot, which has the same shape. */
 export function redactChannelDetail(detail: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const source = detail['sourceConnectorProperties'];
   const destinations = detail['destinations'];

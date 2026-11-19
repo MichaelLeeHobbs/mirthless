@@ -1,8 +1,3 @@
-// ===========================================
-// Data Pruner Controller
-// ===========================================
-// HTTP adapter for data pruner operations.
-
 import type { Request, Response } from 'express';
 import { DataPrunerService } from '../services/data-pruner.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
@@ -17,7 +12,6 @@ function auditContext(req: Request): { userId: string | null; ipAddress: string 
 }
 
 export class DataPrunerController {
-  /** POST /admin/prune — Prune all channels with pruning enabled. */
   static async pruneAll(req: Request, res: Response): Promise<void> {
     const result = await DataPrunerService.pruneAll(auditContext(req));
 
@@ -37,7 +31,6 @@ export class DataPrunerController {
     res.json({ success: true, data: result.value });
   }
 
-  /** POST /admin/prune/:channelId — Prune a specific channel. */
   static async pruneChannel(req: Request, res: Response): Promise<void> {
     const channelId = req.params['channelId'] as string;
     const maxAgeDays = (req.body as { maxAgeDays: number }).maxAgeDays;
@@ -61,7 +54,6 @@ export class DataPrunerController {
     res.json({ success: true, data: result.value });
   }
 
-  /** GET /admin/prune/statistics — Get prunable message counts per channel. */
   static async getStatistics(req: Request, res: Response): Promise<void> {
     const result = await DataPrunerService.getStatistics(await channelScopeOf(req, 'settings:read'));
 

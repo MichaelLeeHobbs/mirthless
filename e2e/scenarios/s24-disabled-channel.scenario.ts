@@ -1,4 +1,3 @@
-// S24: a channel disabled in Mirth stays disabled after the import.
 // Found by the anti-gaming check: the production backup has 3 disabled
 // channels. Mirth 4.x keeps the flag in exportData/metadata; imported as
 // enabled, such a channel would be deployed by the next server start and

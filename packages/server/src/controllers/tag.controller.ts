@@ -1,8 +1,3 @@
-// ===========================================
-// Tag Controller
-// ===========================================
-// Handles HTTP requests for channel tag CRUD + assignment.
-
 import type { Request, Response } from 'express';
 import type { CreateTagInput, UpdateTagInput, AssignTagInput } from '@galvanigraph/core-models';
 import { TagService } from '../services/tag.service.js';

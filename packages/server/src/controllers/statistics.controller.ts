@@ -1,8 +1,3 @@
-// ===========================================
-// Statistics Controller
-// ===========================================
-// HTTP adapter for channel statistics queries.
-
 import type { Request, Response } from 'express';
 import { StatisticsService } from '../services/statistics.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
@@ -10,7 +5,6 @@ import logger from '../lib/logger.js';
 import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class StatisticsController {
-  /** GET /channels/:id/statistics — Per-channel statistics with connector breakdown. */
   static async getChannelStats(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const result = await StatisticsService.getChannelStatistics(channelId);
@@ -24,7 +18,6 @@ export class StatisticsController {
     res.json({ success: true, data: result.value });
   }
 
-  /** GET /channels/statistics — All channels summary for dashboard. */
   static async getAllStats(req: Request, res: Response): Promise<void> {
     const result = await StatisticsService.getAllChannelStatistics(await channelScopeOf(req, 'channels:read'));
 
@@ -37,7 +30,6 @@ export class StatisticsController {
     res.json({ success: true, data: result.value });
   }
 
-  /** POST /channels/:id/statistics/reset — Reset current-window counters. */
   static async resetStats(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const result = await StatisticsService.resetStatistics(channelId);

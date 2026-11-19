@@ -1,7 +1,3 @@
-// ===========================================
-// Connector Messages Table Schema
-// ===========================================
-
 import { sql } from 'drizzle-orm';
 import { pgTable, uuid, varchar, timestamp, integer, bigint, primaryKey, index } from 'drizzle-orm/pg-core';
 

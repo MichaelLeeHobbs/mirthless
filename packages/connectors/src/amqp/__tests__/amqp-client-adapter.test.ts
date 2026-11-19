@@ -1,11 +1,3 @@
-// ===========================================
-// AMQP Client Adapter Tests (mocked amqplib)
-// ===========================================
-// The adapter's contract with amqplib: manual acknowledgement with prefetch 1,
-// persistent mandatory publishes on a confirm channel, a returned message as
-// a failure, and an 'error' listener wherever the broker can close a channel.
-// connector-queue.itest.ts runs the same code against a real RabbitMQ.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 

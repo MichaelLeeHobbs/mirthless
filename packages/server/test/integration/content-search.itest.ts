@@ -1,6 +1,3 @@
-// ===========================================
-// Message content search — real Postgres integration
-// ===========================================
 // What the user types is text to find, not a pattern: % and _ must match
 // themselves.
 

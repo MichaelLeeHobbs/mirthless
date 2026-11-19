@@ -1,10 +1,3 @@
-// ===========================================
-// Message Browser Page
-// ===========================================
-// Search, filter, and inspect messages for a channel.
-// Master-detail: paginated table top, detail panel bottom.
-// WebSocket events refresh the message list in real time.
-
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import Box from '@mui/material/Box';
@@ -43,10 +36,8 @@ export function MessageBrowserPage(): ReactNode {
 
   const { data: channel } = useChannel(channelId.length > 0 ? channelId : null);
 
-  // Pre-filter by status from the URL (e.g. dashboard error drill-through).
   const initialStatus = searchParamsUrl.get('status');
 
-  // Search state
   const [receivedFrom, setReceivedFrom] = useState('');
   const [receivedTo, setReceivedTo] = useState('');
   const [statuses, setStatuses] = useState<readonly string[]>(initialStatus ? [initialStatus] : []);
@@ -93,7 +84,6 @@ export function MessageBrowserPage(): ReactNode {
     );
   }, [channelId, selectedMessageId, bulkDeleteMutation, notify]);
 
-  // Debounce content search
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     debounceRef.current = setTimeout(() => {
@@ -102,23 +92,17 @@ export function MessageBrowserPage(): ReactNode {
     return () => clearTimeout(debounceRef.current);
   }, [contentSearch]);
 
-  // --- WebSocket: join/leave channel room (re-joins on reconnect) ---
   useSocketRoom('join:channel', 'leave:channel', channelId);
 
-  // --- WebSocket: refresh this channel's message list on new messages ---
-  // Throttled (D-306) and scoped to the channel. The list only: an open message's
-  // detail no longer refreshes on live events, so while a message is still being
-  // processed its detail can lag its list row until it is reselected once its
-  // cached detail is stale (30 s), the page reloads, or the socket reconnects.
-  // That is the accepted trade-off for not re-reading PHI content on every
-  // message (refetch on window focus is off app-wide).
+  // The list only (#231, D-306): refetching an open message's detail on every
+  // event re-reads PHI content, so the detail can lag its row until its cache
+  // goes stale (30 s) or it is reselected.
   const handleNewMessage = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.channelSearches(channelId) });
   }, [queryClient, channelId]);
 
   useThrottledSocketEvent(SOCKET_EVENT.MESSAGE_NEW, handleNewMessage, channelId);
 
-  // Build search params
   const searchParams: MessageSearchParams = {
     channelId,
     ...(statuses.length > 0 ? { status: statuses } : {}),
@@ -196,7 +180,6 @@ export function MessageBrowserPage(): ReactNode {
     }).catch(() => { notify('Failed to export messages', 'error'); });
   }, [exportMessages, channelId, channel?.name, statuses, receivedFrom, receivedTo, metaDataId, messageIdSearch, debouncedContentSearch, notify]);
 
-  // Reset pagination and clear bulk selection when filters change
   useEffect(() => {
     setOffset(0);
     setCheckedIds(new Set());

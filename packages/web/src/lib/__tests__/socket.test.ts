@@ -1,7 +1,3 @@
-// ===========================================
-// Socket Client Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const fakeSocket = vi.hoisted(() => {

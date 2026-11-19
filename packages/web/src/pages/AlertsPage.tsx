@@ -1,8 +1,3 @@
-// ===========================================
-// Alerts Page
-// ===========================================
-// Alert management: list, enable/disable, delete.
-
 import { useState, type ReactNode } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router';
 import Box from '@mui/material/Box';
@@ -79,7 +74,6 @@ export function AlertsPage(): ReactNode {
         ) : null}
       />
 
-      {/* Error */}
       {error && (
         <ErrorState title="Couldn't load alerts" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
       )}
@@ -177,7 +171,6 @@ export function AlertsPage(): ReactNode {
             )}
           </TableBody>
         </Table>
-        {/* A short list needs no pager; show it once there is more than one page at the smallest size. */}
         {data && data.pagination.total > PAGE_SIZES[0] ? (
           <TablePagination
             component="div"

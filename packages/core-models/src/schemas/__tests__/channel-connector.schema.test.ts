@@ -1,7 +1,3 @@
-// ===========================================
-// CHANNEL Connector Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   channelSourcePropertiesSchema,
@@ -9,7 +5,6 @@ import {
 } from '../channel-connector.schema.js';
 
 describe('channelSourcePropertiesSchema', () => {
-  // Deploy sets channelId to the channel's own id before validating.
   it('accepts the id deploy sets, and the batch switch', () => {
     expect(channelSourcePropertiesSchema.parse({ channelId: 'c1', processBatch: true })).toEqual({ channelId: 'c1', processBatch: true });
   });

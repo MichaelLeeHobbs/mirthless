@@ -1,8 +1,4 @@
-// ===========================================
-// Summary tab: Channel Group dropdown (#223)
-// ===========================================
-// Changing the group is one server call, so a failure cannot leave the channel
-// in no group. Only a user with channels:write can change it.
+// The group changes in one server call, so a failure cannot leave the channel in no group (#223).
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';

@@ -1,6 +1,3 @@
-// ===========================================
-// Auth Fixture
-// ===========================================
 // Login helper for E2E tests. Uses API login to avoid hitting
 // the auth rate limiter (5 req / 15 min) on every test.
 
@@ -10,7 +7,6 @@ import { ADMIN_USER } from './test-data.js';
 const STORAGE_KEY = 'galvanigraph_auth';
 const API_BASE = 'http://localhost:3000/api/v1';
 
-/** Log in via the API and inject auth state into the browser's localStorage. */
 export async function login(
   page: Page,
   credentials?: { username: string; password: string },
@@ -34,10 +30,9 @@ export async function login(
 
   const { user, accessToken } = body.data;
 
-  // Navigate to the app first so we can access localStorage on the correct origin
+  // localStorage is per origin, so load the app first.
   await page.goto('/login');
 
-  // Inject auth state into localStorage
   await page.evaluate(
     ({ key, state }) => {
       localStorage.setItem(key, JSON.stringify(state));
@@ -45,7 +40,6 @@ export async function login(
     { key: STORAGE_KEY, state: { user, accessToken } },
   );
 
-  // Navigate to dashboard — the SPA picks up auth from localStorage
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({ timeout: 10_000 });
 }

@@ -1,7 +1,3 @@
-// ===========================================
-// usePermissions Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { usePermissions } from '../use-permissions.js';

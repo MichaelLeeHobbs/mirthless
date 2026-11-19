@@ -1,8 +1,3 @@
-// ===========================================
-// Event Export Controller
-// ===========================================
-// Handles HTTP requests for exporting audit events as CSV or JSON files.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type EventExportQuery } from '@galvanigraph/core-models';
 import { EventExportService } from '../services/event-export.service.js';

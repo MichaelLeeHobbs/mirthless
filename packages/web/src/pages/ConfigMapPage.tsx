@@ -1,8 +1,3 @@
-// ===========================================
-// Configuration Map Page
-// ===========================================
-// Table with category/name/value, category filter tabs, create/edit dialog.
-
 import { useState, useMemo, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -127,7 +122,6 @@ export function ConfigMapPage(): ReactNode {
         />
       ) : null}
 
-      {/* Category filter tabs */}
       {categories.length > 0 && (
         <Tabs
           value={selectedCategory}
@@ -202,7 +196,6 @@ export function ConfigMapPage(): ReactNode {
         </TableContainer>
       </Paper>
 
-      {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editing ? 'Edit Entry' : 'Add Entry'}</DialogTitle>
         <DialogContent>

@@ -1,9 +1,4 @@
-// ===========================================
-// Message store statements — real Postgres integration
-// ===========================================
-// Statements whose unit tests mock the database and so cannot show that the SQL
-// is valid: bulk delete by id list, storing the same content type twice, and the
-// rotating queue order.
+// The unit tests of these statements mock the database, so only this shows the SQL is valid.
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';

@@ -1,10 +1,4 @@
-// ===========================================
-// Channel Dependency Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -37,7 +31,6 @@ const mockSelectWhere = vi.fn().mockImplementation(() => {
 const mockSelectFrom = vi.fn().mockImplementation(() => {
   const fn = selectResponses[selectCallIndex];
 
-  // Check if this is a joinable response (needs innerJoin)
   if (fn) {
     const peeked = fn();
     if (peeked && typeof peeked === 'object' && '_joinable' in peeked) {
@@ -46,9 +39,8 @@ const mockSelectFrom = vi.fn().mockImplementation(() => {
     }
   }
 
-  // Return a thenable that also has .where() and .innerJoin()
-  // When awaited directly (no .where()), consumes the current response.
-  // When .where() is called, mockSelectWhere consumes the response instead.
+  // Awaited directly, this consumes the current response; after .where(),
+  // mockSelectWhere consumes it instead.
   const fromResult = {
     then: (
       resolve: (val: unknown) => unknown,
@@ -103,13 +95,9 @@ vi.mock('../../lib/event-emitter.js', () => ({
 
 const { ChannelDependencyService, orderByDependencies } = await import('../channel-dependency.service.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_A = '00000000-0000-0000-0000-00000000000a';
 const CHANNEL_B = '00000000-0000-0000-0000-00000000000b';
 const CHANNEL_C = '00000000-0000-0000-0000-00000000000c';
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();
@@ -154,13 +142,10 @@ describe('ChannelDependencyService', () => {
 
   describe('setDependencies', () => {
     it('replaces all dependencies', async () => {
-      // Channel exists
+      // Channel, dependency B, every edge for the DAG check (direct from() await), then the new list.
       pushResponse([{ id: CHANNEL_A }]);
-      // Dep channel B exists
       pushResponse([{ id: CHANNEL_B }]);
-      // All existing deps for DAG validation (direct from() await)
       pushResponse([]);
-      // Return new deps after insert
       pushJoinableResponse([{ channelId: CHANNEL_B, channelName: 'Channel B' }]);
 
       const result = await ChannelDependencyService.setDependencies(CHANNEL_A, {
@@ -174,7 +159,6 @@ describe('ChannelDependencyService', () => {
 
     it('with empty array clears dependencies', async () => {
       pushResponse([{ id: CHANNEL_A }]);
-      // Return deps after delete
       pushJoinableResponse([]);
 
       const result = await ChannelDependencyService.setDependencies(CHANNEL_A, {
@@ -263,7 +247,6 @@ describe('ChannelDependencyService', () => {
       pushResponse([{ id: CHANNEL_C }]);
       // Existing deps: B->C (direct from() await)
       pushResponse([{ from: CHANNEL_B, to: CHANNEL_C }]);
-      // Return new deps
       pushJoinableResponse([
         { channelId: CHANNEL_B, channelName: 'Channel B' },
         { channelId: CHANNEL_C, channelName: 'Channel C' },

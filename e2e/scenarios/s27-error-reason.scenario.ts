@@ -1,8 +1,3 @@
-// S27: a destination error records why it failed.
-// Found by the anti-gaming check: a channel that responds from its destination
-// ("Respond from" d1) marked the destination ERROR and answered AE, but stored
-// no error text, so the message browser could not say what went wrong.
-
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, jsWriter } from './support/mirth-xml.js';
 import { sendMllp } from './support/net.js';

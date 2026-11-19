@@ -1,8 +1,3 @@
-// ===========================================
-// Global Map Entries Table Schema
-// ===========================================
-// Persistent key-value store accessible from all channels via globalMap.
-
 import { pgTable, varchar, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 
 export const globalMapEntries = pgTable('global_map_entries', {

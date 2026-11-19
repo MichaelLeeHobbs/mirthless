@@ -1,11 +1,5 @@
-// ===========================================
-// authenticate runs once per request (#217)
-// ===========================================
-// Ten routers share the /channels mount. When each ran `authenticate` itself, a
-// request fell through every one of them on the way to its handler and loaded
-// the user and the session up to ten times. The guard now runs once, where the
-// API is mounted. This goes through the real route aggregator; only the guard
-// (counted) and the channel controller (stubbed) are fake.
+// Ten routers share the /channels mount; when each ran `authenticate`, a request
+// loaded the user and the session up to ten times (#217).
 
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import express, { type Request, type Response, type NextFunction } from 'express';

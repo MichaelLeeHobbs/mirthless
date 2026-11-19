@@ -1,8 +1,3 @@
-// ===========================================
-// Notification Store
-// ===========================================
-// Centralized Zustand store for app-wide snackbar notifications.
-
 import { create } from 'zustand';
 
 type NotificationSeverity = 'success' | 'error' | 'warning' | 'info';
@@ -26,9 +21,8 @@ type NotificationStore = NotificationState & NotificationActions;
 
 let nextId = 1;
 
-// Dedupe window: identical message+severity within this window is collapsed to a
-// single toast. This lets the global mutation error handler and a call-site's own
-// error toast coexist without showing the same message twice.
+// Lets the global mutation error toast and a call site's own coexist without
+// showing the same message twice.
 const DEDUPE_WINDOW_MS = 1500;
 const recent = new Map<string, number>();
 
@@ -53,7 +47,6 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
       notifications: [...state.notifications, { id, message, severity }],
     }));
 
-    // Auto-dismiss after 4 seconds
     setTimeout(() => {
       set((state) => ({
         notifications: state.notifications.filter((n) => n.id !== id),
@@ -68,7 +61,6 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
   },
 }));
 
-/** Convenience hook for notification actions. */
 export function useNotification(): { readonly notify: NotificationStore['notify'] } {
   const notify = useNotificationStore((state) => state.notify);
   return { notify };

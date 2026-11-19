@@ -1,14 +1,9 @@
-// ===========================================
-// E2E Test Constants
-// ===========================================
-
-/** Default admin credentials seeded by db:seed */
+// Seeded by db:seed.
 export const ADMIN_USER = {
   username: 'admin',
   password: 'Admin123!',
 } as const;
 
-/** Test channel constants */
 export const TEST_CHANNEL = {
   name: 'E2E Test Channel',
   description: 'Created by Playwright E2E tests',
@@ -16,13 +11,12 @@ export const TEST_CHANNEL = {
   destPort: 18662,
 } as const;
 
-/** The channel channel-deploy.spec.ts deploys from the dashboard. Its port is its own. */
+// channel-deploy.spec.ts only; no other spec uses its port.
 export const DEPLOY_CHANNEL = {
   name: 'E2E Deploy Channel',
   sourcePort: 18671,
 } as const;
 
-/** Test user constants */
 export const TEST_USER = {
   username: 'e2e-test-user',
   email: 'e2e@test.local',
@@ -31,7 +25,6 @@ export const TEST_USER = {
   lastName: 'Tester',
 } as const;
 
-/** Test code template constants */
 export const TEST_LIBRARY = {
   name: 'E2E Test Library',
   description: 'Created by Playwright E2E tests',
@@ -42,7 +35,6 @@ export const TEST_TEMPLATE = {
   code: 'function e2eHelper() { return true; }',
 } as const;
 
-/** Test alert constants */
 export const TEST_ALERT = {
   name: 'E2E Test Alert',
   description: 'Alert created by E2E test',

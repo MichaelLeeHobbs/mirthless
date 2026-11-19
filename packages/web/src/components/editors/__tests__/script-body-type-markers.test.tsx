@@ -1,6 +1,4 @@
-// #206: the hook that type-checks an editor's script through a hidden wrapped
-// model. Monaco and its TypeScript worker are the external boundary, so they
-// are faked here: the worker answers when the test says so, in any order.
+// #206. Monaco and its TypeScript worker are the external boundary, so they are faked: the worker answers when the test says, in any order.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
@@ -51,7 +49,6 @@ vi.mock('../monaco.js', () => ({ monaco: fake.monaco }));
 
 const { useScriptBodyTypeMarkers, SCRIPT_BODY_MARKER_OWNER } = await import('../script-body-check.js');
 
-/** The editor's visible model: text, a version that changes with it, and change listeners. */
 function visibleModel(initial: string): {
   readonly editor: never; readonly model: object; readonly edit: (text: string) => void; readonly dispose: () => void;
 } {
@@ -75,12 +72,10 @@ function visibleModel(initial: string): {
 
 const diagnostic = (message: string): unknown => ({ category: 1, code: 2304, file: undefined, start: 0, length: 1, messageText: message });
 
-/** Let the fake worker's promise chain run. */
 async function settle(): Promise<void> {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
 }
 
-/** Run the delayed check and wait until it has asked the worker. */
 async function runCheck(): Promise<Deferred> {
   const before = fake.state.requests.length;
   await vi.advanceTimersByTimeAsync(500);
@@ -164,7 +159,6 @@ describe('useScriptBodyTypeMarkers', () => {
     pending.resolve([diagnostic('late')]);
     await settle();
     expect(markerMessages()).toEqual([[]]);
-    // No check is scheduled after unmount.
     v.edit('b');
     await vi.advanceTimersByTimeAsync(1000);
     expect(fake.state.requests).toHaveLength(1);

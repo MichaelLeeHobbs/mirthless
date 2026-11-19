@@ -1,10 +1,4 @@
-// ===========================================
-// Confirm Dialog
-// ===========================================
-// Reusable confirmation dialog to replace window.confirm() across the app.
-// `reasonLabel` asks for a reason, required, and hands it to onConfirm (an
-// export or a backup records it in the audit log, D-312). `requireTyped` keeps
-// Confirm disabled until the user types that exact text.
+// The `reasonLabel` reason goes to onConfirm: an export or a backup records it in the audit log (D-312).
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
@@ -26,17 +20,14 @@ interface ConfirmDialogProps {
   readonly cancelLabel?: string;
   readonly severity?: 'warning' | 'error' | 'info';
   readonly isPending?: boolean;
-  /** Ask for a reason with this label; Confirm waits for one and passes it on. */
   readonly reasonLabel?: string;
-  /** What happens to the reason; defaults to the export wording. */
   readonly reasonHelp?: string;
-  /** Text the user must type, exactly, before Confirm is enabled. */
   readonly requireTyped?: string;
   readonly onConfirm: (reason?: string) => void;
   readonly onCancel: () => void;
 }
 
-/** True when the reason is long enough and one line, as the server requires. */
+/** Mirrors the server's exportReasonSchema. */
 export function isValidReason(reason: string): boolean {
   const trimmed = reason.trim();
   return trimmed.length >= MIN_REASON_LENGTH && trimmed.length <= 500 && !/[\r\n]/.test(trimmed);
@@ -58,7 +49,6 @@ export function ConfirmDialog({
 }: ConfirmDialogProps): ReactNode {
   const [reason, setReason] = useState('');
   const [typed, setTyped] = useState('');
-  // A dialog opened again starts empty.
   useEffect(() => {
     if (open) { setReason(''); setTyped(''); }
   }, [open]);

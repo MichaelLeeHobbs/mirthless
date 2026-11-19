@@ -1,9 +1,4 @@
-// ===========================================
-// SFTP Source Connector Form
-// ===========================================
-// Configuration form for SFTP reader source connectors. Mirrors the File source
-// form but polls a remote directory over SFTP. Property keys must match exactly
-// what the SFTP source connector reads (see connector-defaults.ts).
+// Property keys must match exactly what the SFTP source connector reads (see connector-defaults.ts).
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
@@ -39,7 +34,6 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Connection + credentials */}
       <Grid
         size={{
           xs: 12,
@@ -118,7 +112,6 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
         />
       </Grid>
 
-      {/* Right column — Polling + processing */}
       <Grid
         size={{
           xs: 12,

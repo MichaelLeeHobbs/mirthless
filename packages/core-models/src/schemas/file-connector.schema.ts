@@ -1,10 +1,4 @@
-// ===========================================
-// FILE Connector Property Schemas
-// ===========================================
-// Properties of the File Reader (source) and Writer (destination), as a
-// channel stores them. The server validates them at deploy and the connector
-// registry parses them, so defaults live here only. A key not listed here
-// fails validation.
+// Defaults live here only (D-274).
 //
 // Which `${name}` placeholders an output pattern may use is checked by the
 // dispatcher (packages/connectors/src/file/file-dispatcher.ts), which fills them.
@@ -19,16 +13,15 @@ import {
   destinationCommonProperties,
 } from './connector-property-fields.js';
 
-/** The order the source reads the files of one poll in. */
 export const FILE_SORT_ORDERS = ['NAME', 'DATE', 'SIZE'] as const;
 
-/** What the source does with a file once the pipeline has taken it. */
+/** Applied once the pipeline has taken the file. */
 export const FILE_POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
 
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const fileSourceObjectSchema = z.strictObject({
   directory: requiredTextSchema,
-  /** Glob (`*`, `?`) for the files to read, case-sensitive as Mirth's (D-304). */
+  /** Glob (`*`, `?`), case-sensitive as Mirth's (D-304). */
   fileFilter: requiredTextSchema.default('*'),
   /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
   ignoreDot: z.boolean().default(true),
@@ -49,7 +42,6 @@ export const fileSourceObjectSchema = z.strictObject({
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const fileDestinationObjectSchema = z.strictObject({
   directory: requiredTextSchema,
-  /** File name; `${messageId}` and `${timestamp}` are filled. */
   outputPattern: requiredTextSchema.default('${messageId}.txt'),
   charset: charsetSchema,
   /** Decode the content from base64 and write the bytes. */
@@ -60,7 +52,6 @@ export const fileDestinationObjectSchema = z.strictObject({
   ...destinationCommonProperties,
 });
 
-/** The source schema, needing a move-to directory when the post action is MOVE. */
 export const fileSourcePropertiesSchema = fileSourceObjectSchema.superRefine((props, ctx) => {
   if (props.postAction === 'MOVE' && props.moveToDirectory.trim() === '') {
     ctx.addIssue({ code: 'custom', path: ['moveToDirectory'], message: 'required when postAction is MOVE' });

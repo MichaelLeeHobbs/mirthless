@@ -1,26 +1,18 @@
-// ===========================================
-// API Key Schemas
-// ===========================================
-// What a caller sends to issue and manage an API key, and what the API shows
-// of one (D-313, RBAC plan section 7). The secret appears only in the answer
-// to an issue or a replace.
+// API keys (D-313). The secret appears only in the answer to an issue or a replace.
 
 import { z } from 'zod/v4';
 import { PERMISSIONS, type Permission } from '../constants.js';
 import { PERMISSION_CATALOG } from '../authz/catalog.js';
 
-/** The permissions a key may hold: never identity-class ones (users, roles, keys, audit, backup). */
 export const KEY_PERMISSIONS: readonly Permission[] = Object.values(PERMISSIONS).filter((p) => PERMISSION_CATALOG[p].keyAllowed);
 
 const keyPermissionSchema = z.enum(KEY_PERMISSIONS as [Permission, ...Permission[]], {
   error: 'An API key cannot hold that permission.',
 });
 
-/** Why something was done: one line, recorded in the audit log. */
 const reasonSchema = z.string().trim().min(3, 'Say why (at least 3 characters).').max(500)
   .refine((v) => !/[\r\n]/.test(v), 'The reason must be one line.');
 
-/** POST /api-keys. */
 export const createApiKeySchema = z.strictObject({
   name: z.string().trim().min(1, 'Name the key.').max(100),
   description: z.string().max(1000).default(''),
@@ -32,7 +24,6 @@ export const createApiKeySchema = z.strictObject({
     .nullable(),
   /** Required: every key ends. */
   expiresAt: z.string().datetime({ offset: true }),
-  /** Required when the key reads every channel's messages (D-313). */
   reason: reasonSchema.nullable().default(null),
 }).superRefine((input, ctx) => {
   // A list being validated, not a principal's grants, so not holdsPermission.
@@ -42,18 +33,12 @@ export const createApiKeySchema = z.strictObject({
   }
 });
 
-/** POST /api-keys/:id/revoke. */
 export const revokeApiKeySchema = z.strictObject({ reason: reasonSchema });
 
-/**
- * POST /api-keys/:id/replace. A leak ends the old secret at once; a planned
- * change keeps it working for 7 days (or until the key ends) so the caller
- * can switch. Replacing makes the caller the key's issuer.
- */
+/** `leak` ends the old secret at once; `planned` keeps it 7 days or until the key ends (D-322). Replacing makes the caller the key's issuer. */
 export const replaceApiKeySchema = z.strictObject({ mode: z.enum(['leak', 'planned']) });
 export type ReplaceApiKeyInput = z.infer<typeof replaceApiKeySchema>;
 
-/** PATCH /api-keys/:id/enabled. */
 export const setApiKeyEnabledSchema = z.strictObject({ enabled: z.boolean() });
 
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
@@ -67,7 +52,7 @@ export const API_KEY_STATUS = {
 } as const;
 export type ApiKeyStatus = (typeof API_KEY_STATUS)[keyof typeof API_KEY_STATUS];
 
-/** An API key as the API shows it: never its secret. */
+/** Never carries the secret. */
 export interface ApiKeyView {
   readonly id: string;
   readonly name: string;
@@ -88,7 +73,7 @@ export interface ApiKeyView {
   readonly previousSecretUntil: string | null;
 }
 
-/** The answer to an issue: the key, and its token, shown this once. */
+/** The token is shown this once. */
 export interface IssuedApiKey {
   readonly key: ApiKeyView;
   /** gf_<keyId>_<secret>. The server keeps only the secret's hash. */

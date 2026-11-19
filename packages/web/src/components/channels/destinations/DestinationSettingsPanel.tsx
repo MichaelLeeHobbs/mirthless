@@ -1,8 +1,3 @@
-// ===========================================
-// Destination Settings Panel
-// ===========================================
-// Right panel: name, enabled, connector type, connector form, queue settings.
-
 import { useRef, useEffect, type ReactNode, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
@@ -20,7 +15,6 @@ import { DestinationFilterSection } from './DestinationFilterSection.js';
 import { DestinationTransformerSection } from './DestinationTransformerSection.js';
 import { ResponseTransformerSection } from './ResponseTransformerSection.js';
 
-/** Dropdown label per destination type; the type list itself comes from core-models. */
 const DESTINATION_TYPE_LABELS: Readonly<Record<DestinationConnectorType, string>> = {
   TCP_MLLP: 'TCP / MLLP',
   HTTP: 'HTTP',
@@ -44,7 +38,6 @@ interface DestinationSettingsPanelProps {
 export function DestinationSettingsPanel({ destination, onChange }: DestinationSettingsPanelProps): ReactNode {
   const prevConnectorTypeRef = useRef(destination.connectorType);
 
-  // Reset properties when connector type changes
   useEffect(() => {
     if (destination.connectorType !== prevConnectorTypeRef.current) {
       prevConnectorTypeRef.current = destination.connectorType;
@@ -54,7 +47,6 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
 
   return (
     <Box>
-      {/* General settings */}
       <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
         General
       </Typography>
@@ -93,7 +85,6 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
 
       <Divider sx={{ my: 2 }} />
 
-      {/* Connector-specific settings */}
       <DestinationConnectorSettings
         connectorType={destination.connectorType}
         properties={destination.properties}
@@ -122,7 +113,6 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
 
       <Divider sx={{ my: 2 }} />
 
-      {/* Queue settings */}
       <QueueSettingsSection destination={destination} onChange={onChange} />
     </Box>
   );

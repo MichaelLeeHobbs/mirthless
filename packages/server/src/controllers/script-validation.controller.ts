@@ -1,8 +1,3 @@
-// ===========================================
-// Script Validation Controller
-// ===========================================
-// Handles HTTP request for script syntax validation.
-
 import type { Request, Response } from 'express';
 import { holdsPermission, type ScriptTestRunInput } from '@galvanigraph/core-models';
 import { ScriptValidationService } from '../services/script-validation.service.js';
@@ -30,7 +25,7 @@ export class ScriptValidationController {
     res.json({ success: true, data: result.value });
   }
 
-  /** Run a script against a sample message. The sample is never logged. */
+  /** The sample is never logged. */
   static async testRun(req: Request, res: Response): Promise<void> {
     const input = req.body as ScriptTestRunInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };

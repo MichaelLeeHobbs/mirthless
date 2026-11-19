@@ -1,8 +1,3 @@
-// ===========================================
-// New Channel Dialog
-// ===========================================
-// Modal form for creating a new channel.
-
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { useForm, Controller } from 'react-hook-form';
@@ -40,7 +35,6 @@ interface NewChannelDialogProps {
 export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): ReactNode {
   const navigate = useNavigate();
   const createChannel = useCreateChannel();
-  // Asked only of someone who can change channels in several groups but not all.
   const [groupId, setGroupId] = useState('');
   const needsGroup = useNewChannelGroups() !== null;
 

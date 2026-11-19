@@ -1,24 +1,13 @@
-// ===========================================
-// Event Emitter
-// ===========================================
-// Fire-and-forget helper for creating audit events.
-// If event recording fails, the original operation still succeeds.
-
 import type { CreateEventInput } from '@galvanigraph/core-models';
 import { EventService } from '../services/event.service.js';
 import { AuditService, type AuditRecordInput } from '../services/audit.service.js';
 import logger from './logger.js';
 
-/** Audit context passed from controllers. */
 export interface AuditContext {
   readonly userId?: string | null;
   readonly ipAddress?: string | null;
 }
 
-/**
- * Fire-and-forget event emission. Non-blocking — failures are logged
- * at WARN level but never propagated to the caller.
- */
 export function emitEvent(input: CreateEventInput): void {
   EventService.create(input).then((result) => {
     if (!result.ok) {
@@ -29,11 +18,7 @@ export function emitEvent(input: CreateEventInput): void {
   });
 }
 
-/**
- * Write an audit_log row, best effort (D-312): a failure is logged at WARN and
- * never reaches the caller. For records whose loss must refuse the request,
- * use AuditService.recordOrRefuse instead.
- */
+/** Best effort (D-312). When losing the record must refuse the request, use AuditService.recordOrRefuse. */
 export function emitAuditEvent(input: AuditRecordInput, onWritten?: () => void): void {
   AuditService.record(input).then((result) => {
     if (!result.ok) {
@@ -50,15 +35,10 @@ export function emitAuditEvent(input: AuditRecordInput, onWritten?: () => void):
 
 let lostAuditRecords = 0;
 
-/** Best-effort audit records this process failed to write since it started. System info shows it. */
 export function lostAuditRecordCount(): number {
   return lostAuditRecords;
 }
 
-/**
- * Emit an INFO / SUCCESS audit event for a change made by the caller in
- * `context`, with no channel or server. `attributes` says what changed.
- */
 export function emitSuccessEvent(
   name: string,
   context: AuditContext | undefined,

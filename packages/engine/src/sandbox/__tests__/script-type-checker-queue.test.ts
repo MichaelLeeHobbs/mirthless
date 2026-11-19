@@ -1,8 +1,4 @@
-// How the type checker shares its one worker between checks (#183). The worker
-// thread is replaced by a fake so a test decides when it answers, overruns or
-// crashes. Each check gets the worker to itself: its time limit counts only its
-// own work, and when it overruns or crashes the worker, the checks queued
-// behind it run on a fresh worker instead of failing with it.
+// #183: checks share one worker, faked so a test decides when it answers, overruns or crashes.
 
 import { EventEmitter } from 'node:events';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -14,7 +10,7 @@ class FakeWorker extends EventEmitter {
   terminated = false;
   constructor() { super(); FakeWorker.instances.push(this); }
   postMessage(request: TypeCheckRequest): void { this.posted.push(request); }
-  unref(): void { /* nothing keeps the test process alive */ }
+  unref(): void {}
   async terminate(): Promise<number> {
     this.terminated = true;
     this.emit('exit', 1);
@@ -61,7 +57,6 @@ describe('checkScriptTypesBatch queueing', () => {
   it('starts a check\'s time limit when the worker takes it, not while it waits', async () => {
     const first = checkScriptTypesBatch([freshJob()], [], { timeoutMs: 10_000 });
     const second = checkScriptTypesBatch([freshJob()], [], { timeoutMs: 100 });
-    // The first takes far longer than the second's limit; the second only waits.
     await vi.advanceTimersByTimeAsync(5_000);
     const w = FakeWorker.instances[0]!;
     w.answer(0);
@@ -104,7 +99,6 @@ describe('checkScriptTypesBatch queueing', () => {
     const queued = checkScriptTypesBatch([freshJob()], []);
     await vi.advanceTimersByTimeAsync(100);
     await slow;
-    // The stopped worker's answer to the first check must not settle the second.
     FakeWorker.instances[0]!.answer(0);
     FakeWorker.instances[1]!.emit('error', new Error('boom'));
     const result = await queued;
@@ -112,8 +106,7 @@ describe('checkScriptTypesBatch queueing', () => {
     if (!result.ok) expect(result.error.message).toBe('The type checker failed: boom');
   });
 
-  // #228: a batch's cache hits were read back from the cache after its misses
-  // were answered, by which time other checks could have evicted them.
+  // #228: cache hits were read back after the misses were answered, when they could be evicted.
   it('answers a cached script even when it is evicted while the batch waits', async () => {
     const cached = freshJob();
     const prime = checkScriptTypesBatch([cached], []);

@@ -4,9 +4,8 @@ type ThemeMode = 'dark' | 'light';
 
 const THEME_STORAGE_KEY = 'galvanigraph_theme';
 /**
- * Keys used under the product's earlier names, newest first: GalvaniFlow (D-309)
- * and Mirthless (D-205). Read only, so existing users keep their theme.
- * `index.html` reads the same keys before first paint.
+ * Earlier product names, newest first (D-309, D-205). Read only, so existing
+ * users keep their theme. `index.html` reads the same keys before first paint.
  */
 const LEGACY_THEME_STORAGE_KEYS: readonly string[] = ['galvaniflow_theme', 'mirthless_theme'];
 

@@ -1,6 +1,3 @@
-// ===========================================
-// Startup Steps Tests
-// ===========================================
 // One failed startup step must not skip the others, and each failure is
 // logged, emitted as an event and recorded for the health endpoints (#259).
 

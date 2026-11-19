@@ -1,12 +1,5 @@
-// ===========================================
-// Message Action Hooks
-// ===========================================
-// Reprocess and bulk delete operations for messages.
-
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, apiFetch } from '../api/client.js';
-
-// ----- Types -----
 
 interface ReprocessResult {
   readonly messageId: number;
@@ -35,8 +28,6 @@ export interface ResendDestinationResult {
   readonly newMessageId?: number;
   readonly message?: string;
 }
-
-// ----- Hooks -----
 
 export function useReprocessMessage(): ReturnType<typeof useMutation<ReprocessResult, Error, { channelId: string; messageId: number }>> {
   const queryClient = useQueryClient();
@@ -74,10 +65,6 @@ export function useBulkDeleteMessages(): ReturnType<typeof useMutation<BulkDelet
   });
 }
 
-/**
- * Bulk-reprocess a set of messages by re-injecting each into the pipeline.
- * Returns a per-message result so the caller can summarise partial failures.
- */
 export function useBulkReprocessMessages(): ReturnType<typeof useMutation<BulkReprocessResult, Error, { channelId: string; messageIds: readonly number[] }>> {
   const queryClient = useQueryClient();
 

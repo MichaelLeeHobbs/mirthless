@@ -1,10 +1,4 @@
-// ===========================================
-// Settings E2E Tests
-// ===========================================
-// Against the seeded server: sections render, an edit saves and survives a
-// reload, invalid values block saving, pruner settings reach the pruner
-// schedule, and leaving with unsaved changes asks first. Each test puts back
-// what it changed.
+// Settings are server-wide, so each test puts back what it changed.
 
 import { test, expect, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';

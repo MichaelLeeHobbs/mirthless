@@ -1,6 +1,3 @@
-// ===========================================
-// Sandbox Async Isolation Tests
-// ===========================================
 // A script must never be able to block the host event loop: code that runs after
 // an `await` (or in a promise callback) is bounded by the script timeout, and a
 // timed-out script can never resume or keep calling IO bridges.

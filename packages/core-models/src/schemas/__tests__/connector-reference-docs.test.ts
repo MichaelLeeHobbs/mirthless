@@ -1,10 +1,5 @@
-// ===========================================
-// Connector Reference Docs Guard
-// ===========================================
 // docs/user/connector-reference.md must list exactly the keys each connector
-// schema accepts: a key the schema gained but the table lacks fails, and so
-// does a table row for a key the schema does not have. Add a connector here
-// when its properties move into a core-models schema (#115).
+// schema accepts (#115).
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
@@ -29,7 +24,7 @@ import {
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
-/** The `### <heading>` section's table: every backticked key in its first column, `tls.cert`-style rows read as their top-level key. */
+/** `tls.cert`-style rows count as their top-level key. */
 function documentedKeys(heading: string): string[] {
   const lines = DOC.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim() === `### ${heading}`);
@@ -48,7 +43,6 @@ const COMMON = {
   destination: Object.keys(destinationCommonProperties),
 } as const;
 
-/** Connectors whose properties have a core-models schema, by doc heading. */
 const SCHEMAS = [
   ['TCP_MLLP as a source', 'source', tcpMllpSourceObjectSchema.shape],
   ['TCP_MLLP as a destination', 'destination', tcpMllpDestinationObjectSchema.shape],

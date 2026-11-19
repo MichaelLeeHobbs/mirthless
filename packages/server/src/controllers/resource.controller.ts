@@ -1,8 +1,3 @@
-// ===========================================
-// Resource Controller
-// ===========================================
-// Handles HTTP requests for resource CRUD.
-
 import type { Request, Response } from 'express';
 import type { CreateResourceInput, UpdateResourceInput } from '@galvanigraph/core-models';
 import { ResourceService } from '../services/resource.service.js';

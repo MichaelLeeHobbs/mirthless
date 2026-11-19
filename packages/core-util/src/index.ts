@@ -1,8 +1,3 @@
-// ===========================================
-// @galvanigraph/core-util
-// ===========================================
-// Shared utilities for the GalvaniGraph platform.
-
 export * from './result.js';
 export * from './validation.js';
 export * from './date.js';

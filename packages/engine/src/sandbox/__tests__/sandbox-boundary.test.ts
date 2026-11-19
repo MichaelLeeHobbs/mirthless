@@ -1,6 +1,3 @@
-// ===========================================
-// Sandbox Boundary Tests
-// ===========================================
 // A script must not be able to make host code call into an object the script
 // built, in either direction: bridge arguments going out, results coming back.
 

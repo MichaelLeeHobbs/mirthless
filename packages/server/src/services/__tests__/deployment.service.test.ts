@@ -1,12 +1,6 @@
-// ===========================================
-// Deployment Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from 'stderr-lib';
 import { ServiceError } from '../../lib/service-error.js';
-
-// ----- Mock Engine -----
 
 const mockRuntime = {
   getState: vi.fn().mockReturnValue('STOPPED'),
@@ -35,8 +29,6 @@ const mockEngine = {
 vi.mock('../../engine.js', () => ({
   getEngine: () => mockEngine,
 }));
-
-// ----- Mock Channel Service -----
 
 const mockChannelService = {
   getById: vi.fn(),
@@ -70,8 +62,6 @@ vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTempl
 // Must import after mocks
 const { DeploymentService } = await import('../deployment.service.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 
 const CHANNEL_DETAIL = {
@@ -87,7 +77,6 @@ const CHANNEL_DETAIL = {
   transformers: [],
 };
 
-/** The channel with one source transformer step written in TypeScript. */
 function withTypeScriptStep(script: string): typeof CHANNEL_DETAIL {
   return {
     ...CHANNEL_DETAIL,
@@ -106,8 +95,6 @@ function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   deployedChannels.clear();
@@ -119,8 +106,6 @@ beforeEach(() => {
   mockRuntime.resume.mockResolvedValue({ ok: true, value: undefined, error: null });
   mockRuntime.undeploy.mockResolvedValue({ ok: true, value: undefined, error: null });
 });
-
-// ----- Tests -----
 
 describe('DeploymentService', () => {
   describe('deploy', () => {
@@ -208,7 +193,7 @@ describe('DeploymentService', () => {
         ...CHANNEL_DETAIL,
         destinations: [
           { ...dest, id: 'dest-1', metaDataId: 1, name: 'To LIS', connectorType: 'TCP_MLLP', properties: { host: 'lis', port: 6661 } },
-          { ...dest, id: 'dest-2', metaDataId: 2, name: 'To Archive', connectorType: 'FILE' },  // missing directory
+          { ...dest, id: 'dest-2', metaDataId: 2, name: 'To Archive', connectorType: 'FILE' },
         ],
       };
       mockChannelService.getById.mockResolvedValue(ok(badChannel));
@@ -444,7 +429,6 @@ describe('DeploymentService', () => {
       expect(result.ok).toBe(true);
       expect(mockEngine.undeploy).toHaveBeenCalledWith(CHANNEL_ID);
       expect(mockEngine.deploy).toHaveBeenCalledWith(CHANNEL_DETAIL);
-      // Stopped channel is not stopped again.
       expect(mockRuntime.stop).not.toHaveBeenCalled();
     });
 

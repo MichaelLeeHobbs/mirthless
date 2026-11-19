@@ -1,10 +1,4 @@
-// ===========================================
-// Pruner Scheduler Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 const mockSchedule = vi.fn().mockResolvedValue(undefined);
 const mockUnschedule = vi.fn().mockResolvedValue(undefined);
@@ -43,8 +37,6 @@ vi.mock('../../lib/logger.js', () => ({
 
 const { PrunerSchedulerService } = await import('../pruner-scheduler.service.js');
 
-// ----- Helpers -----
-
 function okResult<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
 }
@@ -52,8 +44,6 @@ function okResult<T>(value: T): { ok: true; value: T; error: null } {
 function errResult(message: string): { ok: false; value: null; error: { message: string } } {
   return { ok: false, value: null, error: { message } };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();

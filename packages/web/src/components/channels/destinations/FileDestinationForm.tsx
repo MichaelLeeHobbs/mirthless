@@ -1,8 +1,3 @@
-// ===========================================
-// File Destination Connector Form
-// ===========================================
-// Configuration form for file writer destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -32,7 +27,6 @@ export function FileDestinationForm({ properties, onChange }: DestConnectorFormP
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Output settings */}
       <Grid
         size={{
           xs: 12,
@@ -79,7 +73,6 @@ export function FileDestinationForm({ properties, onChange }: DestConnectorFormP
         </TextField>
       </Grid>
 
-      {/* Right column — Write settings */}
       <Grid
         size={{
           xs: 12,

@@ -1,10 +1,4 @@
-// ===========================================
-// Code Template Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -72,8 +66,7 @@ vi.mock('../../lib/db.js', () => ({
 }));
 
 // Whether the writer holds the permission on a library's links is covered
-// against Postgres (library-scope.itest.ts); here every writer does, unless a
-// test says otherwise.
+// against Postgres (library-scope.itest.ts).
 const mockHoldsOnEveryChannel = vi.fn().mockResolvedValue(true);
 vi.mock('../../lib/channel-scope.js', () => ({
   holdsOnEveryChannel: mockHoldsOnEveryChannel,
@@ -96,8 +89,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 }));
 
 const { CodeTemplateService } = await import('../code-template.service.js');
-
-// ----- Fixtures -----
 
 const NOW = new Date('2026-02-28T12:00:00Z');
 const LIB_ID = '00000000-0000-0000-0000-000000000001';
@@ -132,22 +123,16 @@ function makeTmplRow(overrides?: Partial<Record<string, unknown>>): Record<strin
   };
 }
 
-// ----- Tests -----
-
 beforeEach(() => {
   resetSelectState();
   vi.clearAllMocks();
 });
 
 describe('CodeTemplateService', () => {
-  // ===== Libraries =====
-
   describe('listLibraries', () => {
     it('returns libraries with template counts', async () => {
       const lib = makeLibRow();
-      // First call: select all libraries
       pushOrderableResponse([lib]);
-      // Second call: count templates for lib
       pushResponse([{ value: 3 }]);
 
       const result = await CodeTemplateService.listLibraries();
@@ -173,9 +158,7 @@ describe('CodeTemplateService', () => {
   describe('createLibrary', () => {
     it('creates library when name is unique', async () => {
       const created = makeLibRow();
-      // Check for duplicate name
       pushResponse([]);
-      // Insert returning
       mockReturning.mockResolvedValueOnce([created]);
 
       const result = await CodeTemplateService.createLibrary({
@@ -207,11 +190,8 @@ describe('CodeTemplateService', () => {
     it('updates library with correct revision', async () => {
       const lib = makeLibRow();
       const updated = makeLibRow({ name: 'Updated', revision: 2 });
-      // Find existing (same name → no dup check)
       pushResponse([lib]);
-      // Update returning
       mockUpdateReturning.mockResolvedValueOnce([updated]);
-      // Count templates after update
       pushResponse([{ value: 2 }]);
 
       const result = await CodeTemplateService.updateLibrary(LIB_ID, {
@@ -252,9 +232,7 @@ describe('CodeTemplateService', () => {
 
     it('returns ALREADY_EXISTS when duplicate name', async () => {
       const lib = makeLibRow();
-      // Find existing
       pushResponse([lib]);
-      // Check duplicate name
       pushResponse([{ id: 'other-id' }]);
 
       const result = await CodeTemplateService.updateLibrary(LIB_ID, {
@@ -288,8 +266,6 @@ describe('CodeTemplateService', () => {
       expect(result.error).toHaveProperty('message', expect.stringContaining('not found'));
     });
   });
-
-  // ===== Templates =====
 
   describe('listTemplates', () => {
     it('returns all templates without filter', async () => {
@@ -331,9 +307,7 @@ describe('CodeTemplateService', () => {
   describe('createTemplate', () => {
     it('creates template when library exists', async () => {
       const created = makeTmplRow();
-      // Check library exists
       pushResponse([{ id: LIB_ID }]);
-      // Insert returning
       mockReturning.mockResolvedValueOnce([created]);
 
       const result = await CodeTemplateService.createTemplate({
@@ -350,7 +324,6 @@ describe('CodeTemplateService', () => {
       if (!result.ok) return;
       expect(result.value.name).toBe('myHelper');
       expect(result.value.type).toBe('FUNCTION');
-      // The chosen language is persisted (threaded into the insert).
       expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ language: 'TYPESCRIPT' }));
     });
 
@@ -400,7 +373,7 @@ describe('CodeTemplateService', () => {
 
     it('refuses an update that breaks an existing FUNCTION template', async () => {
       pushResponse([makeTmplRow()]);
-      pushResponse([makeLibRow()]); // the template's library, locked for the write
+      pushResponse([makeLibRow()]);
 
       const result = await CodeTemplateService.updateTemplate(TMPL_ID, { revision: 1, code: 'function x( {' });
 
@@ -415,7 +388,7 @@ describe('CodeTemplateService', () => {
       const tmpl = makeTmplRow();
       const updated = makeTmplRow({ name: 'renamedHelper', revision: 2 });
       pushResponse([tmpl]);
-      pushResponse([makeLibRow()]); // the template's library, locked for the write
+      pushResponse([makeLibRow()]);
       mockUpdateReturning.mockResolvedValueOnce([updated]);
 
       const result = await CodeTemplateService.updateTemplate(TMPL_ID, {
@@ -442,7 +415,7 @@ describe('CodeTemplateService', () => {
 
     it('returns CONFLICT when revision mismatch', async () => {
       pushResponse([makeTmplRow({ revision: 5 })]);
-      pushResponse([makeLibRow()]); // the template's library, locked for the write
+      pushResponse([makeLibRow()]);
 
       const result = await CodeTemplateService.updateTemplate(TMPL_ID, {
         code: 'x',
@@ -459,7 +432,7 @@ describe('CodeTemplateService', () => {
     it('refuses a template write when the writer does not hold the permission on the library\'s links', async () => {
       mockHoldsOnEveryChannel.mockResolvedValueOnce(false);
       pushResponse([makeTmplRow()]);
-      pushResponse([makeLibRow()]); // the template's library, locked for the write
+      pushResponse([makeLibRow()]);
 
       const result = await CodeTemplateService.deleteTemplate(TMPL_ID, { userId: 'u-1', ipAddress: null });
 
@@ -473,7 +446,7 @@ describe('CodeTemplateService', () => {
   describe('deleteTemplate', () => {
     it('deletes existing template', async () => {
       pushResponse([makeTmplRow()]);
-      pushResponse([makeLibRow()]); // the template's library, locked for the write
+      pushResponse([makeLibRow()]);
 
       const result = await CodeTemplateService.deleteTemplate(TMPL_ID);
 

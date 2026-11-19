@@ -1,7 +1,3 @@
-// ===========================================
-// useSocketConnection Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
@@ -77,7 +73,6 @@ describe('useSocketConnection', () => {
     act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
     await vi.waitFor(() => { expect(useAuthStore.getState().accessToken).toBe('fresh-token'); });
 
-    // The reconnect with the fresh token is refused as well.
     act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);

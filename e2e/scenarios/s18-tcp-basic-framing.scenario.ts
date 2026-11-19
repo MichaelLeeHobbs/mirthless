@@ -1,4 +1,3 @@
-// S18: TCP Listener in Basic (non-MLLP) mode with STX/ETX framing.
 // Gap doc 12 rank 3: partners that frame messages with other bytes.
 
 import { expect } from '@playwright/test';

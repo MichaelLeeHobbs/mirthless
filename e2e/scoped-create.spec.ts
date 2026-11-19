@@ -1,13 +1,4 @@
-// ===========================================
-// Scoped creation and library links E2E Tests (#266 slice 10d)
-// ===========================================
-// Someone who can change channels in two groups, but not on every channel,
-// must say which group a new channel joins; the channel lands there. An admin
-// links a code template library to chosen channels.
-//
-// Users can't be deleted, so each run uses names of its own (D-289). Cleanup
-// removes the channel and library, clears the user's access, disables them,
-// and deletes the groups.
+// Users can't be deleted, so each run uses names of its own (D-289).
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';

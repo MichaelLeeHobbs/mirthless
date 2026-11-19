@@ -1,16 +1,9 @@
-// ===========================================
-// Auth Controller
-// ===========================================
-// Handles HTTP requests for authentication.
-// Validates input, calls service, formats responses.
-
 import type { Request, Response } from 'express';
 import { AuthService, type SessionMetadata } from '../services/auth.service.js';
 import logger from '../lib/logger.js';
 import { setRefreshTokenCookie, clearRefreshTokenCookie, getRefreshTokenFromCookie } from '../lib/cookies.js';
 import { isServiceError } from '../lib/service-error.js';
 
-/** The client details a new session records: the request's user agent and address. */
 function sessionMetadata(req: Request): SessionMetadata {
   const userAgent = req.headers['user-agent'];
   const ipAddress = req.ip;

@@ -1,7 +1,3 @@
-// ===========================================
-// Message Generator API Hook
-// ===========================================
-
 import { useMutation } from '@tanstack/react-query';
 import type { GenerateMessagesInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';

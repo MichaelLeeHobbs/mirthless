@@ -1,7 +1,3 @@
-// ===========================================
-// fillVariables: the placeholder rule for connector settings
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { fillVariables } from '../base.js';
 

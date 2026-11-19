@@ -1,7 +1,4 @@
-// A fake Monaco for tests that need the editor to behave: focus, typing, undo,
-// the host replacing its text, and which surface the type service holds.
-// Monaco cannot run in jsdom (test/setup.ts stubs it to render nothing). Use it
-// from a test file with:
+// Monaco cannot run in jsdom (test/setup.ts stubs it to render nothing). Use this from a test file with:
 //   vi.mock('<path>/editors/monaco.js', async () => (await import('<path>/fake-monaco.js')).fakeMonacoModule());
 //   vi.mock('@monaco-editor/react', async () => (await import('<path>/fake-monaco.js')).fakeMonacoReact);
 
@@ -17,9 +14,7 @@ function listen(set: Set<() => void>, listener: () => void): Disposable {
 
 const NONE: Disposable = { dispose: () => undefined };
 
-/** One editor: its text, its undo history and its focus. */
 export class FakeCodeEditor {
-  /** Every editor mounted and not yet disposed, in mount order. */
   static readonly mounted: FakeCodeEditor[] = [];
 
   private text: string;
@@ -41,7 +36,6 @@ export class FakeCodeEditor {
     onDidChangeContent: (listener: () => void): Disposable => listen(this.content, listener),
   };
 
-  /** The editor's aria label, which follows the host's options, as Monaco's does. */
   constructor(initial: string, public label: string) {
     this.text = initial;
   }
@@ -52,19 +46,16 @@ export class FakeCodeEditor {
     for (const listener of [...this.content]) listener();
   }
 
-  /** The user types: the edit can be undone. */
   type(value: string): void {
     this.undoStack.push(this.text);
     this.change(value);
   }
 
-  /** Ctrl+Z. */
   undo(): void {
     const previous = this.undoStack.pop();
     if (previous !== undefined) this.change(previous);
   }
 
-  /** The user clicks in: every other editor loses focus first. */
   focus(): void {
     for (const other of FakeCodeEditor.mounted) if (other !== this) other.blur();
     if (this.focused) return;
@@ -101,14 +92,14 @@ export class FakeCodeEditor {
   revealLineInCenter(): void { /* no scrolling here */ }
 }
 
-/** The mounted editor with this label (the ScriptEditor `label`). */
+/** By the ScriptEditor `label`. */
 export function fakeEditor(label: string): FakeCodeEditor {
   const found = FakeCodeEditor.mounted.find((e) => e.label === label);
   if (!found) throw new Error(`No editor labelled "${label}" is mounted`);
   return found;
 }
 
-/** Every surface applied to the type service, in order (only real changes, as Monaco's). */
+/** Only real changes, as Monaco's. */
 export const appliedSurfaces: SurfaceLibs[] = [];
 
 const fakeMonaco = {
@@ -131,7 +122,6 @@ const fakeMonaco = {
   },
 };
 
-/** Stands in for `components/editors/monaco.ts`, with the real applied-surface tracking. */
 export function fakeMonacoModule(): Record<string, unknown> {
   return {
     monaco: fakeMonaco,
@@ -147,7 +137,7 @@ interface FakeEditorProps {
   readonly options?: { readonly ariaLabel?: string };
 }
 
-/** @monaco-editor/react's Editor: forwards every content change to `onChange`, as 4.7.0 does. */
+/** Forwards every content change to `onChange`, as @monaco-editor/react 4.7.0 does. */
 function FakeEditor({ defaultValue = '', onChange, onMount, options }: FakeEditorProps): ReactNode {
   const [editor] = useState(() => new FakeCodeEditor(defaultValue, options?.ariaLabel ?? ''));
   const latest = useRef({ onChange, onMount });
@@ -162,7 +152,6 @@ function FakeEditor({ defaultValue = '', onChange, onMount, options }: FakeEdito
   return null;
 }
 
-/** Stands in for `@monaco-editor/react`. */
 export const fakeMonacoReact = {
   default: FakeEditor,
   DiffEditor: (): null => null,

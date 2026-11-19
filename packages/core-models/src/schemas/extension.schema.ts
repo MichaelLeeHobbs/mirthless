@@ -1,7 +1,3 @@
-// ===========================================
-// Extension Schemas
-// ===========================================
-
 import { z } from 'zod';
 
 export const EXTENSION_TYPE = {

@@ -1,11 +1,5 @@
-// ===========================================
-// AlertsPage Tests
-// ===========================================
-// The alert list follows the shared admin-list pattern: readable trigger
-// labels, a one-click enabled switch, a named delete confirm, and no pager on
-// a short list. Users without alerts:write must not be offered the edit flow:
-// the server rejects their saves, and the editor route is gated the same way.
-// Data and permission hooks are mocked at the API boundary.
+// Users without alerts:write are not offered the edit flow: the server rejects
+// their saves, and the editor route is gated the same way.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';

@@ -1,14 +1,9 @@
-// ===========================================
-// Channel API Hooks
-// ===========================================
-// TanStack Query hooks for channel CRUD operations.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateChannelInput, UpdateChannelInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 import { STATS_KEYS } from './use-statistics.js';
 
-// ----- Response Types (mirror server's ChannelSummary/ChannelDetail) -----
+// Mirror the server's ChannelSummary and ChannelDetail.
 
 export interface ChannelSummary {
   readonly id: string;
@@ -124,8 +119,6 @@ interface ChannelListResponse {
   };
 }
 
-// ----- Query Keys -----
-
 const CHANNEL_KEYS = {
   all: ['channels'] as const,
   lists: () => [...CHANNEL_KEYS.all, 'list'] as const,
@@ -134,9 +127,6 @@ const CHANNEL_KEYS = {
   detail: (id: string) => [...CHANNEL_KEYS.details(), id] as const,
 } as const;
 
-// ----- Queries -----
-
-/** Fetch paginated channel list. */
 export function useChannels(page: number = 1, pageSize: number = 25): ReturnType<typeof useQuery<ChannelListResponse>> {
   return useQuery({
     queryKey: CHANNEL_KEYS.list(page, pageSize),
@@ -154,7 +144,6 @@ export function useChannels(page: number = 1, pageSize: number = 25): ReturnType
   });
 }
 
-/** Fetch a single channel's full detail. */
 export function useChannel(id: string | null): ReturnType<typeof useQuery<ChannelDetail>> {
   return useQuery({
     queryKey: CHANNEL_KEYS.detail(id ?? ''),
@@ -169,9 +158,6 @@ export function useChannel(id: string | null): ReturnType<typeof useQuery<Channe
   });
 }
 
-// ----- Mutations -----
-
-/** Create a new channel. */
 export function useCreateChannel(): ReturnType<typeof useMutation<ChannelDetail, Error, CreateChannelInput>> {
   const queryClient = useQueryClient();
 
@@ -189,7 +175,6 @@ export function useCreateChannel(): ReturnType<typeof useMutation<ChannelDetail,
   });
 }
 
-/** Update an existing channel. */
 export function useUpdateChannel(): ReturnType<typeof useMutation<ChannelDetail, Error, { id: string; input: UpdateChannelInput }>> {
   const queryClient = useQueryClient();
 
@@ -210,7 +195,7 @@ export function useUpdateChannel(): ReturnType<typeof useMutation<ChannelDetail,
   });
 }
 
-/** Soft-delete a channel. */
+/** The server soft-deletes. */
 export function useDeleteChannel(): ReturnType<typeof useMutation<void, Error, string>> {
   const queryClient = useQueryClient();
 
@@ -231,7 +216,6 @@ export function useDeleteChannel(): ReturnType<typeof useMutation<void, Error, s
   });
 }
 
-/** Clone a channel with a new name. */
 export function useCloneChannel(): ReturnType<typeof useMutation<ChannelDetail, Error, { id: string; name: string; groupId?: string }>> {
   const queryClient = useQueryClient();
 
@@ -249,7 +233,6 @@ export function useCloneChannel(): ReturnType<typeof useMutation<ChannelDetail, 
   });
 }
 
-/** Toggle channel enabled flag. */
 export function useToggleChannelEnabled(): ReturnType<typeof useMutation<ChannelDetail, Error, { id: string; enabled: boolean }>> {
   const queryClient = useQueryClient();
 

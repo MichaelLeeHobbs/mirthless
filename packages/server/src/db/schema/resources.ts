@@ -1,8 +1,4 @@
-// ===========================================
-// Resources Table Schema
-// ===========================================
-// Uploaded files available to channels (certs, XSLTs, lookup tables, etc.).
-// Note: content uses text as a placeholder until bytea custom type is implemented.
+// content is text as a placeholder until a bytea custom type exists.
 
 import { pgTable, uuid, varchar, text, timestamp, integer } from 'drizzle-orm/pg-core';
 

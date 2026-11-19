@@ -1,10 +1,7 @@
-// ===========================================
-// Roles and Role Permissions Table Schemas
-// ===========================================
-// A role is a job: a named set of permissions (D-310, RBAC plan section 1).
-// The admin role is a locked row whose holders get every permission, so a
-// permission added later reaches admins without a migration; it has no
-// role_permissions rows. Only services/grant.service.ts writes these tables.
+// A role is a named set of permissions (D-310). The admin role has no
+// role_permissions rows: its holders get every permission, so a permission
+// added later reaches admins without a migration. Only
+// services/grant.service.ts writes these tables.
 
 import { sql } from 'drizzle-orm';
 import { pgTable, uuid, varchar, text, timestamp, boolean, primaryKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
@@ -13,7 +10,6 @@ export const roles = pgTable('roles', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 100 }).notNull().unique(),
   description: text('description').notNull().default(''),
-  /** Seeded by the product: Admin, Deployer, Developer, Viewer and the three channel roles. */
   builtIn: boolean('built_in').notNull().default(false),
   /** The locked admin role: every permission, never edited or deleted. */
   admin: boolean('admin').notNull().default(false),

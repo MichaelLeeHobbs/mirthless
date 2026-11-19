@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Dependency Routes
-// ===========================================
-// Mounted under /channels prefix in the route aggregator.
-
 import { Router, type IRouter, type Request } from 'express';
 import {
   setDependenciesSchema,
@@ -15,11 +10,7 @@ import { requirePermission, scopeToChannel } from '../middleware/permission.midd
 import { validate } from '../middleware/validate.middleware.js';
 import logger from '../lib/logger.js';
 
-/**
- * A dependency on a channel outside the caller's scope keeps its id, so an edit
- * does not drop it, but not its name: hidden channels stay hidden (plan
- * section 4, "Name unavailable").
- */
+/** An out-of-scope dependency keeps its id, so an edit does not drop it, but not its name. */
 async function withHiddenNames(req: Request, deps: readonly DependencyInfo[]): Promise<readonly DependencyInfo[]> {
   const scope = await channelScopeOf(req, 'channels:read');
   return deps.map((d) => (inScope(scope, d.channelId) ? d : { ...d, channelName: 'Name unavailable' }));

@@ -1,8 +1,4 @@
-// ===========================================
-// Server Backup Controller Tests: the download
-// ===========================================
-// The backup is answered with its exportInfo header first, naming the audit
-// record and the reason (D-318); the recorded hash covers the rest.
+// exportInfo comes first; the recorded hash covers the rest (D-318).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';

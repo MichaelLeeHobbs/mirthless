@@ -1,7 +1,3 @@
-// ===========================================
-// Setting Schema Validation Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   upsertSettingSchema,
@@ -10,8 +6,6 @@ import {
   settingKeyParamSchema,
 } from '../setting.schema.js';
 
-// ----- Fixtures -----
-
 const VALID_UPSERT_INPUT = {
   key: 'general.server_name',
   value: 'Production Server',
@@ -19,8 +13,6 @@ const VALID_UPSERT_INPUT = {
   description: 'The display name of this server instance',
   category: 'general',
 };
-
-// ----- upsertSettingSchema -----
 
 describe('upsertSettingSchema', () => {
   it('accepts valid full input', () => {
@@ -94,8 +86,6 @@ describe('upsertSettingSchema', () => {
   });
 });
 
-// ----- bulkUpsertSettingsSchema -----
-
 describe('bulkUpsertSettingsSchema', () => {
   it('accepts array of valid settings', () => {
     const result = bulkUpsertSettingsSchema.safeParse({
@@ -129,8 +119,6 @@ describe('bulkUpsertSettingsSchema', () => {
   });
 });
 
-// ----- settingsListQuerySchema -----
-
 describe('settingsListQuerySchema', () => {
   it('accepts empty query (no filter)', () => {
     const result = settingsListQuerySchema.safeParse({});
@@ -146,8 +134,6 @@ describe('settingsListQuerySchema', () => {
     expect(result.data.category).toBe('security');
   });
 });
-
-// ----- settingKeyParamSchema -----
 
 describe('settingKeyParamSchema', () => {
   it('accepts valid key', () => {

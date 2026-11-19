@@ -28,9 +28,8 @@ describe('password hashing', () => {
   });
 
   it('leaves the event loop free while several comparisons run', async () => {
-    // A burst of logins: four cost-12 comparisons at once. bcryptjs ran them on
-    // the event loop, keeping it busy the whole time (utilization near 1). On
-    // libuv's thread pool the event loop only waits, however loaded the machine is.
+    // Four cost-12 comparisons at once. On libuv's thread pool the event loop
+    // only waits, however loaded the machine is.
     let ticks = 0;
     // Coarse, so the ticker's own wake-ups add next to nothing to what is measured.
     const timer = setInterval(() => { ticks += 1; }, 10);

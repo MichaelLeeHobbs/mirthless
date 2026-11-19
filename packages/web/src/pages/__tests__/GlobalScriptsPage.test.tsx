@@ -1,18 +1,9 @@
-// ===========================================
-// GlobalScriptsPage Tests
-// ===========================================
-// Behavior tests: renders the 4 script-type tabs, switches the edited script on
-// tab selection, and enables Save once the editor content is dirtied.
-// The Monaco-backed ScriptEditor is replaced with a plain textarea.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@mui/material/styles';
 import type { ReactElement } from 'react';
 import { darkTheme } from '../../styles/theme.js';
-
-// ----- Mocks -----
 
 const updateMutateAsync = vi.fn().mockResolvedValue(undefined);
 const notifyMock = vi.fn();
@@ -48,7 +39,6 @@ vi.mock('../../stores/notification.store.js', () => ({
   useNotification: () => ({ notify: notifyMock }),
 }));
 
-// Replace Monaco editor with a controlled textarea so tab/edit behavior is observable.
 vi.mock('../../components/editors/ScriptEditor.js', () => ({
   ScriptEditor: ({ value, onChange }: { value: string; onChange: (v: string | undefined) => void }) => (
     <textarea
@@ -116,7 +106,6 @@ describe('GlobalScriptsPage', () => {
     expect(save).toHaveProperty('disabled', false);
 
     await act(async () => { fireEvent.click(save); });
-    // mutateAsync is called with the full scripts object including the edit.
     expect(updateMutateAsync).toHaveBeenCalledTimes(1);
     expect(updateMutateAsync.mock.calls[0]?.[0]).toMatchObject({ deploy: 'deploy-src // edited' });
   });

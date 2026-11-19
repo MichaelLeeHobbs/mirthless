@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Dependencies Table Schema
-// ===========================================
-
 import { pgTable, uuid, primaryKey } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 

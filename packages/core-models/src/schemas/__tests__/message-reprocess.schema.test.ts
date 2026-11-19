@@ -1,7 +1,3 @@
-// ===========================================
-// Message Reprocess / Resend Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   bulkReprocessInputSchema,

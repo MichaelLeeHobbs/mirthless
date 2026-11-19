@@ -1,10 +1,5 @@
-// ===========================================
-// Extension Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock SettingsService
 vi.mock('../settings.service.js', () => ({
   SettingsService: {
     list: vi.fn(),
@@ -20,15 +15,11 @@ const mockList = vi.mocked(SettingsService.list);
 const mockGetByKey = vi.mocked(SettingsService.getByKey);
 const mockUpsert = vi.mocked(SettingsService.upsert);
 
-// ----- Setup -----
-
 beforeEach(() => {
   mockList.mockReset();
   mockGetByKey.mockReset();
   mockUpsert.mockReset();
 });
-
-// ----- list -----
 
 describe('ExtensionService.list', () => {
   it('returns all built-in extensions', async () => {
@@ -77,8 +68,6 @@ describe('ExtensionService.list', () => {
   });
 });
 
-// ----- getById -----
-
 describe('ExtensionService.getById', () => {
   it('returns extension by ID', async () => {
     mockGetByKey.mockResolvedValue({ ok: false, value: null, error: { code: 'NOT_FOUND', message: 'Not found' } as never });
@@ -114,8 +103,6 @@ describe('ExtensionService.getById', () => {
     }
   });
 });
-
-// ----- setEnabled -----
 
 describe('ExtensionService.setEnabled', () => {
   it('enables an extension', async () => {
@@ -162,7 +149,6 @@ describe('ExtensionService.setEnabled', () => {
   it('returns error when settings upsert fails', async () => {
     mockUpsert.mockResolvedValue({ ok: false, value: null, error: { code: 'INTERNAL', message: 'DB error' } as never });
 
-    // The upsert error is thrown inside tryCatch
     mockUpsert.mockRejectedValue(new Error('DB error'));
 
     const result = await ExtensionService.setEnabled('http', true);
@@ -181,8 +167,6 @@ describe('ExtensionService.setEnabled', () => {
     }
   });
 });
-
-// ----- Extension capabilities -----
 
 describe('ExtensionService — capabilities', () => {
   it('SMTP connector has only destination capability', async () => {

@@ -1,7 +1,3 @@
-// ===========================================
-// Extension Controller
-// ===========================================
-
 import type { Request, Response } from 'express';
 import type { SetExtensionEnabledInput } from '@galvanigraph/core-models';
 import { ExtensionService } from '../services/extension.service.js';

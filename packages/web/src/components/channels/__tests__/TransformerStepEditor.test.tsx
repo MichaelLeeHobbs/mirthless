@@ -1,9 +1,3 @@
-// ===========================================
-// Transformer Step Editor Tests
-// ===========================================
-// The engine cannot run Mapper steps and refuses to deploy a channel that has an
-// enabled one, so the editor must say so instead of letting the step look valid.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';

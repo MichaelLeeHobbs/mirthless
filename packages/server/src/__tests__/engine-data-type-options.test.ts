@@ -1,7 +1,3 @@
-// ===========================================
-// Data type settings at deploy
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { dataTypeOptionsFor, parsedOrRaw } from '../engine.js';
 import type { ChannelDetail } from '../services/channel.service.js';

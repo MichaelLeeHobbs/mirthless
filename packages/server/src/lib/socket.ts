@@ -1,9 +1,3 @@
-// ===========================================
-// Socket.IO Server
-// ===========================================
-// Singleton Socket.IO server instance with JWT auth
-// and channel-based room management.
-
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { ALL_CHANNELS, PERMISSIONS, holdsPermission, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
@@ -15,29 +9,22 @@ import { verifyAccessToken } from './jwt.js';
 import { isSessionLive } from './session-live.js';
 import { channelGroupIds, holdsOnChannel } from './channel-scope.js';
 
-/** User data stored on authenticated sockets. */
 export interface SocketUserData {
   readonly userId: string;
   readonly sessionId?: string | undefined;
   readonly type: string;
   readonly permissions: readonly string[];
-  /** What the user holds on which channels (D-310): decides the channel rooms and audience rooms. */
+  /** Decides the channel and audience rooms (D-310). */
   readonly grants: FoldedGrants;
 }
 
-/** The room every socket that reads all channels is in. */
 export const ALL_CHANNELS_ROOM = 'scope:all';
 
-/** The room of the sockets that read the channels of one group. */
 export function groupRoom(groupId: string): string {
   return `group:${groupId}`;
 }
 
-/**
- * The audience rooms a socket belongs in: where a channel's state changes go
- * (D-310, plan section 4). Every channel for an all-channel reader; one room
- * per group for a scoped one; none without channels:read.
- */
+/** Where a channel's state changes go (D-310). */
 export function audienceRooms(grants: FoldedGrants): readonly string[] {
   const scope = grants.get(PERMISSIONS.CHANNELS_READ);
   if (scope === undefined) return [];
@@ -51,30 +38,25 @@ function isAudienceRoom(room: string): boolean {
 
 
 
-/** Permission required to join each server-pushed room. */
 const ROOM_PERMISSIONS: Readonly<Record<'channel' | 'dashboard' | 'logs', Permission>> = {
   channel: PERMISSIONS.CHANNELS_READ,
   dashboard: PERMISSIONS.CHANNELS_READ,
   logs: PERMISSIONS.SYSTEM_INFO,
 };
 
-/** How often connected sockets are re-validated against the database. */
 const REVALIDATE_INTERVAL_MS = 60_000;
 
 let io: SocketIOServer | null = null;
 let revalidateTimer: ReturnType<typeof setInterval> | null = null;
 
-/** True when the authenticated socket holds the given `resource:action` permission. */
 function socketHasPermission(socket: { data: Record<string, unknown> }, permission: Permission): boolean {
   const user = socket.data['user'] as SocketUserData | undefined;
   return holdsPermission(user?.permissions, permission);
 }
 
 /**
- * Load the user's current standing for a socket. Returns null when the token may
- * no longer be used: the user is gone or disabled, must change their password, or
- * the token's session was revoked (logout, password reset). Mirrors the REST
- * authenticate middleware so the websocket cannot outlive what REST would allow.
+ * Mirrors the REST authenticate middleware: a socket must not outlive what REST
+ * would allow.
  */
 export async function loadSocketUser(userId: string, sessionId: string | undefined, type: string): Promise<SocketUserData | null> {
   const user = await loadUserStanding(userId);
@@ -83,13 +65,6 @@ export async function loadSocketUser(userId: string, sessionId: string | undefin
   return { userId, sessionId, type, permissions: user.permissions, grants: user.grants };
 }
 
-/**
- * Socket.IO authentication middleware.
- * Validates the JWT from the `auth.token` handshake parameter and loads the user's
- * live standing (see loadSocketUser) so the room-join handlers can enforce RBAC
- * (the REST API's guards must not be bypassable over the websocket — e.g.
- * streaming logs requires system:info).
- */
 export async function authMiddleware(
   socket: { data: Record<string, unknown>; handshake: { auth: Record<string, unknown> } },
   next: (err?: Error) => void,
@@ -114,7 +89,6 @@ export async function authMiddleware(
   }
 }
 
-/** Permission a joined room requires, or null for rooms this server does not manage. */
 function roomPermission(room: string): Permission | null {
   if (room === 'dashboard') return ROOM_PERMISSIONS.dashboard;
   if (room === 'logs') return ROOM_PERMISSIONS.logs;
@@ -131,12 +105,7 @@ interface RevalidatableSocket {
   disconnect(close?: boolean): unknown;
 }
 
-/**
- * Re-check a connected socket against the database. Disconnects it when its
- * session was revoked or the user lost access, and leaves any room whose
- * permission the user no longer holds (e.g. after a role change).
- * Returns true when the socket remains connected.
- */
+/** True when the socket stays connected. */
 export async function revalidateSocket(socket: RevalidatableSocket): Promise<boolean> {
   const current = socket.data['user'] as SocketUserData | undefined;
   const fresh = current ? await loadSocketUser(current.userId, current.sessionId, current.type).catch(() => null) : null;
@@ -157,7 +126,6 @@ export async function revalidateSocket(socket: RevalidatableSocket): Promise<boo
     if (!holdsPermission(fresh.permissions, needed)) {
       void socket.leave(room);
     } else if (room.startsWith('channel:') && !(await holdsOnChannel(fresh.grants, needed, room.slice('channel:'.length)).catch(() => false))) {
-      // Scope narrowed, or the channel left the user's groups.
       void socket.leave(room);
     }
   }
@@ -165,9 +133,6 @@ export async function revalidateSocket(socket: RevalidatableSocket): Promise<boo
   return true;
 }
 
-/**
- * Registers connection event handlers for room join/leave.
- */
 function registerConnectionHandlers(server: SocketIOServer): void {
   server.on('connection', (socket) => {
     logger.debug({ socketId: socket.id }, 'Socket connected');
@@ -219,8 +184,7 @@ function registerConnectionHandlers(server: SocketIOServer): void {
 
     socket.on('join:logs', async () => {
       if (!(await revalidateSocket(socket))) return;
-      // Live server logs can contain error payloads / PHI fragments — same bar as
-      // the REST /logs endpoint (system:info), which only admin holds by default.
+      // Live logs can hold PHI fragments: the same bar as the REST /logs endpoint.
       if (!socketHasPermission(socket, ROOM_PERMISSIONS.logs)) {
         socket.emit('error:forbidden', { room: 'logs' });
         logger.warn({ socketId: socket.id, room: 'logs' }, 'Denied logs stream (missing permission)');
@@ -271,10 +235,6 @@ export function getIO(): SocketIOServer | null {
   return io;
 }
 
-/**
- * Emit an event to all sockets in a specific room.
- * No-ops if Socket.IO is not initialized.
- */
 export function emitToRoom(room: string, event: string, data: unknown): void {
   if (!io) {
     return;
@@ -294,12 +254,8 @@ interface CoalescedEmit {
 const coalescedEmits = new Map<string, CoalescedEmit>();
 
 /**
- * Emit an event to a room at most once per LIVE_EVENT_COALESCE_MS. The first
- * event goes out at once; the events after it in the same window go out as one
- * emit when the window ends, carrying the latest data. Used for the per-message
- * events (`stats:update`, `message:new`), whose listeners only refetch, so a
- * busy channel does not push one event per message to every open page (#231).
- * No-ops if Socket.IO is not initialized.
+ * Only for events whose listeners just refetch (`stats:update`, `message:new`):
+ * a window's events go out as one emit carrying the latest data (#231).
  */
 export function emitToRoomCoalesced(room: string, event: string, data: unknown): void {
   if (!io) return;
@@ -317,10 +273,7 @@ export function emitToRoomCoalesced(room: string, event: string, data: unknown):
   entry.throttle.call();
 }
 
-/**
- * Emit and log a failure instead of throwing it. A trailing emit runs in a
- * timer, where a throw would reach uncaughtException and stop the server.
- */
+/** A trailing emit runs in a timer, where a throw would reach uncaughtException and stop the server. */
 function emitQuietly(room: string, event: string, data: unknown): void {
   try {
     emitToRoom(room, event, data);
@@ -329,17 +282,14 @@ function emitQuietly(room: string, event: string, data: unknown): void {
   }
 }
 
-/** Drop every pending coalesced emit. */
 function cancelCoalescedEmits(): void {
   for (const entry of coalescedEmits.values()) entry.throttle.cancel();
   coalescedEmits.clear();
 }
 
 /**
- * Emit an event about one channel to the sockets that may read it (D-310): the
- * all-channel readers and the readers of each group the channel is in. Best
- * effort: a failed group lookup is logged and the event is not sent, since a
- * live update must never reach a socket outside the channel's scope.
+ * A failed group lookup sends nothing: a live update must never reach a socket
+ * outside the channel's scope (D-310).
  */
 export function emitToChannelAudience(channelId: string, event: string, data: unknown): void {
   const server = io;
@@ -356,7 +306,6 @@ export function emitToChannelAudience(channelId: string, event: string, data: un
   void next.then(() => { if (audienceQueues.get(channelId) === next) audienceQueues.delete(channelId); });
 }
 
-/** The last pending audience emit per channel; cleared once a channel's queue is drained. */
 const audienceQueues = new Map<string, Promise<void>>();
 
 export async function shutdownSocketIO(): Promise<void> {
@@ -366,9 +315,8 @@ export async function shutdownSocketIO(): Promise<void> {
   }
   cancelCoalescedEmits();
   if (io) {
-    // Force-disconnect all clients first. Open websockets otherwise keep the
-    // underlying HTTP server's `close()` from ever resolving, which would hang
-    // graceful shutdown until the force-exit timer fires (SIGTERM => hard kill).
+    // Disconnect clients first: open websockets keep the HTTP server's close()
+    // from resolving, hanging shutdown until the force-exit timer fires.
     io.disconnectSockets(true);
     await new Promise<void>((resolve) => {
       io!.close(() => resolve());
@@ -380,10 +328,7 @@ export async function shutdownSocketIO(): Promise<void> {
   }
 }
 
-/**
- * Reset the io singleton (for testing only).
- * @internal
- */
+/** Tests only. */
 export function _resetIO(server: SocketIOServer | null): void {
   cancelCoalescedEmits();
   io = server;

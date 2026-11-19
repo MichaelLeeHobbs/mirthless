@@ -1,7 +1,3 @@
-// ===========================================
-// Audit Dedupe Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { AuditDedupe, AUDIT_DEDUPE_TTL_MS } from '../audit-dedupe.js';
 

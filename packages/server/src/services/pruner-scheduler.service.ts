@@ -1,9 +1,3 @@
-// ===========================================
-// Pruner Scheduler Service
-// ===========================================
-// Cron-based scheduling for automatic data pruning via pg-boss.
-// Reads schedule config from system_settings table.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { getBoss } from '../lib/queue.js';
 import { SettingsService } from './settings.service.js';
@@ -11,12 +5,8 @@ import { DataPrunerService } from './data-pruner.service.js';
 import { emitEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
 
-// ----- Constants -----
-
 const JOB_NAME = 'data-pruner-auto';
-const DEFAULT_CRON = '0 3 * * *'; // 3 AM daily
-
-// ----- Types -----
+const DEFAULT_CRON = '0 3 * * *';
 
 export interface PrunerScheduleStatus {
   readonly enabled: boolean;
@@ -36,16 +26,11 @@ export interface UpdatePrunerScheduleInput {
   readonly cronExpression: string;
 }
 
-// ----- Module State -----
-
 let lastRunResult: PrunerLastRunResult | null = null;
 let lastRunAt: string | null = null;
 let workerRegistered = false;
 
-// ----- Service -----
-
 export class PrunerSchedulerService {
-  /** Start the pruner scheduler. Reads settings and registers worker. */
   static async start(): Promise<Result<void>> {
     return tryCatch(async () => {
       const boss = getBoss();
@@ -54,7 +39,7 @@ export class PrunerSchedulerService {
         return;
       }
 
-      // Ensure queue exists (pgboss v10+ requires explicit creation)
+      // pg-boss v10+ requires explicit queue creation.
       if (!workerRegistered) {
         await boss.createQueue(JOB_NAME);
         await boss.work(JOB_NAME, async () => {
@@ -82,7 +67,6 @@ export class PrunerSchedulerService {
         workerRegistered = true;
       }
 
-      // Read schedule settings
       const enabledResult = await SettingsService.getByKey('pruner.enabled');
       const cronResult = await SettingsService.getByKey('pruner.cron_expression');
 
@@ -98,7 +82,6 @@ export class PrunerSchedulerService {
     });
   }
 
-  /** Stop the pruner scheduler. */
   static async stop(): Promise<Result<void>> {
     return tryCatch(async () => {
       const boss = getBoss();
@@ -109,7 +92,6 @@ export class PrunerSchedulerService {
     });
   }
 
-  /** Get current scheduler status. */
   static async getStatus(): Promise<Result<PrunerScheduleStatus>> {
     return tryCatch(async () => {
       const enabledResult = await SettingsService.getByKey('pruner.enabled');
@@ -122,14 +104,12 @@ export class PrunerSchedulerService {
     });
   }
 
-  /** Update schedule and restart. */
   static async updateSchedule(
     input: UpdatePrunerScheduleInput,
   ): Promise<Result<PrunerScheduleStatus>> {
     return tryCatch(async () => {
       const boss = getBoss();
 
-      // Persist settings
       await SettingsService.upsert({
         key: 'pruner.enabled',
         value: String(input.enabled),
@@ -145,7 +125,6 @@ export class PrunerSchedulerService {
         category: 'pruner',
       });
 
-      // Reschedule
       if (boss) {
         await boss.unschedule(JOB_NAME);
         if (input.enabled) {
@@ -171,7 +150,7 @@ export class PrunerSchedulerService {
     });
   }
 
-  /** Reset module state (for testing). */
+  /** Tests only. */
   static _reset(): void {
     lastRunResult = null;
     lastRunAt = null;

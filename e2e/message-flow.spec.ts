@@ -1,12 +1,4 @@
-// ===========================================
-// Message Flow E2E Tests
-// ===========================================
-// Tests end-to-end message flow: create a TCP/MLLP channel via API,
-// deploy and start it, send an HL7 ADT^A01 message, verify ACK,
-// then confirm the message appears in the browser UI.
-//
-// The steps run serially and every step must succeed: a failed setup step
-// fails the suite rather than skipping the message checks.
+// Every step must succeed: a failed setup step fails the suite rather than skipping the message checks.
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -14,9 +6,6 @@ import { API_BASE, adminApi, createMllpChannel, deployAndStart, getData, postDat
 import { sendMllpMessage } from './fixtures/mllp.js';
 import { TEST_CHANNEL } from './fixtures/test-data.js';
 
-// -------------------------------------------------------
-// Sample HL7 ADT^A01 message
-// -------------------------------------------------------
 const HL7_ADT = [
   'MSH|^~\\&|E2E_SENDER|FACILITY|E2E_RECEIVER|FACILITY|20260228140000||ADT^A01|E2E001|P|2.5',
   'EVN|A01|20260228140000',
@@ -24,16 +13,10 @@ const HL7_ADT = [
   'PV1||I|ICU^200^B',
 ].join('\r');
 
-// -------------------------------------------------------
-// Shared state across tests in this suite
-// -------------------------------------------------------
 let api: APIRequestContext;
 let channelId = '';
-const MLLP_PORT = TEST_CHANNEL.sourcePort; // 18661
+const MLLP_PORT = TEST_CHANNEL.sourcePort;
 
-// -------------------------------------------------------
-// Tests
-// -------------------------------------------------------
 test.describe('Message Flow', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -89,7 +72,6 @@ test.describe('Message Flow', () => {
     expect([200, 204]).toContain(deleteRes.status());
     channelId = '';
 
-    // The channel list lives on the Dashboard.
     await page.goto('/');
     await expect(page.locator('tr', { hasText: TEST_CHANNEL.name })).toHaveCount(0, { timeout: 10_000 });
   });

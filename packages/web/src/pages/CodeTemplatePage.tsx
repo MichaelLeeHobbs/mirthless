@@ -1,8 +1,3 @@
-// ===========================================
-// Code Template Page
-// ===========================================
-// Two-panel page: library tree (left) + template editor (right).
-
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useCallback, type ReactNode } from 'react';
 import { useBlocker } from 'react-router';
@@ -50,7 +45,7 @@ interface ConfirmState {
 
 const CLOSED_CONFIRM: ConfirmState = { open: false, title: '', message: '', onConfirm: () => {} };
 
-/** Whether the dialog's links differ from the library's (as far as the editor can see them). */
+/** Compares only the links the editor can see. */
 function linksChanged(lib: CodeTemplateLibrary, links: readonly string[] | null | undefined): boolean {
   const before = lib.channelIds ?? null;
   const after = links ?? null;
@@ -103,7 +98,6 @@ export function CodeTemplatePage(): ReactNode {
     setEditorDirty(dirty);
   }, []);
 
-  // Guard in-page template switch / close when there are unsaved edits.
   const requestSelectTemplate = useCallback((next: CodeTemplateDetail | null): void => {
     setSelectedTemplate((current) => {
       if (current && current.id !== next?.id && editorDirty) {
@@ -118,7 +112,6 @@ export function CodeTemplatePage(): ReactNode {
     requestSelectTemplate(null);
   }, [requestSelectTemplate]);
 
-  // Route-level navigation guard (consistent with the channel editor).
   const blocker = useBlocker(editorDirty);
   useBeforeUnload(editorDirty);
 
@@ -144,7 +137,6 @@ export function CodeTemplatePage(): ReactNode {
 
   const handleCreateLibrary = async (): Promise<void> => {
     try {
-      // Links left alone take the server's default for the writer.
       await createLibrary.mutateAsync({
         name: dialogName, description: dialogDescription,
         ...(dialogLinks === undefined ? {} : { channelIds: dialogLinks === null ? null : [...dialogLinks] }),
@@ -326,9 +318,7 @@ export function CodeTemplatePage(): ReactNode {
         />
       ) : null}
 
-      {/* Two-panel layout */}
       <Box sx={{ display: 'flex', flexGrow: 1, gap: 2, minHeight: 0 }}>
-        {/* Left panel: Library tree */}
         <Paper
           variant="outlined"
           sx={{
@@ -354,7 +344,6 @@ export function CodeTemplatePage(): ReactNode {
           )}
         </Paper>
 
-        {/* Right panel: Template editor */}
         <Paper
           variant="outlined"
           sx={{
@@ -387,7 +376,6 @@ export function CodeTemplatePage(): ReactNode {
         </Paper>
       </Box>
 
-      {/* Library Dialog */}
       <Dialog
         open={dialogMode === 'create-library' || dialogMode === 'edit-library'}
         onClose={() => { setDialogMode(null); }}
@@ -441,7 +429,6 @@ export function CodeTemplatePage(): ReactNode {
         </DialogActions>
       </Dialog>
 
-      {/* Confirm Dialog */}
       <ConfirmDialog
         open={confirm.open}
         title={confirm.title}
@@ -452,7 +439,6 @@ export function CodeTemplatePage(): ReactNode {
         onCancel={() => { setConfirm(CLOSED_CONFIRM); }}
       />
 
-      {/* Unsaved-changes guard (template switch / close / route navigation) */}
       <ConfirmDialog
         open={unsavedOpen}
         title="Unsaved Changes"

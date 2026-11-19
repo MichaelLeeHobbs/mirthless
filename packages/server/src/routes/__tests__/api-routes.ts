@@ -1,8 +1,4 @@
-// ===========================================
-// Walk the routes the API mounts
-// ===========================================
-// Shared by public-routes.test.ts, role-access.test.ts and route-walk.itest.ts.
-// It reads routes/index.ts for its imports and mounts, so a router mounted there
+// Reads routes/index.ts for its imports and mounts, so a router mounted there
 // is walked without being listed anywhere else.
 
 import { readFileSync } from 'node:fs';
@@ -10,12 +6,12 @@ import type { Router } from 'express';
 
 export interface ApiRoute {
   readonly method: string;
-  /** The path template under /api/v1, such as `/api/v1/channels/:id`. */
+  /** Includes the prefix: `/api/v1/channels/:id`. */
   readonly path: string;
 }
 
 export interface WalkedRoute extends ApiRoute {
-  /** The route's own handlers in order: guard, validator, controller. Router-wide middleware is not included. */
+  /** Router-wide middleware is not included. */
   readonly handlers: readonly unknown[];
 }
 
@@ -27,7 +23,6 @@ interface RouteLayer {
   };
 }
 
-/** The routes a router defines itself, under `prefix`. */
 function routesOf(router: Router, prefix: string): readonly WalkedRoute[] {
   return (router.stack as unknown as readonly RouteLayer[]).flatMap((layer) => {
     const route = layer.route;
@@ -40,7 +35,6 @@ function routesOf(router: Router, prefix: string): readonly WalkedRoute[] {
   });
 }
 
-/** Every route under /api/v1: index.ts's own, then each mounted router's, in mount order. */
 export async function walkApiRoutes(index: Router): Promise<readonly WalkedRoute[]> {
   const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
   const files = new Map([...source.matchAll(/import (\w+) from '\.\/([\w-]+\.routes)\.js'/g)].map((m) => [m[1] ?? '', m[2] ?? '']));
@@ -64,9 +58,8 @@ export const PUBLIC_ROUTES: ReadonlyArray<ApiRoute & { readonly reason: string }
 ];
 
 /**
- * Routes any signed-in user reaches, with no permission guard: they act only on
- * the caller's own session, password or preferences. role-access.test.ts fails on
- * any other route without a guard; docs/user/access-control.md lists these.
+ * No permission guard: they act only on the caller's own session, password or
+ * preferences. docs/user/access-control.md lists these.
  */
 export const SESSION_ONLY_ROUTES: ReadonlyArray<ApiRoute & { readonly reason: string }> = [
   { method: 'POST', path: '/api/v1/auth/logout', reason: 'Ends the caller\'s own session. Authenticates itself, above the API guard.' },

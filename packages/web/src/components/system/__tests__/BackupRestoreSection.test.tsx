@@ -1,6 +1,4 @@
-// #228: a restore that left something out (a global script not restored, or
-// restored as JavaScript) said "Restore complete" in green with only an error
-// count; why was in the API response alone.
+// #228: a partial restore said "Restore complete" in green, with only an error count.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
@@ -24,7 +22,6 @@ afterEach(() => { cleanup(); });
 const section = (name: string, updated: number, errors: string[] = []): ServerRestoreResult['sections'][number] =>
   ({ section: name, created: 0, updated, skipped: 0, errors });
 
-/** Pick a backup file, confirm, and let the restore answer `result`. */
 async function restoreWith(result: ServerRestoreResult): Promise<void> {
   restore.result = result;
   render(<ThemeProvider theme={lightTheme}><BackupRestoreSection /></ThemeProvider>);

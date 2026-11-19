@@ -1,10 +1,3 @@
-// ===========================================
-// Role Flags
-// ===========================================
-// What a role's permissions amount to, as the badges the roles list, the role
-// editor and the user dialog show (RBAC plan, the Roles screen). Read from the
-// permission catalog in core-models, so the screens and the server agree.
-
 import { PERMISSION_CATALOG, allChannelsOnly, type Permission } from '@galvanigraph/core-models';
 
 export const ROLE_FLAG = {
@@ -21,7 +14,7 @@ function isKnown(name: string): name is Permission {
   return Object.hasOwn(PERMISSION_CATALOG, name);
 }
 
-/** The flags a set of permissions earns, most serious first. The admin role is as strong as admin and needs no other badge. */
+/** The admin role needs no badge beyond the admin one. */
 export function roleFlags(permissions: readonly string[], opts: { readonly admin?: boolean } = {}): readonly RoleFlag[] {
   if (opts.admin === true) return [ROLE_FLAG.ADMIN_EQUIVALENT];
   const flags = new Set<RoleFlag>();
@@ -36,7 +29,6 @@ export function roleFlags(permissions: readonly string[], opts: { readonly admin
   return ORDER.filter((f) => flags.has(f));
 }
 
-/** The flags one permission earns, for the editor's permission list. */
 export function permissionFlags(permission: Permission): readonly RoleFlag[] {
   return roleFlags([permission]);
 }

@@ -1,7 +1,3 @@
-// ===========================================
-// SMTP Connector Exports
-// ===========================================
-
 export {
   SmtpDispatcher,
   substituteTemplate,

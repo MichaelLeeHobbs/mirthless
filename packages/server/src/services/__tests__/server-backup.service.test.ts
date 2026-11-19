@@ -1,11 +1,5 @@
-// ===========================================
-// Server Backup Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ServerBackup, RestoreSectionResult } from '@galvanigraph/core-models';
-
-// ----- Mock Dependencies -----
 
 const mockChannelExportAll = vi.fn();
 const mockChannelImportChannels = vi.fn();
@@ -104,9 +98,6 @@ const {
   codeTemplateLibraries, codeTemplates, channelGroups, channelTags,
 } = await import('../../db/schema/index.js');
 
-// ----- Fixtures -----
-
-/** T with every array and object inside it readonly, as an `as const` fixture is. */
 type DeepReadonly<T> = T extends ReadonlyArray<infer U>
   ? ReadonlyArray<DeepReadonly<U>>
   : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
@@ -119,7 +110,7 @@ function errResult(message: string): { ok: false; value: null; error: { message:
   return { ok: false, value: null, error: { message } };
 }
 
-/** A save refused as a ServiceError, as GlobalScriptService returns it. */
+/** As GlobalScriptService refuses a save. */
 function refused(code: 'INVALID_INPUT' | 'UNAVAILABLE', message: string): { ok: false; value: null; error: { name: string; code: string; message: string } } {
   return { ok: false, value: null, error: { name: 'ServiceError', code, message } };
 }
@@ -147,10 +138,9 @@ function makeMinimalBackup(overrides?: Partial<ServerBackup>): ServerBackup {
   };
 }
 
-/** Reset db mock chain to consistent defaults. */
 function resetDbMocks(): void {
   mockSelectWhere.mockReset().mockResolvedValue([]);
-  // .from() returns a thenable (for queries without .where()) that also has .where()
+  // Thenable, for queries without .where().
   mockSelectFrom.mockReset().mockReturnValue(
     Object.assign(Promise.resolve([]), { where: mockSelectWhere }),
   );
@@ -162,7 +152,6 @@ function resetDbMocks(): void {
   mockUpdate.mockReset().mockReturnValue({ set: mockSet });
 }
 
-/** Set up all service mocks for export with empty defaults. */
 function setupExportMocks(): void {
   mockChannelExportAll.mockResolvedValue(okResult({ version: 1, exportedAt: '', channels: [] }));
   mockListLibraries.mockResolvedValue(okResult([]));
@@ -181,14 +170,10 @@ function setupExportMocks(): void {
   mockTagListAssignments.mockResolvedValue(okResult([]));
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   resetDbMocks();
 });
-
-// ----- Tests -----
 
 describe('ServerBackupService', () => {
   describe('exportBackup', () => {
@@ -558,9 +543,8 @@ describe('ServerBackupService', () => {
       expect(mockGlobalScriptUpdate).toHaveBeenCalledWith({ undeploy: 'logger.info(1);', languages: { undeploy: 'JAVASCRIPT' } });
     });
 
-    // #228: a refusal that is not about the script (the checker timed out,
-    // crashed or was busy) fell back to JavaScript too, silently dropping the
-    // type check of a script that may have none. It is reported and not restored.
+    // #228: falling back to JavaScript when the checker itself failed would
+    // silently drop the type check, so the script is reported, not restored.
     it('does not restore a TypeScript global script as JavaScript when the type checker failed', async () => {
       const languages = { deploy: 'TYPESCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } as const;
       const backup = makeMinimalBackup({ globalScripts: { deploy: "logger.info('up');", undeploy: 'logger.info(1);', preprocessor: '', postprocessor: '', languages } });
@@ -713,8 +697,6 @@ describe('ServerBackupService', () => {
     });
   });
 
-  // Every section the shared restore helpers serve, pinned row by row: counts,
-  // error text, and the exact values written for each collision mode.
   describe('restore sections', () => {
     /** The case tables below are `as const`, so their sections arrive deeply readonly. */
     async function restoreSection(

@@ -1,11 +1,5 @@
-// ===========================================
-// Monaco setup
-// ===========================================
-// The one place the app loads Monaco. It is bundled (no CDN), so editors work on
-// networks with no internet access and a Content-Security-Policy needs no CDN
-// host. Monaco injects inline styles, so such a policy would need
-// `style-src 'unsafe-inline'`, as MUI does (D-283).
-// Importing this module configures @monaco-editor/react to use the bundle.
+// The one place the app loads Monaco. Bundled, not from a CDN, so editors work without internet access and a
+// Content-Security-Policy needs no CDN host; Monaco's inline styles need `style-src 'unsafe-inline'`, as MUI's do (D-283).
 
 import * as monaco from 'monaco-editor';
 import { loader } from '@monaco-editor/react';
@@ -28,12 +22,9 @@ self.MonacoEnvironment = {
 
 loader.config({ monaco });
 
-// Show each suggestion's signature and documentation beside the list by default,
-// as Monaco's details toggle would. Monaco keeps the toggle in its storage
-// service (scope PROFILE = 0, target USER = 0), which exists once an editor does.
-// The list opens 560px wide instead of Monaco's 430, so a code template's name
-// and signature fit on its row (Monaco restores this size each time it opens;
-// the height is its default, 12 rows of 20px plus the border).
+// Suggestion docs open beside the list by default. Monaco keeps that toggle in its storage service (scope PROFILE = 0,
+// target USER = 0), which exists once an editor does. 560px wide, not Monaco's 430, fits a code template's name and
+// signature on its row; Monaco restores this size on each open, and the height is its default (12 rows of 20px plus the border).
 StandaloneServices.withServices(() => {
   const storage = StandaloneServices.get(IStorageService);
   storage.store('expandSuggestionDocs', true, 0, 0);
@@ -54,7 +45,6 @@ document.head.append(popupStyle);
 monaco.editor.defineTheme(editorThemeName('light'), editorTheme('light'));
 monaco.editor.defineTheme(editorThemeName('dark'), editorTheme('dark'));
 
-// HL7 v2: segment names, delimiters and escape sequences.
 monaco.languages.register({ id: 'hl7' });
 monaco.languages.setMonarchTokensProvider('hl7', {
   tokenizer: {
@@ -66,9 +56,7 @@ monaco.languages.setMonarchTokensProvider('hl7', {
   },
 });
 
-// TypeScript scripts get full type checking with the same settings as the
-// server's deploy check. JavaScript scripts get syntax errors only, plus the
-// same completion and hover.
+// The same compiler settings as the server's deploy check.
 const ts = monaco.typescript;
 // The shared options hold TypeScript's numeric enum values; Monaco types them as
 // its own enums, which have the same numbers.
@@ -85,10 +73,8 @@ ts.javascriptDefaults.setCompilerOptions({ ...compilerOptions, allowJs: true, ch
 ts.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
 
 /**
- * Give the TypeScript service the globals for one script surface (see
- * surfaceLibs). Monaco keeps one set for every editor, so the focused editor's
- * surface wins, and an editor with another surface hides the type errors it
- * gets meanwhile (surface-state.ts); the deploy check repeats the check per script.
+ * Monaco keeps one set of globals for every editor, so the focused editor's surface wins and an editor with another
+ * surface hides its type errors meanwhile (surface-state.ts); the deploy check repeats the check per script.
  */
 export function applyScriptSurface(libs: SurfaceLibs): void {
   if (!markSurfaceApplied(libs.key)) return;
@@ -99,13 +85,9 @@ export function applyScriptSurface(libs: SurfaceLibs): void {
 applyScriptSurface(surfaceLibs({}, []));
 
 /**
- * Where every editor renders its popups (completion, hover, parameter hints).
- * It sits at the end of <body>, so no card, accordion or dialog around an
- * editor can clip them. The class picks up Monaco's theme variables.
- *
- * Fixed at the viewport origin: Monaco places these popups in viewport
- * coordinates, so an absolute host at the document origin put the suggestion
- * details panel off by the page's scroll.
+ * Every editor's popups render here, at the end of <body>, so nothing around an editor can clip them; the class picks
+ * up Monaco's theme variables. Fixed at the viewport origin: Monaco places popups in viewport coordinates, so an
+ * absolute host at the document origin put them off by the page's scroll.
  */
 export const overflowWidgetsHost: HTMLElement = (() => {
   const el = document.createElement('div');

@@ -1,8 +1,3 @@
-// ===========================================
-// Event Controller
-// ===========================================
-// Handles HTTP requests for event (audit log) operations.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type EventListQuery, type EventIdParam, type PurgeEventsQuery } from '@galvanigraph/core-models';
 import { EventService } from '../services/event.service.js';

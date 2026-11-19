@@ -1,20 +1,11 @@
-// ===========================================
-// Deployment API Hooks
-// ===========================================
-// TanStack Query hooks for channel deployment actions.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import { useNotificationStore } from '../stores/notification.store.js';
-
-// ----- Response Types -----
 
 export interface ChannelStatus {
   readonly channelId: string;
   readonly state: string;
 }
-
-// ----- Query Keys -----
 
 export const DEPLOYMENT_KEYS = {
   all: ['deployment'] as const,
@@ -22,9 +13,7 @@ export const DEPLOYMENT_KEYS = {
   status: (id: string) => [...DEPLOYMENT_KEYS.all, 'status', id] as const,
 } as const;
 
-// ----- Queries -----
-
-/** Fetch deployment status for all channels. WebSocket-driven with 60s fallback poll. */
+/** WebSocket events refresh it; the 60 s poll is the fallback. */
 export function useAllDeploymentStatuses(): ReturnType<typeof useQuery<readonly ChannelStatus[]>> {
   return useQuery({
     queryKey: DEPLOYMENT_KEYS.statuses(),
@@ -39,8 +28,6 @@ export function useAllDeploymentStatuses(): ReturnType<typeof useQuery<readonly 
   });
 }
 
-// ----- Mutations -----
-
 type DeploymentAction = 'deploy' | 'undeploy' | 'redeploy' | 'start' | 'stop' | 'halt' | 'pause' | 'resume';
 
 interface DeploymentInput {
@@ -48,7 +35,6 @@ interface DeploymentInput {
   readonly action: DeploymentAction;
 }
 
-/** Execute a deployment action on a channel. */
 export function useDeploymentAction(): ReturnType<typeof useMutation<ChannelStatus, Error, DeploymentInput>> {
   const queryClient = useQueryClient();
 
@@ -83,8 +69,6 @@ export function useDeploymentAction(): ReturnType<typeof useMutation<ChannelStat
   });
 }
 
-// ----- Send Message -----
-
 interface SendMessageInput {
   readonly channelId: string;
   readonly content: string;
@@ -94,7 +78,7 @@ interface SendMessageResult {
   readonly messageId: number;
 }
 
-/** Send a raw message to a deployed, started channel. */
+/** The channel must be deployed and started. */
 export function useSendMessage(): ReturnType<typeof useMutation<SendMessageResult, Error, SendMessageInput>> {
   const queryClient = useQueryClient();
 

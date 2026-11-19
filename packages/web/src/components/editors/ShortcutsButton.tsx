@@ -1,9 +1,3 @@
-// ===========================================
-// Editor shortcuts button
-// ===========================================
-// Lists the editor's keyboard shortcuts, so they can be found without
-// knowing they exist.
-
 import { type ReactNode, useState } from 'react';
 import Box from '@mui/material/Box';
 import Popover from '@mui/material/Popover';
@@ -11,7 +5,7 @@ import Typography from '@mui/material/Typography';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 
-/** Shortcut, then what it does. Ctrl means Cmd on a Mac. */
+/** Ctrl means Cmd on a Mac. */
 export const EDITOR_SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
   ['Ctrl+Space', 'Suggest completions'],
   ['F8 / Shift+F8', 'Go to the next / previous problem'],

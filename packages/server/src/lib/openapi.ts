@@ -1,12 +1,5 @@
-// ===========================================
-// OpenAPI 3.1 Specification
-// ===========================================
-// Generates the OpenAPI spec object for Swagger UI.
-// Documents key API endpoints across 8 tag groups.
-
 import { MAX_ASSIGNMENTS_PER_USER, SET_CHANNEL_GROUPS_MAX } from '@galvanigraph/core-models';
 
-/** OpenAPI spec type — minimal structural typing for the spec object. */
 interface OpenAPISpec {
   readonly openapi: string;
   readonly info: {
@@ -30,7 +23,6 @@ const NEW_CHANNEL_GROUP = {
   description: 'The channel group new channels join; needs channels:write in it. Without it: Default for a caller who can change every channel, else their only such group.',
 } as const;
 
-/** Standard success response wrapper. */
 function successResponse(description: string, dataSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     description,
@@ -49,7 +41,6 @@ function successResponse(description: string, dataSchema: Record<string, unknown
   };
 }
 
-/** Standard error response reference. */
 function openApiErrorResponse(description: string): Record<string, unknown> {
   return {
     description,
@@ -61,16 +52,10 @@ function openApiErrorResponse(description: string): Record<string, unknown> {
   };
 }
 
-/** Bearer auth security requirement. */
 const bearerSecurity = [{ bearerAuth: [] }];
 
-/** 204 No Content response. */
 const noContent: Record<string, unknown> = { description: 'No content' };
 
-/**
- * Generates the complete OpenAPI 3.1 specification for the GalvaniGraph API.
- * @returns The OpenAPI spec as a plain object.
- */
 export function generateOpenAPISpec(): OpenAPISpec {
   return {
     openapi: '3.1.0',
@@ -94,7 +79,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
       { name: 'Settings', description: 'Server settings management' },
     ],
     paths: {
-      // ===================== Auth =====================
       '/auth/login': {
         post: {
           tags: ['Auth'],
@@ -158,7 +142,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
       },
 
-      // ===================== Channels =====================
       '/channels': {
         get: {
           tags: ['Channels'],
@@ -384,7 +367,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
       },
 
-      // ===================== Deployment =====================
       '/channels/{id}/deploy': {
         post: {
           tags: ['Deployment'],
@@ -531,7 +513,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
       },
 
-      // ===================== Messages =====================
       '/channels/{id}/messages': {
         get: {
           tags: ['Messages'],
@@ -593,7 +574,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
       },
 
-      // ===================== Users =====================
       '/users': {
         get: {
           tags: ['Users'],
@@ -791,7 +771,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
       },
 
-      // ===================== Health =====================
       '/health': {
         get: {
           tags: ['Health'],
@@ -889,7 +868,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
       },
 
-      // ===================== Events =====================
       '/events': {
         get: {
           tags: ['Events'],
@@ -968,7 +946,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
       },
 
-      // ===================== Settings =====================
       '/settings': {
         get: {
           tags: ['Settings'],

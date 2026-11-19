@@ -1,15 +1,7 @@
-// ===========================================
-// Channel Dispatcher (Destination Connector)
-// ===========================================
-// Routes messages to another channel's source via in-memory dispatch.
-// Looks up the target channel in the static channel registry.
-
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
 import { DISPATCH_STATUS, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { getChannelDispatcher, hasChannel } from './channel-registry.js';
-
-// ----- Config -----
 
 export interface ChannelDispatcherConfig {
   readonly targetChannelId: string;
@@ -17,24 +9,16 @@ export interface ChannelDispatcherConfig {
 }
 
 /**
- * Maximum chained channel-to-channel hops for a single inbound message. Channel A
- * routing to B routing back to A would otherwise recurse in-memory until the stack
- * blows / the process OOMs. AsyncLocalStorage tracks the depth across the awaited
- * dispatch chain per message (correct under concurrent messages).
+ * Without a cap, A routing to B routing back to A recurses in memory until the process dies.
+ * AsyncLocalStorage keeps the depth per message across the awaited chain.
  */
 const MAX_CHANNEL_HOPS = 10;
 const hopDepth = new AsyncLocalStorage<number>();
 
-/**
- * The target with each `${name}` filled from the message's variables by the
- * shared placeholder rule (D-275); an unknown name is left as written, so the
- * send fails with a channel name that shows the mistake.
- */
+/** By the shared placeholder rule (D-275); an unknown name is left as written. */
 export function resolveTarget(target: string, variables: Readonly<Record<string, unknown>> | undefined): string {
   return fillPlaceholders(target, recordLookup(variables ?? {}));
 }
-
-// ----- Dispatcher -----
 
 export class ChannelDispatcher implements DestinationConnectorRuntime {
   private readonly config: ChannelDispatcherConfig;
@@ -58,11 +42,7 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /**
-   * Send to the target channel. The target may be a `${name}` reference that
-   * each message fills from its variables, so a router picks the channel at
-   * run time (Mirth's `${destinationChannelId}`).
-   */
+  /** The target may be `${name}`, filled per message, so a router picks the channel at run time (Mirth's `${destinationChannelId}`). */
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
       if (!this.started) throw new Error('Dispatcher not started');
@@ -131,7 +111,6 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /** Check if target channel is currently available. */
   isTargetAvailable(): boolean {
     return hasChannel(this.config.targetChannelId);
   }

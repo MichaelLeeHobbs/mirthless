@@ -1,11 +1,6 @@
-// ===========================================
-// Route Permission Coverage Test
-// ===========================================
 // A permission the seed grants but no route checks gives a false sense of
-// access control (see code_templates:delete, issue #96). This scans the route
-// sources for the permissions they check and fails on any seeded permission
-// that none of them uses. The reverse also fails: a route checking a name no
-// role can hold (a typo) would refuse every caller, admins included.
+// access control (#96). A route checking a name no role can hold refuses every
+// caller, admins included.
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -16,7 +11,6 @@ import { PERMISSIONS } from '@galvanigraph/core-models';
 const routesDir = fileURLToPath(new URL('..', import.meta.url));
 const appFile = fileURLToPath(new URL('../../app.ts', import.meta.url));
 
-/** The argument text of every requirePermission/requireAllPermissions call in the route files and app.ts. */
 function permissionCallArgs(): readonly string[] {
   const files = readdirSync(routesDir)
     .filter((name) => name.endsWith('.routes.ts'))

@@ -13,7 +13,6 @@ import type { LoginInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 import { useAuthStore } from '../stores/auth.store.js';
 
-/** Shape of the login API success response data */
 interface LoginResponseData {
   readonly accessToken: string;
   readonly user: {
@@ -22,7 +21,6 @@ interface LoginResponseData {
     readonly email: string;
     readonly role: string;
     readonly permissions: ReadonlyArray<string>;
-    /** Server flag: user must change their password before using the app. */
     readonly mustChangePassword?: boolean;
   };
 }
@@ -58,7 +56,6 @@ export function LoginPage(): ReactNode {
     navigate('/');
   };
 
-  // Already signed in — skip the login form.
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
   }

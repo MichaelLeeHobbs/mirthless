@@ -1,16 +1,7 @@
-// ===========================================
-// Channel Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StdError } from 'stderr-lib';
 import { PartitionManagerService } from '../partition-manager.service.js';
 
-// ----- Mock DB -----
-// We mock at the db module boundary per CLAUDE.md rules.
-// Each chain call is tracked via mockImplementation so Promise.all works correctly.
-
-// Shared state for mock call tracking
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
 
@@ -24,7 +15,6 @@ function pushResponse(value: unknown, opts?: { chainable?: boolean; orderable?: 
   const orderable = opts?.orderable ?? false;
   selectResponses.push(() => {
     if (chainable) {
-      // Return value that also supports .orderBy() chain (for list pagination)
       return Object.assign(Promise.resolve(value), {
         orderBy: () => ({
           limit: () => ({
@@ -34,7 +24,6 @@ function pushResponse(value: unknown, opts?: { chainable?: boolean; orderable?: 
       });
     }
     if (orderable) {
-      // Return value that supports .orderBy() chain (for destinations)
       return Object.assign(Promise.resolve(value), {
         orderBy: vi.fn().mockResolvedValue(value),
       });
@@ -72,7 +61,6 @@ const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
 const mockInsertReturning = vi.fn().mockResolvedValue([]);
 const mockInsertValues = vi.fn().mockImplementation(() => {
-  // Support both .returning() chain and direct resolution
   return Object.assign(Promise.resolve(undefined), {
     returning: mockInsertReturning,
   });
@@ -92,7 +80,6 @@ vi.mock('../../lib/db.js', () => ({
   default: mockDb,
 }));
 
-// Mock drizzle-orm operators to be pass-through
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   isNull: vi.fn((_col: unknown) => ({ type: 'isNull' })),
@@ -127,8 +114,6 @@ vi.mock('../../lib/logger.js', () => ({
 
 // Must import after mocks
 const { ChannelService } = await import('../channel.service.js');
-
-// ----- Fixtures -----
 
 const NOW = new Date('2026-02-26T12:00:00Z');
 
@@ -182,11 +167,6 @@ const CREATE_INPUT = {
   responseMode: 'AUTO_AFTER_DESTINATIONS' as const,
 };
 
-// ----- Helpers -----
-
-/**
- * Set up mocks for getById flow: findChannel + 8 parallel relation queries.
- */
 function setupGetByIdMocks(
   channel: Record<string, unknown>,
   relations?: {
@@ -198,32 +178,27 @@ function setupGetByIdMocks(
     transformerStepsData?: unknown[];
   },
 ): void {
-  pushResponse([channel]);                                                    // findChannel
-  pushResponse(DEFAULT_SCRIPTS);                                              // scripts
-  pushResponse(relations?.destinations ?? [], { orderable: true });           // destinations (has .orderBy)
-  pushResponse(relations?.metadataColumns ?? []);                             // metadataColumns
-  pushResponse([]);                                                           // tags (via innerJoin)
-  pushResponse(relations?.filters ?? []);                                     // filters
-  pushResponse(relations?.filterRulesData ?? []);                             // filter rules (via innerJoin)
-  pushResponse(relations?.transformers ?? []);                                // transformers
-  pushResponse(relations?.transformerStepsData ?? []);                        // transformer steps (via innerJoin)
+  pushResponse([channel]);
+  pushResponse(DEFAULT_SCRIPTS);
+  pushResponse(relations?.destinations ?? [], { orderable: true });
+  pushResponse(relations?.metadataColumns ?? []);
+  pushResponse([]);
+  pushResponse(relations?.filters ?? []);
+  pushResponse(relations?.filterRulesData ?? []);
+  pushResponse(relations?.transformers ?? []);
+  pushResponse(relations?.transformerStepsData ?? []);
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
   mockSet.mockReturnValue({ where: mockUpdateWhere });
-  // update().set().where() is awaited directly (delete/setEnabled) AND chained with
-  // .returning() (the atomic optimistic-lock update in update()). Support both.
+  // Awaited directly (delete/setEnabled) and chained with .returning() (update's optimistic lock).
   mockUpdateWhere.mockImplementation(() =>
     Object.assign(Promise.resolve(undefined), {
       returning: vi.fn().mockResolvedValue([{ id: CHANNEL_ID }]),
     }),
   );
-  // By default a transaction just runs its callback against the shared mockDb.
-  // Individual create tests override this with a bespoke tx.
   mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
   mockDeleteWhere.mockResolvedValue(undefined);
   mockDelete.mockReturnValue({ where: mockDeleteWhere });
@@ -237,13 +212,10 @@ beforeEach(() => {
 });
 
 describe('ChannelService', () => {
-  // ========== LIST ==========
   describe('list', () => {
     it('returns paginated results', async () => {
       const channel = makeChannel();
-      // First query: paginated select (goes through orderBy chain)
       pushResponse([channel], { chainable: true });
-      // Second query: count
       pushResponse([{ total: 1 }]);
 
       const result = await ChannelService.list({ page: 1, pageSize: 25 });
@@ -284,7 +256,6 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== GET BY ID ==========
   describe('listLiveForDeploy', () => {
     it('returns every live channel in one query, ordered by id (#259)', async () => {
       const rows = [{ id: 'a', name: 'ADT', enabled: true }, { id: 'b', name: 'ADT', enabled: false }];
@@ -320,7 +291,7 @@ describe('ChannelService', () => {
     });
 
     it('returns NOT_FOUND for missing channel', async () => {
-      pushResponse([]); // findChannel returns empty
+      pushResponse([]);
 
       const result = await ChannelService.getById('00000000-0000-0000-0000-000000000099');
 
@@ -330,7 +301,7 @@ describe('ChannelService', () => {
     });
 
     it('returns NOT_FOUND for soft-deleted channel', async () => {
-      // The SQL filter `isNull(deletedAt)` means deleted channels return empty
+      // The query's isNull(deletedAt) filters a soft-deleted channel out.
       pushResponse([]);
 
       const result = await ChannelService.getById(CHANNEL_ID);
@@ -351,38 +322,32 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== CREATE ==========
   describe('create', () => {
     it('creates channel with default scripts', async () => {
       const channel = makeChannel();
 
-      // 1. Uniqueness check → no duplicate
       pushResponse([]);
-      // After transaction, fetchChannelRelations is called directly (no findChannel)
-      pushResponse(DEFAULT_SCRIPTS);                     // scripts
-      pushResponse([], { orderable: true });             // destinations (has .orderBy)
-      pushResponse([]);                                  // metadataColumns
-      pushResponse([]);                                  // tags
-      pushResponse([]);                                  // filters
-      pushResponse([]);                                  // filter rules
-      pushResponse([]);                                  // transformers
-      pushResponse([]);                                  // transformer steps
+      pushResponse(DEFAULT_SCRIPTS);
+      pushResponse([], { orderable: true });
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
 
-      // Transaction mock
       mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         let insertCallCount = 0;
         const tx = {
           insert: vi.fn().mockImplementation(() => {
             insertCallCount++;
             if (insertCallCount === 1) {
-              // Channel insert
               return {
                 values: vi.fn().mockReturnValue({
                   returning: vi.fn().mockResolvedValue([channel]),
                 }),
               };
             }
-            // Scripts insert
             return { values: vi.fn().mockResolvedValue(undefined) };
           }),
         };
@@ -418,7 +383,7 @@ describe('ChannelService', () => {
     }
 
     it('creates the partitions on the transaction that wrote the channel, after writing it (#260)', async () => {
-      pushResponse([]); // uniqueness check
+      pushResponse([]);
       const channel = makeChannel();
       const { tx } = channelTx(channel);
 
@@ -431,7 +396,7 @@ describe('ChannelService', () => {
     });
 
     it('fails, rolling the channel back, when its partitions cannot be created (#260)', async () => {
-      pushResponse([]); // uniqueness check
+      pushResponse([]);
       const { rejected } = channelTx(makeChannel());
       vi.mocked(PartitionManagerService.createPartitions)
         .mockResolvedValueOnce({ ok: false, value: null, error: new StdError('permission denied for table messages') });
@@ -449,7 +414,7 @@ describe('ChannelService', () => {
     });
 
     it('returns ALREADY_EXISTS for duplicate name', async () => {
-      pushResponse([{ id: 'existing-id' }]); // uniqueness check finds existing
+      pushResponse([{ id: 'existing-id' }]);
 
       const result = await ChannelService.create(CREATE_INPUT);
 
@@ -469,17 +434,13 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== UPDATE ==========
   describe('update', () => {
     it('updates channel and bumps revision', async () => {
       const channel = makeChannel();
       const updatedChannel = makeChannel({ revision: 2, name: 'Updated Channel' });
 
-      // 1. findChannel (existing check)
       pushResponse([channel]);
-      // 2. Name uniqueness check (name is changing) → no duplicate
       pushResponse([]);
-      // 3. After db.update, findChannel again + fetchChannelRelations
       setupGetByIdMocks(updatedChannel);
 
       const result = await ChannelService.update(CHANNEL_ID, {
@@ -539,11 +500,10 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== DELETE ==========
   describe('delete', () => {
     it('soft-deletes channel by setting deletedAt', async () => {
       const channel = makeChannel();
-      pushResponse([channel]); // findChannel
+      pushResponse([channel]);
 
       const result = await ChannelService.delete(CHANNEL_ID);
 
@@ -567,15 +527,12 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== SET ENABLED ==========
   describe('setEnabled', () => {
     it('toggles enabled flag and returns detail', async () => {
       const channel = makeChannel({ enabled: false });
       const updatedChannel = makeChannel({ enabled: true });
 
-      // 1. findChannel (check exists)
       pushResponse([channel]);
-      // 2. After update, getById → findChannel + relations
       setupGetByIdMocks(updatedChannel);
 
       const result = await ChannelService.setEnabled(CHANNEL_ID, true);
@@ -597,7 +554,6 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== DESTINATIONS SYNC ==========
   describe('update — destinations sync', () => {
     const DEST_ROWS = [
       {
@@ -620,9 +576,7 @@ describe('ChannelService', () => {
       const channel = makeChannel();
       const updatedChannel = makeChannel({ revision: 2 });
 
-      // 1. findChannel
       pushResponse([channel]);
-      // 2. After db.update + delete + insert, findChannel + relations
       setupGetByIdMocks(updatedChannel, { destinations: DEST_ROWS });
 
       const result = await ChannelService.update(CHANNEL_ID, {
@@ -647,9 +601,7 @@ describe('ChannelService', () => {
       if (!result.ok) return;
       expect(result.value.destinations).toHaveLength(1);
       expect(result.value.destinations[0]!.name).toBe('Dest 1');
-      // Verify delete was called (for destination sync)
       expect(mockDelete).toHaveBeenCalled();
-      // Verify insert was called (for new destinations)
       expect(mockInsert).toHaveBeenCalled();
     });
 
@@ -672,13 +624,10 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== TRANSACTION & OPTIMISTIC LOCK ==========
   describe('update — transaction & atomic optimistic lock', () => {
     it('returns CONFLICT when the atomic UPDATE affects 0 rows (concurrent writer won)', async () => {
       const channel = makeChannel({ revision: 1 });
-      // findChannel passes and the pre-check matches revision 1...
       pushResponse([channel]);
-      // ...but the atomic UPDATE ... WHERE revision = 1 affects 0 rows (race lost).
       mockUpdateWhere.mockImplementationOnce(() =>
         Object.assign(Promise.resolve(undefined), {
           returning: vi.fn().mockResolvedValue([]),
@@ -695,7 +644,6 @@ describe('ChannelService', () => {
     it('wraps mutations in a transaction and fails the whole update if one step throws (rollback)', async () => {
       const channel = makeChannel({ revision: 1 });
       pushResponse([channel]);
-      // Simulate the DB rolling back the transaction on a mid-way failure.
       mockTransaction.mockImplementationOnce(async () => {
         throw new Error('insert failed mid-update');
       });
@@ -710,15 +658,12 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== ENCRYPT DATA (now a real, working toggle) ==========
   describe('encryptData is accepted and persisted', () => {
     it('accepts create with encryptData enabled and writes the flag', async () => {
       const channel = makeChannel();
       let channelInsertValues: Record<string, unknown> | null = null;
 
-      // Uniqueness check → no duplicate
       pushResponse([]);
-      // fetchChannelRelations after transaction
       pushResponse(DEFAULT_SCRIPTS);
       pushResponse([], { orderable: true });
       pushResponse([]);
@@ -768,9 +713,7 @@ describe('ChannelService', () => {
 
     it('accepts update with encryptData enabled and writes the flag', async () => {
       const channel = makeChannel();
-      // findChannel (revision check)
       pushResponse([{ ...channel, revision: 1 }]);
-      // getById after update: findChannel + relations
       setupGetByIdMocks({ ...channel, encryptData: true });
 
       const result = await ChannelService.update(CHANNEL_ID, {
@@ -813,8 +756,7 @@ describe('ChannelService', () => {
       });
 
       expect(result.ok).toBe(true);
-      // All four scripts are written (a null one as ''), none with a language.
-      // Strict: a `language: undefined` key would still be a write of the language.
+      // Strict: a `language: undefined` key would still write the language.
       expect(scriptSets()).toStrictEqual([{ script: 'return;' }, { script: '' }, { script: '' }, { script: '' }]);
     });
 
@@ -833,7 +775,6 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== PRUNING FIELDS ==========
   describe('getById — pruning fields', () => {
     it('returns pruning fields in channel detail', async () => {
       const channel = makeChannel({
@@ -868,7 +809,6 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== CREATE WITH DESTINATIONS ==========
   describe('create — with destinations', () => {
     it('creates channel with destinations', async () => {
       const channel = makeChannel();
@@ -889,25 +829,21 @@ describe('ChannelService', () => {
         },
       ];
 
-      pushResponse([]);  // uniqueness check
-      // fetchChannelRelations after create
+      pushResponse([]);
       pushResponse(DEFAULT_SCRIPTS);
       pushResponse(destRows, { orderable: true });
       pushResponse([]);
       pushResponse([]);
-      pushResponse([]);  // filters
-      pushResponse([]);  // filter rules
-      pushResponse([]);  // transformers
-      pushResponse([]);  // transformer steps
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
 
       mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         let insertCallCount = 0;
         const tx = {
           insert: vi.fn().mockImplementation(() => {
             insertCallCount++;
-            // Channel insert (call 1) returns the created row; later inserts
-            // (scripts, destinations, filters, transformers) return []. Every
-            // .values() supports both `.returning()` and direct await.
             const rows = insertCallCount === 1 ? [channel] : [];
             return {
               values: vi.fn().mockReturnValue(
@@ -947,7 +883,6 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== FILTER/TRANSFORMER IN GETBYID ==========
   describe('getById — filters and transformers', () => {
     it('returns source filter with rules', async () => {
       const channel = makeChannel();
@@ -1112,15 +1047,12 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== FILTER/TRANSFORMER SYNC ON UPDATE ==========
   describe('update — filter/transformer sync', () => {
     it('persists source filter rules on update', async () => {
       const channel = makeChannel();
       const updatedChannel = makeChannel({ revision: 2 });
 
-      // findChannel
       pushResponse([channel]);
-      // After update + sync, findChannel + fetchChannelRelations
       setupGetByIdMocks(updatedChannel, {
         filters: [{ id: 'f1', connectorId: null }],
         filterRulesData: [
@@ -1132,7 +1064,6 @@ describe('ChannelService', () => {
         ],
       });
 
-      // Mock insert().values().returning() for filter insert
       mockInsert.mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([{ id: 'f1' }]),

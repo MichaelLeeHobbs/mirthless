@@ -1,7 +1,3 @@
-// ===========================================
-// ACK Builder Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { buildAck, classifyAckResponse, controlIdOf } from '../ack-builder.js';
 
@@ -12,7 +8,6 @@ describe('buildAck', () => {
     const ack = buildAck(VALID_HL7, 'AA');
     expect(ack.startsWith('MSH')).toBe(true);
     expect(ack).toContain('MSA|AA|CTRL42');
-    // Receiver becomes the sender in the ACK MSH.
     expect(ack).toContain('RECV|RFAC|SEND|FAC');
   });
 
@@ -104,7 +99,6 @@ describe('fallback ACK', () => {
 describe('classifyAckResponse control id check', () => {
   const ack = (code: string, id: string): string =>
     `MSH|^~\\&|R|F|S|F|20260101||ACK|X1|P|2.5.1\rMSA|${code}|${id}`;
-  /** The control id of a sent message with this MSH-10 and these encoding characters. */
   const sent = (id: string, encodingChars = '^~\\&'): ReturnType<typeof controlIdOf> =>
     controlIdOf(`MSH|${encodingChars}|S|F|R|F|20260101||ADT^A01|${id}|P|2.5.1`);
 

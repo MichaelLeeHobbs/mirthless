@@ -1,10 +1,5 @@
-// ===========================================
-// Who could access a channel, as of a past time (real Postgres, #266 slice 11b)
-// ===========================================
-// GET /channels/:id/access?asOf= rebuilds the grant tables from the latest
-// GRANT_BASELINE and the grant audit rows after it (lib/grant-replay.ts). The
-// changes here go through the API, so each is recorded the way production
-// records it; the answer at each step must match what the guards allowed then.
+// The changes go through the API so each is recorded the way production records
+// it; the replay (lib/grant-replay.ts) reads only those records (#266).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -37,13 +32,12 @@ describeIntegration('who could access a channel as of a past time (real Postgres
     return made;
   }
 
-  /** The database's clock now: the audit rows are stamped with it. */
+  /** The audit rows are stamped with the database's clock, not this process's. */
   async function mark(): Promise<string> {
     const { rows } = await mods.pool.query<{ t: Date }>('SELECT clock_timestamp() AS t');
     return rows[0]!.t.toISOString();
   }
 
-  /** The people among `ours`, each with their permissions and ways in, in a fixed order. */
   function ourPeople(view: ChannelAccessView, ours: ReadonlySet<string>): unknown[] {
     return view.people.filter((p) => ours.has(p.userId)).sort((a, b) => a.userId.localeCompare(b.userId))
       .map((p) => ({ ...p, through: [...p.through].sort((a, b) => a.role.localeCompare(b.role)) }));
@@ -89,7 +83,6 @@ describeIntegration('who could access a channel as of a past time (real Postgres
   it('follows assignments, memberships and disabling over time', async () => {
     const t0 = await mark();
 
-    // The lab viewer loses their assignment.
     expect((await apiCall(base, admin.token, 'PUT', `/users/${labViewer.id}/assignments`, { assignments: [] })).status).toBe(200);
     const t1 = await mark();
 
@@ -97,7 +90,6 @@ describeIntegration('who could access a channel as of a past time (real Postgres
     expect((await apiCall(base, admin.token, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [lab, rad] })).status).toBe(200);
     const t2 = await mark();
 
-    // The radiology viewer is disabled.
     expect((await apiCall(base, admin.token, 'PUT', `/users/${radViewer.id}`, { enabled: false })).status).toBe(200);
     const t3 = await mark();
 
@@ -117,7 +109,6 @@ describeIntegration('who could access a channel as of a past time (real Postgres
     expect(at3.has(radViewer.id)).toBe(false);
     expect(at3.has(admin.id)).toBe(true);
 
-    // Rebuilt for now, the answer matches the live one for these people.
     const live = (await apiCall<ChannelAccessView>(base, admin.token, 'GET', `/channels/${CHANNEL}/access`)).json.data!;
     expect(live.asOf).toBeNull();
     const ours = new Set(users);

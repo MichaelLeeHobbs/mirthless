@@ -1,9 +1,3 @@
-// ===========================================
-// SMTP Dispatcher (Destination Connector)
-// ===========================================
-// Sends messages as emails via SMTP using nodemailer.
-// Supports template variable substitution in subject/body.
-
 import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
 import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { createRequire } from 'node:module';
@@ -13,21 +7,15 @@ import { withTimeoutSignal } from '../timeout.js';
 // injects one, which hid this). Load the CJS client library through createRequire.
 const require = createRequire(import.meta.url);
 
-/** Default SMTP send timeout — nodemailer has no native cancellation. */
 const SEND_TIMEOUT_MS = 30_000;
-
-// ----- Config -----
 
 export interface SmtpDispatcherConfig {
   readonly host: string;
   readonly port: number;
   readonly secure: boolean;
-  /**
-   * Require STARTTLS upgrade before authenticating on a non-secure port.
-   * Prevents credentials from being sent over a plaintext connection.
-   */
+  /** STARTTLS before authenticating, so credentials never cross a plaintext connection. */
   readonly requireTLS: boolean;
-  /** Credentials. Omitted/empty for anonymous relays — no auth is sent. */
+  /** Omitted for an anonymous relay. */
   readonly auth?: SmtpAuth | undefined;
   readonly from: string;
   readonly to: string;
@@ -37,12 +25,7 @@ export interface SmtpDispatcherConfig {
   readonly bodyTemplate: string;
   readonly contentType: 'text/plain' | 'text/html';
   readonly attachContent: boolean;
-  /**
-   * Config-driven attachments. Each item's `filename` and `content` run through
-   * `substituteTemplate` (so `${msg}`/`${messageId}`/etc. work); `mimeType` maps
-   * to nodemailer's `contentType`. This is Mirth's config-driven model — content
-   * is a template string, not a reference into the message attachment table.
-   */
+  /** Mirth's config-driven model: content is a template string, not a reference into the message attachment table. */
   readonly attachments?: readonly SmtpAttachment[] | undefined;
 }
 
@@ -51,12 +34,8 @@ export interface SmtpAuth {
   readonly pass: string;
 }
 
-/** The connection fields a nodemailer transport needs; `SmtpDispatcherConfig` satisfies it. */
 export type SmtpTransportConfig = Pick<SmtpDispatcherConfig, 'host' | 'port' | 'secure' | 'requireTLS' | 'auth'>;
 
-// ----- Transport abstraction (for testability) -----
-
-/** Abstraction over nodemailer transporter for testability. */
 export interface SmtpTransport {
   sendMail(options: SmtpMailOptions): Promise<SmtpSendResult>;
   close(): void;
@@ -73,14 +52,12 @@ export interface SmtpMailOptions {
   readonly attachments?: readonly SmtpMailAttachment[];
 }
 
-/** Config-level attachment: template strings + optional MIME type. */
 export interface SmtpAttachment {
   readonly filename: string;
   readonly content: string;
   readonly mimeType?: string | undefined;
 }
 
-/** Nodemailer-facing attachment: substituted values + nodemailer's `contentType`. */
 export interface SmtpMailAttachment {
   readonly filename: string;
   readonly content: string;
@@ -93,18 +70,8 @@ export interface SmtpSendResult {
   readonly rejected: readonly string[];
 }
 
-/** Factory function to create an SMTP transport. Defaults to nodemailer. */
 export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
 
-// ----- Template substitution -----
-
-/**
- * Substitute `${msg}`, `${messageId}`, `${channelId}` and `${metaDataId}`, and
- * any other `${name}` from the message's variables, by the shared rule in
- * {@link fillPlaceholders}. A built-in wins over a variable of the same name.
- * No eval, no expressions. One pass over the template: a substituted value
- * (the message content or a variable) is never scanned for placeholders.
- */
 export function substituteTemplate(
   template: string,
   content: string,
@@ -119,8 +86,6 @@ export function substituteTemplate(
   const variables = recordLookup(message.variables ?? {});
   return fillPlaceholders(template, (name) => builtIns(name) ?? variables(name));
 }
-
-// ----- Dispatcher -----
 
 export class SmtpDispatcher implements DestinationConnectorRuntime {
   private readonly config: SmtpDispatcherConfig;
@@ -171,8 +136,7 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
       const transport = this.createTransport(this.config);
       try {
         // nodemailer sendMail has no AbortSignal support, so race it against the
-        // caller's signal AND a hard timeout; a hung SMTP server surfaces as a
-        // Result error (via the enclosing tryCatch) instead of an unbounded wait.
+        // caller's signal and a hard timeout.
         const result = await withTimeoutSignal(
           transport.sendMail(mailOptions), SEND_TIMEOUT_MS, 'SMTP sendMail', signal,
         );
@@ -197,13 +161,6 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /**
-   * Build the outbound attachment list: the optional `message.txt` body
-   * attachment (when `attachContent`) followed by each config attachment with
-   * its filename/content template-substituted and `mimeType` mapped to
-   * `contentType`. Returns an empty array when nothing is configured so the
-   * caller can omit the `attachments` key entirely.
-   */
   private buildAttachments(message: ConnectorMessage): readonly SmtpMailAttachment[] {
     const result: SmtpMailAttachment[] = [];
     if (this.config.attachContent) {
@@ -238,14 +195,9 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
   }
 }
 
-// ----- Default transport factory (nodemailer) -----
-
 /**
- * Build nodemailer transport options from SMTP connection settings.
- * Auth is included ONLY when credentials are present — never an empty auth
- * object. requireTLS is forwarded as given: the SMTP connector sets it from its
- * properties so credentials are not sent in plaintext; the server's own mail
- * passes false, as it always has.
+ * requireTLS is forwarded as given: the SMTP connector sets it from its
+ * properties; the server's own mail passes false.
  */
 export function buildNodemailerOptions(config: SmtpTransportConfig): Record<string, unknown> {
   const hasCreds = !!config.auth && !!config.auth.user;
@@ -258,7 +210,6 @@ export function buildNodemailerOptions(config: SmtpTransportConfig): Record<stri
   };
 }
 
-/** Create a nodemailer-based transport. Requires nodemailer to be installed. */
 export function createNodemailerTransport(config: SmtpTransportConfig): SmtpTransport {
   const nodemailer = require('nodemailer') as { createTransport: (opts: Record<string, unknown>) => { sendMail: (opts: SmtpMailOptions) => Promise<SmtpSendResult>; close: () => void } };
   const transporter = nodemailer.createTransport(buildNodemailerOptions(config));

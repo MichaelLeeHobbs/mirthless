@@ -1,12 +1,5 @@
-// ===========================================
-// DICOM connector cascade — dcmjs-dimse SCU → SCP (in-process, pure JS)
-// ===========================================
-//   Channel A: TCP source (message = a .dcm file path) → DICOM destination
-//              (C-STORE SCU sends the file).
-//   Channel B: DICOM source (C-STORE SCP receives it, writes a .dcm) → sink.
-// Proves the DICOM connectors move a real DICOM object over the wire between two
-// channels. Pure JavaScript (dcmjs-dimse) — no native binaries, no external
-// server — so it runs in the default lane like the other connectors.
+// Pure JavaScript (dcmjs-dimse), with no native binaries or external server, so it runs in the
+// default lane like the other connectors.
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
@@ -42,7 +35,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
 
     const sink = new CaptureDestination();
 
-    // Channel B: DICOM SCP source → sink (content = received file path).
+    // The SCP source's message content is the received file's path.
     const channelB = await deployChannel({
       channelId: '00000000-0000-0000-0000-conndicom00b',
       dataType: 'RAW',
@@ -60,7 +53,6 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
 
-    // Channel A: TCP source (message = the .dcm path) → DICOM SCU destination.
     const channelA = await deployChannel({
       channelId: '00000000-0000-0000-0000-conndicom00a',
       dataType: 'RAW',

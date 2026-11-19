@@ -1,7 +1,3 @@
-// ===========================================
-// File/SFTP output filenames: the placeholder rule
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { resolveOutputFilename, unknownPlaceholders } from '../file-dispatcher.js';
 

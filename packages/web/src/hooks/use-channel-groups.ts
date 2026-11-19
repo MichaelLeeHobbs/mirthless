@@ -1,13 +1,6 @@
-// ===========================================
-// Channel Group API Hooks
-// ===========================================
-// TanStack Query hooks for channel group CRUD + member management.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateChannelGroupInput, UpdateChannelGroupInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface ChannelGroupSummary {
   readonly id: string;
@@ -25,15 +18,11 @@ export interface ChannelGroupDetail extends ChannelGroupSummary {
   readonly channels: ReadonlyArray<{ readonly id: string; readonly name: string }>;
 }
 
-// ----- Query Keys -----
-
 const GROUP_KEYS = {
   all: ['channel-groups'] as const,
   list: () => [...GROUP_KEYS.all, 'list'] as const,
   detail: (id: string) => [...GROUP_KEYS.all, 'detail', id] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useChannelGroups(): ReturnType<typeof useQuery<readonly ChannelGroupSummary[]>> {
   return useQuery({
@@ -57,8 +46,6 @@ export function useChannelGroup(id: string): ReturnType<typeof useQuery<ChannelG
     enabled: id.length > 0,
   });
 }
-
-// ----- Group Membership Types -----
 
 export interface GroupMembership {
   readonly channelGroupId: string;
@@ -120,16 +107,12 @@ export function useDeleteChannelGroup(): ReturnType<typeof useMutation<void, Err
   });
 }
 
-/** The input to {@link useSetChannelGroups}: the channel and every group it should belong to. */
 export interface SetChannelGroupsVars {
   readonly channelId: string;
   readonly groupIds: readonly string[];
 }
 
-/**
- * Replace a channel's group memberships in one server call, which the server
- * runs in one transaction: either every change lands or none does (#223).
- */
+/** The server applies every membership change in one transaction, or none (#223). */
 export function useSetChannelGroups(): ReturnType<typeof useMutation<void, Error, SetChannelGroupsVars>> {
   const queryClient = useQueryClient();
 

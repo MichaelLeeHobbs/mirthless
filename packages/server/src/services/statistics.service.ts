@@ -1,8 +1,3 @@
-// ===========================================
-// Statistics Service
-// ===========================================
-// Aggregation queries for channel statistics to power the dashboard.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../lib/db.js';
@@ -11,8 +6,6 @@ import type { ChannelScope } from '../lib/channel-scope.js';
 import {
   messageStatistics,
 } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface ConnectorStats {
   readonly metaDataId: number | null;
@@ -48,10 +41,7 @@ export interface ChannelStatisticsSummary {
   readonly queued: number;
 }
 
-// ----- Service -----
-
 export class StatisticsService {
-  /** Get per-channel statistics with connector breakdown. */
   static async getChannelStatistics(
     channelId: string,
   ): Promise<Result<ChannelStatistics>> {
@@ -79,7 +69,6 @@ export class StatisticsService {
   }
 
   /**
-   * Summary statistics for the channels inside `scope` (for the dashboard).
    * The scope filters the QUEUED count in SQL too, so a scoped reader's
    * request never aggregates other channels' queues (D-310).
    */
@@ -150,7 +139,6 @@ export class StatisticsService {
     });
   }
 
-  /** Reset current-window counters for a channel (preserves lifetime). */
   static async resetStatistics(
     channelId: string,
   ): Promise<Result<void>> {
@@ -164,8 +152,6 @@ export class StatisticsService {
           errored: 0,
         })
         .where(eq(messageStatistics.channelId, channelId));
-
-      // No error if nothing to reset — channel may have no stats yet
     });
   }
 }

@@ -1,8 +1,3 @@
-// ===========================================
-// Revision History Dialog
-// ===========================================
-// Lists channel revisions and allows comparing two revisions.
-
 import { useState, type ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';

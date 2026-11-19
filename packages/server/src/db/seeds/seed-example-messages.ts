@@ -1,24 +1,5 @@
-// ===========================================
-// Example Messages Seed
-// ===========================================
-// Populates the message browser with a handful of clearly-fake, browsable
-// messages for each of the example channels created by seed-examples.ts /
-// seed-showcase.ts. Without this the browser renders empty even though the
-// example channels exist. Messages are written through the real MessageService
-// write-path (the same one the engine uses) so row shapes cannot drift.
-//
-// Coverage per channel is a mix of happy and non-happy paths: SENT source +
-// destinations, FILTERED source, ERROR source with a PROCESSING_ERROR content
-// row, and destination-level SENT/ERROR/QUEUED/FILTERED outcomes. Message
-// content is OBVIOUSLY fake (DOE^JOHN / MRN TEST12345 / {"patient":"TEST"}).
-//
-// A source message in "Example: HL7 ADT Router" and a correlated downstream
-// message in "Example: HL7 to JSON" share one correlation id, so the A -> B
-// channel hop is visible across both message browsers.
-//
-// Idempotent: a channel is skipped entirely when it already has >0 messages,
-// logged with the same +/=/~ style used by seed-examples.ts. Uses the server
-// db singleton (same connection MessageService uses); no db argument.
+// Written through MessageService, the engine's write path, so row shapes cannot
+// drift. Content must stay obviously fake (DOE^JOHN, MRN TEST12345).
 
 import { eq, and, asc, isNull, sql } from 'drizzle-orm';
 import { CONTENT_TYPE, type MessageStatus } from '@galvanigraph/core-models';
@@ -30,8 +11,7 @@ import * as schema from '../schema/index.js';
 // Fixed pseudo-server id so all seeded statistics group under one server row.
 const SERVER_ID = 'seed-server';
 
-// Shared correlation id linking the HL7 ADT Router source message to the
-// downstream HL7-to-JSON message (the A -> B channel hop).
+// Links the HL7 ADT Router source message to its HL7-to-JSON downstream message.
 const CASCADE_CORRELATION_ID = '11111111-1111-4111-8111-111111111111';
 
 type StatField = 'received' | 'filtered' | 'sent' | 'errored';
@@ -40,16 +20,16 @@ type DestStatus = Extract<MessageStatus, 'SENT' | 'ERROR' | 'QUEUED' | 'FILTERED
 
 interface DestOutcome {
   readonly status: DestStatus;
-  readonly sent?: string; // CT SENT (outbound)
-  readonly response?: string; // CT RESPONSE (outbound, SENT only)
-  readonly error?: string; // CT PROCESSING_ERROR (ERROR only)
+  readonly sent?: string;
+  readonly response?: string;
+  readonly error?: string;
 }
 
 interface SampleMessage {
-  readonly raw: string; // CT RAW at source (inbound)
-  readonly transformed?: string; // CT TRANSFORMED at source (outbound)
+  readonly raw: string;
+  readonly transformed?: string;
   readonly outcome: SourceOutcome;
-  readonly processingError?: string; // CT PROCESSING_ERROR at source (ERROR only)
+  readonly processingError?: string;
   readonly correlationId?: string;
   readonly dests?: readonly DestOutcome[]; // aligned to enabled connectors by index
 }
@@ -78,16 +58,13 @@ const STATUS_STAT: Readonly<Partial<Record<MessageStatus, StatField>>> = {
   FILTERED: 'filtered',
 };
 
-// ----- Result unwrap (seed context: throw loudly, run-seed catches) -----
-
+// Seed context: throw loudly, run-seed catches.
 function must<T>(result: Result<T>): T {
   if (!result.ok) throw new Error(result.error.message);
   return result.value;
 }
 
-// ----- Write-path helpers (mirror engine's MessageProcessor) -----
-
-/** Set a connector's status and increment the matching lifetime stat. */
+// These mirror the engine's MessageProcessor.
 async function setConnectorStatus(
   channelId: string,
   messageId: number,
@@ -101,7 +78,6 @@ async function setConnectorStatus(
   }
 }
 
-/** Create one destination connector message with its content and final status. */
 async function writeDestination(
   channelId: string,
   messageId: number,
@@ -122,7 +98,6 @@ async function writeDestination(
   await setConnectorStatus(channelId, messageId, metaDataId, outcome.status);
 }
 
-/** Finalize the source connector (metaDataId 0) per the message outcome. */
 async function finalizeSource(channelId: string, messageId: number, msg: SampleMessage): Promise<void> {
   if (msg.outcome === 'SENT') {
     must(await MessageService.finalizeMessage(channelId, messageId, SERVER_ID));
@@ -140,7 +115,6 @@ async function finalizeSource(channelId: string, messageId: number, msg: SampleM
   must(await MessageService.markProcessed(channelId, messageId));
 }
 
-/** Write a full message (source + optional transformed + destinations). */
 async function writeMessage(ctx: WriteCtx, msg: SampleMessage): Promise<void> {
   const init = must(
     await MessageService.initializeMessage(
@@ -158,7 +132,7 @@ async function writeMessage(ctx: WriteCtx, msg: SampleMessage): Promise<void> {
   const dests = msg.dests ?? [];
   for (let i = 0; i < dests.length; i++) {
     const connector = ctx.connectors[i];
-    if (!connector) continue; // channel has fewer connectors than declared — skip gracefully
+    if (!connector) continue;
     await writeDestination(ctx.channelId, messageId, ctx.outbound, {
       metaDataId: connector.metaDataId,
       name: connector.name,
@@ -167,8 +141,6 @@ async function writeMessage(ctx: WriteCtx, msg: SampleMessage): Promise<void> {
   }
   await finalizeSource(ctx.channelId, messageId, msg);
 }
-
-// ----- Channel lookup + idempotency -----
 
 async function loadCtx(channelName: string): Promise<WriteCtx | null> {
   const [channel] = await db
@@ -214,8 +186,6 @@ async function seedChannel(spec: ChannelSpec): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`  + ${spec.channelName} (${spec.messages.length} messages)`);
 }
-
-// ----- Fake message payloads (obviously test data) -----
 
 const HL7_ADT_A01 = [
   'MSH|^~\\&|TESTSEND|TESTFAC|TESTRECV|TESTFAC|20260712120000||ADT^A01|TEST0001|P|2.5',
@@ -265,8 +235,6 @@ const JSON_OUT = '{"patient":"TEST","mrn":"TEST12345","processedAt":"2026-07-12T
 const XML_DOC = '<patient><name>TEST DOE</name><mrn>TEST12345</mrn></patient>';
 const HEARTBEAT = '{"type":"heartbeat","timestamp":"2026-07-12T12:00:00.000Z","source":"Example: JS Scripted"}';
 
-// ----- Declarative channel -> messages map -----
-
 const SPECS: ReadonlyArray<ChannelSpec> = [
   {
     channelName: 'Example: Echo (RAW)',
@@ -285,7 +253,6 @@ const SPECS: ReadonlyArray<ChannelSpec> = [
   {
     channelName: 'Example: HL7 to JSON',
     messages: [
-      // Correlated downstream half of the HL7 ADT Router -> HL7-to-JSON hop.
       { raw: HL7_ADT_A01, transformed: HL7_TO_JSON_OUT, outcome: 'SENT', correlationId: CASCADE_CORRELATION_ID },
       { raw: HL7_ADT_A01_B, transformed: HL7_TO_JSON_OUT, outcome: 'SENT' },
     ],
@@ -357,7 +324,6 @@ const SPECS: ReadonlyArray<ChannelSpec> = [
   {
     channelName: 'Example: HL7 ADT Router',
     messages: [
-      // Happy path + the source half of the cascade to HL7-to-JSON.
       {
         raw: HL7_ADT_A01,
         transformed: HL7_ADT_A01,
@@ -426,13 +392,7 @@ const SPECS: ReadonlyArray<ChannelSpec> = [
   },
 ];
 
-// ----- Main -----
-
-/**
- * Seed browsable example messages for the example channels. Idempotent per
- * channel (skips any channel that already has messages) and skips gracefully
- * when a channel is absent. Safe to run after seedExampleChannels/seedShowcase.
- */
+/** Run after seedExampleChannels and seedShowcase: a channel they have not created is skipped. */
 export async function seedExampleMessages(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('\nSeeding example messages...');

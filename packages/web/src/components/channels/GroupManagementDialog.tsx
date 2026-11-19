@@ -1,8 +1,3 @@
-// ===========================================
-// Group Management Dialog
-// ===========================================
-// Dialog for managing channel groups (CRUD) from the Channels page.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -40,7 +35,6 @@ interface GroupManagementDialogProps {
   readonly onClose: () => void;
 }
 
-/** Renders the group table and inline create/edit form. */
 function GroupTable({ onClose: _onClose }: { readonly onClose: () => void }): ReactNode {
   const { data: groups, isLoading, error, isFetching } = useChannelGroups();
   const createGroup = useCreateChannelGroup();
@@ -193,7 +187,6 @@ function GroupTable({ onClose: _onClose }: { readonly onClose: () => void }): Re
         </Table>
       </TableContainer>
 
-      {/* Create / Edit form dialog */}
       <Dialog open={formOpen} onClose={handleFormClose} maxWidth="sm" fullWidth>
         <DialogTitle>{editing ? 'Edit Group' : 'Create Group'}</DialogTitle>
         <DialogContent>
@@ -228,7 +221,6 @@ function GroupTable({ onClose: _onClose }: { readonly onClose: () => void }): Re
         </DialogActions>
       </Dialog>
 
-      {/* Delete confirmation */}
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete Group"

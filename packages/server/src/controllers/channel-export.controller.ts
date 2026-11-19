@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Export/Import Controller
-// ===========================================
-// Handles HTTP requests for channel export and import operations.
-
 import type { Request, Response } from 'express';
 import type { ChannelImportInput } from '@galvanigraph/core-models';
 import { ChannelExportService } from '../services/channel-export.service.js';
@@ -12,7 +7,6 @@ import logger from '../lib/logger.js';
 import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class ChannelExportController {
-  /** Export a single channel by ID. */
   static async exportChannel(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
@@ -27,7 +21,6 @@ export class ChannelExportController {
     res.json({ success: true, data: result.value });
   }
 
-  /** Export all channels. */
   static async exportAll(req: Request, res: Response): Promise<void> {
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await ChannelExportService.exportAll(context, await channelScopeOf(req, 'channels:read'));
@@ -41,7 +34,6 @@ export class ChannelExportController {
     res.json({ success: true, data: result.value });
   }
 
-  /** Import channels from JSON. */
   static async importChannels(req: Request, res: Response): Promise<void> {
     const input = req.body as ChannelImportInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };

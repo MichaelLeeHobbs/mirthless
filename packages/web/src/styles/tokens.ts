@@ -1,21 +1,9 @@
-// ===========================================
-// Design Tokens
-// ===========================================
-// Single source of truth for the GalvaniGraph visual system.
-//
-// Direction: a calm, precise clinical instrument panel. Operators watch this
-// all day, so the system favours legibility under pressure — hairline borders
-// over heavy shadows, tabular numerals for every metric, and a small set of
-// semantic status colours that read the same everywhere (channel states,
-// message statuses, dashboard tiles).
-//
-// Colours are drawn from a consistent, accessibility-tested ramp. Each mode
-// uses the ramp step that keeps text/marks legible against that mode's surface:
-// lighter steps on the dark surface, darker steps on the white surface.
+// Visual language: docs/design/15-visual-language.md. Each mode uses the ramp
+// step that keeps text legible on its surface: lighter on dark, darker on white.
 
 import type { PaletteMode } from '@mui/material/styles';
 
-/** Border radius scale (px). */
+/** px */
 export const RADIUS = {
   sm: 6,
   md: 8,
@@ -23,39 +11,25 @@ export const RADIUS = {
   pill: 999,
 } as const;
 
-/** UI font (self-hosted Inter Variable) with a robust system fallback. */
 export const FONT_FAMILY_SANS =
   '"Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
-/** Monospace stack for IDs, code, and HL7/message payloads. */
 export const FONT_FAMILY_MONO =
   'ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace';
 
-/**
- * Tag colours are user data, not part of the palette. A new tag starts at
- * `default`; a chip picks whichever text colour reads on the tag's colour.
- */
+/** Tag colours are user data, not part of the palette. */
 export const TAG_COLOR = {
   default: '#2196f3',
   textOnLight: 'rgba(0, 0, 0, 0.87)',
   textOnDark: '#ffffff',
 } as const;
 
-/**
- * Semantic status levels — the heart of the system. Every stateful thing in the
- * app collapses onto one of these five levels, so a colour always means the same
- * thing. Status colours are reserved: they are never reused as decoration.
- */
+/** Status colours are reserved: never reuse them as decoration. */
 export interface StatusPalette {
-  /** Running / delivered — everything nominal. */
   readonly healthy: string;
-  /** Paused / queued — attention, not yet a failure. */
   readonly warning: string;
-  /** Stopped / errored — action required. */
   readonly critical: string;
-  /** In-flight / received / filtered — informational. */
   readonly info: string;
-  /** Undeployed / idle — inert, no signal. */
   readonly neutral: string;
 }
 
@@ -63,9 +37,7 @@ interface ModeColors {
   readonly primary: { readonly main: string; readonly dark: string; readonly light: string; readonly contrastText: string };
   readonly secondary: { readonly main: string; readonly contrastText: string };
   readonly background: { readonly default: string; readonly paper: string };
-  /** A raised surface, one step above `paper` (menus, hover, nested panels). */
   readonly surfaceRaised: string;
-  /** Subtle inset surface (table header, code blocks). */
   readonly surfaceSunken: string;
   readonly divider: string;
   readonly text: { readonly primary: string; readonly secondary: string; readonly disabled: string };
@@ -129,15 +101,11 @@ const light: ModeColors = {
   info: '#0284c7',
 };
 
-/** Resolve the colour set for a palette mode. */
 export function colorsForMode(mode: PaletteMode): ModeColors {
   return mode === 'dark' ? dark : light;
 }
 
-/**
- * Syntax colours for the code editor. Hues stay clear of the status colours
- * (green, amber, red) so a squiggle or marker is never mistaken for syntax.
- */
+/** Hues stay clear of the status colours (green, amber, red) so a squiggle or marker is never mistaken for syntax. */
 export interface SyntaxColors {
   readonly keyword: string;
   readonly string: string;
@@ -146,9 +114,7 @@ export interface SyntaxColors {
   readonly type: string;
   readonly func: string;
   readonly regexp: string;
-  /** HL7 segment names (MSH, PID). */
   readonly segment: string;
-  /** HL7 delimiters (| ^ ~ \ &). */
   readonly delimiter: string;
 }
 
@@ -163,7 +129,6 @@ const SYNTAX: Readonly<Record<PaletteMode, SyntaxColors>> = {
   },
 };
 
-/** Syntax colours for a palette mode. */
 export function syntaxForMode(mode: PaletteMode): SyntaxColors {
   return SYNTAX[mode];
 }

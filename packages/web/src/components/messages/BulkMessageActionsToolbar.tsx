@@ -1,10 +1,3 @@
-// ===========================================
-// Bulk Message Actions Toolbar
-// ===========================================
-// Floating toolbar for bulk message operations (reprocess / delete). Mirrors the
-// dashboard BulkActionsToolbar pattern. Actions are permission-gated and guarded
-// by a ConfirmDialog. Reprocess reports a per-message success/failure summary.
-
 import { useState, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';

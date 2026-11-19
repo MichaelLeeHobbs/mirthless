@@ -1,11 +1,3 @@
-// ===========================================
-// Async Timeout Utilities
-// ===========================================
-// Bounds connector operations that have no native cancellation (nodemailer
-// sendMail, IMAP client calls) so a hung remote endpoint cannot wedge a
-// connector forever. All async I/O must have a timeout.
-
-/** Error thrown when an operation exceeds its timeout budget. */
 export class TimeoutError extends Error {
   constructor(label: string, ms: number) {
     super(`${label} timed out after ${String(ms)}ms`);
@@ -13,15 +5,7 @@ export class TimeoutError extends Error {
   }
 }
 
-/**
- * Race a promise against a timeout. If the promise settles first its result is
- * returned; otherwise a {@link TimeoutError} is thrown. The timer is always
- * cleared so a resolved promise does not leave the event loop pinned.
- *
- * Note: this does NOT cancel the underlying work (the promise keeps running);
- * it only stops the caller from waiting on it — acceptable for the poll/send
- * paths where the alternative is an unbounded hang.
- */
+/** Does not cancel the underlying work: the promise keeps running, only the caller stops waiting. */
 export async function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
@@ -38,13 +22,6 @@ export async function withTimeout<T>(
   }
 }
 
-/**
- * Race a promise against BOTH a timeout and an AbortSignal. Rejects with a
- * {@link TimeoutError} on timeout, or with the signal's reason (or a generic
- * abort error) if the signal fires first. Used where a caller already owns an
- * AbortSignal (e.g. a destination send) but the underlying client cannot honor
- * it directly.
- */
 export async function withTimeoutSignal<T>(
   promise: Promise<T>,
   ms: number,

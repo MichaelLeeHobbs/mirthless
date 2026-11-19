@@ -1,7 +1,3 @@
-// ===========================================
-// Event Schema Validation Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   eventListQuerySchema,
@@ -9,8 +5,6 @@ import {
   createEventInputSchema,
   purgeEventsSchema,
 } from '../event.schema.js';
-
-// ----- Fixtures -----
 
 const VALID_UUID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
@@ -24,8 +18,6 @@ const VALID_CREATE_INPUT = {
   ipAddress: '192.168.1.100',
   attributes: { browser: 'Chrome' },
 };
-
-// ----- eventListQuerySchema -----
 
 describe('eventListQuerySchema', () => {
   it('applies defaults', () => {
@@ -99,8 +91,6 @@ describe('eventListQuerySchema', () => {
   });
 });
 
-// ----- eventIdParamSchema -----
-
 describe('eventIdParamSchema', () => {
   it('accepts valid positive integer', () => {
     const result = eventIdParamSchema.safeParse({ id: 42 });
@@ -136,8 +126,6 @@ describe('eventIdParamSchema', () => {
     expect(result.success).toBe(false);
   });
 });
-
-// ----- createEventInputSchema -----
 
 describe('createEventInputSchema', () => {
   it('accepts valid full input', () => {
@@ -225,8 +213,6 @@ describe('createEventInputSchema', () => {
     }
   });
 });
-
-// ----- purgeEventsSchema -----
 
 describe('purgeEventsSchema', () => {
   it('accepts valid days value', () => {

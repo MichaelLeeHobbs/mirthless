@@ -1,9 +1,4 @@
-// ===========================================
-// File connector roots (GHSA-r434-hwqg-cvcw)
-// ===========================================
-// A File connector may use only directories under FILE_CONNECTOR_ROOTS, never
-// the server's own directories, and the check follows symlinks. These run
-// against a real temporary directory tree.
+// GHSA-r434-hwqg-cvcw
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs/promises';

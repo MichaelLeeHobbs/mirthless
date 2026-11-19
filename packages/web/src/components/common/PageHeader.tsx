@@ -1,11 +1,3 @@
-// ===========================================
-// Page Header
-// ===========================================
-// One consistent page title treatment across the app: an h1 title, an optional
-// one-line description, an inline "refreshing" indicator, and a right-aligned
-// slot for primary actions. Replaces the ad-hoc `Typography variant="h4"` +
-// flex-between blocks that were copy-pasted onto every page.
-
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -13,13 +5,9 @@ import CircularProgress from '@mui/material/CircularProgress';
 
 interface PageHeaderProps {
   readonly title: string;
-  /** Optional supporting line beneath the title. */
   readonly description?: string;
-  /** Right-aligned action controls (buttons, toggles). */
   readonly actions?: ReactNode;
-  /** Shows a small spinner beside the title during a background refetch. */
   readonly isFetching?: boolean;
-  /** Status line under the description (state chips, a link to what is failing). */
   readonly meta?: ReactNode;
 }
 

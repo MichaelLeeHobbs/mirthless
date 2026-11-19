@@ -1,9 +1,4 @@
-// ===========================================
-// Collection Service
-// ===========================================
-// Business logic for Collections — a durable, queryable, TTL-pruned keyed record
-// store for channel scripts. See docs/design/10-collections.md.
-// All methods return Result<T> using tryCatch from stderr-lib.
+// Design: docs/design/10-collections.md.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { and, eq, asc, desc, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
@@ -22,10 +17,7 @@ import { db } from '../lib/db.js';
 import { containsPattern } from '../lib/like.js';
 import { collections, collectionRecords } from '../db/schema/index.js';
 
-/** Maximum stored payload size (1 MiB). Larger writes are rejected. */
 const MAX_PAYLOAD_BYTES = 1_048_576;
-
-// ----- Response Types -----
 
 export interface CollectionSummary {
   readonly id: string;
@@ -45,22 +37,18 @@ export interface CollectionRecordResult {
   readonly createdAt: Date;
 }
 
-/** One page of records for the UI grid, plus the total matching the search. */
 export interface RecordPage {
   readonly items: readonly CollectionRecordResult[];
   readonly total: number;
 }
 
-// ----- Helpers -----
-
-/** Coerce indexed field values to strings so GIN `@>` matching is type-consistent. */
+/** Strings, so GIN `@>` matching is type-consistent. */
 function stringifyFields(fields: Record<string, string | number | boolean>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(fields)) out[k] = String(v);
   return out;
 }
 
-/** Reject any key not declared in the collection's indexedFields. */
 function assertKnownFields(keys: readonly string[], indexedFields: readonly string[], context: string): void {
   const known = new Set(indexedFields);
   const unknown = keys.filter((k) => !known.has(k));
@@ -84,10 +72,7 @@ function toSummary(row: typeof collections.$inferSelect): CollectionSummary {
   };
 }
 
-// ----- Service -----
-
 export class CollectionService {
-  /** List all collection definitions. */
   static async list(): Promise<Result<readonly CollectionSummary[]>> {
     return tryCatch(async () => {
       const rows = await db.select().from(collections).orderBy(asc(collections.name));
@@ -95,12 +80,10 @@ export class CollectionService {
     });
   }
 
-  /** Get a collection definition by ID. */
   static async getById(id: string): Promise<Result<CollectionSummary>> {
     return tryCatch(async () => toSummary(await requireById(id)));
   }
 
-  /** Create a collection definition. */
   static async create(input: CreateCollectionInput, context?: AuditContext): Promise<Result<CollectionSummary>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -124,7 +107,6 @@ export class CollectionService {
     });
   }
 
-  /** Update a collection definition. */
   static async update(
     id: string,
     input: UpdateCollectionInput,
@@ -154,7 +136,7 @@ export class CollectionService {
     });
   }
 
-  /** Delete a collection definition and all its records (cascade). */
+  /** Cascades to its records. */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db.select({ id: collections.id }).from(collections).where(eq(collections.id, id));
@@ -164,12 +146,10 @@ export class CollectionService {
     });
   }
 
-  /** Append a record to a collection (by name). Called by the script bridge. */
   static async store(name: string, input: StoreRecordInput): Promise<Result<CollectionRecordResult>> {
     return tryCatch(async () => insertRecord(await requireByName(name), input));
   }
 
-  /** Query records in a collection (by name). Called by the script bridge. */
   static async find(name: string, query: FindRecordsInput): Promise<Result<readonly CollectionRecordResult[]>> {
     return tryCatch(async () => {
       const collection = await requireByName(name);
@@ -204,7 +184,6 @@ export class CollectionService {
     });
   }
 
-  /** One sorted, searched page of a collection's records for the UI grid. */
   static async listRecords(collectionId: string, query: ListRecordsQuery): Promise<Result<RecordPage>> {
     return tryCatch(async () => {
       const collection = await requireById(collectionId);
@@ -226,7 +205,6 @@ export class CollectionService {
     });
   }
 
-  /** Add a record from the UI. Same rules as a script write. */
   static async createRecord(
     collectionId: string,
     input: StoreRecordInput,
@@ -239,7 +217,7 @@ export class CollectionService {
     });
   }
 
-  /** Change a record from the UI. Only the keys given change. */
+  /** Only the keys given change. */
   static async updateRecord(
     collectionId: string,
     recordId: string,
@@ -254,7 +232,6 @@ export class CollectionService {
     });
   }
 
-  /** Delete one record from the UI. */
   static async deleteRecord(collectionId: string, recordId: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       if (!(await removeRecord(collectionId, recordId))) {
@@ -264,20 +241,16 @@ export class CollectionService {
     });
   }
 
-  /**
-   * Change a record in a collection (by name). Called by the script bridge.
-   * Returns null when the record is gone (deleted or pruned), so a script can decide.
-   */
+  /** Null when the record is gone (deleted or pruned), so a script can decide. */
   static async updateByName(name: string, recordId: string, input: UpdateRecordInput): Promise<Result<CollectionRecordResult | null>> {
     return tryCatch(async () => patchRecord(await requireByName(name), recordId, input));
   }
 
-  /** Delete a record from a collection (by name). Called by the script bridge. False when it was already gone. */
+  /** False when it was already gone. */
   static async removeByName(name: string, recordId: string): Promise<Result<boolean>> {
     return tryCatch(async () => removeRecord((await requireByName(name)).id, recordId));
   }
 
-  /** Delete all expired records across all collections. Called by the pruner. */
   static async pruneExpired(): Promise<Result<number>> {
     return tryCatch(async () => {
       const deleted = await db
@@ -288,8 +261,6 @@ export class CollectionService {
     });
   }
 }
-
-// ----- Internal -----
 
 async function requireById(id: string): Promise<typeof collections.$inferSelect> {
   const [row] = await db.select().from(collections).where(eq(collections.id, id));
@@ -321,7 +292,6 @@ async function insertRecord(
   return toRecord(row!);
 }
 
-/** Apply the given changes to a record in this collection; null when it isn't there. */
 async function patchRecord(
   collection: typeof collections.$inferSelect,
   recordId: string,
@@ -345,7 +315,6 @@ async function patchRecord(
   return row ? toRecord(row) : null;
 }
 
-/** Delete a record in this collection; false when it isn't there. */
 async function removeRecord(collectionId: string, recordId: string): Promise<boolean> {
   const deleted = await db
     .delete(collectionRecords)
@@ -354,7 +323,6 @@ async function removeRecord(collectionId: string, recordId: string): Promise<boo
   return deleted.length > 0;
 }
 
-/** The SQL for a grid column. An indexed field reads its text out of the jsonb. */
 function columnExpr(column: RecordColumn, indexedFields: readonly string[]): SQL {
   switch (column) {
     case 'createdAt': return sql`${collectionRecords.createdAt}`;
@@ -368,7 +336,6 @@ function columnExpr(column: RecordColumn, indexedFields: readonly string[]): SQL
   }
 }
 
-/** Case-insensitive substring match on one column, or on every field and the payload. */
 function searchCondition(query: ListRecordsQuery, indexedFields: readonly string[]): SQL | undefined {
   const text = query.q?.trim() ?? '';
   if (text === '') return undefined;

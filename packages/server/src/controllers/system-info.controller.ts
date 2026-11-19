@@ -1,8 +1,3 @@
-// ===========================================
-// System Info Controller
-// ===========================================
-// Handles HTTP request for system information.
-
 import type { Request, Response } from 'express';
 import { SystemInfoService } from '../services/system-info.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';

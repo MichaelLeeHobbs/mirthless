@@ -1,19 +1,13 @@
-// ===========================================
-// Role Schemas
-// ===========================================
-// Roles are rows an admin creates, edits and clones (D-310). The admin role is
-// locked; the server refuses to change or delete it.
+// D-310. The admin role is locked: the server refuses to change or delete it.
 
 import { z } from 'zod/v4';
 import { PERMISSIONS, type Permission } from '../constants.js';
 
 const PERMISSION_VALUES = Object.values(PERMISSIONS) as [Permission, ...Permission[]];
 
-/** A role's name: one line of printable text. */
 export const roleNameSchema = z.string().trim().min(1).max(100)
   .refine((v) => [...v].every((c) => { const code = c.charCodeAt(0); return code >= 0x20 && code !== 0x7f; }), 'A role name cannot hold control characters.');
 
-/** A role's permissions: known names, each at most once. */
 export const rolePermissionsSchema = z.array(z.enum(PERMISSION_VALUES)).max(PERMISSION_VALUES.length)
   .refine((list) => new Set(list).size === list.length, 'A permission is listed twice.');
 
@@ -21,7 +15,7 @@ export const createRoleSchema = z.strictObject({
   name: roleNameSchema,
   description: z.string().max(1000).default(''),
   permissions: rolePermissionsSchema,
-  /** The role this one was cloned from, recorded in the audit log. */
+  /** Recorded in the audit log. */
   clonedFrom: z.string().uuid().optional(),
 });
 
@@ -35,16 +29,10 @@ export const roleIdParamSchema = z.object({
   id: z.string().uuid(),
 });
 
-// ----- Assignments -----
-
-/** The most assignments one user may hold; a person has a handful of jobs. */
+/** A person has a handful of jobs. */
 export const MAX_ASSIGNMENTS_PER_USER = 50;
 
-/**
- * One assignment: a role over every channel (`groupIds` null) or over the
- * channels in a set of groups, chosen explicitly (plan section 1), until an
- * optional expiry, with an optional reason recorded with it.
- */
+/** `groupIds` null: every channel, chosen explicitly (plan section 1). */
 export const assignmentInputSchema = z.strictObject({
   roleId: z.string().uuid(),
   groupIds: z.array(z.string().uuid()).min(1).max(100)
@@ -54,7 +42,7 @@ export const assignmentInputSchema = z.strictObject({
   reason: z.string().trim().max(500).nullable().default(null).transform((v) => (v === '' ? null : v)),
 });
 
-/** Every assignment a user should hold, replacing what they hold now. */
+/** Replaces what the user holds now. */
 export const setAssignmentsSchema = z.strictObject({
   assignments: z.array(assignmentInputSchema).max(MAX_ASSIGNMENTS_PER_USER),
 });
@@ -62,7 +50,6 @@ export const setAssignmentsSchema = z.strictObject({
 export type AssignmentInput = z.infer<typeof assignmentInputSchema>;
 export type SetAssignmentsInput = z.infer<typeof setAssignmentsSchema>;
 
-/** An assignment as the API returns it. */
 export interface AssignmentView {
   readonly id: string;
   readonly roleId: string;
@@ -76,7 +63,6 @@ export interface AssignmentView {
   readonly createdAt: string;
 }
 
-/** One way a person reaches a channel: an assignment of a role over a scope that covers it. */
 export interface AccessPath {
   readonly role: string;
   /** The channel permissions this assignment gives on the channel. */
@@ -86,14 +72,14 @@ export interface AccessPath {
   readonly expiresAt: string | null;
 }
 
-/** GET /channels/:id/access query: `asOf` rebuilds the answer for a past time from the audit log. */
+/** `asOf` rebuilds the answer for a past time from the audit log. */
 export const channelAccessQuerySchema = z.object({
   asOf: z.string().datetime({ offset: true }).optional(),
 });
 
 export type ChannelAccessQuery = z.infer<typeof channelAccessQuerySchema>;
 
-/** Who can access one channel, now or as of a past time, and how (D-310, plan section 8). */
+/** See D-310 and plan section 8. */
 export interface ChannelAccessView {
   /** The time the answer was rebuilt for; null for now. */
   readonly asOf: string | null;

@@ -1,8 +1,4 @@
-// ===========================================
-// MySQL Connection Pool
-// ===========================================
-// The DatabasePool for MySQL and MariaDB (`mysql2`), so the database connectors
-// can talk to a partner's MySQL as well as PostgreSQL.
+// Serves MySQL and MariaDB.
 
 import mysql from 'mysql2/promise';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
@@ -15,10 +11,8 @@ const SERVER_MARGIN_MS = 5_000;
 type Queryable = Pick<mysql.PoolConnection, 'execute' | 'query'>;
 
 /**
- * Run one statement. Rows come back for a SELECT; a write returns its affected
- * row count and, as its one row, the id it generated. A statement with
- * parameters is a server-side prepared statement; one without (SAVEPOINT,
- * which the prepared protocol does not take everywhere) is sent as written.
+ * A write returns its affected row count and, as its one row, the generated id. A statement
+ * without parameters is sent as written: the prepared protocol does not take SAVEPOINT everywhere.
  */
 async function run(target: Queryable, sql: string, params: readonly unknown[], timeoutMs: number): Promise<QueryResult> {
   // mysql2 refuses undefined; pg sends it as NULL, and so do we.
@@ -46,7 +40,6 @@ function isBroken(err: unknown): boolean {
   return e?.fatal === true || e?.code === 'PROTOCOL_SEQUENCE_TIMEOUT';
 }
 
-/** MySQL pool (`mysql2`). */
 export class MysqlPool implements DatabasePool {
   private pool: mysql.Pool | null = null;
   private timeoutMs = DEFAULT_STATEMENT_TIMEOUT_MS;
@@ -77,10 +70,9 @@ export class MysqlPool implements DatabasePool {
   }
 
   /**
-   * A pooled connection with server-side limits below the client timeout. The
-   * client timeout alone does not stop the statement: an INSERT waiting on a
-   * lock would still commit after the client gave up, and the queue's retry
-   * would then write the row twice.
+   * Server-side limits below the client timeout: the client timeout alone does not stop the
+   * statement, so an INSERT waiting on a lock could commit after the client gave up and the
+   * queue's retry write the row twice.
    */
   private async connection(): Promise<mysql.PoolConnection> {
     if (!this.pool) throw new Error('Pool not initialized — call create() first');

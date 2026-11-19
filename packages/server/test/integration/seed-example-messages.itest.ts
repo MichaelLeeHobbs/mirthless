@@ -1,13 +1,3 @@
-// ===========================================
-// Example Messages Seed — real Postgres integration
-// ===========================================
-// Seeds the example channels + showcase headline channel, runs
-// seedExampleMessages(), and asserts that browsable messages + content rows
-// land through the real MessageService write-path. Also asserts idempotency
-// (a second run is a no-op) and the HL7 ADT Router -> HL7-to-JSON correlation.
-//
-// Runs only against a *_test database (see _setup.ts gating).
-
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
@@ -18,7 +8,6 @@ describeIntegration('Example messages seed (real Postgres)', () => {
 
   beforeAll(async () => {
     mods = await loadServerModules();
-    // Ensure the example + showcase channels exist before seeding messages.
     const { seedExampleChannels } = await import('../../src/db/seeds/seed-examples.js');
     const { seedShowcase } = await import('../../src/db/seeds/seed-showcase.js');
     await seedExampleChannels(mods.db);
@@ -79,13 +68,11 @@ describeIntegration('Example messages seed (real Postgres)', () => {
     const { seedExampleMessages } = await import('../../src/db/seeds/seed-example-messages.js');
     await seedExampleMessages();
 
-    // Basic channel: source-only messages with RAW content.
     const echoId = await findChannelId('Example: Echo (RAW)');
     expect(await messageCount(echoId)).toBe(2);
     expect(await contentCount(echoId, 1)).toBe(2); // CT RAW
     expect(await connectorCount(echoId, 'SENT')).toBe(2);
 
-    // Round-trip: MessageService can read back the seeded RAW content.
     const { db, schema, MessageService, eq } = mods;
     const [firstMsg] = await db
       .select({ id: schema.messages.id })
@@ -100,11 +87,9 @@ describeIntegration('Example messages seed (real Postgres)', () => {
     const { seedExampleMessages } = await import('../../src/db/seeds/seed-example-messages.js');
     await seedExampleMessages(); // idempotent: no-op here
 
-    // Filter Demo: one message filtered at the source.
     const filterId = await findChannelId('Example: Filter Demo');
     expect(await connectorCount(filterId, 'FILTERED')).toBeGreaterThanOrEqual(1);
 
-    // Multi-Destination: a destination errored with a PROCESSING_ERROR content row.
     const multiId = await findChannelId('Example: Multi-Destination');
     expect(await connectorCount(multiId, 'ERROR')).toBeGreaterThanOrEqual(1);
     expect(await contentCount(multiId, 13)).toBeGreaterThanOrEqual(1); // CT PROCESSING_ERROR
@@ -117,7 +102,6 @@ describeIntegration('Example messages seed (real Postgres)', () => {
     expect(await correlationCount(jsonId, CASCADE_CORRELATION_ID)).toBe(1);
   });
 
-  /** The partitions holding the channel's rows in a partitioned message table. */
   async function partitionsHolding(table: string, channelId: string): Promise<string[]> {
     const { db, sql } = mods;
     const result = await db.execute(
@@ -150,7 +134,6 @@ describeIntegration('Example messages seed (real Postgres)', () => {
 
     const after = (await messageCount(echoId)) + (await messageCount(multiId));
     expect(after).toBe(before);
-    // Echo must still hold exactly its seeded two messages (no duplication).
     expect(await messageCount(echoId)).toBe(2);
   });
 });

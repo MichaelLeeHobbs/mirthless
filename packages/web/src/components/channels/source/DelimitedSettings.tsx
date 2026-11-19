@@ -1,9 +1,5 @@
-// ===========================================
-// Delimited Settings
-// ===========================================
-// How a DELIMITED message splits into rows and columns (D-257), kept on the
-// source transformer as inboundProperties.delimited. Validated here with the
-// schema the server checks at deploy, so a bad setting shows before deploying.
+// Kept on the source transformer as inboundProperties.delimited (D-257), and
+// validated with the schema deploy checks, so a bad setting shows before deploying.
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
@@ -21,29 +17,23 @@ type Settings = Readonly<Record<string, unknown>>;
 
 const ESCAPES: ReadonlyArray<readonly [string, string]> = [['\\', '\\\\'], ['\n', '\\n'], ['\r', '\\r'], ['\t', '\\t']];
 
-/**
- * Control characters written as \n, \r, \t (and a backslash as \\), so a delimiter can be typed and seen.
- * unescapeControlChars (core-util) reads them back.
- */
+/** So a delimiter can be typed and seen; unescapeControlChars (core-util) reads them back. */
 export function showEscapes(text: string): string {
   let out = text;
   for (const [raw, shown] of ESCAPES) out = out.replaceAll(raw, shown);
   return out;
 }
 
-/** The settings with every default filled in, for display. Invalid saved values fall back to the defaults. */
 function shown(settings: Settings): ReturnType<typeof delimitedOptionsSchema.parse> {
   const parsed = delimitedOptionsSchema.safeParse(settings);
   return parsed.success ? parsed.data : { ...delimitedOptionsSchema.parse({}), ...settings } as ReturnType<typeof delimitedOptionsSchema.parse>;
 }
 
-/** Why the server would refuse these settings at deploy, or undefined. */
 export function delimitedProblem(settings: Settings): string | undefined {
   const parsed = delimitedOptionsSchema.safeParse(settings);
   return parsed.success ? undefined : parsed.error.issues.map((i) => i.message).join('; ');
 }
 
-/** Column names typed as a comma-separated list. */
 export function readColumnNames(text: string): string[] {
   return text.split(',').map((name) => name.trim()).filter((name) => name !== '');
 }

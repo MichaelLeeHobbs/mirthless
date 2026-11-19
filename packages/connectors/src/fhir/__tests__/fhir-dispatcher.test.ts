@@ -1,7 +1,3 @@
-// ===========================================
-// FHIR R4 Dispatcher Tests
-// ===========================================
-
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -13,8 +9,6 @@ import {
   extractResourceId,
   type FhirDispatcherConfig,
 } from '../fhir-dispatcher.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<FhirDispatcherConfig>): FhirDispatcherConfig {
   return {
@@ -46,8 +40,6 @@ function makeSignal(aborted = false): AbortSignal {
   return new AbortController().signal;
 }
 
-// ----- Mock fetch -----
-
 const mockFetch = vi.fn();
 
 beforeEach(() => {
@@ -58,8 +50,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
-
-// ----- buildFhirUrl -----
 
 describe('buildFhirUrl', () => {
   it('builds URL with resource type', () => {
@@ -75,14 +65,11 @@ describe('buildFhirUrl', () => {
   });
 
   it('rejects a resource id that would rewrite the request path', () => {
-    // Id comes from message content — must match the FHIR id grammar.
     expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', '../../admin')).toThrow(/Invalid FHIR resource id/);
     expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'p1?evil=1')).toThrow(/Invalid FHIR resource id/);
     expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'a/b')).toThrow(/Invalid FHIR resource id/);
   });
 });
-
-// ----- extractResourceId -----
 
 describe('extractResourceId', () => {
   it('reads id from a JSON resource', () => {
@@ -105,8 +92,6 @@ describe('extractResourceId', () => {
     expect(extractResourceId('<Patient><name>Doe</name></Patient>', 'xml')).toBeUndefined();
   });
 });
-
-// ----- buildHeaders -----
 
 describe('buildHeaders', () => {
   it('sets FHIR JSON content type', () => {
@@ -155,8 +140,6 @@ describe('buildHeaders', () => {
     expect(headers['Authorization']).toBeUndefined();
   });
 });
-
-// ----- onDeploy -----
 
 describe('FhirDispatcher.onDeploy', () => {
   it('succeeds with valid config', async () => {
@@ -211,8 +194,6 @@ describe('FhirDispatcher.onDeploy', () => {
   });
 });
 
-// ----- Lifecycle -----
-
 describe('FhirDispatcher lifecycle', () => {
   it('starts successfully', async () => {
     const dispatcher = new FhirDispatcher(makeConfig());
@@ -240,8 +221,6 @@ describe('FhirDispatcher lifecycle', () => {
     expect(result.ok).toBe(true);
   });
 });
-
-// ----- send -----
 
 describe('FhirDispatcher.send', () => {
   it('sends FHIR resource and returns SENT on success', async () => {
@@ -359,13 +338,11 @@ describe('FhirDispatcher.send', () => {
   });
 });
 
-// ----- redirects (#163) -----
-
+// #163
 describe('FhirDispatcher redirects', () => {
   let server: http.Server | undefined;
   let requests: Array<{ method: string; url: string }> = [];
 
-  /** A FHIR server that redirects the POST to /moved, where a body-less GET answers 200. */
   async function startRedirectingServer(status: number): Promise<string> {
     requests = [];
     const created = http.createServer((req, res) => {

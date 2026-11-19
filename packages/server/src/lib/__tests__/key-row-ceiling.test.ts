@@ -13,7 +13,7 @@ describe('KeyRowCeiling', () => {
     expect(!!await c.take('k', 6)).toBe(true);
     expect(!!await c.take('k', 4)).toBe(true);
     expect(!!await c.take('k', 1)).toBe(false);
-    // A refused read takes nothing, so a smaller one still fits only if it does.
+    // A refused read takes nothing.
     expect(!!await c.take('k', 0)).toBe(true);
   });
 
@@ -70,7 +70,6 @@ describe('KeyRowCeiling', () => {
     const lateRead = await c.take('k', 5);
     clock.now = new Date('2026-11-18T00:00:01Z');
     expect(!!await c.take('k', 5)).toBe(true);
-    // The read from before midnight failed to record: its rows do not free up the new day.
     c.giveBack(lateRead!);
     expect(!!await c.take('k', 1)).toBe(false);
   });
@@ -87,7 +86,6 @@ describe('KeyRowCeiling', () => {
     expect(!!await c.take('k', 4)).toBe(true);
     releaseOld(0);
     await oldRead;
-    // The new day still holds its 4 rows: one more fits, two do not.
     expect(!!await c.take('k', 2)).toBe(false);
     expect(!!await c.take('k', 1)).toBe(true);
   });

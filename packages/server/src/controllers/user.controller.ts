@@ -1,8 +1,3 @@
-// ===========================================
-// User Controller
-// ===========================================
-// Handles HTTP requests for user management.
-
 import type { Request, Response } from 'express';
 import { holdsPermission, type SetAssignmentsInput, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput, type DeleteUserQuery } from '@galvanigraph/core-models';
 import { UserService } from '../services/user.service.js';
@@ -131,7 +126,6 @@ export class UserController {
     res.status(204).send();
   }
 
-  /** POST /users/me/password — self-service password change (no users:write). */
   static async changeOwnPassword(req: Request, res: Response): Promise<void> {
     const { currentPassword, newPassword } = req.body as ChangeOwnPasswordInput;
     const userId = req.user!.id;
@@ -148,7 +142,6 @@ export class UserController {
     res.status(204).send();
   }
 
-  /** GET /users/:id/permissions — view a user's effective role→permissions. */
   static async getPermissions(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const result = await UserService.getPermissions(id);

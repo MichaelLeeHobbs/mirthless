@@ -1,12 +1,6 @@
-// ===========================================
-// List keys
-// ===========================================
-
 import { useCallback, useState } from 'react';
 
-/** React keys for a list the user edits by position, and the moves to keep them with their items. */
 export interface ListKeys {
-  /** One key per item, in list order. */
   readonly keys: readonly number[];
   /** Call with the list's own remove: the item's key goes with it. */
   readonly remove: (index: number) => void;
@@ -21,11 +15,9 @@ function newKeys(count: number): number[] {
 }
 
 /**
- * Stable React keys for items that have no id of their own (filter rules,
- * transformer steps). Keyed by position, a removed or moved item's component
- * went on showing another item, and its script editor kept the other item's
- * undo history (#228). Items added at the end get new keys; a list that
- * shrinks some other way drops the last keys.
+ * For items with no id of their own. Keyed by position, a moved item's script
+ * editor kept another item's undo history (#228). A list that shrinks other
+ * than through `remove` drops the last keys.
  */
 export function useListKeys(length: number): ListKeys {
   const [stored, setStored] = useState<readonly number[]>(() => newKeys(length));

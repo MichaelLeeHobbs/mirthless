@@ -1,4 +1,3 @@
-// S15: a Database Writer inserts into a MySQL database.
 // Gap doc 12 rank 1: Database connectors pointed at Oracle, SQL Server or
 // MySQL. Needs MySQL: docker compose -f docker/docker-compose.yml --profile test up -d mysql-test
 

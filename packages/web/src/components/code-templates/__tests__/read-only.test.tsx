@@ -1,9 +1,4 @@
-// ===========================================
-// Code Template read-only mode Tests
-// ===========================================
-// Users without code_templates:write must not see add/edit/save controls, and
-// users without code_templates:delete must not see delete controls: the server
-// rejects those calls, so showing them only produces errors.
+// The server rejects write and delete calls without code_templates:write/delete, so showing those controls only produces errors.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';

@@ -1,14 +1,5 @@
-// ===========================================
-// Script test run
-// ===========================================
-// Runs one script against a sample message the way the pipeline would, without
-// side effects: the script is compiled through the same compilers (a filter rule
-// or transformer step exactly as deploy compiles it), sees the code templates
-// for its context and the sample parsed with the channel's data type, and runs in
-// the sandbox. Bridges that send, write or route (httpFetch, dbQuery,
-// routeMessage, collection writes) throw instead of acting, and each skipped call
-// is reported. Reads (getResource, collection find) work when the caller passes
-// them. Nothing is stored.
+// Runs one script against a sample as the pipeline would (same compilers, templates and data
+// type parsing) with no side effects: bridges that send, write or route throw instead of acting.
 
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
@@ -20,15 +11,13 @@ import type { BridgeDependencies, CollectionBridge } from './bridge-functions.js
 import { parseForSandbox, serializeFromSandbox } from '../pipeline/data-type-handler.js';
 import { DestinationSet, createDestinationSetProxy } from '../pipeline/destination-set.js';
 
-/** Most logger lines a test run returns; the rest are counted. */
 export const MAX_TEST_LOG_LINES = 200;
-/** Most characters of output (and of the returned value) a test run returns. */
+/** Also caps the returned value. */
 export const MAX_TEST_OUTPUT_CHARS = 256 * 1024;
 
 /** How the pipeline reads the script's result. */
 export type ScriptTestKind = 'filter' | 'transformer' | 'script';
 
-/** Read-only bridges a test run may use. */
 export interface ScriptTestReaders {
   readonly getResource?: BridgeDependencies['getResource'];
   readonly collectionFind?: CollectionBridge['find'];
@@ -37,7 +26,7 @@ export interface ScriptTestReaders {
 export interface ScriptTestInput {
   readonly script: string;
   readonly kind: ScriptTestKind;
-  /** The script's surface; its data type parses the sample. Omit dataType for scripts with no message. */
+  /** Its data type parses the sample; omit dataType for scripts with no message. */
   readonly surface: ScriptSurface;
   readonly templates: readonly TemplateSource[];
   readonly sample: string;
@@ -63,7 +52,6 @@ function asText(value: unknown): string | null {
   return String(value);
 }
 
-/** Bridges that throw instead of acting, recording each call they refused. */
 function dryBridges(readers: ScriptTestReaders | undefined, skipped: string[]): BridgeDependencies {
   const refuse = (call: string): never => {
     skipped.push(call);
@@ -83,7 +71,6 @@ function dryBridges(readers: ScriptTestReaders | undefined, skipped: string[]): 
   };
 }
 
-/** The script as the pipeline compiles it for this kind. */
 function scriptBody(input: ScriptTestInput): Result<string> {
   if (input.kind === 'filter') {
     const r = compileFilterRulesToScript([{ enabled: true, type: 'JAVASCRIPT', operator: 'AND', script: input.script }]);
@@ -103,7 +90,6 @@ function errorResult(error: string, started: number, logs: ScriptTestResult['log
   };
 }
 
-/** Run a script against a sample message, with no side effects. */
 export async function runScriptTest(input: ScriptTestInput): Promise<Result<ScriptTestResult>> {
   return tryCatch(async (): Promise<ScriptTestResult> => {
     const started = Date.now();

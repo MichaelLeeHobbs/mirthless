@@ -1,12 +1,5 @@
-// ===========================================
-// Database Connection Pool
-// ===========================================
-// Thin wrapper around pg.Pool with Result<T> returns.
-
 import pg from 'pg';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-
-// ----- Config -----
 
 export interface PoolConfig {
   readonly host: string;
@@ -17,25 +10,14 @@ export interface PoolConfig {
   readonly maxConnections: number;
   readonly idleTimeoutMs: number;
   readonly connectionTimeoutMs: number;
-  /**
-   * Server-enforced per-statement timeout (ms). A hung query is cancelled by
-   * PostgreSQL after this budget, so a stuck poll cannot wedge the connector.
-   * Defaults to 30s when omitted.
-   */
+  /** Enforced by the server, so a stuck poll cannot wedge the connector. */
   readonly statementTimeoutMs?: number;
-  /**
-   * Encrypt the connection with TLS and verify the server certificate against
-   * the system trust store. Off by default; turn it on for any database that
-   * is not on the same host, since rows and credentials otherwise travel in
-   * plain text.
-   */
+  /** Verifies against the system trust store. Without it, rows and credentials travel in plain text. */
   readonly tls?: boolean;
 }
 
-/** Default statement/query timeout when a PoolConfig does not specify one. */
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
 
-/** The connection fields a database connector's config carries. */
 export interface ConnectorConnection {
   readonly host: string;
   readonly port: number;
@@ -45,11 +27,6 @@ export interface ConnectorConnection {
   readonly tls?: boolean;
 }
 
-/**
- * The pool config a database connector opens: its connection fields with the
- * connectors' pool size and timeouts. TLS is on only when `tls` is exactly
- * `true`. `statementTimeoutMs` is set only when given.
- */
 export function toPoolConfig(connection: ConnectorConnection, statementTimeoutMs?: number): PoolConfig {
   return {
     host: connection.host,
@@ -65,22 +42,16 @@ export function toPoolConfig(connection: ConnectorConnection, statementTimeoutMs
   };
 }
 
-// ----- Query Result -----
-
 export interface QueryResult {
   readonly rows: readonly Record<string, unknown>[];
   readonly rowCount: number;
 }
 
-/**
- * A query interface bound to a single transaction's client. Queries throw on
- * error so a failure aborts the enclosing transaction (rolling it back).
- */
+/** Throws on error, so a failure rolls back the enclosing transaction. */
 export interface TxQuery {
   query(sql: string, params: readonly unknown[]): Promise<QueryResult>;
 }
 
-/** What the database connectors need from a pool, whatever the database. */
 export interface DatabasePool {
   create(config: PoolConfig): Promise<Result<void>>;
   query(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>>;
@@ -89,13 +60,9 @@ export interface DatabasePool {
   destroy(): Promise<Result<void>>;
 }
 
-// ----- Connection Pool -----
-
-/** PostgreSQL pool (`pg`). */
 export class ConnectionPool implements DatabasePool {
   private pool: pg.Pool | null = null;
 
-  /** Create the underlying pg.Pool from config. */
   async create(config: PoolConfig): Promise<Result<void>> {
     return tryCatch(async () => {
       const timeoutMs = config.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS;
@@ -115,28 +82,17 @@ export class ConnectionPool implements DatabasePool {
         query_timeout: timeoutMs,
       });
 
-      // Verify connectivity with a simple ping
       const client = await this.pool.connect();
       client.release();
     });
   }
 
-  /**
-   * Run `fn` inside a single transaction on a dedicated client (BEGIN/COMMIT,
-   * ROLLBACK on throw). The client is always released. Used by the source
-   * receiver to hold row locks (SELECT ... FOR UPDATE SKIP LOCKED) across the
-   * dispatch+ack of a batch so a concurrent poller cannot claim the same rows.
-   */
+  /** The receiver holds row locks (FOR UPDATE SKIP LOCKED) across a batch's dispatch and ack, so a concurrent poller cannot claim the same rows. */
   async transaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>> {
     return this.runInTransaction('BEGIN', false, fn);
   }
 
-  /**
-   * Run ONE statement inside a READ ONLY transaction. The statement is sent with
-   * the extended query protocol, which accepts a single statement only, so input
-   * like `COMMIT; DELETE FROM t` is rejected instead of ending the read-only
-   * transaction and writing.
-   */
+  /** The extended query protocol takes one statement, so `COMMIT; DELETE FROM t` cannot end the read-only transaction. */
   async queryReadOnly(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>> {
     return this.runInTransaction('BEGIN READ ONLY', true, (tx) => tx.query(sql, params));
   }
@@ -172,7 +128,6 @@ export class ConnectionPool implements DatabasePool {
     });
   }
 
-  /** Execute a parameterized query and return rows. */
   async query(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>> {
     return tryCatch(async () => {
       if (!this.pool) {
@@ -186,7 +141,6 @@ export class ConnectionPool implements DatabasePool {
     });
   }
 
-  /** Acquire a client for transaction use. */
   async acquireClient(): Promise<Result<pg.PoolClient>> {
     return tryCatch(async () => {
       if (!this.pool) {
@@ -196,7 +150,6 @@ export class ConnectionPool implements DatabasePool {
     });
   }
 
-  /** Drain and close the pool. */
   async destroy(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.pool) {

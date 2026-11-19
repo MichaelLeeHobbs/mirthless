@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Groups Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, timestamp, integer, primaryKey } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 

@@ -1,12 +1,6 @@
-// ===========================================
-// Channel Clone Service Tests
-// ===========================================
-// Tests for ChannelService.clone() method.
 // We mock getById and create at the service boundary since clone delegates to them.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -108,13 +102,10 @@ vi.mock('../../lib/logger.js', () => ({
   },
 }));
 
-// Must import after mocks
 const { ChannelService } = await import('../channel.service.js');
 const { emitEvent } = await import('../../lib/event-emitter.js');
 const { channels, channelConnectors, channelFilters, filterRules, channelTransformers, transformerSteps, codeTemplateLibraries } =
   await import('../../db/schema/index.js');
-
-// ----- Fixtures -----
 
 const NOW = new Date('2026-03-01T12:00:00Z');
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
@@ -186,8 +177,6 @@ function makeClonedChannel(): Record<string, unknown> {
   });
 }
 
-// ----- Helpers -----
-
 function setupGetByIdMocks(
   channel: Record<string, unknown>,
   relations?: {
@@ -247,7 +236,6 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
   });
 }
 
-// Records every tx.update(table).set(values).where(condition) in the create transaction.
 interface RecordedUpdate { table: unknown; values: Record<string, unknown>; condition: unknown }
 let txUpdates: RecordedUpdate[] = [];
 const txUpdate = vi.fn((table: unknown) => ({
@@ -258,8 +246,6 @@ const txUpdate = vi.fn((table: unknown) => ({
     },
   }),
 }));
-
-// ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -305,8 +291,7 @@ describe('ChannelService.clone', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The create call should have received enabled: false
-    // We verify by checking the transaction was called (create was invoked)
+    // Shows only that create ran; 'copies channel properties from source' checks enabled: false.
     expect(mockTransaction).toHaveBeenCalledOnce();
   });
 
@@ -317,7 +302,6 @@ describe('ChannelService.clone', () => {
     setupGetByIdMocks(source);
     setupCreateMocks(cloned);
 
-    // Spy on create to capture the input
     const createSpy = vi.spyOn(ChannelService, 'create');
 
     const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
@@ -422,7 +406,7 @@ describe('ChannelService.clone', () => {
   });
 
   it('returns NOT_FOUND when source channel does not exist', async () => {
-    pushResponse([]); // findChannel returns empty
+    pushResponse([]);
 
     const result = await ChannelService.clone('00000000-0000-0000-0000-000000000099', 'Clone');
 
@@ -448,7 +432,6 @@ describe('ChannelService.clone', () => {
     const source = makeChannel();
     makeClonedChannel();
 
-    // getById succeeds
     setupGetByIdMocks(source);
     // create's uniqueness check finds a conflict
     pushResponse([{ id: 'existing-id' }]);
@@ -567,7 +550,6 @@ describe('ChannelService.clone', () => {
     const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
     expect(result.ok).toBe(true);
 
-    // Source filter: no connector, with its rule.
     expect(inserted.get(channelFilters)).toEqual([{ channelId: CLONED_ID, connectorId: null }]);
     expect(inserted.get(filterRules)).toEqual([[
       // The language travels too: a TypeScript rule must stay type-checked on the clone.
@@ -580,7 +562,6 @@ describe('ChannelService.clone', () => {
     expect(inserted.get(transformerSteps)).toEqual([[
       expect.objectContaining({ transformerId: 'new-t1', name: 'Set MRN', script: 'tmp.mrn = msg.PID[3];', language: 'TYPESCRIPT' }),
     ]]);
-    // Response transformer travels with its destination.
     const destValues = inserted.get(channelConnectors)?.[0] as readonly Record<string, unknown>[];
     expect(destValues[1]).toEqual(expect.objectContaining({ metaDataId: 2, responseTransformer: 'responseStatus = SENT;' }));
   });
@@ -610,7 +591,6 @@ describe('ChannelService.clone', () => {
     expect(libraryUpdates).toHaveLength(1);
     // Only libraries whose list contains the original (a null list matches nothing in SQL).
     expect(libraryUpdates[0]!.condition).toEqual(expect.objectContaining({ values: [expect.anything(), JSON.stringify([CHANNEL_ID])] }));
-    // The clone's id is appended to the list.
     expect(libraryUpdates[0]!.values['channelIds']).toEqual(expect.objectContaining({ values: [expect.anything(), JSON.stringify([CLONED_ID])] }));
   });
 

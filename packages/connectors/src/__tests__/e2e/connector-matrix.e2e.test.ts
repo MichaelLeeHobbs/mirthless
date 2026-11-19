@@ -1,10 +1,3 @@
-// ===========================================
-// Connector Matrix E2E: exercise each connector by USING it
-// ===========================================
-// One real message pushed through a real source connector, transformed, and
-// delivered through a real destination connector — asserting the payload that
-// actually landed on the other side (a file on disk, an HTTP body downstream).
-//
 // TCP/MLLP + Channel connectors are covered in real-messaging.e2e.test.ts.
 // This file adds File and HTTP. Each new connector added here is a small,
 // self-contained block following the same shape.
@@ -26,7 +19,7 @@ import {
 import { deployChannel, teardownAll, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 
-/** How long a delivery may take: inside each test's 15 s budget, so a miss names the wait. */
+/** Inside each test's 15 s budget, so a miss names the wait. */
 const DELIVERY_WAIT = { timeout: 10_000, interval: 10 } as const;
 
 let deployed: DeployedChannel[] = [];
@@ -39,8 +32,6 @@ afterEach(async () => {
   for (const s of servers.splice(0)) await new Promise<void>((r) => s.close(() => { r(); }));
   for (const d of tempDirs.splice(0)) await fs.rm(d, { recursive: true, force: true });
 });
-
-// ----- File connector -----
 
 describe('File connector (drop a file in → transform → write a file out)', () => {
   it('picks up a dropped file, transforms it, and writes the result to the destination dir', async () => {
@@ -91,13 +82,10 @@ describe('File connector (drop a file in → transform → write a file out)', (
     expect(written).toBe('MSH|^~\\&|FILE|IN::processed');
     expect(channel.store.messageCount()).toBe(1);
 
-    // Source consumed the file (postAction DELETE).
     const remaining = await fs.readdir(srcDir);
     expect(remaining).not.toContain('input.hl7');
   }, 15_000);
 });
-
-// ----- HTTP connector -----
 
 describe('HTTP connector (POST in → transform → POST out to a downstream server)', () => {
   it('receives an HTTP POST, transforms the body, and delivers it to a downstream HTTP server', async () => {
@@ -147,8 +135,6 @@ describe('HTTP connector (POST in → transform → POST out to a downstream ser
   }, 15_000);
 });
 
-// ----- FHIR connector (destination) -----
-
 describe('FHIR connector (POST a resource in → transform to FHIR → POST to a FHIR server)', () => {
   it('transforms the message into a FHIR Patient and POSTs it to a FHIR endpoint', async () => {
     const received: { path: string; contentType: string; body: string }[] = [];
@@ -168,7 +154,6 @@ describe('FHIR connector (POST a resource in → transform to FHIR → POST to a
       channelId: '00000000-0000-0000-0000-connfhir0001',
       dataType: 'RAW',
       source: mllpSource(FHIR_SRC_PORT, { maxConnections: 10 }),
-      // Build a FHIR Patient from the HL7 PID-5 name.
       transformer: [
         "const pid = String(msg).split(String.fromCharCode(13)).find((l) => l.indexOf('PID') === 0) || '';",
         "const name = (pid.split('|')[5] || '').split('^');",
@@ -207,8 +192,6 @@ describe('FHIR connector (POST a resource in → transform to FHIR → POST to a
     expect(resource.name[0]?.given[0]).toBe('JOHN');
   });
 });
-
-// ----- ports + helpers -----
 
 const HTTP_SRC_PORT = 17701;
 const DOWNSTREAM_PORT = 17702;

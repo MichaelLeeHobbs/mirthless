@@ -1,17 +1,9 @@
-// ===========================================
-// Channel Runtime — State Machine
-// ===========================================
-// Manages channel lifecycle: deploy → start → stop → undeploy.
-// Coordinates source connector, destination connectors, and pipeline.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { CHANNEL_STATE } from '@galvanigraph/core-models';
 
-// ----- Types -----
-
 type ChannelState = (typeof CHANNEL_STATE)[keyof typeof CHANNEL_STATE];
 
-/** Connector lifecycle interface (matches connectors package). */
+/** Matches the connectors package's lifecycle. */
 export interface RuntimeConnector {
   onDeploy(): Promise<Result<void>>;
   onStart(): Promise<Result<void>>;
@@ -20,12 +12,10 @@ export interface RuntimeConnector {
   onUndeploy(): Promise<Result<void>>;
 }
 
-/** Source connector with dispatcher. */
 export interface RuntimeSourceConnector extends RuntimeConnector {
   setDispatcher(dispatcher: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>): void;
 }
 
-/** Channel configuration needed for runtime. */
 export interface ChannelRuntimeConfig {
   readonly channelId: string;
   readonly source: RuntimeSourceConnector;
@@ -33,23 +23,15 @@ export interface ChannelRuntimeConfig {
   readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>;
 }
 
-// ----- State Machine -----
-
 export class ChannelRuntime {
   private state: ChannelState = 'UNDEPLOYED';
   private config: ChannelRuntimeConfig | null = null;
   private abortController: AbortController | null = null;
 
-  /** Get current channel state. */
   getState(): ChannelState {
     return this.state;
   }
 
-  /**
-   * Deploy: load config, init connectors. UNDEPLOYED → STOPPED. If a connector
-   * fails, the ones already deployed are undeployed again and the channel
-   * stays UNDEPLOYED.
-   */
   async deploy(config: ChannelRuntimeConfig): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'UNDEPLOYED') {
@@ -70,7 +52,6 @@ export class ChannelRuntime {
         deployed.push(connector);
       }
 
-      // Wire source dispatcher
       config.source.setDispatcher(config.onMessage);
 
       this.config = config;
@@ -79,11 +60,7 @@ export class ChannelRuntime {
     });
   }
 
-  /**
-   * Start: start destinations first, then source. STOPPED → STARTED. If a
-   * connector fails, the ones already started are stopped again and the
-   * channel stays STOPPED, so a failed start leaves nothing listening.
-   */
+  /** A failed start stops what already started, so it leaves nothing listening. */
   async start(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STOPPED') {
@@ -109,11 +86,6 @@ export class ChannelRuntime {
     });
   }
 
-  /**
-   * Stop: stop source first, then destinations. STARTED → STOPPED. Every
-   * connector is asked to stop even if an earlier one fails; the first
-   * failure is returned.
-   */
   async stop(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STARTED' && this.state !== 'PAUSED') {
@@ -127,7 +99,6 @@ export class ChannelRuntime {
       const srcResult = await this.config.source.onStop();
       if (!srcResult.ok) failures.push(`Source stop failed: ${srcResult.error.message}`);
 
-      // Stop destinations
       for (const [id, dest] of this.config.destinations) {
         const result = await dest.onStop();
         if (!result.ok) failures.push(`Destination ${String(id)} stop failed: ${result.error.message}`);
@@ -148,7 +119,6 @@ export class ChannelRuntime {
     return this.abortController.signal;
   }
 
-  /** Halt: force-stop via AbortController. STARTED|PAUSED → STOPPED. */
   async halt(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STARTED' && this.state !== 'PAUSED') {
@@ -156,14 +126,11 @@ export class ChannelRuntime {
       }
       if (!this.config) throw new Error('Channel not deployed');
 
-      // Signal abort to all in-flight operations
       this.abortController?.abort();
       this.abortController = new AbortController();
 
-      // Force-halt source
       await this.config.source.onHalt();
 
-      // Force-halt destinations
       for (const [, dest] of this.config.destinations) {
         await dest.onHalt();
       }
@@ -172,7 +139,6 @@ export class ChannelRuntime {
     });
   }
 
-  /** Pause: stop source only, destinations keep running. STARTED → PAUSED. */
   async pause(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STARTED') {
@@ -186,7 +152,6 @@ export class ChannelRuntime {
     });
   }
 
-  /** Resume: restart source. PAUSED → STARTED. */
   async resume(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'PAUSED') {
@@ -201,7 +166,6 @@ export class ChannelRuntime {
     });
   }
 
-  /** Undeploy: clean up all connectors. STOPPED → UNDEPLOYED. */
   async undeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STOPPED') {

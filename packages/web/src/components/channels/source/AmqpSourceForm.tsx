@@ -1,8 +1,4 @@
-// ===========================================
-// AMQP (RabbitMQ) Source Connector Form
-// ===========================================
-// Consumes an existing queue. Property keys must match the AMQP source schema
-// in core-models (see connector-defaults.ts).
+// Property keys must match the AMQP source schema in core-models (see connector-defaults.ts).
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';

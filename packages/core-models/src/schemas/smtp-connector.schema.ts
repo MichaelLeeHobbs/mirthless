@@ -1,9 +1,4 @@
-// ===========================================
-// SMTP Connector Property Schemas
-// ===========================================
-// Properties of the SMTP destination, as a channel stores them. The server
-// validates them at deploy and the connector registry parses them, so
-// defaults live here only. A key not listed here fails validation.
+// Defaults live here only (D-274).
 
 import { z } from 'zod/v4';
 import {
@@ -14,7 +9,7 @@ import {
 
 export const SMTP_CONTENT_TYPES = ['text/plain', 'text/html'] as const;
 
-/** One configured attachment; `filename` and `content` may use `${...}` variables. */
+/** `filename` and `content` may use `${...}`. */
 const attachmentSchema = z.strictObject({
   filename: z.string(),
   mimeType: z.string().optional(),

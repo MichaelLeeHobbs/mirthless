@@ -1,19 +1,15 @@
-// ===========================================
-// Audit Log Zod Schemas
-// ===========================================
-// The protected audit log (D-312): what it records and how it is queried.
-// Operational events stay in the events table (event.schema.ts).
+// The protected audit log (D-312). Operational events stay in the events table (event.schema.ts).
 
 import { z } from 'zod/v4';
 
-/** What an audit row records. Each is written to audit_log only, never to events. */
+/** Written to audit_log only, never to events. */
 export const AUDIT_ACTION = {
   USER_LOGIN: 'USER_LOGIN',
   USER_LOGIN_FAILED: 'USER_LOGIN_FAILED',
   USER_LOGOUT: 'USER_LOGOUT',
   /** A guard refused a request, once a minute per caller, route and reason (D-314). */
   ACCESS_DENIED: 'ACCESS_DENIED',
-  /** Operational events were purged; written before the purge runs. */
+  /** Written before the purge runs. */
   EVENTS_PURGED: 'EVENTS_PURGED',
   /** Written by drop_expired_audit_partitions() before it drops months (migration 0017). */
   AUDIT_PARTITIONS_DROPPED: 'AUDIT_PARTITIONS_DROPPED',
@@ -22,7 +18,6 @@ export const AUDIT_ACTION = {
   MESSAGE_CONTENT_VIEWED: 'MESSAGE_CONTENT_VIEWED',
   MESSAGES_EXPORTED: 'MESSAGES_EXPORTED',
   ATTACHMENT_DOWNLOADED: 'ATTACHMENT_DOWNLOADED',
-  /** A search across channels (the Traffic page). */
   MESSAGES_SEARCHED_ALL_CHANNELS: 'MESSAGES_SEARCHED_ALL_CHANNELS',
   /** The response of a message sent into a channel from the UI. Fail-closed. */
   MESSAGE_SENT: 'MESSAGE_SENT',
@@ -67,20 +62,15 @@ export const AUDIT_ACTION = {
 
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
 
-/**
- * Why an export or backup is being taken (D-312). Required: it is recorded in
- * the audit log and written into the file's header. One line, so it cannot
- * break out of a CSV header comment.
- */
+/** Recorded in the audit log and the file's header (D-312); one line, so it cannot break out of a CSV header comment. */
 export const exportReasonSchema = z.string().trim().min(3, 'Say why you are exporting this (at least 3 characters).').max(500)
   .refine((v) => !/[\r\n]/.test(v), 'The reason must be one line.');
 
-/** GET /system/backup query string. */
 export const backupExportQuerySchema = z.object({ reason: exportReasonSchema });
 
 export type BackupExportQuery = z.infer<typeof backupExportQuerySchema>;
 
-/** GET /audit query filters. `action` is a comma-separated list. */
+/** `action` is a comma-separated list. */
 export const auditListQuerySchema = z.object({
   // A deeper page is a huge OFFSET; filter by date instead.
   page: z.coerce.number().int().positive().max(10_000).default(1),

@@ -1,9 +1,3 @@
-// ===========================================
-// Channel Status Table
-// ===========================================
-// Main dashboard table showing all channels with stats and deployment state.
-// Columns (beyond Name + State) are per-user configurable.
-
 import { useState, useMemo, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import Box from '@mui/material/Box';
@@ -69,7 +63,6 @@ interface ChannelRow {
 
 const DEFAULT_VISIBLE = new Set<DashboardColumnId>(DEFAULT_VISIBLE_COLUMNS);
 
-/** Comparable value for a sort field. */
 function sortValue(row: ChannelRow, field: SortField): string | number {
   switch (field) {
     case 'channelName': return row.channelName;

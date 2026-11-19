@@ -1,9 +1,3 @@
-// ===========================================
-// Text Editor
-// ===========================================
-// The editor for message text (HL7, JSON, plain text): same frame as the
-// script editor, with copy and full screen, and a line/character count.
-
 import { type ReactNode, useState } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -24,11 +18,7 @@ const LANGUAGE_NAME: Readonly<Record<TextLanguage, string>> = {
   json: 'JSON',
 };
 
-/**
- * The text to hand the host after an edit. Monaco keeps \n or \r\n line
- * endings, but HL7 v2 ends each segment with \r, so an edited HL7 message gets
- * its \r endings back (#183).
- */
+/** HL7 v2 ends each segment with \r but Monaco keeps \n or \r\n, so an edited HL7 message gets its \r endings back (#183). */
 export function textFromEditor(language: TextLanguage, text: string): string {
   return language === 'hl7' ? text.replace(/\r?\n/g, '\r') : text;
 }

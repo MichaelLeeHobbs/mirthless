@@ -1,7 +1,3 @@
-// ===========================================
-// Editor hooks
-// ===========================================
-
 import { useEffect, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 import { monaco, overflowWidgetsHost } from './monaco.js';
@@ -9,15 +5,12 @@ import { editorThemeName } from '../../styles/editor-theme.js';
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor;
 
-/** Monaco theme name that matches the app's current light/dark mode. */
 export function useEditorTheme(): string {
   return editorThemeName(useTheme().palette.mode);
 }
 
-/** One problem in the editor, as shown in the status line. */
 export interface Problem {
   readonly severity: 'error' | 'warning';
-  /** Syntax (the code does not parse) or type (it parses but is wrong). */
   readonly kind: 'syntax' | 'type';
   readonly message: string;
   readonly line: number;
@@ -31,7 +24,6 @@ export function problemKind(code: string | { readonly value: string } | undefine
   return Number.isFinite(n) && n >= 2000 ? 'type' : 'syntax';
 }
 
-/** Errors first, then by position. */
 export function toProblems(markers: readonly monaco.editor.IMarker[]): Problem[] {
   return markers
     .filter((m) => m.severity >= monaco.MarkerSeverity.Warning)
@@ -45,7 +37,6 @@ export function toProblems(markers: readonly monaco.editor.IMarker[]): Problem[]
     .sort((a, b) => (a.severity === b.severity ? a.line - b.line || a.column - b.column : a.severity === 'error' ? -1 : 1));
 }
 
-/** Live problems (errors and warnings) for the editor's model. */
 export function useProblems(editor: CodeEditor | null): readonly Problem[] {
   const [problems, setProblems] = useState<readonly Problem[]>([]);
   useEffect(() => {
@@ -65,7 +56,6 @@ export function useProblems(editor: CodeEditor | null): readonly Problem[] {
   return problems;
 }
 
-/** Cursor line and column. */
 export function useCursor(editor: CodeEditor | null): { readonly line: number; readonly column: number } {
   const [pos, setPos] = useState({ line: 1, column: 1 });
   useEffect(() => {
@@ -76,11 +66,7 @@ export function useCursor(editor: CodeEditor | null): { readonly line: number; r
   return pos;
 }
 
-/**
- * The problems to report while the user may be mid-word. With the completion
- * list open, `logger.` is half typed, not wrong: the parser's syntax error at
- * the cursor is left out until the list closes. Everything else is kept.
- */
+/** With the completion list open, `logger.` is half typed, not wrong: the syntax error at the cursor is left out until the list closes. */
 export function settledProblems(
   problems: readonly Problem[], cursor: { readonly line: number; readonly column: number }, completing: boolean,
 ): readonly Problem[] {
@@ -88,7 +74,6 @@ export function settledProblems(
   return problems.filter((p) => !(p.kind === 'syntax' && p.line === cursor.line && Math.abs(p.column - cursor.column) <= 1));
 }
 
-/** Height an editor needs to hold the open completion list and its docs below the cursor line, or 0 when none is open. */
 export function suggestRoom(host: HTMLElement): number {
   const list = host.querySelector<HTMLElement>('.suggest-widget.visible');
   if (!list) return 0;
@@ -97,12 +82,7 @@ export function suggestRoom(host: HTMLElement): number {
   return Math.max(list.offsetHeight, docs?.offsetHeight ?? 0) + 8;
 }
 
-/**
- * Room to add to a fit-to-content editor while its completion list is open, so
- * the list stays inside the editor instead of covering the status line below.
- * Completion renders in the shared popup host, so this watches the host and
- * answers only for the editor that has focus.
- */
+/** Keeps the completion list inside a fit-to-content editor, off the status line. It renders in the shared popup host, so this watches the host and answers only for the focused editor. */
 export function useSuggestRoom(editor: CodeEditor | null): number {
   const [room, setRoom] = useState(0);
   useEffect(() => {
@@ -121,17 +101,12 @@ function sameText(a: string, b: string): boolean {
   return a.replace(/\r\n?/g, '\n') === b.replace(/\r\n?/g, '\n');
 }
 
-/** Editors whose text the host is replacing right now. */
 const replacing = new WeakSet<CodeEditor>();
 
 /**
- * Put text the host gave into the editor when it is not what the editor
- * holds. Replacing the model's value clears its undo history, so undo cannot
- * bring back the text of another list item or tab the editor showed before
- * (#183). Returns whether it replaced the text. Text equal to the editor's
- * is not replaced, so a host that shows several documents in turn gives each
- * its own editor (a React key per tab, template or list item): otherwise two
- * documents with the same text would share one undo history (#228).
+ * Replacing the model's value clears its undo history, so undo cannot bring back another document's text (#183).
+ * Equal text is not replaced, so a host that shows several documents in turn must give each its own editor (a React
+ * key per document), or two with the same text share one undo history (#228).
  */
 export function replaceExternalValue(editor: CodeEditor, value: string): boolean {
   if (sameText(editor.getValue(), value)) return false;
@@ -144,27 +119,18 @@ export function replaceExternalValue(editor: CodeEditor, value: string): boolean
   return true;
 }
 
-/**
- * Whether a content change is the host's own text going in, not an edit.
- * Monaco reports `setValue` as a content change, and @monaco-editor/react
- * passes it to `onChange`, so without this a host saw its own text come back
- * as an edit: switching Global Scripts tabs marked the page unsaved (#228).
- */
+/** Monaco reports `setValue` as a content change and @monaco-editor/react passes it to `onChange`, so without this a host saw its own text come back as an edit (#228). */
 export function isExternalReplace(editor: CodeEditor | null): boolean {
   return editor !== null && replacing.has(editor);
 }
 
-/**
- * Keep the editor showing the host's value. Pass the editor `defaultValue`,
- * not `value`: @monaco-editor/react applies a new `value` as an undoable edit.
- */
+/** Pass the editor `defaultValue`, not `value`: @monaco-editor/react applies a new `value` as an undoable edit. */
 export function useExternalValue(editor: CodeEditor | null, value: string): void {
   useEffect(() => {
     if (editor) replaceExternalValue(editor, value);
   }, [editor, value]);
 }
 
-/** Move the cursor to a problem and focus the editor. */
 export function revealProblem(editor: CodeEditor, problem: Problem): void {
   editor.setPosition({ lineNumber: problem.line, column: problem.column });
   editor.revealLineInCenter(problem.line);

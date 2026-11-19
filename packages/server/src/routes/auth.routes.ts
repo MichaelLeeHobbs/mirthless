@@ -1,7 +1,3 @@
-// ===========================================
-// Auth Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { AuthController } from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
@@ -17,13 +13,12 @@ const loginSchema = z.object({
 
 const router: IRouter = Router();
 
-// Public routes (with rate limiting). Login reads its small body only after the limiter.
+// Login reads its body only after the limiter.
 router.post('/login', authRateLimiter, authJsonBody, validate({ body: loginSchema }), AuthController.login);
 
-// Refresh uses cookie — no body validation needed (own, looser rate limit)
+// Refresh reads a cookie, so it has no body to validate.
 router.post('/refresh', refreshRateLimiter, AuthController.refresh);
 
-// Logout requires authentication
 router.post('/logout', authenticate, AuthController.logout);
 
 export default router;

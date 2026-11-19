@@ -1,9 +1,4 @@
-// ===========================================
-// Engine NO_MESSAGES Check Tests
-// ===========================================
-// EngineManager.checkSilentChannels hands each started channel's last-activity
-// time to its AlertManager and restarts the clock for channels that are not
-// running. Alert firing rules are covered in engine alert-manager.test.ts.
+// Alert firing rules are tested in the engine's alert-manager.test.ts.
 
 import { describe, it, expect, vi } from 'vitest';
 import { EngineManager, type DeployedChannel } from '../engine.js';

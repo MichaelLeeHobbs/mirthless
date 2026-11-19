@@ -1,17 +1,7 @@
-// ===========================================
-// Events E2E Tests
-// ===========================================
-// The Events page has two views: operational events (the events table) and,
-// for holders of audit:read, access records (the protected audit log, D-312).
-// Sign-ins are access records, so every test's own login is one. For the
-// events view, beforeAll creates a tag, which writes an INFO event. Other specs
-// add rows in parallel, so nothing here depends on which rows come first.
-
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, postData } from './fixtures/api.js';
 
-/** Pick an option from a filter select and wait for the filtered list from `endpoint`. */
 async function chooseFilter(page: Page, label: string, option: string, endpoint: string, query: string): Promise<void> {
   const select = page.getByRole('combobox', { name: label, exact: true });
   const filtered = page.waitForResponse((res) => res.url().includes(`/api/v1/${endpoint}?`) && res.url().includes(query));
@@ -20,7 +10,7 @@ async function chooseFilter(page: Page, label: string, option: string, endpoint:
   expect((await filtered).ok()).toBeTruthy();
 }
 
-/** The cells of one column of a table's summary rows (each also has a hidden detail row). */
+// Summary rows only: each has a hidden detail row after it.
 function columnCells(page: Page, column: number, rowButton: string): ReturnType<Page['locator']> {
   return page.locator(`table tbody tr:has(button[aria-label$="${rowButton}"])`).locator(`td:nth-child(${String(column)})`);
 }
@@ -60,7 +50,6 @@ test.describe('Events', () => {
     await expect(actions.first()).toHaveText('User login');
     await expect.poll(async () => new Set(await actions.allTextContents())).toEqual(new Set(['User login']));
 
-    // The events view no longer offers sign-ins as a filter.
     await page.getByRole('tab', { name: 'Events' }).click();
     await page.getByRole('combobox', { name: 'Event Name', exact: true }).click();
     await expect(page.getByRole('option', { name: 'User login', exact: true })).toHaveCount(0);
@@ -80,7 +69,6 @@ test.describe('Events', () => {
     const expand = page.getByRole('button', { name: 'Expand event details' }).first();
     await expand.click();
 
-    // The open row's button flips to Collapse, and the detail panel shows the event's fields.
     await expect(page.getByRole('button', { name: 'Collapse event details' })).toHaveCount(1);
     await expect(page.getByText('Server ID', { exact: true })).toBeVisible();
     await expect(page.getByText('Channel ID', { exact: true })).toBeVisible();
@@ -101,10 +89,8 @@ test.describe('Events', () => {
 
   test('purge dialog opens', async ({ page }) => {
     await page.goto('/events');
-    // The button's tooltip gives it its accessible name.
     await page.getByRole('button', { name: 'Purge old events' }).click();
 
-    // The dialog asks for an age in days (90 by default). Cancel closes it without purging.
     const dialog = page.getByRole('dialog', { name: 'Purge Old Events' });
     await expect(dialog.getByLabel('Days')).toHaveValue('90');
     await dialog.getByRole('button', { name: 'Cancel' }).click();

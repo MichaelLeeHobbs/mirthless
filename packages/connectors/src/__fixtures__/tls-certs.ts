@@ -1,8 +1,4 @@
-// ===========================================
-// Test TLS Fixtures
-// ===========================================
-// Self-signed certificate (CN=localhost, SAN localhost/127.0.0.1) used ONLY
-// by tests to exercise TLS-enabled connector paths. Not for production use.
+// Self-signed (CN=localhost, SAN localhost/127.0.0.1), for tests only.
 // Generated with: openssl req -x509 -newkey rsa:2048 -nodes -days 3650.
 
 export const TEST_CERT_PEM = `-----BEGIN CERTIFICATE-----

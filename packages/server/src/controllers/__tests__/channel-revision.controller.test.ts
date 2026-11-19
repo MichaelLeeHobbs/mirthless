@@ -1,6 +1,3 @@
-// ===========================================
-// Channel Revision Controller Tests
-// ===========================================
 // A revision snapshot carries the full connector config, so readers without
 // channels:write must get credentials masked exactly as on GET /channels/:id.
 

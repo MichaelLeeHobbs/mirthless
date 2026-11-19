@@ -1,18 +1,10 @@
-// ===========================================
-// Last enabled admin: concurrent demotions (real Postgres, #218)
-// ===========================================
-// Two admins disabling or demoting each other at the same moment must not both
-// succeed: the check for another enabled admin and the write happen in one
-// transaction that holds the lock on the admin role row (grant.service). Each round starts with exactly
-// two enabled admins (any other enabled admin is set aside for the test and
-// put back after), fires both changes with Promise.all, and expects exactly one
-// to succeed and one enabled admin to remain.
+// Each round starts with exactly two enabled admins (any other enabled admin is
+// set aside for the test and put back after) and fires both changes at once (#218).
 
 import { beforeAll, afterAll, beforeEach, afterEach, expect, it } from 'vitest';
 import { describeIntegration } from './_setup.js';
 
 const ROUNDS = 10;
-/** Users holding the admin role through a live assignment. */
 const ADMIN_HOLDERS = `SELECT a.user_id FROM assignments a JOIN roles r ON r.id = a.role_id
   WHERE r.admin AND (a.expires_at IS NULL OR a.expires_at > now())`;
 

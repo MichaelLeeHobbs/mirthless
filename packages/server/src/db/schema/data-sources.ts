@@ -1,9 +1,4 @@
-// ===========================================
-// Data Sources Table Schema
-// ===========================================
-// Admin-managed database connection profiles that channel scripts query via
-// dbQuery(dataSourceName, sql, params). The password is stored encrypted at rest
-// (content-crypto envelope). See docs/design/11-datasources.md.
+// Scripts query these through dbQuery(); see docs/design/11-datasources.md.
 
 import { pgTable, uuid, varchar, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
 

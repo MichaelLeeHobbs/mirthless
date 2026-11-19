@@ -1,6 +1,4 @@
-// #228: which declarations the type service holds for a ScriptEditor. Monaco
-// is faked (fake-monaco.tsx) so the editor mounts, takes focus and is typed in;
-// the applied-surface tracking is the real one.
+// #228. Monaco is faked (fake-monaco.tsx); the applied-surface tracking is the real one.
 
 import { useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -35,7 +33,6 @@ describe('ScriptEditor surface', () => {
     expect(appliedSurfaceKey()).toBe(appliedSurfaces.at(-1)?.key);
   });
 
-  /** A transformer's first two steps: the second can use what the first declares. */
   function TwoSteps(): React.ReactNode {
     const [first, setFirst] = useState('');
     return (

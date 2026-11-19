@@ -1,16 +1,15 @@
 import { create } from 'zustand';
 import type { GrantEntry } from '@galvanigraph/core-models';
 
-/** User profile returned from the API at sign-in and with each session refresh */
 export interface AuthUser {
   readonly id: string;
   readonly username: string;
   readonly email: string;
   readonly role: string;
   readonly permissions: ReadonlyArray<string>;
-  /** Each held permission's scope: every channel, or group ids (D-310). Absent from older servers. */
+  /** Absent from older servers (D-310). */
   readonly grants?: ReadonlyArray<GrantEntry>;
-  /** When the first temporary access ends (ISO), or null; absent from older servers. */
+  /** ISO time the first temporary access ends; absent from older servers. */
   readonly nextExpiryAt?: string | null;
 }
 
@@ -19,11 +18,7 @@ interface AuthState {
   readonly accessToken: string | null;
   readonly isAuthenticated: boolean;
   readonly isLoading: boolean;
-  /**
-   * True when the server requires the signed-in user to change their password
-   * before using the app (e.g. a seeded/flagged admin). The self-change endpoint
-   * clears the flag server-side; the UI mirrors that via clearMustChangePassword.
-   */
+  /** The self-change endpoint clears this on the server; mirror it with clearMustChangePassword. */
   readonly mustChangePassword: boolean;
   /**
    * When a refresh found the user's access had changed (ISO), so a 403 or 404

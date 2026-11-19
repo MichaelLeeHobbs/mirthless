@@ -1,7 +1,3 @@
-// ===========================================
-// Message Processor Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { delimitedOptionsSchema } from '@galvanigraph/core-models';
@@ -16,8 +12,6 @@ import type {
 } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
 import { GlobalChannelMap } from '../../runtime/global-channel-map.js';
-
-// ----- Helpers -----
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
@@ -70,15 +64,11 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
   };
 }
 
-// ----- Setup -----
-
 let sandbox: VmSandboxExecutor;
 
 beforeEach(() => {
   sandbox = new VmSandboxExecutor();
 });
-
-// ----- Tests -----
 
 describe('MessageProcessor', () => {
   it('processes message through full pipeline (happy path)', async () => {
@@ -97,7 +87,6 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults).toHaveLength(1);
     expect(result.value.destinationResults[0]!.status).toBe('SENT');
 
-    // Verify store calls
     expect(store.createMessage).toHaveBeenCalledOnce();
     expect(store.createConnectorMessage).toHaveBeenCalledTimes(2); // source + dest
     expect(store.storeContent).toHaveBeenCalled();
@@ -124,7 +113,6 @@ describe('MessageProcessor', () => {
     expect(result.value.status).toBe('FILTERED');
     expect(result.value.destinationResults).toHaveLength(0);
 
-    // Source filter → no destinations called
     expect(sendFn).not.toHaveBeenCalled();
     expect(store.incrementStats).toHaveBeenCalledWith(
       expect.any(String), 0, expect.any(String), 'filtered',
@@ -164,7 +152,6 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // Transformed content stored
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 3, 'TRANSFORMED_CONTENT', 'RAW',
     );
@@ -184,11 +171,9 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput('original'), AbortSignal.timeout(5_000));
 
-    // Transformed content stored — msg assignment (no explicit return) should work
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 3, 'test', 'RAW',
     );
-    // Destination receives transformed content
     expect(sendFn).toHaveBeenCalledWith(1, 1,'test', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
@@ -208,7 +193,6 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput('original'), AbortSignal.timeout(5_000));
 
-    // Destination receives msg-assigned content
     expect(sendFn).toHaveBeenCalledWith(1, 1,'dest_modified', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
@@ -235,7 +219,6 @@ describe('MessageProcessor', () => {
     expect(sendFn).toHaveBeenCalledTimes(2);
   });
 
-  /** A send function that records start/finish order and holds each send briefly. */
   function makeOrderedSendFn(events: string[]): SendToDestination {
     return vi.fn(async (metaDataId: number) => {
       events.push(`start ${String(metaDataId)}`);
@@ -321,8 +304,6 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults.map((r) => r.metaDataId)).toEqual([1, 2, 3]);
   });
 
-  // ----- Data Type Tests -----
-
   it('HL7V2 channel: msg is auto-parsed, transformer accesses fields directly', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
@@ -333,7 +314,6 @@ describe('MessageProcessor', () => {
     const config = makeConfig({
       dataType: 'HL7V2',
       scripts: {
-        // Access msg.get() directly — no parseHL7 call needed
         sourceTransformer: { code: 'return msg.get("PID.3");' },
       },
     });
@@ -348,7 +328,6 @@ describe('MessageProcessor', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
-    // The transformer returned the PID.3 value as content
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 3, '12345', 'HL7V2',
     );
@@ -431,7 +410,6 @@ describe('MessageProcessor', () => {
     const config = makeConfig({
       dataType: 'HL7V2',
       scripts: {
-        // Explicitly call parseHL7 even though msg is already parsed — should work
         sourceTransformer: { code: 'var parsed = parseHL7(msg); return parsed.get("PID.3");' },
       },
     });
@@ -480,7 +458,6 @@ describe('MessageProcessor', () => {
     const dest2 = result.value.destinationResults.find((d) => d.metaDataId === 2);
     expect(dest1!.status).toBe('FILTERED');
     expect(dest2!.status).toBe('SENT');
-    // Only dest2 should have been sent
     expect(sendFn).toHaveBeenCalledTimes(1);
   });
 
@@ -529,7 +506,6 @@ describe('MessageProcessor', () => {
 
   it('ON_FAILURE: attempts a direct send first, then queues on failure (not ERROR)', async () => {
     const store = makeStore();
-    // Direct send fails.
     const sendFn = vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('conn refused') }) as SendToDestination;
     const config = makeConfig({
       destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ON_FAILURE' }],
@@ -540,11 +516,9 @@ describe('MessageProcessor', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // A direct send WAS attempted (unlike ALWAYS), and on failure it was queued.
     expect(sendFn).toHaveBeenCalledOnce();
     expect(result.value.destinationResults[0]!.status).toBe('QUEUED');
     expect(store.enqueue).toHaveBeenCalledOnce();
-    // Not marked ERROR.
     expect(store.incrementStats).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
   });
 
@@ -679,14 +653,12 @@ describe('MessageProcessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults).toHaveLength(0);
-    // Should store the error message
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 13, expect.stringContaining('Testing error handling'), 'TEXT',
     );
     expect(store.incrementStats).toHaveBeenCalledWith(
       expect.any(String), 0, expect.any(String), 'errored',
     );
-    // Should NOT have been sent to destinations
     expect(sendFn).not.toHaveBeenCalled();
   });
 
@@ -728,7 +700,6 @@ describe('MessageProcessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
-    // Never sent; error content stored against the destination.
     expect(sendFn).not.toHaveBeenCalled();
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 1, 13, expect.stringContaining('filter boom'), 'TEXT',
@@ -770,13 +741,9 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
-    // Destination must receive the original message, not the string "true".
     expect(sendFn).toHaveBeenCalledWith(1, 1,'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
-  // Regression: a preprocessor that returned nothing had its parsed rows written
-  // back, dropping a blank record, a CR inside a quoted value and a column
-  // whose name repeats an earlier one.
   it.each([
     ['a blank record', '001\n\n003\n', {}],
     ['a CR inside a quoted value', '1,"two\r\nlines"\r\n', {}],
@@ -819,7 +786,6 @@ describe('MessageProcessor', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('ERROR');
-    // Source (metaDataId 0) must be counted errored, never sent.
     expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
     expect(store.incrementStats).not.toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'sent');
   });
@@ -862,11 +828,8 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // Transformed content should be sent
     expect(sendFn).toHaveBeenCalledWith(1, 1,'DEST_TRANSFORMED', expect.any(AbortSignal), expect.any(String), undefined);
   });
-
-  // ----- Global Scripts -----
 
   it('global preprocessor runs before channel preprocessor', async () => {
     const store = makeStore();
@@ -883,10 +846,6 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
 
-    // Global preprocessor returns "MSG_GLOBAL"
-    // Channel preprocessor gets rawData (still original "MSG") and returns "MSG_CHANNEL"
-    // But preprocessor reads rawData which is the ORIGINAL input
-    // The content flows through, so destination gets channel preprocessor output
     expect(sendFn).toHaveBeenCalledWith(1, 1,expect.any(String), expect.any(AbortSignal), expect.any(String), undefined);
   });
 
@@ -944,11 +903,8 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // Destination receives the globally-modified content
     expect(sendFn).toHaveBeenCalledWith(1, 1,'GLOBAL_MODIFIED', expect.any(AbortSignal), expect.any(String), undefined);
   });
-
-  // ----- globalChannelMap -----
 
   it('globalChannelMap persists across two processMessage calls', async () => {
     const store = makeStore();
@@ -987,11 +943,8 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // Preprocessor returned the value from globalChannelMap
     expect(sendFn).toHaveBeenCalledWith(1, 1,'hello', expect.any(AbortSignal), expect.any(String), undefined);
   });
-
-  // ----- destinationSet -----
 
   it('source transformer removes destination via destinationSet', async () => {
     const store = makeStore();
@@ -1013,7 +966,6 @@ describe('MessageProcessor', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Only Dest 1 should have been sent to
     expect(result.value.destinationResults).toHaveLength(1);
     expect(result.value.destinationResults[0]!.metaDataId).toBe(1);
     expect(sendFn).toHaveBeenCalledTimes(1);
@@ -1065,8 +1017,6 @@ describe('MessageProcessor', () => {
     expect(sendFn).not.toHaveBeenCalled();
   });
 
-  // ----- sourceMap persistence -----
-
   it('stores sourceMap as JSON string after raw content', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
@@ -1076,7 +1026,7 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // First storeContent call = raw (CT_RAW=1), second = sourceMap (CT_SOURCE_MAP=9)
+    // CT_SOURCE_MAP = 9
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 9, expect.any(String), 'JSON',
     );
@@ -1164,10 +1114,9 @@ describe('MessageProcessor', () => {
       sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
     );
 
-    // tryCatch wraps the entire pipeline, so a storeContent failure results in a failed Result
+    // A rejected store write comes back as a failed Result, not a throw.
     const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // The error is caught by tryCatch — pipeline returns error result
     expect(result.ok).toBe(false);
   });
 
@@ -1189,7 +1138,6 @@ describe('MessageProcessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('FILTERED');
 
-    // sourceMap should still have been stored (happens before filter stage)
     const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const sourceMapCall = calls.find((c) => c[3] === 9);
     expect(sourceMapCall).toBeDefined();
@@ -1261,8 +1209,6 @@ describe('MessageProcessor reports where an error happened', () => {
 
     expect(await run(config)).toEqual({ status: 'ERROR', errorStage: 'DESTINATION' });
   });
-
-  // ----- Crash safety and store failures -----
 
   describe('destination rows and store failures', () => {
     const twoChained = [

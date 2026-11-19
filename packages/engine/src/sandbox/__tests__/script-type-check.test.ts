@@ -1,6 +1,3 @@
-// The deploy check must agree with the editor: same declarations, templates and
-// settings, errors reported at the line the user wrote.
-
 import { describe, it, expect } from 'vitest';
 import { checkScriptTypes, onlySyntaxWhileBroken } from '../script-type-check.js';
 
@@ -52,9 +49,7 @@ describe('checkScriptTypes', () => {
   });
 });
 
-// #206: TypeScript does not check the expression of a `return` outside a
-// function, so the check runs the script as the body of the function the engine
-// runs it in.
+// #206: TypeScript does not check a `return` expression outside a function.
 describe('checkScriptTypes on a top-level return', () => {
   const NO_MESSAGE = { message: false } as const;
   const noMessageErrors = async (script: string): Promise<string[]> => {

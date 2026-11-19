@@ -1,7 +1,3 @@
-// ===========================================
-// SFTP Client Abstraction Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   validateAuth,
@@ -87,7 +83,6 @@ describe('toPathKind', () => {
 });
 
 describe('wrapSsh2Client mkdir', () => {
-  /** A fake ssh2-sftp-client whose path answers lstat-style `type` and stat-style `isDirectory`. */
   function fakeLibrary(type: false | string, isDirectory: boolean): { lib: Ssh2ClientInstance; mkdirCalls: string[] } {
     const mkdirCalls: string[] = [];
     const lib = {

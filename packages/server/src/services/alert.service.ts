@@ -1,9 +1,3 @@
-// ===========================================
-// Alert Service
-// ===========================================
-// Business logic for alert CRUD operations.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, asc, inArray } from 'drizzle-orm';
 import type { AlertTriggerInput, CreateAlertInput, UpdateAlertInput } from '@galvanigraph/core-models';
@@ -11,8 +5,6 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { alerts, alertChannels, alertActions } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface AlertActionDetail {
   readonly id: string;
@@ -54,15 +46,13 @@ export interface AlertListResult {
   };
 }
 
-/** Stored trigger. CHANNEL_ERROR uses errorTypes/regex; NO_MESSAGES uses windowMinutes. */
+/** CHANNEL_ERROR uses errorTypes/regex; NO_MESSAGES uses windowMinutes. */
 export interface AlertTriggerDetail {
   readonly type: string;
   readonly errorTypes: ReadonlyArray<string>;
   readonly regex: string | null;
   readonly windowMinutes: number | null;
 }
-
-// ----- Helpers -----
 
 function parseTrigger(triggerType: string, triggerScript: string | null): AlertTriggerDetail {
   const parsed = (triggerScript ? JSON.parse(triggerScript) : {}) as {
@@ -76,7 +66,6 @@ function parseTrigger(triggerType: string, triggerScript: string | null): AlertT
   };
 }
 
-/** Serialize the type-specific part of a trigger into the trigger_script column. */
 function serializeTrigger(trigger: AlertTriggerInput): string {
   switch (trigger.type) {
     case 'CHANNEL_ERROR':
@@ -138,7 +127,6 @@ async function fetchAlertDetail(alertId: string): Promise<AlertDetail> {
   };
 }
 
-/** Fetch full detail for multiple alerts in batch (3 queries total). */
 async function fetchAlertDetailsBatch(ids: readonly string[]): Promise<AlertDetail[]> {
   const rows = await db
     .select()
@@ -154,7 +142,6 @@ async function fetchAlertDetailsBatch(ids: readonly string[]): Promise<AlertDeta
     db.select().from(alertActions).where(inArray(alertActions.alertId, alertIds)),
   ]);
 
-  // Group channels and actions by alertId
   const channelsByAlert = new Map<string, string[]>();
   for (const c of channelRows) {
     const existing = channelsByAlert.get(c.alertId);
@@ -207,10 +194,7 @@ async function fetchAlertDetailsBatch(ids: readonly string[]): Promise<AlertDeta
   });
 }
 
-// ----- Service -----
-
 export class AlertService {
-  /** List alerts with pagination. */
   static async list(query: {
     readonly page: number;
     readonly pageSize: number;
@@ -266,14 +250,12 @@ export class AlertService {
     });
   }
 
-  /** Get alert by ID with full detail. */
   static async getById(id: string): Promise<Result<AlertDetail>> {
     return tryCatch(async () => {
       return fetchAlertDetail(id);
     });
   }
 
-  /** Get multiple alerts by IDs in a single batch query. */
   static async getByIds(ids: readonly string[]): Promise<Result<AlertDetail[]>> {
     return tryCatch(async () => {
       if (ids.length === 0) return [];
@@ -281,10 +263,8 @@ export class AlertService {
     });
   }
 
-  /** Create a new alert. */
   static async create(input: CreateAlertInput, context?: AuditContext): Promise<Result<AlertDetail>> {
     return tryCatch(async () => {
-      // Check unique name
       const [existing] = await db
         .select({ id: alerts.id })
         .from(alerts)
@@ -314,14 +294,12 @@ export class AlertService {
 
         const alertId = inserted[0]!.id;
 
-        // Insert channel associations
         if (input.channelIds.length > 0) {
           await tx.insert(alertChannels).values(
             input.channelIds.map((channelId) => ({ alertId, channelId })),
           );
         }
 
-        // Insert actions
         if (input.actions.length > 0) {
           await tx.insert(alertActions).values(
             input.actions.map((action) => ({
@@ -353,7 +331,6 @@ export class AlertService {
     });
   }
 
-  /** Update an alert (optimistic locking). */
   static async update(
     id: string,
     input: UpdateAlertInput,
@@ -373,7 +350,6 @@ export class AlertService {
         throw new ServiceError('CONFLICT', 'Alert has been modified by another user');
       }
 
-      // Check duplicate name if changing
       if (input.name !== undefined && input.name !== existing.name) {
         const [dup] = await db
           .select({ id: alerts.id })
@@ -385,7 +361,6 @@ export class AlertService {
         }
       }
 
-      // Build update fields
       const updates: Record<string, unknown> = {
         revision: existing.revision + 1,
         updatedAt: new Date(),
@@ -409,7 +384,6 @@ export class AlertService {
           .set(updates)
           .where(eq(alerts.id, id));
 
-        // Delete-and-reinsert channels if provided
         if (input.channelIds !== undefined) {
           await tx.delete(alertChannels).where(eq(alertChannels.alertId, id));
           if (input.channelIds.length > 0) {
@@ -419,7 +393,6 @@ export class AlertService {
           }
         }
 
-        // Delete-and-reinsert actions if provided
         if (input.actions !== undefined) {
           await tx.delete(alertActions).where(eq(alertActions.alertId, id));
           if (input.actions.length > 0) {
@@ -452,7 +425,6 @@ export class AlertService {
     });
   }
 
-  /** Delete an alert. */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -475,7 +447,7 @@ export class AlertService {
     });
   }
 
-  /** Toggle alert enabled/disabled (no revision check). */
+  /** Skips the revision check that update() makes. */
   static async setEnabled(
     id: string,
     enabled: boolean,

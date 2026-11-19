@@ -1,8 +1,3 @@
-// ===========================================
-// Test Connection Button
-// ===========================================
-// Reusable button that tests connector connectivity and shows result.
-
 import { type ReactNode } from 'react';
 import { useParams } from 'react-router';
 import Button from '@mui/material/Button';
@@ -22,8 +17,7 @@ interface TestConnectionButtonProps {
 
 export function TestConnectionButton({ connectorType, mode, properties }: TestConnectionButtonProps): ReactNode {
   const testMutation = useTestConnection();
-  // The test names the channel being edited: a deployer scoped to some groups
-  // must, and their certificates are judged on their channels (D-310).
+  // D-310: a group-scoped deployer must name the channel, and certificates are judged on its channels.
   // `channels/new` is its own route, so an id here is always an existing channel's.
   const { id: channelId } = useParams<{ id: string }>();
 

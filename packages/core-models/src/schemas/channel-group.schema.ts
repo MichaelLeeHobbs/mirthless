@@ -1,10 +1,4 @@
-// ===========================================
-// Channel Group Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
-
-// ----- Group CRUD -----
 
 export const createChannelGroupSchema = z.object({
   name: z.string().min(1).max(255),
@@ -21,8 +15,6 @@ export const updateChannelGroupSchema = z.object({
 
 export type UpdateChannelGroupInput = z.infer<typeof updateChannelGroupSchema>;
 
-// ----- Member Management -----
-
 /**
  * The full set of groups a channel belongs to, replacing what it had. An empty
  * list takes the channel out of every group.
@@ -37,8 +29,6 @@ export const setChannelGroupsSchema = z.object({
 });
 
 export type SetChannelGroupsInput = z.infer<typeof setChannelGroupsSchema>;
-
-// ----- Params -----
 
 export const channelGroupUuidParamSchema = z.object({
   id: z.string().uuid(),

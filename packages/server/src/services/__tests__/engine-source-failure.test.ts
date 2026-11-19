@@ -1,14 +1,6 @@
-// ===========================================
-// Engine Source Failure Tests
-// ===========================================
-// A source that stops itself (a Kafka record or AMQP message the store always
-// rejects) stops its channel, records an ERROR event and raises a
-// SOURCE_CONNECTOR alert. Real engine package; fake database, services and
-// connectors.
+// A source stops itself when the store always rejects a Kafka record or AMQP message.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 const OK_RESULT = { ok: true, value: undefined, error: null };
 const source = vi.hoisted(() => ({
@@ -72,8 +64,6 @@ vi.mock('../../config/index.js', () => ({ config: { LOG_LEVEL: 'info', NODE_ENV:
 
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
-
-// ----- Fixtures -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 

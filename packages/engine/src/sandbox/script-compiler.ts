@@ -1,24 +1,13 @@
-// ===========================================
-// Script Compiler
-// ===========================================
-// Transpiles TypeScript user scripts to JavaScript using esbuild.
-// Returns CompiledScript objects ready for sandbox execution.
-
 import { transform } from 'esbuild';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
 import { SCRIPT_BODY_OPEN, scriptBodyPosition, wrapScriptBody } from '@galvanigraph/core-models';
 import type { CompiledScript } from './sandbox-executor.js';
 
-// ----- Compile Options -----
-
 export interface CompileOptions {
   readonly sourcefile?: string;
   readonly sourcemap?: boolean;
-  /**
-   * Use the compiled-script cache (default true). A one-off syntax check passes
-   * false so it does not evict scripts deploy compiled.
-   */
+  /** Default true. A one-off syntax check passes false so it does not evict scripts deploy compiled. */
   readonly cache?: boolean;
 }
 
@@ -27,19 +16,14 @@ const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
   sourcemap: true,
 } as const;
 
-// ----- Compiler -----
-
-/** Most compiled scripts kept. A server with more distinct scripts recompiles the oldest on next deploy. */
 export const SCRIPT_CACHE_LIMIT = 1_000;
 
 /**
- * Compiled scripts by compile options and source. Bounded: a long-running
- * server sees a new entry for every edit of every script, and nothing else
- * ever removed them. A Map keeps insertion order, so the first key is the oldest.
+ * Bounded: a long-running server adds an entry for every edit of every script.
+ * A Map keeps insertion order, so the first key is the oldest.
  */
 const scriptCache = new Map<string, CompiledScript>();
 
-/** Number of scripts in the cache. */
 export function scriptCacheSize(): number {
   return scriptCache.size;
 }
@@ -66,7 +50,6 @@ function unwrapBody(output: string): string {
   return [...lines.slice(1, close), ...trailer].join('\n');
 }
 
-/** Compile TypeScript source to JavaScript via esbuild. */
 export async function compileScript(
   code: string,
   options?: CompileOptions,
@@ -130,12 +113,10 @@ export function compileErrorMessages(error: unknown, code: string): readonly str
   });
 }
 
-/** Clear the script compilation cache. */
 export function clearScriptCache(): void {
   scriptCache.clear();
 }
 
-// ----- Filter/Transformer Compilation -----
 // A rule or step the engine cannot run is an error, never a skip: dropping a filter
 // rule lets every message through, and dropping a transformer step forwards data
 // that was meant to be changed or removed.
@@ -150,7 +131,6 @@ function unsupported(message: string): Result<never> {
   return { ok: false, value: null, error: new Error(message) } as Result<never>;
 }
 
-/** A single filter rule for compilation. */
 export interface FilterRuleInput {
   readonly enabled: boolean;
   readonly operator: string;
@@ -160,7 +140,6 @@ export interface FilterRuleInput {
   readonly field?: string | null | undefined;
   /** Rule Builder: one of RULE_BUILDER_CONDITIONS. */
   readonly condition?: string | null | undefined;
-  /** Rule Builder: values the field is compared with. */
   readonly values?: ReadonlyArray<string> | null | undefined;
 }
 
@@ -191,7 +170,7 @@ function firstInvalidRegex(values: ReadonlyArray<string>): string | null {
   return null;
 }
 
-/** Generate the body of a Rule Builder rule. User text is embedded only as JSON literals. */
+/** User text is embedded only as JSON literals. */
 function ruleBuilderBody(rule: FilterRuleInput, position: number): Result<string> {
   const field = rule.field?.trim() ?? '';
   const condition = rule.condition ?? '';
@@ -216,7 +195,6 @@ function ruleBuilderBody(rule: FilterRuleInput, position: number): Result<string
   return { ok: true, value: body, error: null };
 }
 
-/** Turn one enabled filter rule into a function body, or explain why it cannot run. */
 function filterRuleBody(rule: FilterRuleInput, position: number): Result<string | null> {
   if (rule.type === 'RULE_BUILDER') return ruleBuilderBody(rule, position);
   const script = rule.script ?? '';
@@ -229,11 +207,8 @@ function filterRuleBody(rule: FilterRuleInput, position: number): Result<string 
 }
 
 /**
- * Call one filter rule and insist on a boolean. A rule that returns nothing (a
- * forgotten `return`), null, a number or text is a mistake: treating it as
- * "accept" would send messages the filter was written to stop, and treating it
- * as "reject" would drop them quietly. It fails the message instead, so it shows
- * as an error with the reason.
+ * A rule that returns anything but a boolean fails the message: treating it as "accept" would
+ * send messages the filter was written to stop, and as "reject" would drop them quietly.
  */
 function filterRuleCall(body: string, position: number): string {
   const n = String(position);
@@ -245,11 +220,7 @@ function filterRuleCall(body: string, position: number): string {
   );
 }
 
-/**
- * Compile filter rules into a single boolean-returning script.
- * Returns null when there is nothing to run, and an error when an enabled rule
- * cannot be run (so the caller can refuse to deploy).
- */
+/** Null when there is nothing to run; an error when an enabled rule cannot run, so the caller can refuse to deploy. */
 export function compileFilterRulesToScript(
   rules: ReadonlyArray<FilterRuleInput>,
 ): Result<string | null> {
@@ -268,19 +239,13 @@ export function compileFilterRulesToScript(
   return okScript(`return ${parts.join('')};`);
 }
 
-/** A single transformer step for compilation. */
 export interface TransformerStepInput {
   readonly enabled: boolean;
   readonly type: string;
   readonly script: string | null;
 }
 
-/**
- * Compile transformer steps into a sequential execution script.
- * Returns null when there is nothing to run, and an error when an enabled step
- * cannot be run. JavaScript and Message Builder steps are scripts; any other type
- * runs only if it carries a script.
- */
+/** Null when there is nothing to run; an error when an enabled step cannot run. */
 export function compileTransformerStepsToScript(
   steps: ReadonlyArray<TransformerStepInput>,
 ): Result<string | null> {

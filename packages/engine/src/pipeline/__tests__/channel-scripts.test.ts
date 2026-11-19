@@ -1,18 +1,5 @@
-// ===========================================
-// Channel-Level Script Tests — Preprocessor & Postprocessor
-// ===========================================
-// Focused coverage for the two channel-level scripts that have a wired
-// execution path in the engine's MessageProcessor: the channel preprocessor
-// (stage 2b, runs before the source filter) and the channel postprocessor
-// (stage 7a, runs after routing to destinations).
-//
-// NOTE ON DEPLOY / UNDEPLOY: the `deploy` / `undeploy` (and their global
-// variants) fields exist on ChannelScripts, but the engine package has NO
-// execution path for them — ChannelRuntime never reads channel scripts
-// (ChannelRuntimeConfig has no `scripts` field) and MessageProcessor only runs
-// the per-message scripts. Deploy/undeploy scripts are executed by the SERVER
-// (`packages/server/src/engine.ts` → runDeployScript), which is out of scope
-// for this package. They are therefore deliberately NOT tested here.
+// Deploy and undeploy scripts are not tested here: the engine has no path for
+// them. The server runs them (`packages/server/src/engine.ts`, runDeployScript).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
@@ -26,8 +13,6 @@ import type {
 } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
 import { GlobalChannelMap } from '../../runtime/global-channel-map.js';
-
-// ----- Helpers -----
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
@@ -78,15 +63,11 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
   };
 }
 
-// ----- Setup -----
-
 let sandbox: VmSandboxExecutor;
 
 beforeEach(() => {
   sandbox = new VmSandboxExecutor();
 });
-
-// ----- Preprocessor -----
 
 describe('channel preprocessor', () => {
   it('happy path: a returned string replaces the message for all downstream stages', async () => {
@@ -102,7 +83,6 @@ describe('channel preprocessor', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
-    // The replacement content flows to the destination.
     expect(sendFn).toHaveBeenCalledWith(1, 1, 'PREPROCESSED_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
@@ -197,7 +177,6 @@ describe('channel preprocessor', () => {
       expect.any(String), 1, 0, 13, expect.stringContaining('pre boom'), 'TEXT',
     );
     expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
-    // Message never leaves the channel on a preprocessor failure.
     expect(sendFn).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalled();
   });
@@ -205,7 +184,6 @@ describe('channel preprocessor', () => {
   it('runs before the source filter (its replacement is what the filter sees)', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
-    // The filter passes only if it observes the preprocessor's replacement.
     const config = makeConfig({
       scripts: {
         preprocessor: { code: 'return "PASSPHRASE";' },
@@ -218,13 +196,10 @@ describe('channel preprocessor', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Filter saw the preprocessed message and passed → SENT (not FILTERED).
     expect(result.value.status).toBe('SENT');
     expect(sendFn).toHaveBeenCalledWith(1, 1, 'PASSPHRASE', expect.any(AbortSignal), expect.any(String), undefined);
   });
 });
-
-// ----- Postprocessor -----
 
 describe('channel postprocessor', () => {
   it('happy path: runs after routing and can read the destination response via responseMap', async () => {
@@ -233,8 +208,6 @@ describe('channel postprocessor', () => {
     const gcm = new GlobalChannelMap();
     const config = makeConfig({
       scripts: {
-        // Postprocessor observes the response the destination produced during routing
-        // and records it somewhere we can assert on (the global channel map).
         postprocessor: { code: 'globalChannelMap["capturedResponse"] = responseMap["Dest 1"].content; return true;' },
       },
       globalChannelMap: gcm,
@@ -246,7 +219,6 @@ describe('channel postprocessor', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
-    // Proves the postprocessor ran AND had the routed destination response available.
     expect(gcm.get('capturedResponse')).toBe('MSA|AA|OK99');
   });
 
@@ -281,7 +253,6 @@ describe('channel postprocessor', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The destination still SENT, but the postprocessor failure flips the message to ERROR.
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults[0]!.status).toBe('SENT');
     expect(store.storeContent).toHaveBeenCalledWith(
@@ -297,7 +268,6 @@ describe('channel postprocessor', () => {
     const store = makeStore();
     const sendFn = makeSendFn();
     const config = makeConfig({
-      // Postprocessor returns a string; it must NOT alter what was already sent.
       scripts: { postprocessor: { code: 'return "IGNORED_RETURN";' } },
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -307,12 +277,9 @@ describe('channel postprocessor', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
-    // Destination received the original content; the postprocessor return is inert.
     expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 });
-
-// ----- Response source -----
 
 describe('response to the sender', () => {
   const twoDestinations: PipelineConfig['destinations'] = [

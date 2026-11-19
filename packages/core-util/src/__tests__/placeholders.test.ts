@@ -1,7 +1,3 @@
-// ===========================================
-// ${name} placeholder tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import { fillPlaceholders, placeholderNames, placeholderText, recordLookup } from '../placeholders.js';
 

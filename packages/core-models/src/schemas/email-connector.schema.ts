@@ -1,9 +1,4 @@
-// ===========================================
-// EMAIL Connector Property Schemas
-// ===========================================
-// Properties of the Email (IMAP) source, as a channel stores it. The server
-// validates them at deploy and the connector registry parses them, so
-// defaults live here only. A key not listed here fails validation.
+// Defaults live here only (D-274).
 
 import { z } from 'zod/v4';
 import {
@@ -38,7 +33,6 @@ export const emailSourceObjectSchema = z.strictObject({
 });
 export type EmailSourceProperties = z.infer<typeof emailSourceObjectSchema>;
 
-/** The source schema: IMAP only, and a move-to folder for MOVE. */
 export const emailSourcePropertiesSchema = emailSourceObjectSchema.superRefine((props, ctx) => {
   if (props.protocol !== 'IMAP') {
     ctx.addIssue({ code: 'custom', path: ['protocol'], message: 'only IMAP is supported' });

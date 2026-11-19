@@ -1,7 +1,3 @@
-// ===========================================
-// Registry: Kafka and AMQP connectors
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { createSourceConnector, createDestinationConnector, readQueueTls } from '../registry.js';
 import { KafkaReceiver } from '../kafka/kafka-receiver.js';

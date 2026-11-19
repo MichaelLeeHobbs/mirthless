@@ -1,11 +1,5 @@
-// ===========================================
-// Cross-Channel Search Hook
-// ===========================================
-
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface CrossChannelSearchItem {
   readonly messageId: number;
@@ -33,14 +27,10 @@ export interface CrossChannelFilters {
   readonly offset: number;
 }
 
-// ----- Query Keys -----
-
 const SEARCH_KEYS = {
   all: ['cross-channel-search'] as const,
   search: (filters: CrossChannelFilters) => [...SEARCH_KEYS.all, filters] as const,
 } as const;
-
-// ----- Hook -----
 
 export function useCrossChannelSearch(filters: CrossChannelFilters): ReturnType<typeof useQuery<CrossChannelSearchResult>> {
   return useQuery({

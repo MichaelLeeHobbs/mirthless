@@ -1,15 +1,7 @@
-// ===========================================
-// User Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
 import { USER_ROLE } from '../constants.js';
 
-/**
- * Password policy: 8-128 chars with basic complexity — at least one letter and
- * one digit. Enforced at every boundary that sets a password (create user,
- * admin reset, self-service change).
- */
+/** Use at every boundary that sets a password. */
 export const passwordSchema = z
   .string()
   .min(8)
@@ -43,9 +35,8 @@ export const updateUserSchema = z.object({
 });
 
 /**
- * DELETE /users/:id query. Every working API key the user issued is disabled
- * with them (D-322); `takeOwnership` (comma-separated key ids) names keys the
- * caller takes over instead, each replaced as a leak with a new token.
+ * The deleted user's API keys are disabled (D-322), except those named in
+ * `takeOwnership`, which pass to the caller with new tokens.
  */
 export const deleteUserQuerySchema = z.object({
   takeOwnership: z.string().max(4000).optional()
@@ -66,10 +57,7 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
-/**
- * Self-service password change. Requires the caller's current password so a
- * hijacked session cannot silently rotate credentials.
- */
+/** Requires the current password so a hijacked session cannot rotate credentials. */
 export const changeOwnPasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: passwordSchema,

@@ -1,12 +1,5 @@
-// ===========================================
-// Auth Middleware Tests
-// ===========================================
-// Focused on token verification and the server-side forced-password-change gate.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
-
-// ----- Mocks -----
 
 const mockVerify = vi.fn();
 vi.mock('../../lib/jwt.js', () => ({
@@ -40,8 +33,6 @@ vi.mock('../../services/api-key.service.js', () => ({
 }));
 
 const { authenticate, keyInQuery } = await import('../auth.middleware.js');
-
-// ----- Helpers -----
 
 function makeRes(): Response & { statusCode?: number; body?: unknown } {
   const res = {} as Response & { statusCode?: number; body?: unknown };

@@ -1,7 +1,3 @@
-// ===========================================
-// Email Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
@@ -17,8 +13,6 @@ import {
   type EmailMessage,
 } from '../email-receiver.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<EmailReceiverConfig>): EmailReceiverConfig {
   return {
@@ -88,8 +82,6 @@ function makeFailDispatcher(): (raw: RawMessage) => Promise<Result<DispatchResul
   });
 }
 
-// ----- Lifecycle -----
-
 let receiver: EmailReceiver | null = null;
 
 beforeEach(() => {
@@ -105,8 +97,6 @@ afterEach(async () => {
     receiver = null;
   }
 });
-
-// ----- Tests -----
 
 describe('EmailReceiver', () => {
   describe('onDeploy', () => {
@@ -429,7 +419,7 @@ describe('EmailReceiver', () => {
   describe('post-action failure', () => {
     it('retries only the post-action, never dispatching the same email twice', async () => {
       const msg = makeMessage({ uid: 7 });
-      const client = makeMockClient([msg]); // stays unread until markRead succeeds
+      const client = makeMockClient([msg]);
       vi.mocked(client.markRead)
         .mockRejectedValueOnce(new Error('IMAP STORE failed'))
         .mockResolvedValue(undefined);
@@ -440,8 +430,8 @@ describe('EmailReceiver', () => {
       receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
       await receiver.onStart();
 
-      await vi.advanceTimersByTimeAsync(5_000); // dispatch ok, markRead fails
-      await vi.advanceTimersByTimeAsync(5_000); // same email fetched again: post-action retried only
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5_000);
 
       expect(dispatched).toHaveLength(1);
       expect(client.markRead).toHaveBeenCalledTimes(2);
@@ -504,11 +494,9 @@ describe('EmailReceiver', () => {
       }));
       await receiver.onStart();
 
-      // First poll fails
       await vi.advanceTimersByTimeAsync(5_000);
       expect(captured).toHaveLength(0);
 
-      // Second poll succeeds
       await vi.advanceTimersByTimeAsync(5_000);
       expect(captured).toHaveLength(1);
     });
@@ -560,8 +548,7 @@ describe('EmailReceiver', () => {
     });
   });
 
-  // Pause is onStop then onStart on the same instance. An email whose dispatch
-  // was in flight when the channel stopped must not be dispatched again.
+  // Pause is onStop then onStart on the same instance.
   describe('stopping during a dispatch', () => {
     function pendingDispatcher(): {
       readonly dispatcher: (raw: RawMessage) => Promise<Result<DispatchResult>>;
@@ -659,7 +646,6 @@ describe('EmailReceiver', () => {
 
       await receiver.onUndeploy();
 
-      // After undeploy, start should fail because dispatcher is cleared
       const startResult = await receiver.onStart();
       expect(startResult.ok).toBe(false);
 
@@ -683,12 +669,10 @@ describe('EmailReceiver', () => {
       receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
       await receiver.onStart();
 
-      // Cycle 1: fetch fails → error logged, client dropped.
       await vi.advanceTimersByTimeAsync(1_000);
       expect(errors.some((e) => e.msg.includes('poll cycle failed'))).toBe(true);
       expect(dispatched).toHaveLength(0);
 
-      // Cycle 2: reconnect with fresh client → message dispatched.
       await vi.advanceTimersByTimeAsync(1_000);
       expect(vi.mocked(client2.connect)).toHaveBeenCalled();
       expect(dispatched).toHaveLength(1);
@@ -696,7 +680,6 @@ describe('EmailReceiver', () => {
 
     it('times out a hung fetchUnread instead of wedging the poll loop', async () => {
       const client = makeMockClient();
-      // fetchUnread never resolves → must be bounded by the op timeout.
       vi.mocked(client.fetchUnread).mockReturnValue(new Promise(() => { /* never */ }));
 
       const { logger, errors } = makeMockLogger();
@@ -715,7 +698,6 @@ describe('EmailReceiver', () => {
       const client1 = makeMockClient();
       vi.mocked(client1.fetchUnread).mockRejectedValue(new Error('IMAP connection dropped'));
       vi.mocked(client1.disconnect).mockReturnValue(new Promise(() => { /* never */ }));
-      // One unread email, marked read by the first poll that sees it.
       const client2 = makeMockClient();
       vi.mocked(client2.fetchUnread).mockResolvedValueOnce([makeMessage()]);
 
@@ -735,7 +717,6 @@ describe('EmailReceiver', () => {
       const warning = warnings.find((w) => w.msg === 'Error disconnecting IMAP client during reconnect');
       expect(warning?.obj['errMsg']).toBe('IMAP disconnect timed out after 30000ms');
 
-      // The next cycle reconnects on a fresh client and dispatches.
       await vi.advanceTimersByTimeAsync(1_000);
       expect(vi.mocked(client2.connect)).toHaveBeenCalledOnce();
       expect(dispatched).toHaveLength(1);
@@ -747,8 +728,7 @@ describe('EmailReceiver', () => {
       expect(DISPATCHED_KEYWORD).toBe('$GalvaniGraphDispatched');
     });
 
-    // Keywords set under the product's earlier names (D-205, D-309). Counting them
-    // as dispatched keeps an email handled before a rename from being delivered twice.
+    // Earlier names' keywords (D-205, D-309), so an email handled before a rename is not delivered twice.
     it.each(['$GalvaniGraphDispatched', '$GalvaniFlowDispatched', '$MirthlessDispatched'])(
       'counts an email marked %s as dispatched',
       (keyword) => {

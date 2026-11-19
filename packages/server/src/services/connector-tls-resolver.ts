@@ -1,16 +1,8 @@
-// ===========================================
-// Connector TLS Resolver
-// ===========================================
-// Resolves certificate-ID references in HTTP connector properties into the raw
-// PEM material the connectors package consumes. This runs SERVER-SIDE (deploy
-// time and connection-test time) because the connectors package has no DB access.
-//
-// HARD CUT: connector props store cert-ID references only — never inline PEM.
-// For scheme === 'HTTPS' the id-based `tls` bag is replaced by a PEM-based bag
-// whose keys match exactly what readTlsServerOptions/readTlsClientOptions read.
-// FAIL LOUD: any missing/invalid referenced id, or a cert selected for a role
-// that needs a private key but has none, returns a Result error so the channel
-// never deploys (or a test never passes) silently without the TLS it asked for.
+// Server-side because the connectors package has no DB access. Connector props
+// store certificate ids only, never inline PEM; the PEM `tls` bag built here
+// uses exactly the keys readTlsServerOptions/readTlsClientOptions read. A missing
+// id, or a certificate without the private key its role needs, is an error, so
+// a channel never deploys (or a test passes) without the TLS it asked for.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { isPlainObject } from '@galvanigraph/core-util';
@@ -24,9 +16,6 @@ import { grantedChannels } from '../lib/channel-scope.js';
 const TLS_NOT_AN_OBJECT = 'Connector tls settings must be an object';
 import { CertificateService } from './certificate.service.js';
 
-// ----- Helpers -----
-
-/** Load a referenced certificate's PEM material, failing loud when absent. */
 async function loadMaterial(
   id: string,
 ): Promise<{ certificatePem: string; privateKeyPem: string | null }> {
@@ -37,10 +26,6 @@ async function loadMaterial(
   return result.value;
 }
 
-/**
- * Read the nested id-based tls bag from raw props: empty when absent
- * (undefined, null or false); any other value that is not a plain object fails loud.
- */
 function readTlsBag(props: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const tls = props['tls'];
   if (tls === undefined || tls === null || tls === false) return {};
@@ -48,33 +33,21 @@ function readTlsBag(props: Readonly<Record<string, unknown>>): Record<string, un
   return tls;
 }
 
-/** Read an optional string id from a tls bag. */
 function optionalId(bag: Record<string, unknown>, key: string): string | undefined {
   const value = bag[key];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-// ----- Public API -----
-
-/**
- * The tls bag keys that load a certificate's private key: a client
- * certificate for mutual TLS, and a listener's server certificate. A CA
- * (`caCertId`) is public, so naming any one is harmless.
- */
+/** A CA (`caCertId`) is public, so naming one is harmless. */
 const PRIVATE_KEY_CERT_KEYS = ['clientCertId', 'serverCertId'] as const;
 
-/** The store certificates whose private keys a connector's properties would use. */
 export function privateKeyCertificateIds(props: unknown): readonly string[] {
   if (!isPlainObject(props)) return [];
   const bag = readTlsBag(props);
   return [...new Set(PRIVATE_KEY_CERT_KEYS.map((k) => optionalId(bag, k)).filter((id): id is string => id !== undefined))];
 }
 
-/**
- * Of `certificateIds`, the ones no live connector of `channelIds` uses with
- * its private key (as a client or server certificate). Matched key to key on
- * the parsed tls bag, so a certificate pinned as a CA does not count.
- */
+/** Matched key by key on the parsed tls bag, so a certificate pinned as a CA does not count. */
 export async function certificatesNotUsedBy(channelIds: readonly string[], certificateIds: readonly string[]): Promise<readonly string[]> {
   if (certificateIds.length === 0) return [];
   if (channelIds.length === 0) return certificateIds;
@@ -113,28 +86,19 @@ export async function assertCertificatesInScope(grants: FoldedGrants | undefined
   }
 }
 
-/**
- * Resolve an HTTP DESTINATION connector's id-based TLS references to PEM material.
- * Passes props through unchanged when scheme !== 'HTTPS'.
- */
 export async function resolveHttpDestinationTls(
   props: Readonly<Record<string, unknown>>,
 ): Promise<Result<Record<string, unknown>>> {
   return tryCatch(async () => (props['scheme'] === 'HTTPS' ? resolveClientTls(props) : { ...props }));
 }
 
-/**
- * Resolve a Kafka or AMQP connector's id-based TLS references to PEM material.
- * Both source and destination are TLS clients of the broker. Passes props
- * through unchanged unless `useTls` is on.
- */
+/** A Kafka or AMQP source and destination are both TLS clients of the broker. */
 export async function resolveQueueTls(
   props: Readonly<Record<string, unknown>>,
 ): Promise<Result<Record<string, unknown>>> {
   return tryCatch(async () => (props['useTls'] === true ? resolveClientTls(props) : { ...props }));
 }
 
-/** Replace a client's id-based `tls` bag (CA, client certificate) with PEM. */
 async function resolveClientTls(props: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>> {
   const bag = readTlsBag(props);
   const caCertId = optionalId(bag, 'caCertId');
@@ -155,10 +119,6 @@ async function resolveClientTls(props: Readonly<Record<string, unknown>>): Promi
   return { ...props, tls: pemTls };
 }
 
-/**
- * Resolve an HTTP SOURCE connector's id-based TLS references to PEM material.
- * Passes props through unchanged when scheme !== 'HTTPS'. Requires a serverCertId.
- */
 export async function resolveHttpSourceTls(
   props: Readonly<Record<string, unknown>>,
 ): Promise<Result<Record<string, unknown>>> {

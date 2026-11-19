@@ -1,13 +1,7 @@
-// ===========================================
-// Script type checker
-// ===========================================
-// Type-checking a script builds a TypeScript program: hundreds of milliseconds
-// of synchronous work for the first script, tens after that. Deploy checks
-// every TypeScript script of a channel, so on the engine's main thread that
-// would stall listeners, queues and the API. Checks run in one long-lived
-// worker thread instead (TypeScript and its lib files load once), with a time
-// limit per request, and results are cached by everything that decides them:
-// the script, its surface's declarations and the code templates it can see.
+// Building a TypeScript program is hundreds of milliseconds of synchronous work for the first
+// script and tens after; on the main thread a deploy's checks would stall listeners, queues and
+// the API. So checks run in one long-lived worker, and results are cached by everything that
+// decides them: the script, its surface's declarations and the code templates it can see.
 
 import { createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
@@ -17,45 +11,37 @@ import { scriptDeclarations, templateDeclarations, type ScriptSurface, type Temp
 import type { ScriptTypeError } from './script-type-check.js';
 import { workerEntry } from './worker-entry.js';
 
-/** One script to check. */
 export interface TypeCheckJob {
   readonly code: string;
   readonly surface: ScriptSurface;
 }
 
-/** Main thread to worker. */
 export interface TypeCheckRequest {
   readonly id: number;
   readonly jobs: readonly TypeCheckJob[];
   readonly templates: readonly TemplateSource[];
 }
 
-/** Worker to main thread. */
 export type TypeCheckReply =
   | { readonly id: number; readonly ok: true; readonly results: ReadonlyArray<readonly ScriptTypeError[]> }
   | { readonly id: number; readonly ok: false; readonly error: string };
 
-/** Default time limit for one batch: generous, since a cold worker loads TypeScript first. */
+/** Generous: a cold worker loads TypeScript first. */
 export const TYPE_CHECK_TIMEOUT_MS = 30_000;
 const CACHE_LIMIT = 500;
 /**
- * Checks that may wait for the worker. Each is a deploy or a save; past this
- * many, a new one is refused at once (the server answers 503, try again), so
- * the queue cannot grow without end (#228). It bounds how many wait, not how
- * long: a check waits for the ones ahead of it, each up to its own time limit.
+ * Past this many waiting, a new check is refused at once (the server answers 503) so the queue
+ * cannot grow without end (#228). It bounds how many wait, not how long.
  */
 export const TYPE_CHECK_QUEUE_LIMIT = 100;
-/** Heap limit of the type-check worker. */
 const TYPE_CHECK_HEAP_MB = 512;
 
-/** A request waiting its turn. */
 interface Queued {
   readonly request: TypeCheckRequest;
   readonly timeoutMs: number;
   readonly resolve: (reply: TypeCheckReply) => void;
 }
 
-/** The one request the worker is working on. */
 interface InFlight {
   readonly queued: Queued;
   readonly worker: Worker;
@@ -85,7 +71,7 @@ function remember(key: string, errors: readonly ScriptTypeError[]): void {
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
 }
 
-/** Settle the request in flight, if `reply` is its answer, and send the next one. */
+/** Ignores a reply that is not for the request in flight. */
 function finish(reply: TypeCheckReply): void {
   const current = inFlight;
   if (current?.queued.request.id !== reply.id) return;
@@ -95,10 +81,6 @@ function finish(reply: TypeCheckReply): void {
   sendNext();
 }
 
-/**
- * A worker failed or stopped: the request it was working on fails, and the
- * next one goes to a fresh worker. Nothing to do for a worker already replaced.
- */
 function workerLost(target: Worker, error: string): void {
   if (worker === target) worker = undefined;
   if (inFlight?.worker === target) finish({ id: inFlight.queued.request.id, ok: false, error });
@@ -155,10 +137,6 @@ function ask(jobs: readonly TypeCheckJob[], templates: readonly TemplateSource[]
   });
 }
 
-/**
- * Type-check scripts off the main thread. Returns each job's errors, in order
- * (empty for a clean script); fails when the checker fails or overruns.
- */
 export async function checkScriptTypesBatch(
   jobs: readonly TypeCheckJob[],
   templates: readonly TemplateSource[],
@@ -183,7 +161,7 @@ export async function checkScriptTypesBatch(
   });
 }
 
-/** Stop the worker (tests, shutdown), failing every check not yet answered. The next check starts a new one. */
+/** Fails every check not yet answered; the next check starts a new worker. */
 export async function stopTypeChecker(): Promise<void> {
   for (const queued of queue.splice(0)) queued.resolve({ id: queued.request.id, ok: false, error: 'The type checker stopped.' });
   const current = worker;

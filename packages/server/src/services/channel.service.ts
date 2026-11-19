@@ -1,9 +1,3 @@
-// ===========================================
-// Channel Service
-// ===========================================
-// Business logic for channel CRUD operations.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
@@ -40,8 +34,6 @@ import {
   codeTemplateLibraries,
 } from '../db/schema/index.js';
 
-// ----- Response Types -----
-
 export interface ChannelSummary {
   readonly id: string;
   readonly name: string;
@@ -55,7 +47,6 @@ export interface ChannelSummary {
   readonly updatedAt: Date;
 }
 
-/** What the startup auto-deploy needs of each channel. */
 export interface ChannelDeployEntry {
   readonly id: string;
   readonly name: string;
@@ -176,18 +167,7 @@ export interface ChannelListResult {
   };
 }
 
-// ----- Default Scripts -----
-
 const DEFAULT_SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
-
-// At-rest message-content encryption (encryptData) is now wired end-to-end: the
-// message store adapter (engine.ts) encrypts content rows via
-// lib/content-crypto.ts, read paths decrypt, and EngineManager.deploy() refuses
-// to deploy an encryptData channel when CONTENT_ENCRYPTION_KEY is not configured.
-// The flag is therefore a real, working toggle — accepted on create/update.
-// See docs/progress/DECISIONS.md (D-143).
-
-// ----- Private Helpers -----
 
 async function findChannel(id: string): Promise<typeof channels.$inferSelect> {
   const [channel] = await db
@@ -307,7 +287,6 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       .where(eq(channelTransformers.channelId, id)),
   ]);
 
-  // Group filter rules by filterId
   const rulesByFilterId = new Map<string, ChannelFilterRuleDetail[]>();
   for (const r of ruleRows) {
     const arr = rulesByFilterId.get(r.filterId) ?? [];
@@ -333,7 +312,6 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
     rules: (rulesByFilterId.get(f.id) ?? []).sort((a, b) => a.sequenceNumber - b.sequenceNumber),
   }));
 
-  // Group transformer steps by transformerId
   const stepsByTransformerId = new Map<string, ChannelTransformerStepDetail[]>();
   for (const s of stepRows) {
     const arr = stepsByTransformerId.get(s.transformerId) ?? [];
@@ -411,8 +389,6 @@ function assembleDetail(
   };
 }
 
-// ----- Clone Helpers -----
-
 function buildCloneScripts(source: ChannelDetail): CreateChannelInput['scripts'] {
   const find = (type: string): ChannelScript | undefined => source.scripts.find((s) => s.scriptType === type);
   const language = (type: string): ScriptLanguageCode => toScriptLanguage(find(type)?.language);
@@ -451,11 +427,9 @@ type CloneFilter = NonNullable<CreateChannelInput['filters']>[number];
 type CloneTransformer = NonNullable<CreateChannelInput['transformers']>[number];
 
 /**
- * The metaDataId a source-channel connector row gets on the clone: `create`
- * numbers destinations by position (index + 1), so a source with a gap in its
- * metaDataIds is renumbered. Null for the source connector. Throws when the row
- * names a connector the channel does not have, rather than silently moving a
- * destination's filter or transformer onto the source.
+ * `create` numbers destinations by position (index + 1), so a gap in the
+ * source's metaDataIds is renumbered. Throws on an unknown connector rather than
+ * silently moving a destination's filter or transformer onto the source.
  */
 function cloneMetaDataId(source: ChannelDetail, connectorId: string | null): number | null {
   if (connectorId === null) return null;
@@ -544,16 +518,8 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
   };
 }
 
-// ----- Filter / transformer persistence (shared by create + update) -----
-
-/** Drizzle transaction handle, as passed to `db.transaction(async (tx) => …)`. */
 type ChannelTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/**
- * Replace a channel's filters (and their rules) with the provided set.
- * Delete-and-reinsert; a source filter has `metaDataId: null`, a destination
- * filter is mapped to its connector row via `destIdByMetaDataId`.
- */
 async function syncFilters(
   tx: ChannelTx,
   channelId: string,
@@ -592,11 +558,6 @@ async function syncFilters(
   }
 }
 
-/**
- * Replace a channel's transformers (and their steps) with the provided set.
- * Delete-and-reinsert; a source transformer has `metaDataId: null`, a
- * destination transformer is mapped to its connector row via `destIdByMetaDataId`.
- */
 async function syncTransformers(
   tx: ChannelTx,
   channelId: string,
@@ -662,10 +623,8 @@ async function addCloneToLibraries(tx: ChannelTx, sourceId: string, cloneId: str
     .where(sql`${codeTemplateLibraries.channelIds} @> ${JSON.stringify([sourceId])}::jsonb`);
 }
 
-// ----- Service -----
-
 export class ChannelService {
-  /** List the channels inside `scope` with pagination (D-310: every channel unless scoped). */
+  /** `scope` per D-310. */
   static async list(query: ChannelListQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<ChannelListResult>> {
     return tryCatch(async () => {
       const offset = (query.page - 1) * query.pageSize;
@@ -711,10 +670,9 @@ export class ChannelService {
   }
 
   /**
-   * Every live (not deleted) channel's id, name and enabled flag, in one
-   * query ordered by id. The startup auto-deploy reads this rather than
-   * paging `list`, whose name order is not unique and whose offsets shift
-   * while the API serves, so a page could repeat one channel and skip another.
+   * The startup auto-deploy reads this rather than paging `list`, whose name
+   * order is not unique and whose offsets shift while the API serves, so a page
+   * could repeat one channel and skip another.
    */
   static async listLiveForDeploy(): Promise<Result<readonly ChannelDeployEntry[]>> {
     return tryCatch(async () => db
@@ -724,7 +682,6 @@ export class ChannelService {
       .orderBy(asc(channels.id)));
   }
 
-  /** Get full channel detail by ID. */
   static async getById(id: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       const channel = await findChannel(id);
@@ -733,14 +690,9 @@ export class ChannelService {
     });
   }
 
-  /**
-   * Create a new channel with default scripts. `cloneOf` names the channel this
-   * one copies: the new channel joins every code template library that lists
-   * that channel, in the same transaction (see `addCloneToLibraries`).
-   */
+  /** `cloneOf`: the channel this one copies; the new channel joins its code template libraries. */
   static async create(input: CreateChannelInput, context?: AuditContext, cloneOf?: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
-      // Check name uniqueness among non-deleted channels
       const [existing] = await db
         .select({ id: channels.id })
         .from(channels)
@@ -781,13 +733,11 @@ export class ChannelService {
         }
       }
 
-      // Transaction: insert channel + default scripts + destinations + metadata columns
       const [created] = await db.transaction(async (tx) => {
         const inserted = await tx.insert(channels).values(channelValues).returning();
 
         const channelId = inserted[0]!.id;
 
-        // Insert default scripts (using input.scripts if provided)
         const scriptValues = DEFAULT_SCRIPT_TYPES.map((scriptType) => {
           const key = scriptType.toLowerCase() as 'deploy' | 'undeploy' | 'preprocessor' | 'postprocessor';
           return {
@@ -800,8 +750,6 @@ export class ChannelService {
 
         await tx.insert(channelScripts).values(scriptValues);
 
-        // Insert destinations if provided, tracking new IDs by metaDataId so
-        // source/destination filters + transformers can be mapped to them.
         const destIdByMetaDataId = new Map<number, string>();
         if (input.destinations && input.destinations.length > 0) {
           const destValues = input.destinations.map((dest, index) => ({
@@ -829,7 +777,6 @@ export class ChannelService {
           }
         }
 
-        // Insert metadata columns if provided
         if (input.metadataColumns && input.metadataColumns.length > 0) {
           const metaValues = input.metadataColumns.map((col) => ({
             channelId,
@@ -840,7 +787,6 @@ export class ChannelService {
           await tx.insert(channelMetadataColumns).values(metaValues);
         }
 
-        // Persist filters + transformers (previously dropped on create — data loss).
         if (input.filters && input.filters.length > 0) {
           await syncFilters(tx, channelId, input.filters, destIdByMetaDataId);
         }
@@ -863,7 +809,6 @@ export class ChannelService {
         return inserted;
       });
 
-      // Return full detail
       const channel = created!;
 
       const relations = await fetchChannelRelations(channel.id);
@@ -880,7 +825,6 @@ export class ChannelService {
     });
   }
 
-  /** Update a channel with optimistic locking via revision. */
   static async update(id: string, input: UpdateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       const existing = await findChannel(id);
@@ -920,7 +864,6 @@ export class ChannelService {
         if (input.properties.scriptTimeoutSeconds !== undefined) updateValues['scriptTimeoutSeconds'] = input.properties.scriptTimeoutSeconds;
       }
 
-      // Check name uniqueness if name is changing
       if (input.name !== undefined && input.name !== existing.name) {
         const [duplicate] = await db
           .select({ id: channels.id })
@@ -932,11 +875,10 @@ export class ChannelService {
         }
       }
 
-      // All mutations run in one transaction so a mid-way failure cannot leave a
-      // channel with its destinations/filters/transformers deleted-but-not-reinserted.
-      // The optimistic lock is enforced atomically: the UPDATE carries the expected
-      // revision in its WHERE, and 0 rows affected means a concurrent writer won the
-      // race (409). Track new destination IDs by metaDataId for filter/transformer mapping.
+      // One transaction, so a mid-way failure cannot leave a channel with its
+      // destinations/filters/transformers deleted-but-not-reinserted. The UPDATE
+      // carries the expected revision in its WHERE: 0 rows means a concurrent
+      // writer won the race (409).
       const destIdByMetaDataId = new Map<number, string>();
 
       await db.transaction(async (tx) => {
@@ -952,9 +894,9 @@ export class ChannelService {
           });
         }
 
-        // Update scripts if provided. A language the request leaves out keeps
-        // the stored one (D-294): defaulting it would turn TypeScript into
-        // JavaScript and switch off the script's deploy type check.
+        // A language the request leaves out keeps the stored one (D-294):
+        // defaulting it would turn TypeScript into JavaScript and switch off the
+        // script's deploy type check.
         if (input.scripts) {
           const { languages, ...scriptsByKey } = input.scripts;
           for (const [key, value] of Object.entries(scriptsByKey)) {
@@ -969,7 +911,6 @@ export class ChannelService {
           }
         }
 
-        // Sync destinations if provided (delete-and-reinsert)
         if (input.destinations) {
           await tx.delete(channelConnectors).where(eq(channelConnectors.channelId, id));
 
@@ -1000,7 +941,6 @@ export class ChannelService {
           }
         }
 
-        // Sync metadata columns if provided (delete-and-reinsert)
         if (input.metadataColumns) {
           await tx.delete(channelMetadataColumns).where(eq(channelMetadataColumns.channelId, id));
 
@@ -1015,7 +955,6 @@ export class ChannelService {
           }
         }
 
-        // Sync filters + transformers if provided (delete-and-reinsert).
         if (input.filters) await syncFilters(tx, id, input.filters, destIdByMetaDataId);
         if (input.transformers) await syncTransformers(tx, id, input.transformers, destIdByMetaDataId);
       });
@@ -1031,7 +970,7 @@ export class ChannelService {
         attributes: { channelName: channel.name },
       });
 
-      // Save revision snapshot (fire-and-forget — don't block the update response)
+      // Fire-and-forget: don't block the update response.
       void ChannelRevisionService.saveRevision(
         id,
         channel.revision,
@@ -1048,13 +987,9 @@ export class ChannelService {
   }
 
   /**
-   * Soft-delete a channel by setting deletedAt.
-   *
-   * This is reversible and intentionally retains all message history/PHI: a soft
-   * delete must NOT drop the channel's message partitions (that would irreversibly
-   * destroy the message and audit trail that a "soft" delete promises to keep, and
-   * is a HIPAA retention hazard). Physical partition removal is a separate, explicit
-   * purge operation performed only on an undeployed channel.
+   * A soft delete must not drop the channel's message partitions: that would
+   * irreversibly destroy the message trail it promises to keep, a HIPAA
+   * retention hazard. Only an explicit purge of an undeployed channel removes them.
    */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
@@ -1070,7 +1005,6 @@ export class ChannelService {
     });
   }
 
-  /** Clone an existing channel with a new name. */
   static async clone(id: string, newName: string, context?: AuditContext, groupId?: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       const sourceResult = await ChannelService.getById(id);
@@ -1095,7 +1029,6 @@ export class ChannelService {
     });
   }
 
-  /** Toggle channel enabled flag. */
   static async setEnabled(id: string, enabled: boolean): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       await findChannel(id);

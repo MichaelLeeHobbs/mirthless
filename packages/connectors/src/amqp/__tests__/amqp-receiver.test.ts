@@ -1,7 +1,3 @@
-// ===========================================
-// AMQP Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import type { RawMessage, DispatchResult } from '../../base.js';
@@ -141,7 +137,6 @@ describe('a message the pipeline never stores', () => {
     expect(p.offered.map((r) => r.content)).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
     expect(queue.acked).toEqual([]);
     expect(queue.deadLettered).toEqual([]);
-    // Still on the queue, first, for when the channel is started again.
     expect(queue.messages.map((m) => m.body)).toEqual(['MSH|poison', 'MSH|next']);
     expect(fatal[0]?.message).toContain('3 attempts');
     expect(log.errors.some((e) => e.msg.includes('AMQP source stopped'))).toBe(true);
@@ -220,7 +215,6 @@ describe('a message the pipeline never stores', () => {
     await receiver.onStart();
     await vi.waitFor(() => { expect(closing).toBe(true); });
 
-    // The operator halts and starts the channel while the cap's close is still going.
     await receiver.onHalt();
     await receiver.onStart();
     releaseClose?.();
@@ -314,7 +308,7 @@ describe('a delivery that throws', () => {
     let calls = 0;
     await start(queue, async () => {
       calls += 1;
-      if (calls === 1) return new Promise<Result<DispatchResult>>(() => undefined); // never answers
+      if (calls === 1) return new Promise<Result<DispatchResult>>(() => undefined);
       return stored(calls);
     });
     await vi.waitFor(() => { expect(calls).toBe(1); });
@@ -334,7 +328,6 @@ describe('broker disconnect', () => {
     const dispatch: Dispatch = async (raw) => {
       offered.push(raw);
       calls += 1;
-      // The connection drops while the first message is being stored.
       if (calls === 1) { queue.failConnects = 2; queue.disconnect(); dropped = true; }
       return stored(calls);
     };

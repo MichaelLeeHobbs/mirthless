@@ -1,7 +1,4 @@
-// ===========================================
-// Channel Schema Validation Tests
-// ===========================================
-// Tests Zod schemas with real UI payloads to catch frontend/backend contract mismatches.
+// Real UI payloads, to catch frontend/backend contract mismatches.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -17,7 +14,6 @@ import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../../const
 
 describe('createChannelSchema', () => {
   it('accepts payload from NewChannelDialog', () => {
-    // Exact payload sent by NewChannelDialog.tsx
     const payload = {
       name: 'Test HL7 Channel',
       description: 'Routes lab results',
@@ -39,7 +35,6 @@ describe('createChannelSchema', () => {
   });
 
   it('accepts payload from ChannelEditorPage create mode', () => {
-    // Exact payload sent by ChannelEditorPage.tsx in create mode
     const payload = {
       name: 'New Editor Channel',
       description: '',
@@ -242,7 +237,6 @@ describe('createChannelSchema', () => {
 
 describe('updateChannelSchema', () => {
   it('accepts payload from ChannelEditorPage save', () => {
-    // Exact payload sent by ChannelEditorPage.tsx in edit mode
     const payload = {
       name: 'Updated Channel',
       description: 'Updated description',

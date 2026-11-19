@@ -1,12 +1,4 @@
-// ===========================================
-// Engine Alert Wiring Tests
-// ===========================================
-// How a failing message turns into alert actions. Real engine package; fake
-// database, services and connectors.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 const mockSend = vi.hoisted(() => vi.fn());
 
@@ -119,8 +111,6 @@ vi.mock('../../config/index.js', () => ({
 
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
-
-// ----- Fixtures -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const OK_EMPTY = { ok: true, value: [], error: null };
