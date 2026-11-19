@@ -323,9 +323,17 @@ describe('QueueConsumer wiring', () => {
 
     it('hands a delivered queued message to the source that keeps its input until then (#243)', async () => {
       const { createSourceConnector } = await import('@galvanigraph/connectors');
-      const base = (createSourceConnector as ReturnType<typeof vi.fn>)() as Record<string, unknown>;
+      const done = { ok: true, value: undefined, error: null };
       const onMessageDelivered = vi.fn().mockResolvedValue(undefined);
-      (createSourceConnector as ReturnType<typeof vi.fn>).mockReturnValueOnce({ ...base, onMessageDelivered });
+      vi.mocked(createSourceConnector).mockReturnValueOnce({
+        setDispatcher: vi.fn(),
+        onDeploy: vi.fn().mockResolvedValue(done),
+        onStart: vi.fn().mockResolvedValue(done),
+        onStop: vi.fn().mockResolvedValue(done),
+        onHalt: vi.fn().mockResolvedValue(done),
+        onUndeploy: vi.fn().mockResolvedValue(done),
+        onMessageDelivered,
+      } as never);
 
       const engine = new EngineManager('test-server');
       await engine.deploy(makeChannel({ destinations: [makeDest()] }) as never);
