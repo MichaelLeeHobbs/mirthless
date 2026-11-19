@@ -10,10 +10,11 @@
 // association is rejected ("Source: Service User"). The accept-list here mirrors
 // what production DIMSE services commonly accept.
 
-import * as fs from 'node:fs';
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
+import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
 import type { DcmtkSender, DcmtkSendResult } from './dicom-dispatcher.js';
 
@@ -96,6 +97,52 @@ interface ReceiverOptions {
   readonly storageDir: string;
   readonly aeTitle: string;
   readonly connectionTimeoutMs: number;
+  readonly roots: FileRoots;
+}
+
+/** A DICOM UID (PS3.5 9.1): digits and dots, at most 64 characters. Nothing in it can leave a directory. */
+const DICOM_UID = /^[0-9]+(\.[0-9]+)*$/;
+const MAX_UID_LENGTH = 64;
+
+/**
+ * The SOP Instance UID that names a received file. The sending AE supplies
+ * it, so anything but a DICOM UID is refused (#313). One that is missing gets
+ * a generated UID, as before.
+ */
+function instanceUid(value: unknown): string {
+  if (value === undefined || value === '') return Dataset.generateDerivedUid();
+  if (typeof value === 'string' && value.length <= MAX_UID_LENGTH && DICOM_UID.test(value)) return value;
+  throw new Error('The SOP Instance UID is not a DICOM UID (digits and dots, at most 64 characters); the instance was not stored');
+}
+
+/** Write a dataset as a DICOM P10 file. */
+function writeDataset(dataset: DatasetType, filePath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    dataset.toFile(filePath, (error) => { if (error) reject(error); else resolve(); });
+  });
+}
+
+/** Copies of one instance that may wait in the storage directory at once. */
+const MAX_COPIES = 100;
+
+/**
+ * Claim a file name for an instance: `<uid>.dcm`, or `<uid>_<n>.dcm` while an
+ * earlier copy is still there. A file now waits until every destination,
+ * queued ones included, has sent it (D-325), so a modality that re-sends an
+ * instance must not overwrite the copy an earlier message still needs. The
+ * name is created exclusively, so two associations cannot claim the same one.
+ */
+async function claimFileName(dir: string, uid: string): Promise<string> {
+  for (let n = 1; n <= MAX_COPIES; n++) {
+    const filePath = path.join(dir, n === 1 ? `${uid}.dcm` : `${uid}_${String(n)}.dcm`);
+    try {
+      await (await fs.open(filePath, 'wx')).close();
+      return filePath;
+    } catch (err) {
+      if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+    }
+  }
+  throw new Error(`${String(MAX_COPIES)} copies of this instance are already waiting in the storage directory; the instance was not stored`);
 }
 
 class DimseReceiver implements DcmtkReceiver {
@@ -110,15 +157,24 @@ class DimseReceiver implements DcmtkReceiver {
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void { this.assocListener = listener; }
   onEvent(_event: 'error', listener: (data: { readonly error: Error }) => void): void { this.errorListener = listener; }
 
-  /** Persist a received dataset to a .dcm file and notify listeners. */
-  private handleInstance(dataset: DatasetType, callingAe: string, calledAe: string, assocId: string, files: string[]): void {
+  /**
+   * Persist a received dataset to a .dcm file and notify listeners. The
+   * storage directory is checked against the roots before every write, so one
+   * swapped for a link out of them since deploy is refused.
+   */
+  private async handleInstance(dataset: DatasetType, callingAe: string, calledAe: string, assocId: string, files: string[]): Promise<void> {
     const elements = dataset.getElements() as Record<string, unknown>;
-    const sopInstanceUid = typeof elements['SOPInstanceUID'] === 'string' && elements['SOPInstanceUID']
-      ? (elements['SOPInstanceUID'] as string)
-      : Dataset.generateDerivedUid();
-    fs.mkdirSync(this.options.storageDir, { recursive: true });
-    const filePath = path.join(this.options.storageDir, `${sopInstanceUid}.dcm`);
-    dataset.toFile(filePath);
+    const sopInstanceUid = instanceUid(elements['SOPInstanceUID']);
+    const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
+    await fs.mkdir(dir, { recursive: true });
+    const filePath = await claimFileName(dir, sopInstanceUid);
+    try {
+      await writeDataset(dataset, filePath);
+    } catch (err) {
+      // Give the name back; the sender is told the store failed.
+      await fs.rm(filePath, { force: true });
+      throw err;
+    }
     files.push(filePath);
     this.fileListener?.({
       filePath,
@@ -174,20 +230,20 @@ class DimseReceiver implements DcmtkReceiver {
 
       override cStoreRequest(request: CStoreRequestType, callback: (response: CStoreResponseType) => void): void {
         const response = CStoreResponse.fromRequest(request);
-        try {
-          const dataset = request.getDataset();
-          if (!dataset) {
-            response.setStatus(Status.ProcessingFailure);
-            callback(response);
-            return;
-          }
-          handleInstance(dataset, this.callingAe, this.calledAe, this.assocId, this.files);
-          response.setStatus(Status.Success);
-        } catch (err) {
-          emitError(err instanceof Error ? err : new Error(String(err)));
+        const dataset = request.getDataset();
+        if (!dataset) {
           response.setStatus(Status.ProcessingFailure);
+          callback(response);
+          return;
         }
-        callback(response);
+        // The SCU waits for the response, so it learns whether the file was stored.
+        void handleInstance(dataset, this.callingAe, this.calledAe, this.assocId, this.files).then(
+          () => { response.setStatus(Status.Success); },
+          (err: unknown) => {
+            emitError(err instanceof Error ? err : new Error(String(err)));
+            response.setStatus(Status.ProcessingFailure);
+          },
+        ).finally(() => { callback(response); });
       }
     }
 
@@ -217,15 +273,15 @@ export function createDimseReceiver(options: {
   readonly port: number;
   readonly storageDir: string;
   readonly aeTitle: string;
-  readonly minPoolSize: number;
-  readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
+  readonly roots: FileRoots;
 }): Result<DcmtkReceiver> {
   return ok(new DimseReceiver({
     port: options.port,
     storageDir: options.storageDir,
     aeTitle: options.aeTitle,
     connectionTimeoutMs: options.connectionTimeoutMs,
+    roots: options.roots,
   }));
 }
 
@@ -291,8 +347,6 @@ export function createDimseSender(options: {
   readonly port: number;
   readonly calledAETitle: string;
   readonly callingAETitle: string;
-  readonly mode: 'single' | 'multiple';
-  readonly maxAssociations: number;
   readonly maxRetries: number;
   readonly retryDelayMs: number;
   readonly timeoutMs: number;

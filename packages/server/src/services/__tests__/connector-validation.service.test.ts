@@ -643,7 +643,8 @@ describe('validateConnectorProperties', () => {
   });
 
   describe('DICOM and EMAIL', () => {
-    // The editor's defaults since 2026-03 (AE titles MIRTHLESS until 02b022a), the required fields filled.
+    // The editor's defaults from 2026-03 until #154 (AE titles MIRTHLESS until 02b022a), the required fields filled.
+    // The pool sizes, mode and maxAssociations were never used; saved channels that have them still validate.
     const DICOM_SOURCE = {
       port: 4242, storageDir: '/dicom', aeTitle: 'MIRTHLESS', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
       dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
@@ -671,9 +672,8 @@ describe('validateConnectorProperties', () => {
 
     it.each([
       ['DICOM', 'source', { ...DICOM_SOURCE, aeTitle: 'SEVENTEEN_CHARS_X' }, 'aeTitle'],
-      ['DICOM', 'source', { ...DICOM_SOURCE, minPoolSize: 5, maxPoolSize: 4 }, 'maxPoolSize'],
       ['DICOM', 'source', { ...DICOM_SOURCE, dispatchMode: 'PER_STUDY' }, 'dispatchMode'],
-      ['DICOM', 'destination', { ...DICOM_DEST, mode: 'pooled' }, 'mode'],
+      ['DICOM', 'destination', { ...DICOM_DEST, maxRetries: -1 }, 'maxRetries'],
       ['DICOM', 'destination', { ...DICOM_DEST, aet: 'X' }, 'aet'],
       ['EMAIL', 'source', { ...EMAIL, protocol: 'POP3' }, 'protocol'],
       ['EMAIL', 'source', { ...EMAIL, pollingIntervalMs: 500 }, 'pollingIntervalMs'],

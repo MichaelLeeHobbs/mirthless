@@ -15,7 +15,7 @@ Every property below is the key the connector reads from the channel's saved pro
 | [DATABASE](#database) | Yes | Yes | PostgreSQL and MySQL/MariaDB only. No SQL Server or Oracle | `tls` flag; when on, the server certificate is verified | Database username and password | Database Reader / Database Writer |
 | [JAVASCRIPT](#javascript) | Yes | Yes | Whatever a sandboxed script can produce or reach through the script bridges | Not applicable (runs in the server) | Not applicable | JavaScript Reader / JavaScript Writer |
 | [CHANNEL](#channel) | Yes | Yes | Another GalvaniGraph channel on the same server | Not applicable (in memory) | Not applicable | Channel Reader / Channel Writer |
-| [DICOM](#dicom) | Yes | Yes | DICOM C-STORE in and out | No TLS | None. The listener accepts any calling and called AE title | DICOM Listener / DICOM Sender |
+| [DICOM](#dicom) | Yes | Yes | DICOM C-STORE in and out | No TLS | None. The listener accepts any calling and called AE title. Files only under `FILE_CONNECTOR_ROOTS` | DICOM Listener / DICOM Sender |
 | [EMAIL](#email) | Yes | No | Reading an IMAP mailbox. POP3 refuses to deploy | `secure` (IMAP over TLS), on by default | Mailbox username and password | none (Mirth Connect has no email reader connector) |
 | [SMTP](#smtp) | No | Yes | Sending email only | `secure` (implicit TLS) and `requireTLS` (STARTTLS required); both off by default | Optional username and password | SMTP Sender |
 | [FHIR](#fhir) | No | Yes | Posting a message that is already a FHIR R4 resource. No HL7 v2 to FHIR mapping | HTTPS when `baseUrl` is https, with the Node trust store | None, Basic, bearer token or API key header | FHIR Sender (commercial extension in Mirth) |
@@ -385,27 +385,27 @@ No network is involved, so there is nothing to encrypt. The message stays inside
 
 ### DICOM: what it does
 
-The source is a DICOM storage SCP. It accepts C-STORE associations, writes each instance to `storageDir` as `<SOPInstanceUID>.dcm`, and sends a message whose content is the file path, with the dataset's attributes and the AE titles in the source map. In `PER_ASSOCIATION` mode it sends one message per association whose content is a JSON list of file paths.
+The source is a DICOM storage SCP. It accepts C-STORE associations, writes each instance to `storageDir` as `<SOPInstanceUID>.dcm` (a copy that arrives while an earlier one is still there is written as `<SOPInstanceUID>_2.dcm`, `_3` and so on, never over it), and sends a message whose content is the file path, with the dataset's attributes and the AE titles in the source map. In `PER_ASSOCIATION` mode it sends one message per association whose content is a JSON list of file paths.
 
-The destination is a storage SCU. The message content must be the path of a DICOM file on the server, which it sends with C-STORE.
+The destination is a storage SCU. The message content must be the absolute path of a DICOM file under `FILE_CONNECTOR_ROOTS`, which it sends with C-STORE.
 
 ### DICOM security
 
 DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN. A DICOM connector imported from Mirth with TLS on (Mirth's `tls` other than `notls`) refuses to deploy rather than run in plaintext; remove `tls` only if plaintext is acceptable on that network.
+
+DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories](#file-security) do (D-326). The listener's `storageDir` and `moveToDirectory` are checked at deploy and again before every write and every move, after symlinks are resolved, so a directory later swapped for a link out of the roots is refused. The sending AE names each file through its SOP Instance UID, so an instance whose UID is not a DICOM UID (digits and dots, at most 64 characters) is refused with a C-STORE failure rather than stored. The destination checks the path in the message before it reads the file: message content comes from transformers, and without the check a script could send any DICOM file the server can read to the remote AE.
 
 ### DICOM as a source
 
 | Property | Required | Notes |
 |---|---|---|
 | `port` | Yes | Port to listen on. |
-| `storageDir` | Yes | Directory received files are written to. |
+| `storageDir` | Yes | Directory received files are written to: an absolute path under `FILE_CONNECTOR_ROOTS`. |
 | `aeTitle` | No | This listener's AE title, at most 16 characters, `GALVANIGRAPH` by default. Not checked against incoming associations. |
-| `minPoolSize` | No | Checked at deploy (at least 1) but not used by the current listener. |
-| `maxPoolSize` | No | Checked at deploy (not below `minPoolSize`) but not used by the current listener. |
 | `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds, 10000 by default. |
 | `dispatchMode` | No | `PER_FILE` (default) or `PER_ASSOCIATION`. |
-| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, and the default deletes the file once the pipeline accepts it, so a queued destination or a later reprocess has no file to read. Use `MOVE` or `NONE` if anything reads the file afterwards. |
-| `moveToDirectory` | No | Where `MOVE` puts files. Required when `postAction` is `MOVE`. |
+| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, so the action waits until every destination has delivered the message, a queued destination included: a DICOM Sender retrying from its queue still finds the file (D-325). If a destination fails, or its queue gives up, the file stays where it is for manual recovery, whatever the channel's response mode tells the sender. A later reprocess of the message has no file to read after `DELETE`; use `MOVE` or `NONE` if anything reads the file afterwards. |
+| `moveToDirectory` | No | Where `MOVE` puts files: an absolute path under `FILE_CONNECTOR_ROOTS`. Required when `postAction` is `MOVE`. |
 
 ### DICOM as a destination
 
@@ -415,8 +415,6 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 | `port` | Yes | Remote SCP port. |
 | `calledAETitle` | No | The remote AE title, at most 16 characters, `PACS` by default. |
 | `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIGRAPH` by default. |
-| `mode` | No | `single` or `multiple`. Read but not used by the current sender. |
-| `maxAssociations` | No | Read but not used by the current sender. |
 | `maxRetries` | No | Retries of a failed send. |
 | `retryDelayMs` | No | Milliseconds between retries. |
 | `timeoutMs` | No | Milliseconds before the send fails. |
@@ -424,8 +422,8 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 ### DICOM limits
 
 - No TLS in either direction, and no AE title filtering on the listener.
-- The destination sends whatever readable local file the message content names; nothing limits it to the receiver's storage directory.
-- `mode` and `maxAssociations` on the destination, and `minPoolSize` and `maxPoolSize` on the source, have no effect.
+- Files only under `FILE_CONNECTOR_ROOTS`; with it unset, DICOM connectors refuse to deploy.
+- No limit on concurrent associations in either direction. The destination opens one association per message. `minPoolSize` and `maxPoolSize` (source) and `mode` and `maxAssociations` (destination), which earlier versions saved and never used, are dropped when a channel is validated (#154).
 
 ## EMAIL
 

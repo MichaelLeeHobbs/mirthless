@@ -583,6 +583,55 @@ describe('MessageProcessor', () => {
     expect(store.removeCompletedContent).not.toHaveBeenCalled();
   });
 
+  describe('a message with a queued destination (#243)', () => {
+    const queuedConfig = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ALWAYS' }],
+    });
+
+    it('reports it queued while the queue has not delivered', async () => {
+      const store = { ...makeStore(), isFullyDelivered: vi.fn().mockResolvedValue(ok(false)) };
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), queuedConfig, DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value.queued).toBe(true);
+      expect(store.removeCompletedContent).not.toHaveBeenCalled();
+    });
+
+    it('finishes the message itself when the queue delivered before the pipeline was done', async () => {
+      const store = { ...makeStore(), isFullyDelivered: vi.fn().mockResolvedValue(ok(true)) };
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), queuedConfig, DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value.queued).toBeUndefined();
+      expect(store.isFullyDelivered).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1);
+      expect(store.removeCompletedContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1);
+    });
+
+    it('counts it queued, and raises an alert, when the store cannot say', async () => {
+      const store = { ...makeStore(), isFullyDelivered: vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('db down') }) };
+      const onError = vi.fn().mockResolvedValue(undefined);
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), { ...queuedConfig, onError }, DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value.queued).toBe(true);
+      expect(store.removeCompletedContent).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('db down') }));
+    });
+
+    it('does not ask the store when nothing was queued', async () => {
+      const store = { ...makeStore(), isFullyDelivered: vi.fn().mockResolvedValue(ok(true)) };
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value.queued).toBeUndefined();
+      expect(store.isFullyDelivered).not.toHaveBeenCalled();
+    });
+  });
+
   it('ALWAYS: queues without attempting a direct send', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

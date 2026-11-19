@@ -25,7 +25,8 @@ export const NO_FILE_ROOTS: FileRoots = { allowed: [], denied: [] };
 /** Kernel and device trees, refused whatever the roots say. `/proc/self/environ` holds the server's secrets. */
 const SYSTEM_DENIED: readonly string[] = ['/proc', '/sys', '/dev'];
 
-function isMissing(err: unknown): boolean {
+/** True when a filesystem call failed because the path does not exist. */
+export function isMissing(err: unknown): boolean {
   return err instanceof Error && 'code' in err && err.code === 'ENOENT';
 }
 

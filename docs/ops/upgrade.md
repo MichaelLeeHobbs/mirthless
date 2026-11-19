@@ -383,6 +383,22 @@ Migrations 0018 to 0020 move roles from code into the database (D-310). 0018 cre
 
 The previous version reads `users.role` on every request, so it cannot run against an upgraded database. Going back needs the pre-upgrade dump (see [Rollback](#rollback)). Server backups made after the upgrade list each user's `roles` instead of one `role`, and an older server refuses to restore them.
 
+## DICOM paths limited to FILE_CONNECTOR_ROOTS (#313)
+
+A DICOM Listener's `storageDir` and `moveToDirectory`, and the file a DICOM Sender sends, must now be under `FILE_CONNECTOR_ROOTS`, as File connectors' directories have been since D-315 (D-326). A Listener outside the roots, or on a server with `FILE_CONNECTOR_ROOTS` unset, refuses to deploy; a Sender asked to send a file outside them errors that message. Before upgrading, add each DICOM storage and move-to directory to `FILE_CONNECTOR_ROOTS`, or move it under a root. These list them:
+
+```sql
+SELECT id, name, source_connector_properties->>'storageDir' AS storage_dir,
+       source_connector_properties->>'moveToDirectory' AS move_to
+FROM channels WHERE source_connector_type = 'DICOM';
+```
+
+A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (digits and dots, at most 64 characters), answering the sender with a C-STORE failure instead of storing it.
+
+## DICOM settings that did nothing are gone (#154)
+
+The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
+
 ## Standard upgrade (Docker)
 
 ```bash

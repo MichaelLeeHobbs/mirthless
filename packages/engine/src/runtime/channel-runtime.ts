@@ -30,7 +30,7 @@ export interface ChannelRuntimeConfig {
   readonly channelId: string;
   readonly source: RuntimeSourceConnector;
   readonly destinations: ReadonlyMap<number, RuntimeConnector>;
-  readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>;
+  readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string; queued?: boolean; destinationFailed?: boolean }>>;
 }
 
 // ----- State Machine -----

@@ -151,6 +151,14 @@ export interface MessageStore {
    * destination and cannot tell; the store can.
    */
   removeContentIfDelivered?(channelId: string, messageId: number): Promise<Result<void>>;
+
+  /**
+   * Optional: true when every connector of the message (the source and each
+   * destination) is SENT or FILTERED. Settles whether a message with a queued
+   * destination has finished, whichever of the pipeline and the queue consumer
+   * gets there last.
+   */
+  isFullyDelivered?(channelId: string, messageId: number): Promise<Result<boolean>>;
 }
 
 /** Input to the pipeline. */
@@ -175,6 +183,12 @@ export interface ProcessedMessage {
   readonly errorStage?: 'SOURCE' | 'DESTINATION';
   readonly response?: string;
   readonly destinationResults: readonly DestinationResult[];
+  /**
+   * True when a queued destination had not delivered the message by the time
+   * the pipeline finished. The queue consumer reports the delivery later
+   * (`QueueConsumerConfig.onMessageDelivered`). Absent otherwise.
+   */
+  readonly queued?: true;
 }
 
 /** Result of sending to one destination. */
@@ -601,10 +615,15 @@ export class MessageProcessor {
         ]);
       }
 
+      // A queued destination may have delivered while the rest of the pipeline
+      // ran. Its consumer then saw the message unfinished and left the
+      // completion work to us.
+      const stillQueued = hasQueued && !(await this.deliveredMeanwhile(messageId));
+
       // Apply removeContentOnCompletion only when the message is fully done — no
       // errors and nothing still queued (a queued destination needs the stored
       // content to deliver later, and error content must be kept for investigation).
-      if (!hasError && !hasQueued && this.store.removeCompletedContent) {
+      if (!hasError && !stillQueued && this.store.removeCompletedContent) {
         await this.store.removeCompletedContent(channelId, messageId);
       }
       mark('finalize');
@@ -631,6 +650,7 @@ export class MessageProcessor {
         status: hasError ? 'ERROR' as const : 'SENT' as const,
         ...(hasError ? { errorStage: 'DESTINATION' as const } : {}),
         destinationResults: destResults,
+        ...(stillQueued ? { queued: true as const } : {}),
       };
       if (firstResponse) {
         return { ...result, response: firstResponse };
@@ -642,6 +662,29 @@ export class MessageProcessor {
         return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       }
     });
+  }
+
+  /**
+   * Whether the queued destinations of a just-finished message have all
+   * delivered already. A store that cannot tell, or a failed check, counts as
+   * not delivered: the message's completion then waits for the queue consumer.
+   */
+  private async deliveredMeanwhile(messageId: number): Promise<boolean> {
+    if (!this.store.isFullyDelivered) return false;
+    const delivered = await this.store.isFullyDelivered(this.config.channelId, messageId);
+    if (delivered.ok) return delivered.value;
+    // If the queue already delivered and saw the message unfinished, nobody
+    // finishes it: its source keeps its input and its content stays. Say so.
+    if (this.config.onError) {
+      await this.config.onError({
+        channelId: this.config.channelId,
+        errorType: 'DESTINATION_CONNECTOR',
+        errorMessage: `Message ${String(messageId)} has a queued destination, and whether it has delivered could not be read: ` +
+          `${delivered.error.message}. If it has, the source's after-processing action and content removal will not run.`,
+        timestamp: Date.now(),
+      });
+    }
+    return false;
   }
 
   /** Finish a message that failed with an error no stage handled. */

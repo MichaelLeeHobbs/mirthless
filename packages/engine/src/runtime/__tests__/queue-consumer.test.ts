@@ -807,3 +807,109 @@ describe('QueueConsumer content removal', () => {
     }));
   });
 });
+
+// ----- Telling the source a queued message is delivered (#243) -----
+
+describe('QueueConsumer onMessageDelivered', () => {
+  const CH = '00000000-0000-0000-0000-000000000001';
+  const queued = { channelId: CH, messageId: 10, metaDataId: 1, sendAttempts: 0 };
+  type Delivered = NonNullable<MessageStore['isFullyDelivered']>;
+  type Hook = NonNullable<QueueConsumerConfig['onMessageDelivered']>;
+
+  function storeWith(delivered: Mock<Delivered>, raw: Result<string | null> = ok('/dicom/in/1.2.3.dcm')): MessageStore {
+    const store = { ...makeStore(), isFullyDelivered: delivered };
+    (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued]));
+    (store.loadContent as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_c: string, _m: number, metaDataId: number, contentType: number) => {
+        if (metaDataId === 0 && contentType === 1) return raw;
+        return ok(contentType === 5 ? 'test content' : null);
+      },
+    );
+    return store;
+  }
+
+  it('passes the raw content to the source once the delivery leaves the whole message delivered', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValue(undefined);
+    const store = storeWith(vi.fn<Delivered>().mockResolvedValue(ok(true)));
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(store.isFullyDelivered).toHaveBeenCalledWith(CH, 10);
+    expect(hook).toHaveBeenCalledWith(10, '/dicom/in/1.2.3.dcm');
+  });
+
+  it('runs before the content is removed, so the raw content is still there', async () => {
+    const order: string[] = [];
+    const hook = vi.fn<Hook>().mockImplementation(async () => { order.push('hook'); });
+    const store = {
+      ...storeWith(vi.fn<Delivered>().mockResolvedValue(ok(true))),
+      removeContentIfDelivered: vi.fn().mockImplementation(async () => { order.push('remove'); return ok(undefined); }),
+    };
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(order).toEqual(['hook', 'remove']);
+  });
+
+  it('does not call the source while another connector of the message is unfinished', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValue(undefined);
+    const store = storeWith(vi.fn<Delivered>().mockResolvedValue(ok(false)));
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it('does not call the source when the delivery fails', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValue(undefined);
+    const store = storeWith(vi.fn<Delivered>().mockResolvedValue(ok(true)));
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook }), store, makeSendFn({ status: 'ERROR', content: '', errorMessage: 'down' }));
+    await consumer.poll();
+
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  // The pipeline saw the message finished too, ran the source's action itself
+  // and removed the content on completion (#320 review).
+  it('does nothing when the raw content is already gone', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValue(undefined);
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const store = storeWith(vi.fn<Delivered>().mockResolvedValue(ok(true)), ok(null));
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook, onError }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(hook).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the state cannot be read', fail('db down'), ok('/x.dcm'), 'db down'],
+    ['the raw content cannot be read', ok(true), fail('read failed'), 'read failed'],
+  ] as const)('raises an alert instead of calling the source when %s', async (_case, delivered, raw, text) => {
+    const hook = vi.fn<Hook>().mockResolvedValue(undefined);
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const store = storeWith(vi.fn<Delivered>().mockResolvedValue(delivered as Result<boolean>), raw as Result<string | null>);
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook, onError }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(hook).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining(text) }));
+  });
+
+  it('raises an alert when the source throws', async () => {
+    const hook = vi.fn<Hook>().mockRejectedValue(new Error('rename failed'));
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const store = storeWith(vi.fn<Delivered>().mockResolvedValue(ok(true)));
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook, onError }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('rename failed') }));
+  });
+});
