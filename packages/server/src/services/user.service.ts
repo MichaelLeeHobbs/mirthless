@@ -4,7 +4,7 @@
 // CRUD operations for user management.
 // All methods return Result<T> using tryCatch from stderr-lib.
 
-import bcrypt from 'bcryptjs';
+import { hashPassword, verifyPassword } from '../lib/password.js';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, ne, asc, type SQL } from 'drizzle-orm';
 import type { AssignmentInput, AssignmentView, CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
@@ -16,8 +16,6 @@ import { users, sessions } from '../db/schema/index.js';
 import { GrantService } from './grant.service.js';
 import { USER_KIND, type TakenOverKey } from '@galvanigraph/core-models';
 import { ApiKeyService } from './api-key.service.js';
-
-const BCRYPT_ROUNDS = 12;
 
 /** Drizzle transaction/executor type (db and tx both satisfy this). */
 type DbExecutor = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -164,7 +162,7 @@ export class UserService {
         throw new ServiceError('ALREADY_EXISTS', `Email already in use: ${input.email}`);
       }
 
-      const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
+      const passwordHash = await hashPassword(input.password);
       const role = input.role ?? 'viewer';
 
       // The user and their one all-channel assignment commit together, with
@@ -334,7 +332,7 @@ export class UserService {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
       }
 
-      const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+      const passwordHash = await hashPassword(newPassword);
 
       // Admin reset: change the hash and revoke the target user's sessions so any
       // stolen tokens for that account are invalidated.
@@ -375,12 +373,12 @@ export class UserService {
         throw new ServiceError('NOT_FOUND', `User not found: ${userId}`);
       }
 
-      const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+      const valid = await verifyPassword(currentPassword, user.passwordHash);
       if (!valid) {
         throw new ServiceError('INVALID_CREDENTIALS', 'Current password is incorrect');
       }
 
-      const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+      const passwordHash = await hashPassword(newPassword);
 
       await db.transaction(async (tx) => {
         await tx

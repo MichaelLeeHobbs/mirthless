@@ -4,7 +4,7 @@
 // Handles user login, token refresh, and logout.
 // All methods return Result<T> using tryCatch from stderr-lib.
 
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from '../lib/password.js';
 import { hashToken } from '../lib/token-hash.js';
 import { tryCatch, type Result } from 'stderr-lib';
 import { ServiceError } from '../lib/service-error.js';
@@ -142,7 +142,7 @@ export class AuthService {
       if (!user) {
         // Spend the same time as a real password check, so the response time
         // does not tell a caller which usernames exist.
-        await bcrypt.compare(password, UNKNOWN_USER_HASH);
+        await verifyPassword(password, UNKNOWN_USER_HASH);
         auditLoginFailure(username, null, 'unknown_user', metadata);
         throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
       }
@@ -163,7 +163,7 @@ export class AuthService {
       }
 
       // Verify password
-      const valid = await bcrypt.compare(password, user.passwordHash);
+      const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) {
         const outcome = await recordFailedAttempt(user.id, new Date());
         if (outcome === 'counted') {

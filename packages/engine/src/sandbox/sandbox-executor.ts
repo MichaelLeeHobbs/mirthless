@@ -772,8 +772,8 @@ function isVmTimeout(e: unknown): boolean {
  * anything thrown becomes a host Error. A timeout names the whole limit, not the
  * few milliseconds this call had left.
  */
-function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit, minimumMs = 0): unknown {
-  const left = Math.max(minimumMs, limit.deadline - Date.now());
+function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit): unknown {
+  const left = limit.deadline - Date.now();
   if (left <= 0) throw timedOut(limit);
   try {
     return vm.runInContext(code, contextObj, { timeout: left }) as unknown;
@@ -782,16 +782,20 @@ function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit, minimu
   }
 }
 
-/**
- * The least time collecting a result gets. A script that finished inside its
- * limit is not reported as timed out because the host reached the collection a
- * moment late; a 1 ms watchdog could fire on a busy machine from scheduling alone.
- */
-const COLLECT_MIN_MS = 50;
+/** A limit of `ms` that starts now. */
+function limitFromNow(ms: number): TimeLimit {
+  return { deadline: Date.now() + ms, ms };
+}
 
-/** Serialise the script's result inside the sandbox (still under the deadline) and parse it on the host. */
-function collect(contextObj: vm.Context, limit: TimeLimit): CollectedResult {
-  const out = runTimed('__collect()', contextObj, limit, COLLECT_MIN_MS);
+/**
+ * Serialise the script's result inside the sandbox and parse it on the host.
+ * Reading the result back is the engine's work, like building the globals, so it
+ * has a limit of its own: a script that finished in time is never reported as
+ * timed out because a busy host reached its result late (D-323). The limit still
+ * stops a toJSON or getter in the result that loops.
+ */
+function collect(contextObj: vm.Context, ms: number): CollectedResult {
+  const out = runTimed('__collect()', contextObj, limitFromNow(ms));
   if (typeof out !== 'string') throw new Error('Script result could not be read');
   const parsed = JSON.parse(out) as CollectedResult;
   if (parsed.err !== undefined) throw new Error(parsed.err);
@@ -848,13 +852,13 @@ export class VmSandboxExecutor implements SandboxExecutor {
       // Building the sandbox's globals is the engine's work, not the script's: it
       // has a limit of its own, and the script's limit starts when the script does,
       // so one execute can take the setup time plus the limit (D-300).
-      const setup: TimeLimit = { deadline: Date.now() + options.timeout, ms: options.timeout };
+      const setup = limitFromNow(options.timeout);
       runTimed(BOOTSTRAP_SRC, contextObj, setup);
       runTimed(INVOKE_SRC, contextObj, setup);
 
       // Each script gets its own wall-clock limit. A caller's signal can cancel
       // it sooner, but can never let it run longer than `timeout`.
-      const limit: TimeLimit = { deadline: Date.now() + options.timeout, ms: options.timeout };
+      const limit = limitFromNow(options.timeout);
       const expiry = AbortSignal.timeout(options.timeout);
       const signal = options.signal ? AbortSignal.any([options.signal, expiry]) : expiry;
       run.start(limit);
@@ -874,7 +878,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
         run.finish(undefined, true);
       }
 
-      const collected = collect(contextObj, limit);
+      const collected = collect(contextObj, options.timeout);
       return {
         returnValue: restore(state, collected.r),
         msg: restore(state, collected.m),

@@ -23,7 +23,7 @@ const mockDb = { select: mockSelect, update: mockUpdate, delete: mockDelete, ins
 
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn(), emitAuditEvent: vi.fn() }));
-vi.mock('bcryptjs', () => ({ default: { compare: vi.fn().mockResolvedValue(false) } }));
+vi.mock('bcrypt', () => ({ default: { compare: vi.fn().mockResolvedValue(false) } }));
 vi.mock('../../lib/jwt.js', () => ({
   verifyRefreshToken: vi.fn(() => ({ userId: 'u-1' })),
   signRefreshToken: vi.fn(() => 'signed-refresh'),

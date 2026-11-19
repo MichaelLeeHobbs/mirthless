@@ -20,9 +20,9 @@ async function run(overrides: Partial<IsolatedTestInput>, readers = {}, limits: 
       ...overrides,
     },
     readers,
-    // Scripts meant to finish get the Test button's own 5 s limit: on a busy machine
-    // every timed entry into the sandbox costs tens of milliseconds (#188).
-    { timeoutMs: 5_000, maxOldGenerationSizeMb: 32, maxMemoryGrowthMb: 256, ...limits },
+    // Scripts meant to finish get a generous limit, so only the time-limit tests
+    // depend on the clock (D-290, #188).
+    { timeoutMs: 10_000, maxOldGenerationSizeMb: 32, maxMemoryGrowthMb: 256, ...limits },
   );
 }
 
@@ -53,16 +53,16 @@ describe('runScriptTestIsolated', () => {
     afterEach(() => { vi.useRealTimers(); });
 
     it("does not count the worker's start-up against the script's time limit", async () => {
-      const pending = run({ kind: 'transformer', script: "logger.info('done');" }, {}, { timeoutMs: 5_000 });
-      // Far past the 5 s limit and its grace before the worker has even started.
-      vi.advanceTimersByTime(20_000);
+      const pending = run({ kind: 'transformer', script: "logger.info('done');" });
+      // Far past the 10 s limit and its grace before the worker has even started.
+      vi.advanceTimersByTime(25_000);
       const result = await pending;
       expect(result.error).toBeNull();
       expect(result.outcome).toBe('completed');
     });
 
     it('gives up on a worker that does not start at all, and says why', async () => {
-      const pending = run({ kind: 'transformer', script: "logger.info('done');" }, {}, { timeoutMs: 5_000 });
+      const pending = run({ kind: 'transformer', script: "logger.info('done');" });
       vi.advanceTimersByTime(WORKER_START_LIMIT_MS);
       const result = await pending;
       expect(result.outcome).toBe('error');
@@ -100,7 +100,7 @@ describe('runScriptTestIsolated', () => {
       'logger.info(String(refused.length));',
       'logger.info((refused[0] as PromiseRejectedResult).reason.message);',
     ].join('\n');
-    const result = await run({ kind: 'script', script }, { getResource }, { timeoutMs: 5_000 });
+    const result = await run({ kind: 'script', script }, { getResource });
     // First, so a run stopped by its time limit shows as a timeout, not as missing logs.
     expect(result.error).toBeNull();
     expect(result.outcome).toBe('completed');

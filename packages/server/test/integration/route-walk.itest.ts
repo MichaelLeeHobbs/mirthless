@@ -123,7 +123,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
       await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [ids]);
     }
     await pool?.end();
-  });
+  }, 120_000); // as long as the setup's: closing the server and deleting the callers slow down on a loaded machine (#294)
 
   function caller(name: string): Caller {
     const c = callers.get(name);

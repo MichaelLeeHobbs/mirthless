@@ -77,9 +77,9 @@ describe('compileScript', () => {
     if (!compiled.ok) throw compiled.error;
     const executor = new VmSandboxExecutor({ getResource: async (name: string) => `hello ${name}` });
 
-    const result = await executor.execute(compiled.value, createSandboxContext('m', 'r'), { timeout: 2_000 });
+    const result = await executor.execute(compiled.value, createSandboxContext('m', 'r'), { timeout: 10_000 });
 
-    expect(result.ok && result.value.returnValue).toBe('hello greeting!');
+    expect(result.ok ? result.value.returnValue : result.error.message).toBe('hello greeting!');
   });
 
   it('keeps a multi-line template literal exactly as written', async () => {
@@ -469,7 +469,7 @@ describe('compiled filter rules insist on a boolean', () => {
     if (!compiled.ok || compiled.value === null) throw new Error('expected a script');
     const { VmSandboxExecutor } = await import('../sandbox-executor.js');
     const { createSandboxContext } = await import('../sandbox-context.js');
-    const result = await new VmSandboxExecutor().execute({ code: compiled.value }, createSandboxContext({}, ''), { timeout: 2_000 });
+    const result = await new VmSandboxExecutor().execute({ code: compiled.value }, createSandboxContext({}, ''), { timeout: 10_000 });
     return result.ok ? { ok: true, value: result.value.returnValue } : { ok: false, message: result.error.message };
   }
   const js = (script: string, operator = 'AND'): { enabled: boolean; operator: string; type: string; script: string } =>

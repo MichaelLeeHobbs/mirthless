@@ -44,9 +44,11 @@ const MEMORY_SAMPLE_MS = 20;
  */
 export const WORKER_START_LIMIT_MS = 30_000;
 /**
- * How long after its time limit a started worker is terminated. The sandbox's
- * own limit stops a script first; this covers building the sandbox's globals,
- * which is not counted against that limit, and a script the sandbox fails to stop.
+ * How long past its two limits a started worker is terminated: the script's,
+ * and collecting its result, which has a limit of the same length (D-323). The
+ * sandbox's own limits stop a script first; this covers building the sandbox's
+ * globals, which is not counted against either, and a script the sandbox fails
+ * to stop.
  */
 const STOP_GRACE_MS = 5_000;
 
@@ -119,7 +121,7 @@ export function runScriptTestIsolated(
       if (settled) return;
       if (message.type === 'started') {
         clearTimeout(timer);
-        timer = setTimeout(() => { fail(`The script was stopped after ${String(limits.timeoutMs)} ms.`); }, limits.timeoutMs + STOP_GRACE_MS);
+        timer = setTimeout(() => { fail(`The script was stopped after ${String(limits.timeoutMs)} ms.`); }, 2 * limits.timeoutMs + STOP_GRACE_MS);
         watchMemory();
       } else if (message.type === 'read') {
         // The worker refuses reads past MAX_TEST_READS before asking; the script

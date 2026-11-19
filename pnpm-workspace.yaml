@@ -8,6 +8,9 @@ allowBuilds:
   ssh2: true
   '@scarf/scarf': false
   core-js-pure: false
+  # Ships prebuilt binaries (glibc and musl, x64 and arm64, Windows, macOS);
+  # its install script would only compile when none matches.
+  bcrypt: false
 
 minimumReleaseAgeExclude:
   - '@tanstack/query-core@5.105.0'

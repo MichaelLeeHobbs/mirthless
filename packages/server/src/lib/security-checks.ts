@@ -3,8 +3,8 @@
 // ===========================================
 // Loud, non-fatal warnings for insecure defaults at boot.
 
-import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
+import { verifyPassword } from './password.js';
 import { db } from './db.js';
 import { users } from '../db/schema/index.js';
 import logger from './logger.js';
@@ -27,7 +27,7 @@ export async function warnIfDefaultAdminPassword(): Promise<void> {
       return;
     }
 
-    const usingDefault = await bcrypt.compare(DEFAULT_ADMIN_PASSWORD, admin.passwordHash);
+    const usingDefault = await verifyPassword(DEFAULT_ADMIN_PASSWORD, admin.passwordHash);
     if (usingDefault) {
       logger.warn(
         { mustChangePassword: admin.mustChangePassword },
