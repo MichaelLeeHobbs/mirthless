@@ -301,7 +301,7 @@ describe('QueueConsumer wiring', () => {
       } as never);
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel({ destinations: [makeDest()] }) as never);
+      await engine.deploy(bundleOf(makeChannel({ destinations: [makeDest()] }) as never));
 
       const config = MockQueueConsumerCtor.mock.calls[0]![0] as { onMessageDelivered?: (id: number, raw: string) => Promise<void> };
       await config.onMessageDelivered?.(7, '/dicom/in/1.2.dcm');
@@ -310,7 +310,7 @@ describe('QueueConsumer wiring', () => {
 
     it('gives the queue no delivered hook when the source has none', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel({ destinations: [makeDest()] }) as never);
+      await engine.deploy(bundleOf(makeChannel({ destinations: [makeDest()] }) as never));
 
       const config = MockQueueConsumerCtor.mock.calls[0]![0] as Record<string, unknown>;
       expect(config['onMessageDelivered']).toBeUndefined();
