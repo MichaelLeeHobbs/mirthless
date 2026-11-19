@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'node:path';
 import { stderr } from '@galvanigraph/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import {
@@ -26,6 +27,7 @@ function makeConfig(overrides?: Partial<DicomDispatcherConfig>): DicomDispatcher
     maxRetries: 3,
     retryDelayMs: 1_000,
     timeoutMs: 30_000,
+    roots: { allowed: ['/data'], denied: [] },
     ...overrides,
   };
 }
@@ -197,7 +199,25 @@ describe('DicomDispatcher.send', () => {
     await dispatcher.send(makeMessage({ content: '  /data/file.dcm  ' }), makeSignal());
 
     const sendFn = sender.send as ReturnType<typeof vi.fn>;
-    expect(sendFn).toHaveBeenCalledWith(['/data/file.dcm']);
+    expect(sendFn).toHaveBeenCalledWith([path.resolve('/data/file.dcm')]);
+  });
+
+  // #313: the path is message content, which a transformer controls.
+  it.each([
+    ['outside the roots', makeConfig(), '/etc/galvanigraph/image.dcm', 'outside FILE_CONNECTOR_ROOTS'],
+    ['climbing out of the roots', makeConfig(), '/data/../etc/image.dcm', 'outside FILE_CONNECTOR_ROOTS'],
+    ['relative', makeConfig(), 'image.dcm', 'must be absolute'],
+    ['anywhere when no roots are set', makeConfig({ roots: { allowed: [], denied: [] } }), '/data/image.dcm', 'FILE_CONNECTOR_ROOTS is not set'],
+  ])('returns ERROR and sends nothing for a path %s', async (_case, config, content, message) => {
+    const sender = makeMockSender();
+    const dispatcher = new DicomDispatcher(config, makeMockFactory(sender));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage({ content }), makeSignal());
+
+    expect(result.ok && result.value.status).toBe('ERROR');
+    expect(result.ok ? result.value.errorMessage : '').toContain(message);
+    expect(sender.send).not.toHaveBeenCalled();
   });
 });
 

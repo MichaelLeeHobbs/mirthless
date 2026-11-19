@@ -4,6 +4,8 @@
 // A dcmjs-dimse DICOM SCP that receives C-STORE associations and dispatches each
 // received instance as a message into the pipeline.
 // Content = file path; metadata goes into sourceMap.
+// storageDir and moveToDirectory are limited to FILE_CONNECTOR_ROOTS, as the
+// File connector's directories are (D-315, #313).
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -11,6 +13,7 @@ import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { isMissing, resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import { createDimseReceiver } from './dcmjs-dimse-adapter.js';
 
 // ----- Constants -----
@@ -40,6 +43,8 @@ export interface DicomReceiverConfig {
   readonly dispatchMode: DicomDispatchMode;
   readonly postAction: DicomPostAction;
   readonly moveToDirectory: string;
+  /** The directories storageDir and moveToDirectory must be in (FILE_CONNECTOR_ROOTS). */
+  readonly roots: FileRoots;
 }
 
 // ----- dcmtk abstraction (for testability) -----
@@ -85,6 +90,8 @@ export type ReceiverFactory = (options: {
   readonly minPoolSize: number;
   readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
+  /** Checked before each file is written, as well as at deploy. */
+  readonly roots: FileRoots;
 }) => Result<DcmtkReceiver>;
 
 /** The file paths in what the receiver dispatched: a JSON list of paths, or one path. */
@@ -140,6 +147,10 @@ export class DicomReceiver implements SourceConnectorRuntime {
       if (this.config.postAction === DICOM_POST_ACTION.MOVE && !this.config.moveToDirectory) {
         throw new Error('Move-to directory is required when postAction is MOVE');
       }
+      await resolveWithinRoots(this.config.storageDir, this.config.roots);
+      if (this.config.postAction === DICOM_POST_ACTION.MOVE) {
+        await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
+      }
     });
   }
 
@@ -156,6 +167,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
         minPoolSize: this.config.minPoolSize,
         maxPoolSize: this.config.maxPoolSize,
         connectionTimeoutMs: this.config.connectionTimeoutMs,
+        roots: this.config.roots,
       });
       if (!result.ok) {
         throw result.error;
@@ -285,18 +297,43 @@ export class DicomReceiver implements SourceConnectorRuntime {
     await Promise.allSettled(files.filter((f) => f !== '').map((f) => this.applyPostAction(f)));
   }
 
+  /**
+   * Delete or move one stored file. A file already gone is fine: the pipeline
+   * and the queue consumer can both finish a message (D-323). Anything else
+   * leaves the file where it is and is logged.
+   */
   private async applyPostAction(filePath: string): Promise<void> {
-    switch (this.config.postAction) {
-      case DICOM_POST_ACTION.DELETE:
-        await fs.unlink(filePath).catch(() => { /* best-effort */ });
-        break;
-      case DICOM_POST_ACTION.MOVE:
-        await fs.mkdir(this.config.moveToDirectory, { recursive: true }).catch(() => { /* best-effort */ });
-        await fs.rename(filePath, path.join(this.config.moveToDirectory, path.basename(filePath))).catch(() => { /* best-effort */ });
-        break;
-      case DICOM_POST_ACTION.NONE:
-        break;
+    if (this.config.postAction === DICOM_POST_ACTION.NONE) return;
+    try {
+      const file = await this.storedFile(filePath);
+      if (this.config.postAction === DICOM_POST_ACTION.DELETE) {
+        await fs.unlink(file);
+        return;
+      }
+      const target = await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
+      await fs.mkdir(target, { recursive: true });
+      await fs.rename(file, path.join(target, path.basename(file)));
+    } catch (err) {
+      if (isMissing(err)) return;
+      this.logger.error(
+        { ...errorInfo(err), filePath, postAction: this.config.postAction },
+        'DICOM post-action failed; file left in place',
+      );
     }
+  }
+
+  /**
+   * The real path of a file this listener stored, or throw when the path is
+   * not a file directly in the storage directory. The path comes from the
+   * stored message when a queue finishes it, so it is checked, not trusted.
+   */
+  private async storedFile(filePath: string): Promise<string> {
+    const dir = await resolveWithinRoots(this.config.storageDir, this.config.roots);
+    const file = await resolveWithinRoots(filePath, this.config.roots);
+    if (path.dirname(file) !== dir) {
+      throw new Error(`"${filePath}" is not a file in the DICOM storage directory`);
+    }
+    return file;
   }
 }
 

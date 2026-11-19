@@ -26,6 +26,8 @@ const SCP_PORT = 11114;
 const TCP_PORT = 17762;
 const QUEUE_LISTENER_PORT = 11115;
 const QUEUE_PACS_PORT = 11116;
+/** Where a test's DICOM Listeners may write (FILE_CONNECTOR_ROOTS). */
+const TMP_ROOTS = { allowed: [os.tmpdir()], denied: [] };
 const SAMPLE_DCM = fileURLToPath(new URL('./fixtures/sample.dcm', import.meta.url));
 
 let deployed: DeployedChannel[] = [];
@@ -59,6 +61,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
         dispatchMode: 'PER_FILE',
         postAction: 'NONE',
         moveToDirectory: '',
+        roots: TMP_ROOTS,
       }),
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
@@ -81,7 +84,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
           maxRetries: 0,
           retryDelayMs: 0,
           timeoutMs: 20_000,
-          allowedBaseDir: path.dirname(SAMPLE_DCM),
+          roots: { allowed: [path.dirname(SAMPLE_DCM)], denied: [] },
         }),
       }],
     });
@@ -124,6 +127,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
         dispatchMode: 'PER_FILE',
         postAction: 'DELETE',
         moveToDirectory: '',
+        roots: TMP_ROOTS,
       }),
       destinations: [{
         metaDataId: 1,
@@ -140,7 +144,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
           maxRetries: 0,
           retryDelayMs: 0,
           timeoutMs: 5_000,
-          allowedBaseDir: listenerDir,
+          roots: { allowed: [listenerDir], denied: [] },
         }),
       }],
     });
@@ -183,6 +187,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
         dispatchMode: 'PER_FILE',
         postAction: 'NONE',
         moveToDirectory: '',
+        roots: TMP_ROOTS,
       }),
       destinations: [{ metaDataId: 1, name: 'archive', connector: pacsSink }],
     });

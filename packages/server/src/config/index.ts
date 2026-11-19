@@ -97,6 +97,7 @@ export const configSchema = z.object({
   // Directories File sources and File destinations may use (absolute paths,
   // comma separated), with everything under them. Empty: File connectors are
   // off. The server's own directories are refused even inside a root (D-315).
+  // DICOM storage, move-to and send paths are held to the same roots (D-324).
   FILE_CONNECTOR_ROOTS: z.string().default('')
     .transform((v): ReadonlyArray<string> => v.split(',').map((p) => p.trim()).filter((p) => p.length > 0))
     .refine((roots) => roots.every((p) => path.isAbsolute(p)), 'every FILE_CONNECTOR_ROOTS entry must be an absolute path'),

@@ -30,6 +30,7 @@ function makeConfig(overrides?: Partial<DicomReceiverConfig>): DicomReceiverConf
     dispatchMode: 'PER_FILE',
     postAction: 'DELETE',
     moveToDirectory: '',
+    roots: { allowed: ['/data', os.tmpdir()], denied: [] },
     ...overrides,
   };
 }
@@ -169,6 +170,25 @@ describe('DicomReceiver.onDeploy', () => {
     const receiver = new DicomReceiver(makeConfig({ postAction: 'MOVE', moveToDirectory: '/data/processed' }));
     const result = await receiver.onDeploy();
     expect(result.ok).toBe(true);
+  });
+
+  // #313: a deployer could point the listener at any directory the server can write.
+  it.each([
+    ['storageDir is outside the roots', { storageDir: '/etc/galvanigraph' }, 'outside FILE_CONNECTOR_ROOTS'],
+    ['storageDir is relative', { storageDir: 'data/dicom' }, 'must be absolute'],
+    ['moveToDirectory is outside the roots', { postAction: 'MOVE', moveToDirectory: '/srv/app' }, 'outside FILE_CONNECTOR_ROOTS'],
+    ['storageDir is in a denied directory', { roots: { allowed: ['/data'], denied: ['/data/dicom'] } }, "server's own directories"],
+    ['no roots are set', { roots: { allowed: [], denied: [] } }, 'FILE_CONNECTOR_ROOTS is not set'],
+  ] as const)('fails when %s', async (_case, overrides, message) => {
+    const receiver = new DicomReceiver(makeConfig(overrides as Partial<DicomReceiverConfig>));
+    const result = await receiver.onDeploy();
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error.message).toContain(message);
+  });
+
+  it('ignores moveToDirectory when the post-action is not MOVE', async () => {
+    const receiver = new DicomReceiver(makeConfig({ postAction: 'DELETE', moveToDirectory: '/srv/app' }));
+    expect((await receiver.onDeploy()).ok).toBe(true);
   });
 });
 
@@ -362,6 +382,33 @@ describe('DicomReceiver post-action', () => {
     const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
     await receiver.onMessageDelivered('[not json');
     await receiver.onMessageDelivered('{"a":1}');
+    expect(await exists(filePath)).toBe(true);
+  });
+
+  // #313: the path comes back from the stored message, so it is checked again.
+  it('deletes nothing outside the storage directory', async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'dicom-outside-'));
+    const victim = path.join(outside, 'keep.dcm');
+    await fs.writeFile(victim, 'DICM');
+    try {
+      const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
+      await receiver.onMessageDelivered(victim);
+      await receiver.onMessageDelivered(path.join(dir, '..', path.basename(outside), 'keep.dcm'));
+      expect(await exists(victim)).toBe(true);
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('moves nothing into a directory outside the roots', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = new DicomReceiver(makeConfig({
+      storageDir: dir,
+      postAction: 'MOVE',
+      moveToDirectory: '/srv/not-allowed',
+      roots: { allowed: [dir], denied: [] },
+    }));
+    await receiver.onMessageDelivered(filePath);
     expect(await exists(filePath)).toBe(true);
   });
 });
