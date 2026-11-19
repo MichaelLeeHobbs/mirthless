@@ -16,6 +16,7 @@ import {
   VmSandboxExecutor,
   MessageProcessor,
   ChannelRuntime,
+  QueueConsumer,
   DEFAULT_EXECUTION_OPTIONS,
   compileScript,
   prependTemplates,
@@ -77,6 +78,8 @@ export interface StoredConnectorMessageRow {
   readonly metaDataId: number;
   readonly connectorName: string;
   status: string;
+  /** Failed queued deliveries so far (the server counts them the same way). */
+  sendAttempts: number;
 }
 
 export interface StoredStatRow {
@@ -113,6 +116,9 @@ export function createInMemoryStore(): InMemoryStore {
   const contents: StoredContentRow[] = [];
   const stats: StoredStatRow[] = [];
 
+  const findConnectorMessage = (channelId: string, messageId: number, metaDataId: number): StoredConnectorMessageRow | undefined =>
+    connectorMessages.find((m) => m.channelId === channelId && m.messageId === messageId && m.metaDataId === metaDataId);
+
   return {
     messages,
     contents,
@@ -130,14 +136,16 @@ export function createInMemoryStore(): InMemoryStore {
       return ok({ messageId, correlationId: correlationId ?? `corr-${channelId}-${String(messageId)}` });
     },
     createConnectorMessage: async (channelId, messageId, metaDataId, name, status) => {
-      connectorMessages.push({ channelId, messageId, metaDataId, connectorName: name, status });
+      connectorMessages.push({ channelId, messageId, metaDataId, connectorName: name, status, sendAttempts: 0 });
       return ok(undefined);
     },
     updateConnectorMessageStatus: async (channelId, messageId, metaDataId, status) => {
-      const cm = connectorMessages.find(
-        (m) => m.channelId === channelId && m.messageId === messageId && m.metaDataId === metaDataId,
-      );
-      if (cm) cm.status = status;
+      const cm = findConnectorMessage(channelId, messageId, metaDataId);
+      if (cm) {
+        // A claimed message going back on the queue is a failed attempt.
+        if (cm.status === 'PENDING' && status === 'QUEUED') cm.sendAttempts += 1;
+        cm.status = status;
+      }
       return ok(undefined);
     },
     storeContent: async (channelId, messageId, metaDataId, contentType, content, dataType) => {
@@ -149,7 +157,11 @@ export function createInMemoryStore(): InMemoryStore {
       if (msg) msg.processed = true;
       return ok(undefined);
     },
-    enqueue: async () => ok(undefined),
+    enqueue: async (channelId, messageId, metaDataId) => {
+      const cm = findConnectorMessage(channelId, messageId, metaDataId);
+      if (cm) cm.status = 'QUEUED';
+      return ok(undefined);
+    },
     loadContent: async (channelId, messageId, metaDataId, contentType) => {
       const entry = contents.find(
         (c) => c.channelId === channelId && c.messageId === messageId
@@ -157,8 +169,19 @@ export function createInMemoryStore(): InMemoryStore {
       );
       return ok(entry?.content ?? null);
     },
-    dequeue: async () => ok([]),
-    release: async () => ok(undefined),
+    // Claims QUEUED rows as PENDING, as MessageService.dequeue does.
+    dequeue: async (channelId, metaDataId, batchSize) => {
+      const claimed = connectorMessages
+        .filter((m) => m.channelId === channelId && m.metaDataId === metaDataId && m.status === 'QUEUED')
+        .slice(0, batchSize);
+      for (const m of claimed) m.status = 'PENDING';
+      return ok(claimed.map(({ messageId, sendAttempts }) => ({ channelId, messageId, metaDataId, sendAttempts })));
+    },
+    release: async (channelId, messageId, metaDataId, newStatus) => {
+      const cm = findConnectorMessage(channelId, messageId, metaDataId);
+      if (cm) cm.status = newStatus;
+      return ok(undefined);
+    },
     incrementStats: async (channelId, metaDataId, _serverId, field) => {
       let stat = stats.find((s) => s.channelId === channelId && s.metaDataId === metaDataId);
       if (!stat) {
@@ -182,6 +205,10 @@ export interface DestinationSpec {
   readonly filter?: string;
   readonly transformer?: string;
   readonly responseTransformer?: string;
+  /** Queue the destination (default NEVER). A queued destination gets a running queue consumer. */
+  readonly queueMode?: 'NEVER' | 'ON_FAILURE' | 'ALWAYS';
+  /** Wait between queued delivery attempts (default 200 ms). */
+  readonly retryIntervalMs?: number;
 }
 
 export interface ChannelSpec {
@@ -251,7 +278,7 @@ async function buildDestinationConfigs(
       name: d.name,
       enabled: true,
       scripts: scripts as DestinationScripts,
-      queueMode: 'NEVER',
+      queueMode: d.queueMode ?? 'NEVER',
     });
   }
   return configs;
@@ -333,15 +360,29 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
     )),
   };
 
+  const queueConsumers = spec.destinations
+    .filter((d) => (d.queueMode ?? 'NEVER') !== 'NEVER')
+    .map((d) => new QueueConsumer({
+      channelId: spec.channelId,
+      metaDataId: d.metaDataId,
+      serverId,
+      retryCount: 0,
+      retryIntervalMs: d.retryIntervalMs ?? 200,
+      batchSize: 10,
+      pollIntervalMs: 100,
+    }, store, sendFn));
+
   const deployResult = await runtime.deploy(runtimeConfig);
   if (!deployResult.ok) throw new Error(`deploy failed: ${deployResult.error.message}`);
   const startResult = await runtime.start();
   if (!startResult.ok) throw new Error(`start failed: ${startResult.error.message}`);
+  for (const consumer of queueConsumers) consumer.start();
 
   return {
     runtime,
     store,
     teardown: async () => {
+      for (const consumer of queueConsumers) await consumer.stop();
       const state = runtime.getState();
       if (state === 'STARTED' || state === 'PAUSED') await runtime.stop();
       if (runtime.getState() === 'STOPPED') await runtime.undeploy();
