@@ -404,7 +404,7 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 | `maxPoolSize` | No | Checked at deploy (not below `minPoolSize`) but not used by the current listener. |
 | `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds, 10000 by default. |
 | `dispatchMode` | No | `PER_FILE` (default) or `PER_ASSOCIATION`. |
-| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, and the default deletes the file once the pipeline accepts it, so a queued destination or a later reprocess has no file to read. Use `MOVE` or `NONE` if anything reads the file afterwards. |
+| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, so the action waits until every destination has delivered the message, a queued destination included: a DICOM Sender retrying from its queue still finds the file (D-323). If a destination fails, or its queue gives up, the file stays where it is for manual recovery. A later reprocess of the message has no file to read after `DELETE`; use `MOVE` or `NONE` if anything reads the file afterwards. |
 | `moveToDirectory` | No | Where `MOVE` puts files. Required when `postAction` is `MOVE`. |
 
 ### DICOM as a destination

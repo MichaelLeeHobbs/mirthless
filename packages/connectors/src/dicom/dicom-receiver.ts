@@ -87,6 +87,18 @@ export type ReceiverFactory = (options: {
   readonly connectionTimeoutMs: number;
 }) => Result<DcmtkReceiver>;
 
+/** The file paths in what the receiver dispatched: a JSON list of paths, or one path. */
+function filesIn(content: string): string[] {
+  const text = content.trim();
+  if (!text.startsWith('[')) return [text];
+  try {
+    const list: unknown = JSON.parse(text);
+    return Array.isArray(list) ? list.filter((f): f is string => typeof f === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // ----- Receiver -----
 
 export { DICOM_POST_ACTION, DICOM_DISPATCH_MODE };
@@ -213,9 +225,12 @@ export class DicomReceiver implements SourceConnectorRuntime {
       },
     };
 
-    const failure = dispatchFailure(await this.dispatcher(raw));
+    const result = await this.dispatcher(raw);
+    const failure = dispatchFailure(result);
     if (failure === null) {
-      await this.applyPostAction(data.filePath);
+      // A queued destination reads the file when it sends, so the file stays
+      // until onMessageDelivered says the last one has (#243, D-323).
+      if (!(result.ok && result.value.queued === true)) await this.applyPostAction(data.filePath);
     } else {
       // Pipeline rejected the file. This is event-driven (not polled), so the file
       // is never re-dispatched — surface it loudly and leave the file in place
@@ -244,22 +259,30 @@ export class DicomReceiver implements SourceConnectorRuntime {
       },
     };
 
-    const failure = dispatchFailure(await this.dispatcher(raw));
+    const result = await this.dispatcher(raw);
+    const failure = dispatchFailure(result);
     if (failure === null) {
-      const postActions: Promise<void>[] = [];
-      for (let i = 0; i < data.files.length; i++) {
-        const filePath = data.files[i];
-        if (filePath) {
-          postActions.push(this.applyPostAction(filePath));
-        }
-      }
-      await Promise.allSettled(postActions);
+      if (!(result.ok && result.value.queued === true)) await this.applyPostActions(data.files);
     } else {
       this.logger.error(
         { ...errorInfo(failure), associationId: data.associationId, fileCount: data.files.length },
         'DICOM association dispatch failed; files retained for manual recovery',
       );
     }
+  }
+
+  /**
+   * Every destination has delivered a message that waited in a queue: apply
+   * the post-action now. `content` is what this source dispatched, a file path
+   * (PER_FILE) or a JSON list of them (PER_ASSOCIATION). It is read by its
+   * shape, not the current mode, since the mode may have changed since.
+   */
+  async onMessageDelivered(content: string): Promise<void> {
+    await this.applyPostActions(filesIn(content));
+  }
+
+  private async applyPostActions(files: readonly string[]): Promise<void> {
+    await Promise.allSettled(files.filter((f) => f !== '').map((f) => this.applyPostAction(f)));
   }
 
   private async applyPostAction(filePath: string): Promise<void> {

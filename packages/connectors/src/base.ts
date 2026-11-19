@@ -57,6 +57,12 @@ export interface DispatchResult {
    * callers that do not yet report status).
    */
   readonly status?: DispatchStatus | undefined;
+  /**
+   * True when a queued destination has not delivered the message yet. A source
+   * that would remove what it read (a file it deletes or moves) must keep it
+   * until `onMessageDelivered` says every destination has delivered.
+   */
+  readonly queued?: boolean | undefined;
 }
 
 /**
@@ -95,6 +101,13 @@ export interface SourceConnectorRuntime extends ConnectorLifecycle {
   setDispatcher(dispatcher: MessageDispatcher): void;
   /** Set the callback for a fatal error; only sources that can stop themselves have it. */
   setFatalHandler?(handler: SourceFatalHandler): void;
+  /**
+   * A message this source dispatched with `queued` set has now been delivered
+   * by every destination, without an error. `content` is the raw content the
+   * source dispatched. Called by the queue consumer, so it can come after a
+   * restart, from a new instance of the source.
+   */
+  onMessageDelivered?(content: string): Promise<void>;
 }
 
 // ----- Destination Connector -----

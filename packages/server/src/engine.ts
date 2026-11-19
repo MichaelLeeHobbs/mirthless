@@ -119,6 +119,8 @@ export interface SourceDispatchOutcome {
   readonly messageId: number;
   readonly status: DispatchStatus;
   readonly response?: string;
+  /** A queued destination has not delivered yet (see `DispatchResult.queued`). */
+  readonly queued?: true;
 }
 
 /** Response modes that answer the sender once the source has accepted the message. */
@@ -342,6 +344,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       if (!delivered.ok) return fail<void>(delivered.error);
       return delivered.value ? removeContent(channelId, messageId) : OK_VOID;
     },
+    isFullyDelivered: (channelId, messageId) => MessageService.isFullyDelivered(channelId, messageId),
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),
     loadContent: (channelId, messageId, metaDataId, contentType) =>
@@ -810,6 +813,10 @@ export class EngineManager {
         batchSize: 10,
         pollIntervalMs: 1_000,
         onError: raiseAlert,
+        // A source that keeps its input until every destination delivered (DICOM).
+        onMessageDelivered: source.onMessageDelivered
+          ? (_messageId, rawContent) => source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
+          : undefined,
       };
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
@@ -852,9 +859,15 @@ export class EngineManager {
       // Surface the pipeline's final status so the source connector can build the
       // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AA), as the
       // channel's response mode defines it.
-      const { messageId, response } = result.value;
+      const { messageId, response, queued } = result.value;
       const status = toDispatchStatus(result.value, channel.responseMode);
-      return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
+      const outcome: SourceDispatchOutcome = {
+        messageId,
+        status,
+        ...(response === undefined ? {} : { response }),
+        ...(queued ? { queued } : {}),
+      };
+      return { ok: true, value: outcome, error: null };
     };
 
     // Build runtime config

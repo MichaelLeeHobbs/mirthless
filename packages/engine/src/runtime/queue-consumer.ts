@@ -30,9 +30,17 @@ export interface QueueConsumerConfig {
   readonly pollIntervalMs: number;
   /** Raised when a queued message is given up on (final ERROR), same as pipeline destination errors. */
   readonly onError?: AlertEventHandler | undefined;
+  /**
+   * Called once a delivery leaves the whole message delivered (every connector
+   * SENT or FILTERED, per `MessageStore.isFullyDelivered`), with the raw
+   * content the source dispatched. A source that keeps what it read until then
+   * (a DICOM file it deletes or moves) acts on it here.
+   */
+  readonly onMessageDelivered?: ((messageId: number, rawContent: string) => Promise<void>) | undefined;
 }
 
-/** Content types written by the consumer (see CONTENT_TYPE in core-models). */
+/** Content types read or written by the consumer (see CONTENT_TYPE in core-models). */
+const CT_RAW = 1;
 const CT_SENT = 5;
 const CT_RESPONSE = 6;
 /** A destination's stored variables (MessageProcessor.storeVariables). */
@@ -297,7 +305,34 @@ export class QueueConsumer {
       return;
     }
     await this.store.incrementStats(channelId, msg.metaDataId, serverId, 'sent');
+    // Before the content goes: the source needs the raw content it dispatched.
+    await this.notifyDelivered(msg);
     await this.removeDeliveredContent(msg);
+  }
+
+  /** Tell the source when this delivery was the last one the message waited for. */
+  private async notifyDelivered(msg: QueuedMessage): Promise<void> {
+    const { onMessageDelivered } = this.config;
+    if (!onMessageDelivered || !this.store.isFullyDelivered) return;
+    const what = `delivered message ${String(msg.messageId)}, but the source's after-processing action`;
+    const delivered = await this.store.isFullyDelivered(this.config.channelId, msg.messageId);
+    if (!delivered.ok) {
+      await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} did not run: the message's state could not be read: ${delivered.error.message}`);
+      return;
+    }
+    if (!delivered.value) return;
+    const raw = await this.store.loadContent(this.config.channelId, msg.messageId, 0, CT_RAW);
+    if (!raw.ok || raw.value === null) {
+      const cause = raw.ok ? 'no raw content is stored' : raw.error.message;
+      await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} did not run: ${cause}`);
+      return;
+    }
+    try {
+      await onMessageDelivered(msg.messageId, raw.value);
+    } catch (e) {
+      const cause = e instanceof Error ? e.message : String(e);
+      await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} failed: ${cause}`);
+    }
   }
 
   /** Apply the channel's remove-content-on-completion setting now that this delivery is done. */

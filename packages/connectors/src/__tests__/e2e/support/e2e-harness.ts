@@ -54,11 +54,14 @@ function ok<T>(value: T): Result<T> {
  */
 export function toDispatchResult(result: Result<ProcessedMessage>): Awaited<ReturnType<ChannelRuntimeConfig['onMessage']>> {
   if (!result.ok) return result;
-  const { messageId, status, response } = result.value;
+  const { messageId, status, response, queued } = result.value;
   const dispatchStatus = status === 'FILTERED' ? 'FILTERED' : status === 'ERROR' ? 'ERROR' : 'PROCESSED';
-  return ok(response !== undefined
-    ? { messageId, status: dispatchStatus, response }
-    : { messageId, status: dispatchStatus });
+  return ok({
+    messageId,
+    status: dispatchStatus,
+    ...(response === undefined ? {} : { response }),
+    ...(queued ? { queued } : {}),
+  });
 }
 
 // ----- In-memory message store -----
@@ -181,6 +184,11 @@ export function createInMemoryStore(): InMemoryStore {
       const cm = findConnectorMessage(channelId, messageId, metaDataId);
       if (cm) cm.status = newStatus;
       return ok(undefined);
+    },
+    // As MessageService.isFullyDelivered: every connector SENT or FILTERED.
+    isFullyDelivered: async (channelId, messageId) => {
+      const rows = connectorMessages.filter((m) => m.channelId === channelId && m.messageId === messageId);
+      return ok(rows.length > 0 && rows.every((m) => m.status === 'SENT' || m.status === 'FILTERED'));
     },
     incrementStats: async (channelId, metaDataId, _serverId, field) => {
       let stat = stats.find((s) => s.channelId === channelId && s.metaDataId === metaDataId);
@@ -370,6 +378,10 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
       retryIntervalMs: d.retryIntervalMs ?? 200,
       batchSize: 10,
       pollIntervalMs: 100,
+      // As the server wires it (engine.ts).
+      onMessageDelivered: spec.source.onMessageDelivered
+        ? (_messageId, rawContent) => spec.source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
+        : undefined,
     }, store, sendFn));
 
   const deployResult = await runtime.deploy(runtimeConfig);

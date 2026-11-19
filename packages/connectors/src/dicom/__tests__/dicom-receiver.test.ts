@@ -2,7 +2,10 @@
 // DICOM Receiver Tests
 // ===========================================
 
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import type { MessageDispatcher, RawMessage, DispatchResult } from '../../base.js';
 import {
@@ -282,26 +285,84 @@ describe('DicomReceiver PER_ASSOCIATION dispatch', () => {
 // ----- Post-action -----
 
 describe('DicomReceiver post-action', () => {
-  it('does not apply post-action when dispatch fails', async () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dicom-receiver-'));
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  async function storedFile(name: string): Promise<string> {
+    const filePath = path.join(dir, name);
+    await fs.writeFile(filePath, 'DICM');
+    return filePath;
+  }
+
+  async function exists(filePath: string): Promise<boolean> {
+    return fs.access(filePath).then(() => true, () => false);
+  }
+
+  async function receiveFile(filePath: string, response: Result<DispatchResult>, overrides?: Partial<DicomReceiverConfig>): Promise<DicomReceiver> {
     const mock = makeMockReceiver();
-    const failResult: Result<DispatchResult> = {
-      ok: false,
-      value: null,
-      error: stderr('Dispatch failed'),
-    };
-    const dispatcher = makeDispatcher(failResult);
+    const dispatcher = makeDispatcher(response);
+    const receiver = new DicomReceiver(makeConfig({ storageDir: dir, ...overrides }), makeMockFactory(mock));
+    receiver.setDispatcher(dispatcher);
+    await receiver.onStart();
+    mock.fileHandler!(makeFileData({ filePath }));
+    await vi.waitFor(() => { expect(dispatcher).toHaveBeenCalledTimes(1); });
+    return receiver;
+  }
+
+  it('deletes the file once every destination has it', async () => {
+    const filePath = await storedFile('a.dcm');
+    await receiveFile(filePath, { ok: true, value: { messageId: 1, status: 'PROCESSED' }, error: null });
+    await vi.waitFor(async () => { expect(await exists(filePath)).toBe(false); });
+  });
+
+  it('keeps the file when dispatch fails', async () => {
+    const filePath = await storedFile('a.dcm');
+    await receiveFile(filePath, { ok: false, value: null, error: stderr('Dispatch failed') });
+    await new Promise((r) => { setTimeout(r, 50); });
+    expect(await exists(filePath)).toBe(true);
+  });
+
+  it('keeps the file while a queued destination waits, and deletes it when the queue delivers', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = await receiveFile(filePath, { ok: true, value: { messageId: 1, status: 'PROCESSED', queued: true }, error: null });
+    await new Promise((r) => { setTimeout(r, 50); });
+    expect(await exists(filePath)).toBe(true);
+
+    await receiver.onMessageDelivered(filePath);
+    expect(await exists(filePath)).toBe(false);
+  });
+
+  it('moves every file of a queued association when the queue delivers', async () => {
+    const files = [await storedFile('1.dcm'), await storedFile('2.dcm')];
+    const moveTo = path.join(dir, 'done');
+    const mock = makeMockReceiver();
+    const dispatcher = makeDispatcher({ ok: true, value: { messageId: 1, queued: true }, error: null });
     const receiver = new DicomReceiver(
-      makeConfig({ postAction: 'NONE' }),
+      makeConfig({ storageDir: dir, dispatchMode: 'PER_ASSOCIATION', postAction: 'MOVE', moveToDirectory: moveTo }),
       makeMockFactory(mock),
     );
     receiver.setDispatcher(dispatcher);
     await receiver.onStart();
+    mock.assocHandler!(makeAssociationData({ files }));
+    await vi.waitFor(() => { expect(dispatcher).toHaveBeenCalledTimes(1); });
+    expect(await exists(files[0]!)).toBe(true);
 
-    mock.fileHandler!(makeFileData());
-    await vi.waitFor(() => {
-      expect(dispatcher).toHaveBeenCalledTimes(1);
-    });
-    // No error thrown — post-action is skipped
+    await receiver.onMessageDelivered(JSON.stringify(files));
+    expect(await fs.readdir(moveTo)).toEqual(['1.dcm', '2.dcm']);
+    expect(await exists(files[0]!)).toBe(false);
+  });
+
+  it('touches nothing when the delivered content is not a path or a list of paths', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
+    await receiver.onMessageDelivered('[not json');
+    await receiver.onMessageDelivered('{"a":1}');
+    expect(await exists(filePath)).toBe(true);
   });
 });
 
