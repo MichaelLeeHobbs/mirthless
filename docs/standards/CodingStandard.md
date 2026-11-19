@@ -225,7 +225,7 @@ Use `tsd` or `expect-type` to verify complex generics and type transformations b
 
 ### Rule 10.1: Inline Documentation
 
-All public APIs **shall** have TSDoc with `@param`, `@returns`, `@throws`, and examples for complex functions.
+A comment, doc comments included, **shall** state only what the code and types cannot: a reason, an outside fact (a spec, a vendor limit, a runtime defect), a deliberate oddity, or a caller rule the types miss (units, side effects, ordering). A comment that repeats a name, a type or what the code does **shall not** be written, and neither shall a `@param` or `@returns` tag that restates the signature. A long reason goes in a decision record or issue, and the comment points to it. **Why**: agents read this code many times, and a comment that restates the code goes stale and is then believed (D-325). This departs from the upstream standard, which asks for TSDoc on every public API.
 
 ### Rule 10.2: Architecture Decision Records
 
