@@ -128,7 +128,7 @@ const MAX_COPIES = 100;
 /**
  * Claim a file name for an instance: `<uid>.dcm`, or `<uid>_<n>.dcm` while an
  * earlier copy is still there. A file now waits until every destination,
- * queued ones included, has sent it (D-323), so a modality that re-sends an
+ * queued ones included, has sent it (D-325), so a modality that re-sends an
  * instance must not overwrite the copy an earlier message still needs. The
  * name is created exclusively, so two associations cannot claim the same one.
  */

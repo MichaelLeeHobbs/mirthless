@@ -288,7 +288,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
   /**
    * Whether the stored files must stay although the pipeline accepted the
    * message: a queued destination still reads them when it sends, until
-   * onMessageDelivered says the last one has (#243, D-323), or a destination
+   * onMessageDelivered says the last one has (#243, D-325), or a destination
    * failed under a response mode that answers before destinations.
    */
   private keepsInput(result: Result<DispatchResult>, context: Readonly<Record<string, unknown>>): boolean {
@@ -311,7 +311,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
 
   /**
    * Delete or move one stored file. A file already gone is fine: the pipeline
-   * and the queue consumer can both finish a message (D-323). Anything else
+   * and the queue consumer can both finish a message (D-325). Anything else
    * leaves the file where it is, is logged, and is returned.
    */
   private async applyPostAction(filePath: string): Promise<Error | null> {
