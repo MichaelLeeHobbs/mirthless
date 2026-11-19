@@ -10,7 +10,8 @@
 //   over the assignment's scope, and may add a permission to a role only when they hold it
 //   over every scope the role is assigned on;
 // - target rule: an actor may act on a user only when that user's permissions are all
-//   among the actor's own.
+//   among the actor's own;
+// - nobody changes their own role (user.service), and the admin role is locked.
 
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import {

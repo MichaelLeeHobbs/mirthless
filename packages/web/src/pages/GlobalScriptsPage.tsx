@@ -151,6 +151,7 @@ export function GlobalScriptsPage(): ReactNode {
           </Tabs>
 
           <Box sx={{ flexGrow: 1, minHeight: 0, mt: 2 }}>
+            {/* One editor per tab, so undo stays in the tab it was typed in (#228). */}
             <ScriptEditor
               key={activeKey}
               height="100%"

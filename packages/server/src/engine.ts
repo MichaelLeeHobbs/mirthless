@@ -887,7 +887,7 @@ export class EngineManager {
     return this.runtimes;
   }
 
-  /** The send-message API maps these ServiceError codes to HTTP statuses. */
+  /** NOT_FOUND when not deployed, CONFLICT when not STARTED or not processed; the send-message API maps them to HTTP statuses. */
   async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return tryCatch(async () => {
       const deployed = this.runtimes.get(channelId);

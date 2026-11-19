@@ -57,7 +57,7 @@ interface HostBridgeState {
   readonly x12Handles: Map<number, X12MessageProxy>;
   readonly destSet: Record<string, unknown> | undefined;
   nextHandle: number;
-  /** Set from inside the sandbox; the host never reads a thrown value. */
+  /** Set from inside the sandbox; the host never reads the value a script threw. */
   failure: string | undefined;
 }
 
