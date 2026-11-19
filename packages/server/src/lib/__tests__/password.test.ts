@@ -32,7 +32,8 @@ describe('password hashing', () => {
     // the event loop, keeping it busy the whole time (utilization near 1). On
     // libuv's thread pool the event loop only waits, however loaded the machine is.
     let ticks = 0;
-    const timer = setInterval(() => { ticks += 1; }, 1);
+    // Coarse, so the ticker's own wake-ups add next to nothing to what is measured.
+    const timer = setInterval(() => { ticks += 1; }, 10);
     const before = performance.eventLoopUtilization();
     const results = await Promise.all(Array.from({ length: 4 }, () => verifyPassword(PASSWORD, BCRYPTJS_3_COST_12)));
     const used = performance.eventLoopUtilization(before);
