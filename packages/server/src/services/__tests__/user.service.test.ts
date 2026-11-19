@@ -7,7 +7,7 @@
 // test/integration/user-roles.itest.ts and last-admin.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 
 // ----- Mock DB -----
 
@@ -70,7 +70,7 @@ vi.mock('../../lib/logger.js', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock('bcryptjs', () => ({
+vi.mock('bcrypt', () => ({
   default: {
     hash: vi.fn().mockResolvedValue('$2a$12$hashed'),
     compare: vi.fn().mockResolvedValue(true),

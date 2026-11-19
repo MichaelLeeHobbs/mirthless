@@ -16,7 +16,7 @@ const mockDb = { select: mockSelect, update: mockUpdate, delete: mockDelete };
 
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent: vi.fn() }));
-vi.mock('bcryptjs', () => ({ default: { compare: vi.fn().mockResolvedValue(false) } }));
+vi.mock('bcrypt', () => ({ default: { compare: vi.fn().mockResolvedValue(false) } }));
 vi.mock('drizzle-orm', () => ({ eq: vi.fn(), and: vi.fn(), or: vi.fn(), isNull: vi.fn(), lte: vi.fn(), sql: vi.fn() }));
 
 const { AuthService } = await import('../auth.service.js');
@@ -56,7 +56,7 @@ describe('AuthService.login audit', () => {
 
   it('does a password comparison for an unknown username, so timing does not reveal which accounts exist', async () => {
     selectResult = [];
-    const bcrypt = (await import('bcryptjs')).default;
+    const bcrypt = (await import('bcrypt')).default;
     await AuthService.login('alice', 'pw', META);
     expect(bcrypt.compare).toHaveBeenCalledWith('pw', expect.stringMatching(/^\$2b\$12\$/));
   });
