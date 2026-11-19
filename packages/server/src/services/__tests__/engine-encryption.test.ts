@@ -7,6 +7,7 @@
 // encryptData channel with no key configured.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 // ----- Config mock (drives content-crypto key) -----
 
@@ -71,10 +72,8 @@ vi.mock('../message.service.js', () => ({
   },
 }));
 
-vi.mock('../global-script.service.js', () => ({ GlobalScriptService: { getAll: vi.fn() } }));
 vi.mock('../global-map.service.js', () => ({ GlobalMapService: { list: vi.fn(), upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() } }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn() } }));
-vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplatesForChannel: vi.fn() } }));
 vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds: vi.fn() } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/db.js', () => ({ db: { select: vi.fn(), execute: vi.fn() }, default: {} }));
@@ -210,13 +209,13 @@ describe('EngineManager.deploy — encryptData key guard', () => {
       messageStorageMode: 'DEVELOPMENT',
       removeContentOnCompletion: false, removeAttachmentsOnCompletion: false,
       sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {},
-      inboundDataType: 'HL7V2', destinations: [], metadataColumns: [], scripts: [],
+      inboundDataType: 'HL7V2', destinations: [], metadataColumns: [], scripts: [], filters: [], transformers: [],
     };
   }
 
   it('refuses to deploy an encryptData channel when no key is configured', async () => {
     cfg.CONTENT_ENCRYPTION_KEY = undefined;
     const engine = new EngineManager();
-    await expect(engine.deploy(makeChannel(true) as never)).rejects.toThrow(/CONTENT_ENCRYPTION_KEY/);
+    await expect(engine.deploy(bundleOf(makeChannel(true) as never))).rejects.toThrow(/CONTENT_ENCRYPTION_KEY/);
   });
 });

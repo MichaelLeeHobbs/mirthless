@@ -5,7 +5,7 @@
 // All methods return Result<T> via tryCatch.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@galvanigraph/core-models';
+import { CHANNEL_STATE, EVENT_NAME, SOCKET_EVENT, type ChannelState } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { emitToChannelAudience } from '../lib/socket.js';
@@ -17,28 +17,30 @@ import { configLookup, resolveConfigReferences } from '../lib/config-references.
 import { getEngine } from '../engine.js';
 import type { DeployedChannel, SourceDispatchOutcome } from '../engine.js';
 import logger from '../lib/logger.js';
-import { CodeTemplateService } from './code-template.service.js';
 import { assertScriptsTypeCheck } from './script-type-gate.service.js';
+import { DeploymentRecordService, type DeploymentBundle, type RecordedDeployment } from './deployment-record.service.js';
 
 /**
  * Refuse a channel whose TypeScript scripts have type errors. Runs before
  * anything is torn down, so a refused redeploy leaves the channel running.
  * Results are cached, so a redeploy's second check costs nothing.
  */
-async function typeCheckChannel(channel: ChannelDetail): Promise<void> {
-  const templates = await CodeTemplateService.listTemplatesForChannel(channel.id);
-  if (!templates.ok) throw templates.error;
-  await assertScriptsTypeCheck(channel, templates.value);
+async function typeCheckChannel(bundle: DeploymentBundle): Promise<void> {
+  await assertScriptsTypeCheck(bundle.channel, bundle.templates);
 }
 
-/** Options for a deploy. */
-export interface DeployOptions {
+/** How a bundle deploys. */
+interface DeployBundleOptions {
   /**
-   * Refuse a channel with TypeScript type errors (default true). The startup
-   * auto-deploy turns it off and does not check at all: a channel that was
-   * running must come back after a restart, and the check would only cost time.
+   * Refuse a channel with TypeScript type errors. The startup redeploy does
+   * not check: a channel that was running must come back after a restart.
    */
-  readonly typeCheck?: boolean;
+  readonly typeCheck: boolean;
+  /**
+   * Record the bundle as the channel's deployment. A deploy someone asked for
+   * does; the startup redeploy, which runs what is already recorded, does not.
+   */
+  readonly record: boolean;
 }
 
 // ----- Types -----
@@ -68,7 +70,8 @@ function notRunning(action: 'deployed' | 'redeployed', channelId: string, cause:
 /**
  * The channel as it deploys: configuration map references in connector
  * settings resolved, and a Channel Reader given its own channel id (used to
- * register itself).
+ * register itself). The record keeps the unresolved channel: the map can hold
+ * secrets, and its values are server settings read at every deploy.
  */
 async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDetail> {
   const entries = await ConfigMapService.list();
@@ -82,110 +85,154 @@ async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDeta
   };
 }
 
+/** Refuse connector settings that would not deploy, naming the connector. */
+function validateConnectors(channel: ChannelDetail): void {
+  const srcValidation = validateConnectorProperties(channel.sourceConnectorType, 'source', channel.sourceConnectorProperties);
+  if (!srcValidation.ok) {
+    throw new ServiceError('INVALID_INPUT', srcValidation.error.message);
+  }
+  for (const dest of channel.destinations) {
+    const destValidation = validateConnectorProperties(dest.connectorType, 'destination', dest.properties);
+    if (!destValidation.ok) {
+      throw new ServiceError(
+        'INVALID_INPUT',
+        `Destination "${dest.name}" (metaDataId ${String(dest.metaDataId)}): ${destValidation.error.message}`,
+      );
+    }
+  }
+}
+
+/** The channel, its code templates and the global scripts as saved now, read together. */
+async function loadSaved(channelId: string): Promise<DeploymentBundle> {
+  const bundle = await DeploymentRecordService.loadSaved(channelId);
+  if (!bundle.ok) throw bundle.error;
+  if (!bundle.value.channel.enabled) {
+    throw new ServiceError('CONFLICT', 'Cannot deploy a disabled channel. Enable it first.');
+  }
+  return bundle.value;
+}
+
+/**
+ * Record what was just deployed. A channel running something the record does
+ * not hold would come back different after a restart, so when the record
+ * cannot be written the deploy is undone and fails.
+ */
+async function recordOrUndo(bundle: DeploymentBundle, context: AuditContext | undefined): Promise<void> {
+  const recorded = await DeploymentRecordService.record(bundle, context?.userId ?? null);
+  if (recorded.ok) return;
+  const channelId = bundle.channel.id;
+  logger.error({ channelId, errMsg: recorded.error.message }, 'Could not record a deployment; undeploying the channel');
+  await getEngine().undeploy(channelId).catch((err: unknown) => {
+    logger.error({ channelId, errMsg: err instanceof Error ? err.message : String(err) }, 'Could not undeploy a channel whose deployment was not recorded');
+  });
+  emitStateChange(channelId, CHANNEL_STATE.UNDEPLOYED);
+  throw new ServiceError('INTERNAL', `Channel was not deployed: the deployment could not be recorded, so a restart would not run it. ${recorded.error.message}`);
+}
+
+/** Start (and pause) a just-deployed channel as its initial state asks. */
+async function applyInitialState(channel: ChannelDetail, context: AuditContext | undefined): Promise<ChannelState> {
+  const deployed = getEngine().getRuntime(channel.id);
+  const currentState = (deployed?.runtime.getState() ?? 'STOPPED') as ChannelState;
+  if ((channel.initialState !== 'STARTED' && channel.initialState !== 'PAUSED') || currentState !== 'STOPPED') {
+    return currentState;
+  }
+  // Fail loud: a channel set to start on deploy that cannot start (a port
+  // in use, an unreachable host) must not report a successful deploy.
+  const startResult = await DeploymentService.start(channel.id, context);
+  if (!startResult.ok) throw notRunning('deployed', channel.id, startResult.error);
+  if (channel.initialState !== 'PAUSED') return CHANNEL_STATE.STARTED;
+  const pauseResult = await DeploymentService.pause(channel.id, context);
+  if (!pauseResult.ok) throw pauseResult.error;
+  return CHANNEL_STATE.PAUSED;
+}
+
+/** Deploy a bundle: validate, compile, run it, record it if asked, and apply the initial state. */
+async function deployBundle(bundle: DeploymentBundle, context: AuditContext | undefined, options: DeployBundleOptions): Promise<ChannelStatus> {
+  const channelId = bundle.channel.id;
+  const engine = getEngine();
+  if (engine.getRuntime(channelId)) {
+    throw new ServiceError('CONFLICT', `Channel ${channelId} is already deployed`);
+  }
+  const deployChannel = await withConfigReferences(bundle.channel);
+  validateConnectors(deployChannel);
+  if (options.typeCheck) await typeCheckChannel(bundle);
+
+  await engine.deploy({ ...bundle, channel: deployChannel });
+  // Recorded before the start: a channel that deployed but would not start is
+  // still deployed, and a restart must bring back this version of it.
+  if (options.record) await recordOrUndo(bundle, context);
+
+  emitEvent({
+    level: 'INFO', name: EVENT_NAME.CHANNEL_DEPLOYED, outcome: 'SUCCESS',
+    userId: context?.userId ?? null, channelId,
+    serverId: null, ipAddress: context?.ipAddress ?? null,
+    attributes: { revision: bundle.channel.revision, ...(options.record ? {} : { restart: true }) },
+  });
+
+  const finalState = await applyInitialState(bundle.channel, context);
+  emitStateChange(channelId, finalState);
+  return { channelId, state: finalState };
+}
+
+/** Refuse to undeploy a channel that is not deployed or not stopped. */
+function assertUndeployable(channelId: string): void {
+  const state = getDeployed(channelId).runtime.getState();
+  if (state !== 'STOPPED') {
+    throw new ServiceError('CONFLICT', `Cannot undeploy: channel is ${state}. Stop it first.`);
+  }
+}
+
+/** Shut the channel's runtime down and remove it, leaving its deployment record alone. */
+async function undeployRuntime(channelId: string, context: AuditContext | undefined): Promise<ChannelStatus> {
+  assertUndeployable(channelId);
+  await getEngine().undeploy(channelId);
+
+  emitEvent({
+    level: 'INFO', name: EVENT_NAME.CHANNEL_UNDEPLOYED, outcome: 'SUCCESS',
+    userId: context?.userId ?? null, channelId,
+    serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
+  });
+
+  emitStateChange(channelId, CHANNEL_STATE.UNDEPLOYED);
+  return { channelId, state: CHANNEL_STATE.UNDEPLOYED };
+}
+
 // ----- Service -----
 
 export class DeploymentService {
-  /** Deploy a channel (loads config and initializes connectors). */
-  static async deploy(channelId: string, context?: AuditContext, options: DeployOptions = {}): Promise<Result<ChannelStatus>> {
+  /**
+   * Deploy a channel as saved now, with the code templates and global scripts
+   * as saved now, and record that as its deployment: what a restart runs.
+   */
+  static async deploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
-      const channelResult = await ChannelService.getById(channelId);
-      if (!channelResult.ok) {
-        throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
-      }
-
-      const channel = channelResult.value;
-
-      if (!channel.enabled) {
-        throw new ServiceError('CONFLICT', 'Cannot deploy a disabled channel. Enable it first.');
-      }
-
-      const engine = getEngine();
-      const existing = engine.getRuntime(channelId);
-      if (existing) {
+      if (getEngine().getRuntime(channelId)) {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is already deployed`);
       }
-
-      const deployChannel = await withConfigReferences(channel);
-
-      // Validate source connector properties
-      const srcValidation = validateConnectorProperties(
-        deployChannel.sourceConnectorType, 'source', deployChannel.sourceConnectorProperties,
-      );
-      if (!srcValidation.ok) {
-        throw new ServiceError('INVALID_INPUT', srcValidation.error.message);
-      }
-
-      // Validate each destination's connector properties
-      for (const dest of deployChannel.destinations) {
-        const destValidation = validateConnectorProperties(
-          dest.connectorType, 'destination', dest.properties,
-        );
-        if (!destValidation.ok) {
-          throw new ServiceError(
-            'INVALID_INPUT',
-            `Destination "${dest.name}" (metaDataId ${String(dest.metaDataId)}): ${destValidation.error.message}`,
-          );
-        }
-      }
-
-      if (options.typeCheck !== false) await typeCheckChannel(channel);
-
-      await engine.deploy(deployChannel);
-
-      emitEvent({
-        level: 'INFO', name: 'CHANNEL_DEPLOYED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId,
-        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
-      });
-
-      // Auto-start if channel's initialState calls for it (skip if already in target state)
-      const deployed = engine.getRuntime(channelId);
-      const currentState = deployed?.runtime.getState() ?? 'STOPPED';
-      let finalState: ChannelState = currentState as ChannelState;
-      if ((channel.initialState === 'STARTED' || channel.initialState === 'PAUSED') && currentState === 'STOPPED') {
-        // Fail loud: a channel set to start on deploy that cannot start (a port
-        // in use, an unreachable host) must not report a successful deploy.
-        const startResult = await DeploymentService.start(channelId, context);
-        if (!startResult.ok) throw notRunning('deployed', channelId, startResult.error);
-        finalState = CHANNEL_STATE.STARTED;
-        if (channel.initialState === 'PAUSED') {
-          const pauseResult = await DeploymentService.pause(channelId, context);
-          if (!pauseResult.ok) throw pauseResult.error;
-          finalState = CHANNEL_STATE.PAUSED;
-        }
-      }
-
-      emitStateChange(channelId, finalState);
-
-      return { channelId, state: finalState };
+      const bundle = await loadSaved(channelId);
+      return deployBundle(bundle, context, { typeCheck: true, record: true });
     });
   }
 
-  /** Undeploy a channel (shuts down and removes runtime). */
+  /**
+   * Undeploy a channel (shuts down and removes runtime). Its deployment record
+   * is marked first, so a restart leaves it undeployed; when the record cannot
+   * be marked, nothing is undeployed.
+   */
   static async undeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
-      const engine = getEngine();
-      const deployed = engine.getRuntime(channelId);
-      if (!deployed) {
-        throw new ServiceError('NOT_FOUND', `Channel ${channelId} is not deployed`);
+      assertUndeployable(channelId);
+      const marked = await DeploymentRecordService.markUndeployed(channelId, true);
+      if (!marked.ok) {
+        throw new ServiceError('INTERNAL', `Channel was not undeployed: the server could not record it, so a restart would bring it back. ${marked.error.message}`);
       }
-
-      const state = deployed.runtime.getState();
-      if (state !== 'STOPPED') {
-        throw new ServiceError('CONFLICT', `Cannot undeploy: channel is ${state}. Stop it first.`);
+      try {
+        return await undeployRuntime(channelId, context);
+      } catch (err) {
+        const cleared = await DeploymentRecordService.markUndeployed(channelId, false);
+        if (!cleared.ok) logger.error({ channelId, errMsg: cleared.error.message }, 'Undeploy failed and its mark could not be cleared; a restart will not redeploy this channel');
+        throw err;
       }
-
-      await engine.undeploy(channelId);
-
-      emitEvent({
-        level: 'INFO', name: 'CHANNEL_UNDEPLOYED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId,
-        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
-      });
-
-      emitStateChange(channelId, CHANNEL_STATE.UNDEPLOYED);
-
-      return { channelId, state: CHANNEL_STATE.UNDEPLOYED };
     });
   }
 
@@ -194,52 +241,33 @@ export class DeploymentService {
    * Editing a deployed channel does not affect the live runtime until it is
    * redeployed, so without this the running channel silently keeps executing the
    * old config. Preserves the prior runtime state (a STARTED channel comes back
-   * STARTED, a PAUSED one PAUSED).
+   * STARTED, a PAUSED one PAUSED). The saved configuration is read once, so what
+   * is checked is what deploys and what is recorded. When the new version fails
+   * to deploy, the record still holds the old one, and a restart brings that back.
    */
   static async redeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const engine = getEngine();
       const existing = engine.getRuntime(channelId);
       const priorState: ChannelState = (existing?.runtime.getState() ?? 'UNDEPLOYED') as ChannelState;
+      const bundle = await loadSaved(channelId);
 
       if (existing) {
         // Compile the saved configuration BEFORE touching the running channel.
         // A script that does not compile then fails the redeploy and the
         // channel keeps running on its current configuration.
-        const saved = await ChannelService.getById(channelId);
-        if (!saved.ok) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
-        await engine.checkScripts(saved.value);
-        await typeCheckChannel(saved.value);
+        await engine.checkScripts(bundle);
+        await typeCheckChannel(bundle);
 
         if (priorState === 'STARTED' || priorState === 'PAUSED') {
           const stopResult = await DeploymentService.stop(channelId, context);
           if (!stopResult.ok) throw stopResult.error;
         }
-        const undeployResult = await DeploymentService.undeploy(channelId, context);
-        if (!undeployResult.ok) throw undeployResult.error;
+        await undeployRuntime(channelId, context);
       }
 
-      const deployResult = await DeploymentService.deploy(channelId, context);
-      if (!deployResult.ok) throw deployResult.error;
-
-      // Restore the prior runtime state if deploy() (which follows initialState)
-      // did not already land there.
-      let state = deployResult.value.state;
-      if (priorState === 'STARTED' && state !== 'STARTED') {
-        const r = await DeploymentService.start(channelId, context);
-        if (!r.ok) throw notRunning('redeployed', channelId, r.error);
-        state = r.value.state;
-      } else if (priorState === 'PAUSED' && state !== 'PAUSED') {
-        if (state !== 'STARTED') {
-          const started = await DeploymentService.start(channelId, context);
-          if (!started.ok) throw notRunning('redeployed', channelId, started.error);
-        }
-        const p = await DeploymentService.pause(channelId, context);
-        if (!p.ok) throw p.error;
-        state = p.value.state;
-      }
-
-      return { channelId, state };
+      const deployed = await deployBundle(bundle, context, { typeCheck: true, record: true });
+      return { channelId, state: await restoreState(channelId, priorState, deployed.state, context) };
     });
   }
 
@@ -395,10 +423,12 @@ export class DeploymentService {
   }
 
   /**
-   * Auto-deploy all enabled channels on server startup.
-   * Channels with initialState STARTED are deployed and started.
-   * Channels with initialState PAUSED are deployed and started then paused.
-   * Channels with initialState STOPPED are deployed only.
+   * Redeploy, on server startup, what each enabled channel last deployed (#225).
+   * The saved configuration, code templates and global scripts are not read:
+   * an edit nobody deployed does not go live because the server restarted.
+   * Each channel comes back in its initial state (STARTED, PAUSED or STOPPED).
+   * Not redeployed: a channel someone undeployed, and an enabled channel with
+   * no deployment record (never deployed), which is logged and audited.
    * Channels deploy after the channels they depend on. If the dependencies
    * can't be loaded, nothing is auto-deployed: a safe order can't be proven.
    * Fails when the channels can't be listed or ordered, or when any channel
@@ -411,22 +441,19 @@ export class DeploymentService {
       if (channels === null) {
         throw new ServiceError('INTERNAL', 'Channel dependencies could not be loaded, so no channel was redeployed');
       }
+      const notAdopted = new Set(await adoptPendingChannels(channels));
+      const failedNames = channels.filter((ch) => notAdopted.has(ch.id)).map((ch) => ch.name);
+      const recorded = await DeploymentRecordService.listRecorded(channels.map((ch) => ch.id));
+      if (!recorded.ok) throw recorded.error;
       logger.info({
         total: allChannels.length,
         enabled: channels.length,
         channels: channels.map((ch) => ({ id: ch.id, name: ch.name })),
-      }, 'Auto-deploying enabled channels');
+      }, 'Redeploying the recorded deployments of enabled channels');
 
-      const failedNames: string[] = [];
       for (const ch of channels) {
-        const deployResult = await DeploymentService.deploy(ch.id, undefined, { typeCheck: false });
-        if (!deployResult.ok) {
-          logger.error({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
-          failedNames.push(ch.name);
-          continue;
-        }
-        // deploy() handles auto-start based on initialState — just log the result
-        logger.info({ channelId: ch.id, channelName: ch.name, state: deployResult.value.state }, 'Auto-deployed channel');
+        if (notAdopted.has(ch.id)) continue;
+        if (!(await redeployRecorded(ch, recorded.value.get(ch.id)))) failedNames.push(ch.name);
       }
       if (failedNames.length > 0) {
         throw new ServiceError('INTERNAL', `${failedNames.length} of ${channels.length} channels failed to redeploy: ${failedNames.join(', ')}`);
@@ -445,6 +472,95 @@ export class DeploymentService {
 }
 
 // ----- Helper -----
+
+/** Bring a redeployed channel back to the state it was in before (deploy follows initialState). */
+async function restoreState(channelId: string, priorState: ChannelState, state: ChannelState, context: AuditContext | undefined): Promise<ChannelState> {
+  if (priorState === 'STARTED' && state !== 'STARTED') {
+    const r = await DeploymentService.start(channelId, context);
+    if (!r.ok) throw notRunning('redeployed', channelId, r.error);
+    return r.value.state;
+  }
+  if (priorState === 'PAUSED' && state !== 'PAUSED') {
+    if (state !== 'STARTED') {
+      const started = await DeploymentService.start(channelId, context);
+      if (!started.ok) throw notRunning('redeployed', channelId, started.error);
+    }
+    const p = await DeploymentService.pause(channelId, context);
+    if (!p.ok) throw p.error;
+    return p.value.state;
+  }
+  return state;
+}
+
+/** Audit an enabled channel that a restart did not bring back. */
+function emitNotRedeployed(ch: ChannelDeployEntry, level: 'WARN' | 'ERROR', reason: string): void {
+  emitEvent({
+    level, name: EVENT_NAME.CHANNEL_NOT_REDEPLOYED, outcome: level === 'ERROR' ? 'FAILURE' : 'SUCCESS',
+    userId: null, channelId: ch.id, serverId: null, ipAddress: null,
+    attributes: { channelName: ch.name, reason },
+  });
+}
+
+/**
+ * Redeploy one enabled channel from its record at startup. Returns false when
+ * the channel should be running and is not (a failed deploy, an unreadable
+ * record); true when it deployed or, by design, was not redeployed.
+ */
+async function redeployRecorded(ch: ChannelDeployEntry, recorded: RecordedDeployment | undefined): Promise<boolean> {
+  if (recorded === undefined) {
+    logger.warn({ channelId: ch.id, channelName: ch.name }, 'Enabled channel was never deployed, so it was not deployed at startup');
+    emitNotRedeployed(ch, 'WARN', 'It has never been deployed. Deploy it to run it.');
+    return true;
+  }
+  if (recorded.kind === 'undeployed') {
+    logger.info({ channelId: ch.id, channelName: ch.name }, 'Channel was undeployed before the restart, so it stays undeployed');
+    return true;
+  }
+  if (recorded.kind === 'unreadable') {
+    logger.error({ channelId: ch.id, channelName: ch.name, reason: recorded.reason }, 'Channel was not redeployed: its deployment record cannot be read');
+    emitNotRedeployed(ch, 'ERROR', `Not redeployed: ${recorded.reason}. Deploy it again.`);
+    return false;
+  }
+  const result = await tryCatch(() => deployBundle(recorded.bundle, undefined, { typeCheck: false, record: false }));
+  if (!result.ok) {
+    logger.error({ channelId: ch.id, channelName: ch.name, errMsg: result.error.message }, 'Failed to redeploy channel');
+    return false;
+  }
+  logger.info({ channelId: ch.id, channelName: ch.name, revision: recorded.bundle.channel.revision, state: result.value.state }, 'Redeployed channel');
+  return true;
+}
+
+/**
+ * First start after the upgrade that added deployment records (D-323): record
+ * each enabled channel's saved configuration as its deployment, once, so it
+ * comes back as it did before the upgrade. Channels no longer enabled are
+ * dropped from the list. Returns the ids of channels that could not be adopted.
+ */
+async function adoptPendingChannels(channels: readonly ChannelDeployEntry[]): Promise<string[]> {
+  const pending = await DeploymentRecordService.listPendingAdoptions();
+  if (!pending.ok) throw pending.error;
+  if (pending.value.size === 0) return [];
+  const enabledIds = new Set(channels.map((ch) => ch.id));
+  const dropped = await DeploymentRecordService.dropAdoptions([...pending.value].filter((id) => !enabledIds.has(id)));
+  if (!dropped.ok) throw dropped.error;
+
+  const failed: string[] = [];
+  for (const ch of channels.filter((c) => pending.value.has(c.id))) {
+    const adopted = await DeploymentRecordService.adoptSaved(ch.id);
+    if (!adopted.ok) {
+      logger.error({ channelId: ch.id, channelName: ch.name, errMsg: adopted.error.message }, 'Could not record the saved configuration as the channel\'s deployment');
+      failed.push(ch.id);
+    } else if (adopted.value !== null) {
+      logger.warn({ channelId: ch.id, channelName: ch.name, revision: adopted.value.channel.revision }, 'Upgrade: recorded the saved configuration as the channel\'s deployment');
+      emitEvent({
+        level: 'WARN', name: EVENT_NAME.CHANNEL_DEPLOYMENT_ADOPTED, outcome: 'SUCCESS',
+        userId: null, channelId: ch.id, serverId: null, ipAddress: null,
+        attributes: { channelName: ch.name, revision: adopted.value.channel.revision },
+      });
+    }
+  }
+  return failed;
+}
 
 /**
  * Every live channel, read in one query and kept once per id, so no channel

@@ -49,4 +49,10 @@ export { pool };
 
 export const db = drizzle(pool, { schema });
 
+/** A database transaction, as `db.transaction` passes it to its callback. */
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** What a read needs: the pool, or a transaction so several reads see one snapshot. */
+export type DbReader = Pick<typeof db, 'select'>;
+
 export default db;

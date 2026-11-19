@@ -58,6 +58,8 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'POST', path: `${C}/deploy`, permission: 'channels:deploy', handler: DeploymentController.deploy },
   { method: 'GET', path: C, permission: 'channels:read', handler: ChannelController.getById },
   { method: 'PUT', path: C, permission: 'channels:write', handler: ChannelController.update },
+  // Whether an enabled channel comes back at a restart is deploy control (#225).
+  { method: 'PATCH', path: `${C}/enabled`, permission: 'channels:deploy', handler: ChannelController.setEnabled },
   { method: 'DELETE', path: C, permission: 'channels:delete', handler: ChannelController.delete },
   // Group membership will decide who can read a channel's PHI once access goes by group (#160).
   { method: 'PUT', path: `${C}/groups`, permission: 'channels:write', handler: ChannelGroupController.setChannelGroups },

@@ -7,6 +7,7 @@
 // connectors.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 // ----- Mock Dependencies -----
 
@@ -45,10 +46,6 @@ vi.mock('../global-map.service.js', () => ({
   GlobalMapService: { list: vi.fn().mockResolvedValue(OK_EMPTY), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() },
 }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn().mockResolvedValue(OK_EMPTY) } }));
-vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplatesForChannel: vi.fn().mockResolvedValue(OK_EMPTY) } }));
-vi.mock('../global-script.service.js', () => ({
-  GlobalScriptService: { getAll: vi.fn().mockResolvedValue(ok({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' })) },
-}));
 
 const alerts = vi.hoisted(() => ({ list: vi.fn(), getByIds: vi.fn(), sendMail: vi.fn() }));
 vi.mock('../alert.service.js', () => ({ AlertService: { list: alerts.list, getByIds: alerts.getByIds } }));
@@ -58,15 +55,6 @@ const events = vi.hoisted(() => ({ emitEvent: vi.fn(), emitToAll: vi.fn() }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: events.emitEvent }));
 vi.mock('../../lib/socket.js', () => ({ emitToChannelAudience: events.emitToAll }));
 
-const mockSelect = vi.fn();
-vi.mock('../../lib/db.js', () => ({ db: { select: mockSelect } }));
-vi.mock('../../db/schema/index.js', () => ({
-  channelFilters: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  filterRules: { id: 'id', filterId: 'filterId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', operator: 'operator', type: 'type', script: 'script' },
-  channelTransformers: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  transformerSteps: { id: 'id', transformerId: 'transformerId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', type: 'type', script: 'script' },
-}));
-vi.mock('drizzle-orm', () => ({ eq: vi.fn(), asc: vi.fn() }));
 vi.mock('../../lib/logger.js', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../../config/index.js', () => ({ config: { LOG_LEVEL: 'info', NODE_ENV: 'test' } }));
 
@@ -89,7 +77,10 @@ const CHANNEL = {
   metadataColumns: [],
   destinations: [],
   scripts: [],
+  filters: [],
+  transformers: [],
 } as never;
+const BUNDLE = bundleOf(CHANNEL);
 
 function alertOnSourceErrors(): void {
   const detail = {
@@ -109,7 +100,6 @@ beforeEach(() => {
     fn.mockResolvedValue(OK_RESULT);
   }
   sourceMock.setFatalHandler.mockImplementation((handler: (error: Error) => void) => { source.fatal = handler; });
-  mockSelect.mockImplementation(() => ({ from: () => ({ leftJoin: () => ({ where: () => ({ orderBy: () => Promise.resolve([]) }) }) }) }));
   ms.getLatestMessageId.mockResolvedValue(ok(0));
   ms.resetPending.mockResolvedValue(OK_RESULT);
   alerts.sendMail.mockResolvedValue(OK_RESULT);
@@ -122,7 +112,7 @@ const WAIT = { timeout: 10_000 };
 describe('EngineManager source failure', () => {
   it('stops the channel, records an ERROR event and raises a SOURCE_CONNECTOR alert', async () => {
     const engine = new EngineManager('test-server');
-    await engine.deploy(CHANNEL);
+    await engine.deploy(BUNDLE);
     const deployed = engine.getRuntime(CHANNEL_ID)!;
     await deployed.runtime.start();
     expect(source.fatal).not.toBeNull();
@@ -143,7 +133,7 @@ describe('EngineManager source failure', () => {
 
   it('ignores a report once the channel has been stopped: no event, no alert', async () => {
     const engine = new EngineManager('test-server');
-    await engine.deploy(CHANNEL);
+    await engine.deploy(BUNDLE);
     const deployed = engine.getRuntime(CHANNEL_ID)!;
     await deployed.runtime.start();
     await deployed.runtime.stop();
@@ -160,11 +150,11 @@ describe('EngineManager source failure', () => {
 
   it('ignores a report from the source of an earlier deployment of the channel', async () => {
     const engine = new EngineManager('test-server');
-    await engine.deploy(CHANNEL);
+    await engine.deploy(BUNDLE);
     await engine.getRuntime(CHANNEL_ID)!.runtime.start();
     const oldHandler = source.fatal;
     await engine.undeploy(CHANNEL_ID);
-    await engine.deploy(CHANNEL);
+    await engine.deploy(BUNDLE);
     const redeployed = engine.getRuntime(CHANNEL_ID)!;
     await redeployed.runtime.start();
     sourceMock.onStop.mockClear();

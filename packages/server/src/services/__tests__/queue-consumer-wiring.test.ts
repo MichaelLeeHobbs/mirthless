@@ -5,6 +5,7 @@
 // and their lifecycle is managed with start()/stop()/halt()/undeploy().
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 // ----- Mock QueueConsumer -----
 
@@ -135,18 +136,6 @@ vi.mock('../config-map.service.js', () => ({
   ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
 }));
 
-vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: {
-    listTemplatesForChannel: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
-  },
-}));
-
-vi.mock('../global-script.service.js', () => ({
-  GlobalScriptService: {
-    getAll: vi.fn().mockResolvedValue({ ok: true, value: { preprocessor: null, postprocessor: null }, error: null }),
-  },
-}));
-
 vi.mock('../alert.service.js', () => ({
   AlertService: {
     list: vi.fn().mockResolvedValue({
@@ -163,32 +152,6 @@ vi.mock('../email.service.js', () => ({
   EmailService: {
     sendMail: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   },
-}));
-
-// Mock DB
-const mockSelectFrom = vi.fn().mockReturnValue({
-  leftJoin: vi.fn().mockReturnValue({
-    where: vi.fn().mockReturnValue({
-      orderBy: vi.fn().mockResolvedValue([]),
-    }),
-  }),
-});
-const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
-
-vi.mock('../../lib/db.js', () => ({
-  db: { select: mockSelect },
-}));
-
-vi.mock('../../db/schema/index.js', () => ({
-  channelFilters: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  filterRules: { id: 'id', filterId: 'filterId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', operator: 'operator', type: 'type', script: 'script' },
-  channelTransformers: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  transformerSteps: { id: 'id', transformerId: 'transformerId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', type: 'type', script: 'script' },
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn(),
-  asc: vi.fn(),
 }));
 
 vi.mock('../../lib/logger.js', () => ({
@@ -247,6 +210,8 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
     metadataColumns: [],
     destinations: [],
     scripts: [],
+    filters: [],
+    transformers: [],
     ...overrides,
   };
 }
@@ -268,7 +233,7 @@ describe('QueueConsumer wiring', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(MockQueueConsumerCtor).toHaveBeenCalledOnce();
       const deployed = engine.getRuntime(CHANNEL_ID);
@@ -282,7 +247,7 @@ describe('QueueConsumer wiring', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(MockQueueConsumerCtor).toHaveBeenCalledOnce();
       expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toHaveLength(1);
@@ -294,7 +259,7 @@ describe('QueueConsumer wiring', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(MockQueueConsumerCtor).not.toHaveBeenCalled();
       expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toHaveLength(0);
@@ -306,7 +271,7 @@ describe('QueueConsumer wiring', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(MockQueueConsumerCtor).toHaveBeenCalledOnce();
       const config = MockQueueConsumerCtor.mock.calls[0]![0] as Record<string, unknown>;
@@ -331,7 +296,7 @@ describe('QueueConsumer wiring', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       // Only 2 consumers: dest-1 (ON_FAILURE) and dest-2 (ALWAYS), not dest-3 (NEVER)
       expect(MockQueueConsumerCtor).toHaveBeenCalledTimes(2);
@@ -348,7 +313,7 @@ describe('QueueConsumer wiring', () => {
       const channel = makeChannel({ destinations: [] });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(MockQueueConsumerCtor).not.toHaveBeenCalled();
       expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toEqual([]);
@@ -363,7 +328,7 @@ describe('QueueConsumer wiring', () => {
           destinations: [makeDest({ id: 'dest-1', metaDataId: 1, queueMode: 'ALWAYS' })],
         });
         const engine = new EngineManager('test-server');
-        await expect(engine.deploy(channel as never)).rejects.toThrow(/queued destination/);
+        await expect(engine.deploy(bundleOf(channel as never))).rejects.toThrow(/queued destination/);
         expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
       }
     });
@@ -374,7 +339,7 @@ describe('QueueConsumer wiring', () => {
         destinations: [makeDest({ id: 'dest-1', metaDataId: 1, queueMode: 'NEVER' })],
       });
       const engine = new EngineManager('test-server');
-      await expect(engine.deploy(channel as never)).resolves.toBeUndefined();
+      await expect(engine.deploy(bundleOf(channel as never))).resolves.toBeUndefined();
     });
   });
 
@@ -388,7 +353,7 @@ describe('QueueConsumer wiring', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       await engine.undeploy(CHANNEL_ID);
 

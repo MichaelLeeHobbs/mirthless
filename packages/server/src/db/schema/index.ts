@@ -35,4 +35,5 @@ export * from './events.js';
 export * from './audit-log.js';
 export * from './settings.js';
 export * from './channel-revisions.js';
+export * from './channel-deployments.js';
 export * from './certificates.js';

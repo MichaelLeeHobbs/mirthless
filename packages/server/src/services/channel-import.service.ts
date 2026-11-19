@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
-import { eq, isNull, and } from 'drizzle-orm';
+import { eq, isNull, and, sql } from 'drizzle-orm';
 import {
   PERMISSIONS,
   can,
@@ -256,11 +256,14 @@ async function overwriteChannel(entry: ChannelExportEntry, run: ImportRun): Prom
     if (!(await mayOverwrite(tx, entry.id, run))) {
       return `Channel "${entry.name}": not imported; it would replace a channel you cannot change`;
     }
-    // Update channel core fields
+    // Update channel core fields. Whether a channel is enabled is deploy
+    // control (#225), so an import keeps the stored flag; a restore sets it.
+    // The revision goes up, so an editor opened before the import gets a conflict.
     await tx.update(channels).set({
       name: entry.name,
       description: entry.description,
-      enabled: entry.enabled,
+      ...(run.placement === 'restore' ? { enabled: entry.enabled } : {}),
+      revision: sql`${channels.revision} + 1`,
       inboundDataType: entry.inboundDataType,
       outboundDataType: entry.outboundDataType,
       sourceConnectorType: entry.sourceConnectorType,

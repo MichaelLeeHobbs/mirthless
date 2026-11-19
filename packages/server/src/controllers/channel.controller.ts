@@ -12,7 +12,8 @@ import type {
   PatchChannelEnabledInput,
   ChannelAccessQuery,
 } from '@galvanigraph/core-models';
-import { AUDIT_ACTION, holdsPermission } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, can, holdsPermission } from '@galvanigraph/core-models';
+import { deny, DENY_REASON } from '../middleware/permission.middleware.js';
 import { ChannelService } from '../services/channel.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { recordReadBestEffort } from '../lib/audited-read.js';
@@ -26,6 +27,22 @@ import { db } from '../lib/db.js';
 import { tryCatch } from 'stderr-lib';
 import { isServiceError } from '../lib/service-error.js';
 import { errorInfo } from '@galvanigraph/core-util';
+
+/**
+ * Refuse a save that changes the channel's enabled flag from a caller without
+ * `channels:deploy` on it: whether an enabled channel comes back at a restart
+ * is deploy control (#225). A save that sends the stored value passes, since
+ * the editor always sends it. Answers the request and returns false when refused.
+ */
+async function enabledChangeAllowed(req: Request, res: Response, id: string, input: UpdateChannelInput): Promise<boolean> {
+  if (input.enabled === undefined) return true;
+  if (req.principal && can(req.principal.grants, 'channels:deploy', { groupIds: req.channelScope ?? [] })) return true;
+  const current = await ChannelService.getById(id);
+  // A missing channel is answered by the update itself.
+  if (!current.ok || current.value.enabled === input.enabled) return true;
+  deny(req, res, DENY_REASON.NO_PERMISSION);
+  return false;
+}
 
 /**
  * Refuse a save that puts a store certificate's private key to use outside
@@ -122,6 +139,7 @@ export class ChannelController {
     const input = req.body as UpdateChannelInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     if (!(await certificatesAllowed(req, res, [input.sourceConnectorProperties, ...(input.destinations ?? []).map((d) => d.properties)]))) return;
+    if (!(await enabledChangeAllowed(req, res, id, input))) return;
     const result = await ChannelService.update(id, input, context);
 
     if (!result.ok) {
@@ -177,7 +195,8 @@ export class ChannelController {
   static async setEnabled(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const { enabled } = req.body as PatchChannelEnabledInput;
-    const result = await ChannelService.setEnabled(id, enabled);
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelService.setEnabled(id, enabled, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

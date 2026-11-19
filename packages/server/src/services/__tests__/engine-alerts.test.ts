@@ -5,6 +5,7 @@
 // database, services and connectors.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 // ----- Mock Dependencies -----
 
@@ -65,44 +66,9 @@ vi.mock('../config-map.service.js', () => ({
   ConfigMapService: { list: mockConfigMapList },
 }));
 
-const mockListTemplates = vi.fn();
-vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listTemplatesForChannel: mockListTemplates },
-}));
-
-const mockGlobalScriptGetAll = vi.fn().mockResolvedValue({
-  ok: true, value: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }, error: null,
-});
-
-vi.mock('../global-script.service.js', () => ({
-  GlobalScriptService: {
-    getAll: mockGlobalScriptGetAll,
-  },
-}));
-
 const alerts = vi.hoisted(() => ({ list: vi.fn(), getByIds: vi.fn(), sendMail: vi.fn() }));
 vi.mock('../alert.service.js', () => ({ AlertService: { list: alerts.list, getByIds: alerts.getByIds } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: alerts.sendMail } }));
-
-
-// Deploy reads filter rules and transformer steps; these channels have none.
-const mockSelect = vi.fn();
-
-vi.mock('../../lib/db.js', () => ({
-  db: { select: mockSelect },
-}));
-
-vi.mock('../../db/schema/index.js', () => ({
-  channelFilters: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  filterRules: { id: 'id', filterId: 'filterId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', operator: 'operator', type: 'type', script: 'script' },
-  channelTransformers: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  transformerSteps: { id: 'id', transformerId: 'transformerId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', type: 'type', script: 'script' },
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn(),
-  asc: vi.fn(),
-}));
 
 vi.mock('../../lib/logger.js', () => ({
   default: {
@@ -138,6 +104,8 @@ function makeChannel(overrides: Record<string, unknown> = {}): never {
     metadataColumns: [],
     destinations: [],
     scripts: [],
+    filters: [],
+    transformers: [],
     ...overrides,
   } as never;
 }
@@ -161,8 +129,6 @@ const FAILING = { inboundDataType: 'RAW', outboundDataType: 'RAW', scripts: [{ s
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockSelect.mockImplementation(() => ({ from: () => ({ leftJoin: () => ({ where: () => ({ orderBy: () => Promise.resolve([]) }) }) }) }));
-  mockListTemplates.mockResolvedValue(OK_EMPTY);
   mockConfigMapList.mockResolvedValue(OK_EMPTY);
   mockGlobalMapList.mockResolvedValue(OK_EMPTY);
   mockSend.mockResolvedValue(ok({ status: 'SENT', content: 'ACK' }));
@@ -180,7 +146,7 @@ describe('EngineManager alerts', () => {
     alertWith({ actionType: 'EMAIL', recipients: ['oncall@example.org'] });
     alerts.sendMail.mockImplementation(() => new Promise(() => undefined)); // SMTP server that never answers
     const engine = new EngineManager('test-server');
-    await engine.deploy(makeChannel(FAILING));
+    await engine.deploy(bundleOf(makeChannel(FAILING)));
 
     // The email never finishes, so a message that waited on it would never return here.
     const result = await engine.getRuntime(CHANNEL_ID)!.processMessage('x');
@@ -193,9 +159,9 @@ describe('EngineManager alerts', () => {
   it('delivers a CHANNEL alert action to the target channel', async () => {
     alertWith({ actionType: 'CHANNEL', properties: { channelId: TARGET_ID } });
     const engine = new EngineManager('test-server');
-    await engine.deploy(makeChannel(FAILING));
+    await engine.deploy(bundleOf(makeChannel(FAILING)));
     alerts.list.mockResolvedValue(ok({ data: [], pagination: { page: 1, pageSize: 1000, total: 0, totalPages: 0 } }));
-    await engine.deploy(makeChannel({ id: TARGET_ID, name: 'Alert sink', inboundDataType: 'RAW', outboundDataType: 'RAW' }));
+    await engine.deploy(bundleOf(makeChannel({ id: TARGET_ID, name: 'Alert sink', inboundDataType: 'RAW', outboundDataType: 'RAW' })));
     await engine.getRuntime(TARGET_ID)!.runtime.start();
 
     await engine.getRuntime(CHANNEL_ID)!.processMessage('x');
@@ -210,7 +176,7 @@ describe('EngineManager alerts', () => {
     const logger = (await import('../../lib/logger.js')).default;
     alertWith({ actionType: 'CHANNEL', properties: { channelId: TARGET_ID } });
     const engine = new EngineManager('test-server');
-    await engine.deploy(makeChannel(FAILING));
+    await engine.deploy(bundleOf(makeChannel(FAILING)));
 
     await engine.getRuntime(CHANNEL_ID)!.processMessage('x');
 
@@ -223,7 +189,7 @@ describe('EngineManager alerts', () => {
   it('never sends an alert about a channel into that same channel', async () => {
     alertWith({ actionType: 'CHANNEL', properties: { channelId: CHANNEL_ID } });
     const engine = new EngineManager('test-server');
-    await engine.deploy(makeChannel(FAILING));
+    await engine.deploy(bundleOf(makeChannel(FAILING)));
     await engine.getRuntime(CHANNEL_ID)!.runtime.start();
 
     await engine.getRuntime(CHANNEL_ID)!.processMessage('x');
