@@ -36,7 +36,7 @@ Paths are under `packages/server/src` unless they start with `packages/`, `docs/
 ### Deployed code
 
 - Deployed channel code reaches every collection, resource, data source and map, and can route to any channel, regardless of who wrote it (`engine.ts:404-545`).
-- A restart deploys every enabled channel's saved head (`services/deployment.service.ts`, #225). Fixed 2026-11-18: a restart redeploys each channel's recorded deployment, and enabling a channel needs `channels:deploy` (D-323).
+- A restart deploys every enabled channel's saved head (`services/deployment.service.ts`, #225). Fixed 2026-11-18: a restart redeploys each channel's recorded deployment, and enabling a channel needs `channels:deploy` (D-325).
 
 ## Recommended design
 
