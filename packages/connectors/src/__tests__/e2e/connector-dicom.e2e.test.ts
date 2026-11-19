@@ -11,11 +11,16 @@ import {
   DicomDispatcher,
   clearChannelRegistry,
 } from '../../index.js';
+import { createDimseSender } from '../../dicom/dcmjs-dimse-adapter.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 
 const SCP_PORT = 11114;
 const TCP_PORT = 17762;
+const QUEUE_LISTENER_PORT = 11115;
+const QUEUE_PACS_PORT = 11116;
+/** Where a test's DICOM Listeners may write (FILE_CONNECTOR_ROOTS). */
+const TMP_ROOTS = { allowed: [os.tmpdir()], denied: [] };
 const SAMPLE_DCM = fileURLToPath(new URL('./fixtures/sample.dcm', import.meta.url));
 
 let deployed: DeployedChannel[] = [];
@@ -43,12 +48,11 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
         port: SCP_PORT,
         storageDir,
         aeTitle: 'TESTSCP',
-        minPoolSize: 1,
-        maxPoolSize: 2,
         connectionTimeoutMs: 15_000,
         dispatchMode: 'PER_FILE',
         postAction: 'NONE',
         moveToDirectory: '',
+        roots: TMP_ROOTS,
       }),
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
@@ -65,12 +69,10 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
           port: SCP_PORT,
           calledAETitle: 'TESTSCP',
           callingAETitle: 'TESTSCU',
-          mode: 'single',
-          maxAssociations: 1,
           maxRetries: 0,
           retryDelayMs: 0,
           timeoutMs: 20_000,
-          allowedBaseDir: path.dirname(SAMPLE_DCM),
+          roots: { allowed: [path.dirname(SAMPLE_DCM)], denied: [] },
         }),
       }],
     });
@@ -90,4 +92,103 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
     expect(head.subarray(128, 132).toString('ascii')).toBe('DICM');
     expect(head.length).toBeGreaterThan(1000);
   }, 45_000);
+
+  // #243: the Listener deleted its stored file as soon as the message was
+  // queued, so the Sender's retry found no file and the image never arrived.
+  it('a queued DICOM Sender delivers the image once the PACS comes up, and the Listener deletes its copy only then', async () => {
+    const listenerDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mless-dicom-listener-'));
+    const pacsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mless-dicom-pacs-'));
+    tempDirs.push(listenerDir, pacsDir);
+
+    // DICOM Listener (deletes its file after processing) → DICOM Sender that
+    // queues on failure. Nothing listens on the PACS port yet.
+    const listener = await deployChannel({
+      channelId: '00000000-0000-0000-0000-conndicom0ql',
+      dataType: 'RAW',
+      source: new DicomReceiver({
+        port: QUEUE_LISTENER_PORT,
+        storageDir: listenerDir,
+        aeTitle: 'LISTENER',
+        connectionTimeoutMs: 15_000,
+        dispatchMode: 'PER_FILE',
+        postAction: 'DELETE',
+        moveToDirectory: '',
+        roots: TMP_ROOTS,
+      }),
+      destinations: [{
+        metaDataId: 1,
+        name: 'PACS',
+        queueMode: 'ON_FAILURE',
+        retryIntervalMs: 200,
+        connector: new DicomDispatcher({
+          host: '127.0.0.1',
+          port: QUEUE_PACS_PORT,
+          calledAETitle: 'PACS',
+          callingAETitle: 'LISTENER',
+          maxRetries: 0,
+          retryDelayMs: 0,
+          timeoutMs: 5_000,
+          roots: { allowed: [listenerDir], denied: [] },
+        }),
+      }],
+    });
+    deployed.push(listener);
+
+    // A modality stores the image on the Listener.
+    const modality = createDimseSender({
+      host: '127.0.0.1',
+      port: QUEUE_LISTENER_PORT,
+      calledAETitle: 'LISTENER',
+      callingAETitle: 'MODALITY',
+      maxRetries: 0,
+      retryDelayMs: 0,
+      timeoutMs: 10_000,
+    });
+    if (!modality.ok) throw modality.error;
+    const stored = await modality.value.send([SAMPLE_DCM]);
+    expect(stored.ok).toBe(true);
+
+    // The first send fails (no PACS) and the destination waits in the queue.
+    await waitFor(() => listener.store.connectorMessages.some(
+      (m) => m.metaDataId === 1 && m.sendAttempts >= 1,
+    ), 10_000);
+    expect(await fs.readdir(listenerDir)).toHaveLength(1);
+
+    // The PACS comes up.
+    const pacsSink = new CaptureDestination();
+    const pacs = await deployChannel({
+      channelId: '00000000-0000-0000-0000-conndicom0qp',
+      dataType: 'RAW',
+      source: new DicomReceiver({
+        port: QUEUE_PACS_PORT,
+        storageDir: pacsDir,
+        aeTitle: 'PACS',
+        connectionTimeoutMs: 15_000,
+        dispatchMode: 'PER_FILE',
+        postAction: 'NONE',
+        moveToDirectory: '',
+        roots: TMP_ROOTS,
+      }),
+      destinations: [{ metaDataId: 1, name: 'archive', connector: pacsSink }],
+    });
+    deployed.push(pacs);
+
+    await waitFor(() => pacsSink.received.length > 0, 15_000);
+    const received = await fs.readFile(pacsSink.lastContent() ?? '');
+    expect(received.subarray(128, 132).toString('ascii')).toBe('DICM');
+    expect(received.length).toBeGreaterThan(1000);
+
+    // Delivered everywhere, so the Listener's DELETE runs now.
+    await waitFor(async () => (await fs.readdir(listenerDir)).length === 0, 5_000);
+    expect(listener.store.connectorMessages.find((m) => m.metaDataId === 1)?.status).toBe('SENT');
+  }, 60_000);
 });
+
+/** Poll until `check` holds, or fail after `timeoutMs`. */
+async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await check())) {
+    if (Date.now() > deadline) throw new Error(`condition not met within ${String(timeoutMs)} ms`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}

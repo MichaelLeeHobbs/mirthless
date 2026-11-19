@@ -1,4 +1,11 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+// ===========================================
+// DICOM Receiver Tests
+// ===========================================
+
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import type { MessageDispatcher, RawMessage, DispatchResult } from '../../base.js';
 import {
@@ -15,12 +22,11 @@ function makeConfig(overrides?: Partial<DicomReceiverConfig>): DicomReceiverConf
     port: 4242,
     storageDir: '/data/dicom',
     aeTitle: 'GALVANIGRAPH',
-    minPoolSize: 2,
-    maxPoolSize: 10,
     connectionTimeoutMs: 10_000,
     dispatchMode: 'PER_FILE',
     postAction: 'DELETE',
     moveToDirectory: '',
+    roots: { allowed: ['/data', os.tmpdir()], denied: [] },
     ...overrides,
   };
 }
@@ -134,18 +140,6 @@ describe('DicomReceiver.onDeploy', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('fails when minPoolSize is less than 1', async () => {
-    const receiver = new DicomReceiver(makeConfig({ minPoolSize: 0 }));
-    const result = await receiver.onDeploy();
-    expect(result.ok).toBe(false);
-  });
-
-  it('fails when maxPoolSize is less than minPoolSize', async () => {
-    const receiver = new DicomReceiver(makeConfig({ minPoolSize: 5, maxPoolSize: 3 }));
-    const result = await receiver.onDeploy();
-    expect(result.ok).toBe(false);
-  });
-
   it('fails when postAction is MOVE but moveToDirectory is empty', async () => {
     const receiver = new DicomReceiver(makeConfig({ postAction: 'MOVE', moveToDirectory: '' }));
     const result = await receiver.onDeploy();
@@ -156,6 +150,25 @@ describe('DicomReceiver.onDeploy', () => {
     const receiver = new DicomReceiver(makeConfig({ postAction: 'MOVE', moveToDirectory: '/data/processed' }));
     const result = await receiver.onDeploy();
     expect(result.ok).toBe(true);
+  });
+
+  // #313: a deployer could point the listener at any directory the server can write.
+  it.each([
+    ['storageDir is outside the roots', { storageDir: '/etc/galvanigraph' }, 'outside FILE_CONNECTOR_ROOTS'],
+    ['storageDir is relative', { storageDir: 'data/dicom' }, 'must be absolute'],
+    ['moveToDirectory is outside the roots', { postAction: 'MOVE', moveToDirectory: '/srv/app' }, 'outside FILE_CONNECTOR_ROOTS'],
+    ['storageDir is in a denied directory', { roots: { allowed: ['/data'], denied: ['/data/dicom'] } }, "server's own directories"],
+    ['no roots are set', { roots: { allowed: [], denied: [] } }, 'FILE_CONNECTOR_ROOTS is not set'],
+  ] as const)('fails when %s', async (_case, overrides, message) => {
+    const receiver = new DicomReceiver(makeConfig(overrides as Partial<DicomReceiverConfig>));
+    const result = await receiver.onDeploy();
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error.message).toContain(message);
+  });
+
+  it('ignores moveToDirectory when the post-action is not MOVE', async () => {
+    const receiver = new DicomReceiver(makeConfig({ postAction: 'DELETE', moveToDirectory: '/srv/app' }));
+    expect((await receiver.onDeploy()).ok).toBe(true);
   });
 });
 
@@ -262,25 +275,133 @@ describe('DicomReceiver PER_ASSOCIATION dispatch', () => {
 });
 
 describe('DicomReceiver post-action', () => {
-  it('does not apply post-action when dispatch fails', async () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dicom-receiver-'));
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  async function storedFile(name: string): Promise<string> {
+    const filePath = path.join(dir, name);
+    await fs.writeFile(filePath, 'DICM');
+    return filePath;
+  }
+
+  async function exists(filePath: string): Promise<boolean> {
+    return fs.access(filePath).then(() => true, () => false);
+  }
+
+  async function receiveFile(filePath: string, response: Result<DispatchResult>, overrides?: Partial<DicomReceiverConfig>): Promise<DicomReceiver> {
     const mock = makeMockReceiver();
-    const failResult: Result<DispatchResult> = {
-      ok: false,
-      value: null,
-      error: stderr('Dispatch failed'),
-    };
-    const dispatcher = makeDispatcher(failResult);
+    const dispatcher = makeDispatcher(response);
+    const receiver = new DicomReceiver(makeConfig({ storageDir: dir, ...overrides }), makeMockFactory(mock));
+    receiver.setDispatcher(dispatcher);
+    await receiver.onStart();
+    mock.fileHandler!(makeFileData({ filePath }));
+    await vi.waitFor(() => { expect(dispatcher).toHaveBeenCalledTimes(1); });
+    return receiver;
+  }
+
+  it('deletes the file once every destination has it', async () => {
+    const filePath = await storedFile('a.dcm');
+    await receiveFile(filePath, { ok: true, value: { messageId: 1, status: 'PROCESSED' }, error: null });
+    await vi.waitFor(async () => { expect(await exists(filePath)).toBe(false); });
+  });
+
+  // #320 review: under AUTO_BEFORE and AUTO_AFTER_TRANSFORMER a failed destination is reported as success.
+  it('keeps the file when a destination failed although the sender was answered with success', async () => {
+    const filePath = await storedFile('a.dcm');
+    await receiveFile(filePath, { ok: true, value: { messageId: 1, status: 'PROCESSED', destinationFailed: true }, error: null });
+    await new Promise((r) => { setTimeout(r, 50); });
+    expect(await exists(filePath)).toBe(true);
+  });
+
+  it('does nothing and throws nothing when the file was already deleted', async () => {
+    const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
+    await expect(receiver.onMessageDelivered(path.join(dir, 'gone.dcm'))).resolves.toBeUndefined();
+  });
+
+  it('throws when a queued message\'s post-action fails, so the queue raises an alert', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = new DicomReceiver(makeConfig({
+      storageDir: dir, postAction: 'MOVE', moveToDirectory: '/srv/not-allowed', roots: { allowed: [dir], denied: [] },
+    }));
+    await expect(receiver.onMessageDelivered(filePath)).rejects.toThrow('FILE_CONNECTOR_ROOTS');
+    expect(await exists(filePath)).toBe(true);
+  });
+
+  it('keeps the file when dispatch fails', async () => {
+    const filePath = await storedFile('a.dcm');
+    await receiveFile(filePath, { ok: false, value: null, error: stderr('Dispatch failed') });
+    await new Promise((r) => { setTimeout(r, 50); });
+    expect(await exists(filePath)).toBe(true);
+  });
+
+  it('keeps the file while a queued destination waits, and deletes it when the queue delivers', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = await receiveFile(filePath, { ok: true, value: { messageId: 1, status: 'PROCESSED', queued: true }, error: null });
+    await new Promise((r) => { setTimeout(r, 50); });
+    expect(await exists(filePath)).toBe(true);
+
+    await receiver.onMessageDelivered(filePath);
+    expect(await exists(filePath)).toBe(false);
+  });
+
+  it('moves every file of a queued association when the queue delivers', async () => {
+    const files = [await storedFile('1.dcm'), await storedFile('2.dcm')];
+    const moveTo = path.join(dir, 'done');
+    const mock = makeMockReceiver();
+    const dispatcher = makeDispatcher({ ok: true, value: { messageId: 1, queued: true }, error: null });
     const receiver = new DicomReceiver(
-      makeConfig({ postAction: 'NONE' }),
+      makeConfig({ storageDir: dir, dispatchMode: 'PER_ASSOCIATION', postAction: 'MOVE', moveToDirectory: moveTo }),
       makeMockFactory(mock),
     );
     receiver.setDispatcher(dispatcher);
     await receiver.onStart();
+    mock.assocHandler!(makeAssociationData({ files }));
+    await vi.waitFor(() => { expect(dispatcher).toHaveBeenCalledTimes(1); });
+    expect(await exists(files[0]!)).toBe(true);
 
-    mock.fileHandler!(makeFileData());
-    await vi.waitFor(() => {
-      expect(dispatcher).toHaveBeenCalledTimes(1);
-    });
+    await receiver.onMessageDelivered(JSON.stringify(files));
+    expect(await fs.readdir(moveTo)).toEqual(['1.dcm', '2.dcm']);
+    expect(await exists(files[0]!)).toBe(false);
+  });
+
+  it('touches nothing when the delivered content is not a path or a list of paths', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
+    await receiver.onMessageDelivered('[not json');
+    await expect(receiver.onMessageDelivered('{"a":1}')).rejects.toThrow('must be absolute');
+    expect(await exists(filePath)).toBe(true);
+  });
+
+  // #313: the path comes back from the stored message, so it is checked again.
+  it('deletes nothing outside the storage directory', async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'dicom-outside-'));
+    const victim = path.join(outside, 'keep.dcm');
+    await fs.writeFile(victim, 'DICM');
+    try {
+      const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
+      await expect(receiver.onMessageDelivered(victim)).rejects.toThrow('not a file in the DICOM storage directory');
+      await expect(receiver.onMessageDelivered(path.join(dir, '..', path.basename(outside), 'keep.dcm'))).rejects.toThrow();
+      expect(await exists(victim)).toBe(true);
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('moves nothing into a directory outside the roots', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = new DicomReceiver(makeConfig({
+      storageDir: dir,
+      postAction: 'MOVE',
+      moveToDirectory: '/srv/not-allowed',
+      roots: { allowed: [dir], denied: [] },
+    }));
+    await receiver.onMessageDelivered(filePath).catch(() => undefined);
+    expect(await exists(filePath)).toBe(true);
   });
 });
 

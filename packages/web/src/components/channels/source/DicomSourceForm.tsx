@@ -68,7 +68,7 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
           label="Storage Directory"
           value={getStr(properties, 'storageDir', '')}
           onChange={handleText('storageDir')}
-          helperText="Directory for received DICOM files"
+          helperText="Absolute path under FILE_CONNECTOR_ROOTS for received files"
           fullWidth
           sx={{ mb: 2 }}
         />
@@ -89,33 +89,11 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
         </Typography>
 
         <TextField
-          label="Min Pool Size"
-          type="number"
-          value={getNum(properties, 'minPoolSize', 2)}
-          onChange={handleNumber('minPoolSize')}
-          helperText="Minimum worker pool size"
-          fullWidth
-          sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { min: 1 } }}
-        />
-
-        <TextField
-          label="Max Pool Size"
-          type="number"
-          value={getNum(properties, 'maxPoolSize', 10)}
-          onChange={handleNumber('maxPoolSize')}
-          helperText="Maximum worker pool size"
-          fullWidth
-          sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { min: 1 } }}
-        />
-
-        <TextField
           label="Connection Timeout (ms)"
           type="number"
           value={getNum(properties, 'connectionTimeoutMs', 10000)}
           onChange={handleNumber('connectionTimeoutMs')}
-          helperText="Timeout waiting for idle worker"
+          helperText="Connect, association and PDU timeout"
           fullWidth
           sx={{ mb: 2 }}
           slotProps={{ htmlInput: { min: 1000 } }}
@@ -154,7 +132,7 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
             label="Move-To Directory"
             value={getStr(properties, 'moveToDirectory', '')}
             onChange={handleText('moveToDirectory')}
-            helperText="Directory to move files after processing"
+            helperText="Absolute path under FILE_CONNECTOR_ROOTS; files move here once every destination has them"
             fullWidth
             sx={{ mb: 2 }}
           />

@@ -14,7 +14,6 @@ import {
 
 export const DICOM_DISPATCH_MODES = ['PER_FILE', 'PER_ASSOCIATION'] as const;
 export const DICOM_POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
-export const DICOM_SEND_MODES = ['single', 'multiple'] as const;
 
 /** DICOM caps an application entity title at 16 characters. */
 const aeTitle = z.string().max(16);
@@ -27,8 +26,6 @@ export const dicomSourceObjectSchema = z.strictObject({
   port: connectorPortSchema,
   storageDir: requiredTextSchema,
   aeTitle: aeTitle.default('GALVANIGRAPH'),
-  minPoolSize: wholeNumberSchema(1).default(2),
-  maxPoolSize: wholeNumberSchema(1).default(10),
   connectionTimeoutMs: dicomTimeout.default(10_000),
   dispatchMode: z.enum(DICOM_DISPATCH_MODES).default('PER_FILE'),
   postAction: z.enum(DICOM_POST_ACTIONS).default('DELETE'),
@@ -43,8 +40,6 @@ export const dicomDestinationObjectSchema = z.strictObject({
   port: connectorPortSchema,
   calledAETitle: aeTitle.default('PACS'),
   callingAETitle: aeTitle.default('GALVANIGRAPH'),
-  mode: z.enum(DICOM_SEND_MODES).default('multiple'),
-  maxAssociations: wholeNumberSchema(0).default(4),
   maxRetries: wholeNumberSchema(0).default(3),
   retryDelayMs: dicomTimeout.default(1_000),
   timeoutMs: dicomTimeout.default(30_000),
@@ -66,12 +61,16 @@ const MIRTH_COMMON = [
 const SOURCE_LEGACY_KEYS: ReadonlySet<string> = new Set([
   ...MIRTH_COMMON, 'listenerConnectorProperties', 'sourceConnectorProperties', 'requestTo', 'idleTo', 'rspDelay', 'bigEndian',
   'defts', 'dest', 'nativeData',
+  // Saved by this app's editor until #154; the listener never used them.
+  'minPoolSize', 'maxPoolSize',
 ]);
 
 /** Mirth's DICOM Sender properties other than host, port and template (DICOMDispatcherProperties.java). */
 const DESTINATION_LEGACY_KEYS: ReadonlySet<string> = new Set([
   ...MIRTH_COMMON, 'destinationConnectorProperties', 'acceptTo', 'connectTo', 'priority', 'passcode', 'rspTo', 'shutdownDelay',
   'stgcmt', 'ts1', 'uidnegrsp', 'username',
+  // Saved by this app's editor until #154; the sender never read them.
+  'mode', 'maxAssociations',
 ]);
 
 /**
@@ -96,12 +95,10 @@ function dropDestinationLegacy(value: unknown, ctx: z.RefinementCtx): unknown {
   return typeof template === 'string' && destinationTemplate('DICOM', { template }) === undefined ? rest : props;
 }
 
+/** The source schema: a move-to directory for MOVE. */
 export const dicomSourcePropertiesSchema = z.preprocess(
   (value, ctx) => withoutMirthKeys(value, SOURCE_LEGACY_KEYS, ctx),
   dicomSourceObjectSchema.superRefine((props, ctx) => {
-    if (props.maxPoolSize < props.minPoolSize) {
-      ctx.addIssue({ code: 'custom', path: ['maxPoolSize'], message: 'must be at least minPoolSize' });
-    }
     if (props.postAction === 'MOVE' && props.moveToDirectory.trim() === '') {
       ctx.addIssue({ code: 'custom', path: ['moveToDirectory'], message: 'required when postAction is MOVE' });
     }

@@ -205,14 +205,16 @@ export function smtpDispatcherConfig(props: Record<string, unknown>): SmtpDispat
   return { ...config, ...(authUser ? { auth: { user: authUser, pass: authPass ?? '' } } : {}) };
 }
 
-function dicomReceiver(props: Record<string, unknown>): DicomReceiver {
+/** A DICOM Listener: schema-checked props, its directories limited to the server's File roots. */
+function dicomReceiver(props: Record<string, unknown>, env: ConnectorEnvironment): DicomReceiver {
   const { processBatch: _processBatch, ...config } = parseProps('DICOM', dicomSourcePropertiesSchema, props);
-  return new DicomReceiver(config);
+  return new DicomReceiver({ ...config, roots: env.fileRoots });
 }
 
-function dicomDispatcher(props: Record<string, unknown>): DicomDispatcher {
+/** A DICOM Sender: schema-checked props, the files it sends limited to the server's File roots. */
+function dicomDispatcher(props: Record<string, unknown>, env: ConnectorEnvironment): DicomDispatcher {
   const { template: _template, ...config } = parseProps('DICOM', dicomDestinationPropertiesSchema, props);
-  return new DicomDispatcher(config);
+  return new DicomDispatcher({ ...config, roots: env.fileRoots });
 }
 
 function emailReceiver(props: Record<string, unknown>): EmailReceiver {

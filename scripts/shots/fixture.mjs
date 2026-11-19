@@ -114,6 +114,23 @@ const scriptedDetail = {
   }],
 };
 
+/** A DICOM Listener forwarding to a PACS, for the DICOM connector forms (#154, #313). */
+const dicomDetail = {
+  ...channelDetail,
+  id: 'c5', name: 'Radiology Reports to PACS', inboundDataType: 'DICOM', outboundDataType: 'DICOM', sourceConnectorType: 'DICOM',
+  sourceConnectorProperties: {
+    port: 11112, storageDir: '/srv/galvanigraph/files/dicom/in', aeTitle: 'RAD_ROUTER', connectionTimeoutMs: 10000,
+    dispatchMode: 'PER_FILE', postAction: 'MOVE', moveToDirectory: '/srv/galvanigraph/files/dicom/sent',
+  },
+  destinations: [{
+    ...channelDetail.destinations[0], name: 'To PACS', connectorType: 'DICOM',
+    properties: { host: 'pacs.example.test', port: 104, calledAETitle: 'PACS', callingAETitle: 'RAD_ROUTER', maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000 },
+    queueMode: 'ON_FAILURE', retryCount: 0, retryIntervalMs: 10000,
+  }],
+};
+
+// A Delimited file drop written to a partner's MySQL: shows the Delimited
+// settings and the database type.
 const billingDetail = {
   ...channelDetail,
   id: 'c6', name: 'Nightly Billing Export (file drop with a long name)', description: 'Billing rows from the nightly CSV into the partner MySQL.',
@@ -314,6 +331,7 @@ export function route(pathname, search) {
   if (p === '/channels/c8') return queueChannelDetail;
   if (p === '/channels/c6') return billingDetail;
   if (p === '/channels/c9') return scriptedDetail;
+  if (p === '/channels/c5') return dicomDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;

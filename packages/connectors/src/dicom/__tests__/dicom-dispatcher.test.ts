@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'node:path';
 import { stderr } from '@galvanigraph/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import {
@@ -15,11 +16,10 @@ function makeConfig(overrides?: Partial<DicomDispatcherConfig>): DicomDispatcher
     port: 104,
     calledAETitle: 'PACS',
     callingAETitle: 'GALVANIGRAPH',
-    mode: 'multiple',
-    maxAssociations: 4,
     maxRetries: 3,
     retryDelayMs: 1_000,
     timeoutMs: 30_000,
+    roots: { allowed: ['/data'], denied: [] },
     ...overrides,
   };
 }
@@ -99,6 +99,13 @@ describe('DicomDispatcher.onDeploy', () => {
     const dispatcher = new DicomDispatcher(makeConfig({ callingAETitle: 'A'.repeat(17) }));
     const result = await dispatcher.onDeploy();
     expect(result.ok).toBe(false);
+  });
+
+  // #320 review: without roots every send would fail, and a queue retrying forever would stall.
+  it('fails when FILE_CONNECTOR_ROOTS is not set', async () => {
+    const dispatcher = new DicomDispatcher(makeConfig({ roots: { allowed: [], denied: [] } }));
+    const result = await dispatcher.onDeploy();
+    expect(result.ok ? '' : result.error.message).toContain('FILE_CONNECTOR_ROOTS is not set');
   });
 });
 
@@ -183,7 +190,25 @@ describe('DicomDispatcher.send', () => {
     await dispatcher.send(makeMessage({ content: '  /data/file.dcm  ' }), makeSignal());
 
     const sendFn = sender.send as ReturnType<typeof vi.fn>;
-    expect(sendFn).toHaveBeenCalledWith(['/data/file.dcm']);
+    expect(sendFn).toHaveBeenCalledWith([path.resolve('/data/file.dcm')]);
+  });
+
+  // #313: the path is message content, which a transformer controls.
+  it.each([
+    ['outside the roots', makeConfig(), '/etc/galvanigraph/image.dcm', 'outside FILE_CONNECTOR_ROOTS'],
+    ['climbing out of the roots', makeConfig(), '/data/../etc/image.dcm', 'outside FILE_CONNECTOR_ROOTS'],
+    ['relative', makeConfig(), 'image.dcm', 'must be absolute'],
+    ['anywhere when no roots are set', makeConfig({ roots: { allowed: [], denied: [] } }), '/data/image.dcm', 'FILE_CONNECTOR_ROOTS is not set'],
+  ])('returns ERROR and sends nothing for a path %s', async (_case, config, content, message) => {
+    const sender = makeMockSender();
+    const dispatcher = new DicomDispatcher(config, makeMockFactory(sender));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage({ content }), makeSignal());
+
+    expect(result.ok && result.value.status).toBe('ERROR');
+    expect(result.ok ? result.value.errorMessage : '').toContain(message);
+    expect(sender.send).not.toHaveBeenCalled();
   });
 });
 

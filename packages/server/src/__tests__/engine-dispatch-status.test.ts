@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toDispatchStatus, toResponseSource } from '../engine.js';
+import { toDispatchStatus, toResponseSource, toSourceOutcome } from '../engine.js';
 
 const AFTER_SOURCE = ['AUTO_BEFORE', 'AUTO_AFTER_TRANSFORMER'] as const;
 const AFTER_DESTINATIONS = ['AUTO_AFTER_DESTINATIONS', 'POSTPROCESSOR', 'DESTINATION', 'NONE', 'SOMETHING_NEW'] as const;
@@ -33,6 +33,29 @@ describe('toDispatchStatus', () => {
 
   it.each(ALL_MODES.filter((m) => m !== 'AUTO_BEFORE'))('treats an error with no stage as an error under %s', (mode) => {
     expect(toDispatchStatus({ status: 'ERROR' }, mode)).toBe('ERROR');
+  });
+});
+
+// What a source that removes its input (a DICOM file) needs besides the status (#243, #320 review).
+describe('toSourceOutcome', () => {
+  it.each(AFTER_SOURCE)('flags a destination failure the sender is told is a success under %s', (mode) => {
+    expect(toSourceOutcome({ messageId: 7, status: 'ERROR', errorStage: 'DESTINATION' }, mode))
+      .toEqual({ messageId: 7, status: 'PROCESSED', destinationFailed: true });
+  });
+
+  it.each(AFTER_DESTINATIONS)('does not flag it under %s, where the status already says ERROR', (mode) => {
+    expect(toSourceOutcome({ messageId: 7, status: 'ERROR', errorStage: 'DESTINATION' }, mode))
+      .toEqual({ messageId: 7, status: 'ERROR' });
+  });
+
+  it('passes on a queued destination still waiting, and the response', () => {
+    expect(toSourceOutcome({ messageId: 7, status: 'SENT', queued: true, response: 'ACK' }, 'AUTO_AFTER_DESTINATIONS'))
+      .toEqual({ messageId: 7, status: 'PROCESSED', response: 'ACK', queued: true });
+  });
+
+  it('adds nothing for a delivered or filtered message', () => {
+    expect(toSourceOutcome({ messageId: 7, status: 'SENT' }, 'AUTO_BEFORE')).toEqual({ messageId: 7, status: 'PROCESSED' });
+    expect(toSourceOutcome({ messageId: 7, status: 'FILTERED' }, 'AUTO_BEFORE')).toEqual({ messageId: 7, status: 'FILTERED' });
   });
 });
 

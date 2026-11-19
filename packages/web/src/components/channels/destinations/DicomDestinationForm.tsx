@@ -1,14 +1,11 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
-import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { DICOM_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
-
-const SEND_MODES = ['single', 'multiple'] as const;
 
 export function DicomDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -23,8 +20,6 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
   }, [properties, onChange]);
 
   const { handleText, handleNumber } = propertyUpdaters(properties, onChange);
-
-  const mode = getStr(properties, 'mode', 'multiple');
 
   return (
     <Grid container spacing={3}>
@@ -96,34 +91,6 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
           }}>
           Sending
         </Typography>
-
-        <TextField
-          label="Mode"
-          value={mode}
-          onChange={handleText('mode')}
-          select
-          fullWidth
-          sx={{ mb: 2 }}
-        >
-          {SEND_MODES.map((m) => (
-            <MenuItem key={m} value={m}>
-              {m === 'single' ? 'Single (one association at a time)' : 'Multiple (concurrent associations)'}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        {mode === 'multiple' && (
-          <TextField
-            label="Max Associations"
-            type="number"
-            value={getNum(properties, 'maxAssociations', 4)}
-            onChange={handleNumber('maxAssociations')}
-            helperText="Maximum concurrent associations"
-            fullWidth
-            sx={{ mb: 2 }}
-            slotProps={{ htmlInput: { min: 1, max: 64 } }}
-          />
-        )}
 
         <TextField
           label="Timeout (ms)"

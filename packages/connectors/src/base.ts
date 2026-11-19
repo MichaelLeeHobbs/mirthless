@@ -31,6 +31,19 @@ export interface DispatchResult {
   readonly response?: string;
   /** Absent means PROCESSED. */
   readonly status?: DispatchStatus | undefined;
+  /**
+   * True when a queued destination has not delivered the message yet. A source
+   * that would remove what it read (a file it deletes or moves) must keep it
+   * until `onMessageDelivered` says every destination has delivered.
+   */
+  readonly queued?: boolean | undefined;
+  /**
+   * True when a destination or the postprocessor failed although `status` is
+   * PROCESSED: the channel answers the sender before its destinations
+   * (AUTO_BEFORE, AUTO_AFTER_TRANSFORMER). A source must still keep what it
+   * read, so the message can be reprocessed.
+   */
+  readonly destinationFailed?: boolean | undefined;
 }
 
 /**
@@ -64,6 +77,13 @@ export interface SourceConnectorRuntime extends ConnectorLifecycle {
   setDispatcher(dispatcher: MessageDispatcher): void;
   /** Only sources that can stop themselves have it. */
   setFatalHandler?(handler: SourceFatalHandler): void;
+  /**
+   * A message this source dispatched with `queued` set has now been delivered
+   * by every destination, without an error. `content` is the raw content the
+   * source dispatched. Called by the queue consumer, so it can come after a
+   * restart, from a new instance of the source.
+   */
+  onMessageDelivered?(content: string): Promise<void>;
 }
 
 export interface ConnectorMessage {

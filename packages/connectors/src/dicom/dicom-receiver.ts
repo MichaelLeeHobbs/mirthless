@@ -1,9 +1,19 @@
+// ===========================================
+// DICOM Receiver (Source Connector)
+// ===========================================
+// A dcmjs-dimse DICOM SCP that receives C-STORE associations and dispatches each
+// received instance as a message into the pipeline.
+// Content = file path; metadata goes into sourceMap.
+// storageDir and moveToDirectory are limited to FILE_CONNECTOR_ROOTS, as the
+// File connector's directories are (D-315, #313).
+
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import type { SourceConnectorRuntime, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { isMissing, resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import { createDimseReceiver } from './dcmjs-dimse-adapter.js';
 
 const DICOM_POST_ACTION = {
@@ -23,12 +33,12 @@ export interface DicomReceiverConfig {
   readonly port: number;
   readonly storageDir: string;
   readonly aeTitle: string;
-  readonly minPoolSize: number;
-  readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
   readonly dispatchMode: DicomDispatchMode;
   readonly postAction: DicomPostAction;
   readonly moveToDirectory: string;
+  /** The directories storageDir and moveToDirectory must be in (FILE_CONNECTOR_ROOTS). */
+  readonly roots: FileRoots;
 }
 
 export interface DcmtkFileData {
@@ -65,10 +75,24 @@ export type ReceiverFactory = (options: {
   readonly port: number;
   readonly storageDir: string;
   readonly aeTitle: string;
-  readonly minPoolSize: number;
-  readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
+  /** Checked before each file is written, as well as at deploy. */
+  readonly roots: FileRoots;
 }) => Result<DcmtkReceiver>;
+
+/** The file paths in what the receiver dispatched: a JSON list of paths, or one path. */
+function filesIn(content: string): string[] {
+  const text = content.trim();
+  if (!text.startsWith('[')) return [text];
+  try {
+    const list: unknown = JSON.parse(text);
+    return Array.isArray(list) ? list.filter((f): f is string => typeof f === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+// ----- Receiver -----
 
 export { DICOM_POST_ACTION, DICOM_DISPATCH_MODE };
 export type { DicomPostAction, DicomDispatchMode };
@@ -100,14 +124,12 @@ export class DicomReceiver implements SourceConnectorRuntime {
       if (this.config.aeTitle.length > 16) {
         throw new Error('AE Title must be 16 characters or fewer');
       }
-      if (this.config.minPoolSize < 1) {
-        throw new Error('Min pool size must be at least 1');
-      }
-      if (this.config.maxPoolSize < this.config.minPoolSize) {
-        throw new Error('Max pool size must be >= min pool size');
-      }
       if (this.config.postAction === DICOM_POST_ACTION.MOVE && !this.config.moveToDirectory) {
         throw new Error('Move-to directory is required when postAction is MOVE');
+      }
+      await resolveWithinRoots(this.config.storageDir, this.config.roots);
+      if (this.config.postAction === DICOM_POST_ACTION.MOVE) {
+        await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
       }
     });
   }
@@ -122,9 +144,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
         port: this.config.port,
         storageDir: this.config.storageDir,
         aeTitle: this.config.aeTitle,
-        minPoolSize: this.config.minPoolSize,
-        maxPoolSize: this.config.maxPoolSize,
         connectionTimeoutMs: this.config.connectionTimeoutMs,
+        roots: this.config.roots,
       });
       if (!result.ok) {
         throw result.error;
@@ -192,9 +213,11 @@ export class DicomReceiver implements SourceConnectorRuntime {
       },
     };
 
-    const failure = dispatchFailure(await this.dispatcher(raw));
+    const result = await this.dispatcher(raw);
+    const failure = dispatchFailure(result);
     if (failure === null) {
-      await this.applyPostAction(data.filePath);
+      if (this.keepsInput(result, { filePath: data.filePath })) return;
+      await this.applyPostActions([data.filePath]);
     } else {
       // Event-driven, so never re-dispatched: leave the file in place (no post-action)
       // for manual recovery rather than lose it.
@@ -222,16 +245,11 @@ export class DicomReceiver implements SourceConnectorRuntime {
       },
     };
 
-    const failure = dispatchFailure(await this.dispatcher(raw));
+    const result = await this.dispatcher(raw);
+    const failure = dispatchFailure(result);
     if (failure === null) {
-      const postActions: Promise<void>[] = [];
-      for (let i = 0; i < data.files.length; i++) {
-        const filePath = data.files[i];
-        if (filePath) {
-          postActions.push(this.applyPostAction(filePath));
-        }
-      }
-      await Promise.allSettled(postActions);
+      if (this.keepsInput(result, { associationId: data.associationId, fileCount: data.files.length })) return;
+      await this.applyPostActions(data.files);
     } else {
       this.logger.error(
         { ...errorInfo(failure), associationId: data.associationId, fileCount: data.files.length },
@@ -240,18 +258,84 @@ export class DicomReceiver implements SourceConnectorRuntime {
     }
   }
 
-  private async applyPostAction(filePath: string): Promise<void> {
-    switch (this.config.postAction) {
-      case DICOM_POST_ACTION.DELETE:
-        await fs.unlink(filePath).catch(() => { /* best-effort */ });
-        break;
-      case DICOM_POST_ACTION.MOVE:
-        await fs.mkdir(this.config.moveToDirectory, { recursive: true }).catch(() => { /* best-effort */ });
-        await fs.rename(filePath, path.join(this.config.moveToDirectory, path.basename(filePath))).catch(() => { /* best-effort */ });
-        break;
-      case DICOM_POST_ACTION.NONE:
-        break;
+  /**
+   * Every destination has delivered a message that waited in a queue: apply
+   * the post-action now. `content` is what this source dispatched, a file path
+   * (PER_FILE) or a JSON list of them (PER_ASSOCIATION). It is read by its
+   * shape, not the current mode, since the mode may have changed since.
+   */
+  async onMessageDelivered(content: string): Promise<void> {
+    const failures = await this.applyPostActions(filesIn(content));
+    // Thrown so the queue consumer raises an alert, not only a log line.
+    if (failures.length > 0) {
+      throw new Error(`DICOM post-action failed for ${String(failures.length)} file(s), left in place: ${failures.map((f) => f.message).join('; ')}`);
     }
+  }
+
+  /**
+   * Whether the stored files must stay although the pipeline accepted the
+   * message: a queued destination still reads them when it sends, until
+   * onMessageDelivered says the last one has (#243, D-325), or a destination
+   * failed under a response mode that answers before destinations.
+   */
+  private keepsInput(result: Result<DispatchResult>, context: Readonly<Record<string, unknown>>): boolean {
+    if (!result.ok) return false;
+    if (result.value.destinationFailed === true) {
+      this.logger.error(
+        { ...context, messageId: result.value.messageId },
+        'DICOM message had a destination fail; file retained for reprocessing or manual recovery',
+      );
+      return true;
+    }
+    return result.value.queued === true;
+  }
+
+  /** Apply the post-action to each file; the failures, each already logged. */
+  private async applyPostActions(files: readonly string[]): Promise<Error[]> {
+    const results = await Promise.all(files.filter((f) => f !== '').map((f) => this.applyPostAction(f)));
+    return results.filter((e): e is Error => e !== null);
+  }
+
+  /**
+   * Delete or move one stored file. A file already gone is fine: the pipeline
+   * and the queue consumer can both finish a message (D-325). Anything else
+   * leaves the file where it is, is logged, and is returned.
+   */
+  private async applyPostAction(filePath: string): Promise<Error | null> {
+    if (this.config.postAction === DICOM_POST_ACTION.NONE) return null;
+    try {
+      const file = await this.storedFile(filePath);
+      if (this.config.postAction === DICOM_POST_ACTION.DELETE) {
+        await fs.unlink(file);
+        return null;
+      }
+      const target = await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
+      await fs.mkdir(target, { recursive: true });
+      await fs.rename(file, path.join(target, path.basename(file)));
+      return null;
+    } catch (err) {
+      if (isMissing(err)) return null;
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.logger.error(
+        { ...errorInfo(error), filePath, postAction: this.config.postAction },
+        'DICOM post-action failed; file left in place',
+      );
+      return error;
+    }
+  }
+
+  /**
+   * The real path of a file this listener stored, or throw when the path is
+   * not a file directly in the storage directory. The path comes from the
+   * stored message when a queue finishes it, so it is checked, not trusted.
+   */
+  private async storedFile(filePath: string): Promise<string> {
+    const dir = await resolveWithinRoots(this.config.storageDir, this.config.roots);
+    const file = await resolveWithinRoots(filePath, this.config.roots);
+    if (path.dirname(file) !== dir) {
+      throw new Error(`"${filePath}" is not a file in the DICOM storage directory`);
+    }
+    return file;
   }
 }
 

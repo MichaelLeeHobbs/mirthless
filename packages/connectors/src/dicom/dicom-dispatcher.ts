@@ -1,6 +1,12 @@
-import * as path from 'node:path';
+// ===========================================
+// DICOM Dispatcher (Destination Connector)
+// ===========================================
+// A dcmjs-dimse DICOM SCU that sends DICOM files via C-STORE.
+// Expects message content to be a file path.
+
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import { createDimseSender } from './dcmjs-dimse-adapter.js';
 
 export interface DicomDispatcherConfig {
@@ -8,23 +14,15 @@ export interface DicomDispatcherConfig {
   readonly port: number;
   readonly calledAETitle: string;
   readonly callingAETitle: string;
-  readonly mode: 'single' | 'multiple';
-  readonly maxAssociations: number;
   readonly maxRetries: number;
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
   /**
-   * Content is transformer-controlled, so without this any readable local file could be
-   * sent to the remote AE. Set it to the receiver's storage dir.
+   * The directories the file named by the message may be in (FILE_CONNECTOR_ROOTS).
+   * Message content is transformer-controlled, so without this a script could
+   * send any DICOM file the server can read to the remote AE (#313).
    */
-  readonly allowedBaseDir?: string | undefined;
-}
-
-function isWithinBaseDir(filePath: string, baseDir: string): boolean {
-  const resolvedBase = path.resolve(baseDir);
-  const resolved = path.resolve(filePath);
-  const rel = path.relative(resolvedBase, resolved);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  readonly roots: FileRoots;
 }
 
 export interface DcmtkSendResult {
@@ -43,8 +41,6 @@ export type SenderFactory = (options: {
   readonly port: number;
   readonly calledAETitle: string;
   readonly callingAETitle: string;
-  readonly mode: 'single' | 'multiple';
-  readonly maxAssociations: number;
   readonly maxRetries: number;
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
@@ -75,6 +71,11 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
       if (this.config.callingAETitle.length > 16) {
         throw new Error('Calling AE Title must be 16 characters or fewer');
       }
+      // Every send would be refused, and a queue retrying forever would hold
+      // every message behind the first, so refuse to deploy instead.
+      if (this.config.roots.allowed.length === 0) {
+        throw new Error('DICOM Senders are turned off: FILE_CONNECTOR_ROOTS is not set. List the directories the files they send may be in.');
+      }
     });
   }
 
@@ -85,8 +86,6 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
         port: this.config.port,
         calledAETitle: this.config.calledAETitle,
         callingAETitle: this.config.callingAETitle,
-        mode: this.config.mode,
-        maxAssociations: this.config.maxAssociations,
         maxRetries: this.config.maxRetries,
         retryDelayMs: this.config.retryDelayMs,
         timeoutMs: this.config.timeoutMs,
@@ -111,15 +110,11 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
         throw new Error('Message content is empty — expected a DICOM file path');
       }
 
-      const filePath = message.content.trim();
-      if (this.config.allowedBaseDir && !isWithinBaseDir(filePath, this.config.allowedBaseDir)) {
-        return {
-          status: 'ERROR' as const,
-          content: '',
-          errorMessage: `DICOM file path is outside the allowed directory: ${filePath}`,
-        };
+      const allowed = await tryCatch(resolveWithinRoots(message.content.trim(), this.config.roots));
+      if (!allowed.ok) {
+        return { status: 'ERROR' as const, content: '', errorMessage: allowed.error.message };
       }
-      const sendResult = await this.sender.send([filePath]);
+      const sendResult = await this.sender.send([allowed.value]);
       if (!sendResult.ok) {
         return {
           status: 'ERROR' as const,
