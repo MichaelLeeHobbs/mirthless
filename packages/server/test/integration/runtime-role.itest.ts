@@ -132,6 +132,10 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     await runtime.connect();
   }, 120_000);
 
+  // Every pg-boss instance and pool this file opens is stopped where it is used, and
+  // WITH (FORCE) ends any session left over, so nothing here waits on a client. Dropping
+  // two migrated databases is server work that a loaded machine slows down, so the
+  // teardown gets the setup's budget, not the 30 s default (#294).
   afterAll(async () => {
     await runtime?.end();
     await owner?.end();
@@ -143,7 +147,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
       await admin.query(`DROP ROLE IF EXISTS "${SUPER_ROLE}"`);
       await admin.end();
     }
-  });
+  }, 120_000);
 
   /** Insert a channel row as `client` and return its id; the partition function wants one. */
   async function newChannel(client: pg.Client): Promise<string> {
