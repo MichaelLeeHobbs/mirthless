@@ -119,6 +119,10 @@ export interface SourceDispatchOutcome {
   readonly messageId: number;
   readonly status: DispatchStatus;
   readonly response?: string;
+  /** A queued destination has not delivered yet (see `DispatchResult.queued`). */
+  readonly queued?: true;
+  /** A destination failed although status is PROCESSED (see `DispatchResult.destinationFailed`). */
+  readonly destinationFailed?: true;
 }
 
 /** Response modes that answer the sender once the source has accepted the message. */
@@ -148,6 +152,33 @@ export function toDispatchStatus(
     return DISPATCH_STATUS.PROCESSED;
   }
   return DISPATCH_STATUS.ERROR;
+}
+
+/**
+ * What the source connector learns about a processed message: the status
+ * the response mode gives it, plus what a source that removes its input
+ * needs to keep it (a queued destination still waiting, or a failure the
+ * status does not show).
+ */
+export function toSourceOutcome(
+  processed: {
+    readonly messageId: number;
+    readonly status: 'SENT' | 'FILTERED' | 'ERROR';
+    readonly errorStage?: 'SOURCE' | 'DESTINATION' | undefined;
+    readonly response?: string | undefined;
+    readonly queued?: true | undefined;
+  },
+  responseMode: string,
+): SourceDispatchOutcome {
+  const status = toDispatchStatus(processed, responseMode);
+  const hiddenFailure = processed.status === 'ERROR' && status !== DISPATCH_STATUS.ERROR;
+  return {
+    messageId: processed.messageId,
+    status,
+    ...(processed.response === undefined ? {} : { response: processed.response }),
+    ...(processed.queued ? { queued: true as const } : {}),
+    ...(hiddenFailure ? { destinationFailed: true as const } : {}),
+  };
 }
 
 /** What a deploy, JavaScript Reader or JavaScript Writer script runs on. */
@@ -342,6 +373,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       if (!delivered.ok) return fail<void>(delivered.error);
       return delivered.value ? removeContent(channelId, messageId) : OK_VOID;
     },
+    isFullyDelivered: (channelId, messageId) => MessageService.isFullyDelivered(channelId, messageId),
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),
     loadContent: (channelId, messageId, metaDataId, contentType) =>
@@ -810,6 +842,10 @@ export class EngineManager {
         batchSize: 10,
         pollIntervalMs: 1_000,
         onError: raiseAlert,
+        // A source that keeps its input until every destination delivered (DICOM).
+        onMessageDelivered: source.onMessageDelivered
+          ? (_messageId, rawContent) => source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
+          : undefined,
       };
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
@@ -852,9 +888,7 @@ export class EngineManager {
       // Surface the pipeline's final status so the source connector can build the
       // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AA), as the
       // channel's response mode defines it.
-      const { messageId, response } = result.value;
-      const status = toDispatchStatus(result.value, channel.responseMode);
-      return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
+      return { ok: true, value: toSourceOutcome(result.value, channel.responseMode), error: null };
     };
 
     // Build runtime config
