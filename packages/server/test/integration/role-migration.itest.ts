@@ -89,6 +89,8 @@ describeIntegration('role migration (real Postgres)', () => {
     await migrate(drizzle(client), { migrationsFolder: MIGRATIONS });
   }, 120_000);
 
+  // Dropping a migrated database is server work a loaded machine slows down: the
+  // teardown gets the setup's budget, not the 30 s default (#294).
   afterAll(async () => {
     await client?.end();
     if (admin) {
@@ -96,7 +98,7 @@ describeIntegration('role migration (real Postgres)', () => {
       await admin.end();
     }
     if (partial) rmSync(partial, { recursive: true, force: true });
-  });
+  }, 120_000);
 
   it('leaves every user holding exactly the permissions their role gave them', async () => {
     const { queryUserStanding } = await import('../../src/lib/principal.js');

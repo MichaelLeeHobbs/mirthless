@@ -7,7 +7,7 @@
 // concurrent refreshes with one token cannot both succeed.
 
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { describeIntegration } from './_setup.js';
 
 const PASSWORD = 'Correct-horse-1';

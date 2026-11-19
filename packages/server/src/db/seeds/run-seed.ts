@@ -15,17 +15,16 @@ import { config as loadEnv } from 'dotenv';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, sql } from 'drizzle-orm';
-import bcrypt from 'bcryptjs';
 
 import { DEFAULT_GROUP_NAME } from '@galvanigraph/core-models';
 import * as schema from '../schema/index.js';
 import { defaultSettings } from './settings.js';
 import { demoDataEnabled } from './seed-options.js';
+import { hashPassword } from '../../lib/password.js';
 
 loadEnv({ path: '../../.env', quiet: true });
 loadEnv({ path: '.env', quiet: true });
 
-const SALT_ROUNDS = 12;
 const ADMIN_USERNAME = 'admin';
 const ADMIN_EMAIL = 'admin@galvanigraph.local';
 const ADMIN_PASSWORD = 'Admin123!';
@@ -83,7 +82,7 @@ async function seed(): Promise<void> {
       let adminId: string;
 
       if (!existingAdmin) {
-        const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, SALT_ROUNDS);
+        const passwordHash = await hashPassword(ADMIN_PASSWORD);
         const [admin] = await tx
           .insert(schema.users)
           .values({

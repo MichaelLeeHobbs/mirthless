@@ -234,14 +234,16 @@ describe('VmSandboxExecutor', () => {
     });
 
     it('returns the result of a script that finished in time, even when collecting it starts after the limit (#188)', async () => {
-      // The script's last act moves the host clock past the deadline, as a
+      // The script's last act moves the host clock far past the deadline, as a
       // descheduled host thread would between the script's end and the collection.
+      // The limit is the generous one for a script that finishes (D-290): only the
+      // clock jump puts the collection after the deadline, not the machine's speed.
       const realNow = Date.now.bind(Date);
       let skew = 0;
       const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
       try {
-        const context = makeContext({ extras: { destinationSet: { removeAll: () => { skew = 10_000; } } } });
-        const result = await executor.execute(makeScript("destinationSet.removeAll(); return 'done';"), context, { timeout: 1_000 });
+        const context = makeContext({ extras: { destinationSet: { removeAll: () => { skew = 60_000; } } } });
+        const result = await executor.execute(makeScript("destinationSet.removeAll(); return 'done';"), context, { timeout: 10_000 });
         expect(result.ok ? result.value.returnValue : result.error.message).toBe('done');
       } finally {
         clock.mockRestore();

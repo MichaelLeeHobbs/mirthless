@@ -24,7 +24,7 @@
     "@galvanigraph/core-util": "workspace:*",
     "@galvanigraph/engine": "workspace:^",
     "@prometheus-io/client": "^0.16.1",
-    "bcryptjs": "3.0.3",
+    "bcrypt": "6.0.0",
     "compression": "1.8.2",
     "cookie-parser": "1.4.7",
     "cors": "2.8.6",
@@ -46,6 +46,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@types/bcrypt": "6.0.0",
     "@types/compression": "1.8.1",
     "@types/cookie-parser": "1.4.10",
     "@types/cors": "2.8.19",
