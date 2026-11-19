@@ -602,7 +602,7 @@ async function redeployRecorded(ch: ChannelDeployEntry, recorded: RecordedDeploy
 }
 
 /**
- * First start after the upgrade that added deployment records (D-325): record
+ * First start after the upgrade that added deployment records (D-327): record
  * each enabled channel's saved configuration as its deployment, once, so it
  * comes back as it did before the upgrade. Channels no longer enabled are
  * dropped from the list. Returns the ids of channels that could not be adopted.

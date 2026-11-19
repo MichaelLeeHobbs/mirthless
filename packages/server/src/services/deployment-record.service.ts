@@ -3,7 +3,7 @@
 // ===========================================
 // What a deploy deployed: the channel configuration and the code templates and
 // global scripts compiled into it, read from one snapshot of the database, and
-// recorded so that a restart brings back exactly that (#225, D-325).
+// recorded so that a restart brings back exactly that (#225, D-327).
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -160,7 +160,7 @@ export class DeploymentRecordService {
     });
   }
 
-  /** Channels still waiting for their one-time adoption after the upgrade (D-325). */
+  /** Channels still waiting for their one-time adoption after the upgrade (D-327). */
   static async listPendingAdoptions(): Promise<Result<ReadonlySet<string>>> {
     return tryCatch(async () => {
       const rows = await db.select({ channelId: channelDeploymentAdoptions.channelId }).from(channelDeploymentAdoptions);

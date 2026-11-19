@@ -142,7 +142,7 @@ Code reaches the server through channel scripts (deploy, undeploy, preprocessor,
 
 - **admin** can write all of it, deploy it, and restore it from a backup.
 - **deployer** can write channel scripts and code templates (`channels:write`, `code_templates:write`) and deploy them (`channels:deploy`). It cannot write global scripts.
-- **developer** can write channel scripts and code templates but cannot deploy, enable or disable a channel. Its code runs the next time someone holding `channels:deploy` deploys an affected channel. A server restart does not run it: each channel comes back as it was last deployed, with the code templates and global scripts it was deployed with (D-325).
+- **developer** can write channel scripts and code templates but cannot deploy, enable or disable a channel. Its code runs the next time someone holding `channels:deploy` deploys an affected channel. A server restart does not run it: each channel comes back as it was last deployed, with the code templates and global scripts it was deployed with (D-327).
 - A code template or global script change reaches a running channel only when that channel is deployed again.
 - **viewer** cannot write code.
 
