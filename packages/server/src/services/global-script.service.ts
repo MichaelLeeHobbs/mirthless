@@ -98,8 +98,10 @@ async function assertTouchedScriptsTypeCheck(input: UpdateGlobalScriptsInput): P
 // ----- Service -----
 
 export class GlobalScriptService {
-  /** Get all 4 global scripts. Returns empty strings for missing rows. */
-  /** Every global script. A deploy passes its transaction, so they are read with the channel. */
+  /**
+   * Get all 4 global scripts, with empty strings for missing rows. A deploy
+   * passes its transaction, so they are read with the channel.
+   */
   static async getAll(reader: DbReader = db): Promise<Result<GlobalScriptsData>> {
     return tryCatch(() => readAll(reader));
   }

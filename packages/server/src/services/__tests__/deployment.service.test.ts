@@ -207,6 +207,37 @@ describe('DeploymentService', () => {
       expect(deployedChannels.has(CHANNEL_ID)).toBe(false);
     });
 
+    it('says the channel is still deployed when neither the record nor the undo can be written', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockEngine.deploy.mockImplementationOnce(async () => { register(); });
+      mockRecords.record.mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') });
+      mockEngine.undeploy.mockRejectedValueOnce(new Error('global map flush failed'));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain('it is deployed and stopped');
+      expect(mockEmitEvent).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'CHANNEL_DEPLOYED' }));
+    });
+
+    it('lets an undeploy started during a deploy wait until the deploy is recorded', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      let finishDeploy: (() => void) | undefined;
+      mockEngine.deploy.mockImplementationOnce(() => new Promise<void>((resolve) => {
+        finishDeploy = (): void => { register(); resolve(); };
+      }));
+
+      const deploying = DeploymentService.deploy(CHANNEL_ID);
+      const undeploying = DeploymentService.undeploy(CHANNEL_ID);
+      await vi.waitFor(() => { expect(finishDeploy).toBeDefined(); });
+      expect(mockRecords.markUndeployed).not.toHaveBeenCalled();
+      finishDeploy?.();
+
+      expect((await deploying).ok).toBe(true);
+      expect((await undeploying).ok).toBe(true);
+      expect(mockRecords.record.mock.invocationCallOrder[0]!).toBeLessThan(mockRecords.markUndeployed.mock.invocationCallOrder[0]!);
+    });
+
     it('refuses a disabled channel', async () => {
       mockChannelService.getById.mockResolvedValue(ok({ ...CHANNEL_DETAIL, enabled: false }));
 
@@ -532,6 +563,27 @@ describe('DeploymentService', () => {
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
     });
 
+    it('marks the record of a channel that is not running but would come back at a restart', async () => {
+      // A redeploy stopped the old version and the new one failed: nothing runs,
+      // and the record still holds the old version.
+      mockRecords.listRecorded.mockResolvedValue(ok(new Map([[CHANNEL_ID, { kind: 'deployed', bundle: bundle(CHANNEL_DETAIL) }]])));
+
+      const result = await DeploymentService.undeploy(CHANNEL_ID);
+
+      expect(result.ok && result.value.state).toBe('UNDEPLOYED');
+      expect(mockRecords.markUndeployed).toHaveBeenCalledWith(CHANNEL_ID, true);
+      expect(mockEngine.undeploy).not.toHaveBeenCalled();
+    });
+
+    it('answers NOT_FOUND for a channel already marked undeployed', async () => {
+      mockRecords.listRecorded.mockResolvedValue(ok(new Map([[CHANNEL_ID, { kind: 'undeployed' }]])));
+
+      const result = await DeploymentService.undeploy(CHANNEL_ID);
+
+      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+      expect(mockRecords.markUndeployed).not.toHaveBeenCalled();
+    });
+
     it('returns CONFLICT if channel is still running', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');
       deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
@@ -798,6 +850,27 @@ describe('DeploymentService', () => {
       expect(mockEngine.deploy).toHaveBeenCalledWith(recorded);
       expect(mockRecords.loadSaved).not.toHaveBeenCalled();
       expect(mockChannelService.getById).not.toHaveBeenCalled();
+    });
+
+    it('leaves a channel someone deployed while the server was starting as it is', async () => {
+      mockChannelService.listLiveForDeploy.mockResolvedValue(ok([summary('a')]));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+      register('a');
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(result.ok).toBe(true);
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+    });
+
+    it('reads each channel\'s record just before deploying it, not once for all', async () => {
+      mockChannelService.listLiveForDeploy.mockResolvedValue(ok([summary('a'), summary('b')]));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+
+      await DeploymentService.autoDeployChannels();
+
+      expect(mockRecords.listRecorded.mock.calls).toEqual([[['a']], [['b']]]);
+      expect(mockRecords.listRecorded.mock.invocationCallOrder[1]!).toBeGreaterThan(mockEngine.deploy.mock.invocationCallOrder[0]!);
     });
 
     it('does not record again what it redeploys at startup', async () => {

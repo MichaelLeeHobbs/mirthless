@@ -38,8 +38,15 @@ async function enabledChangeAllowed(req: Request, res: Response, id: string, inp
   if (input.enabled === undefined) return true;
   if (req.principal && can(req.principal.grants, 'channels:deploy', { groupIds: req.channelScope ?? [] })) return true;
   const current = await ChannelService.getById(id);
-  // A missing channel is answered by the update itself.
-  if (!current.ok || current.value.enabled === input.enabled) return true;
+  if (!current.ok) {
+    // A missing channel is answered by the update itself; any other failure
+    // refuses the save rather than skip the check.
+    if (isServiceError(current.error, 'NOT_FOUND')) return true;
+    logger.error({ ...errorInfo(current.error), channelId: id }, 'Could not read a channel to check an enabled change');
+    res.status(mapErrorToStatus(current.error)).json({ success: false, error: errorResponse(current.error) });
+    return false;
+  }
+  if (current.value.enabled === input.enabled) return true;
   deny(req, res, DENY_REASON.NO_PERMISSION);
   return false;
 }

@@ -27,6 +27,12 @@ vi.mock('../../engine.js', () => ({
   getEngine: () => ({ getRuntime: mockGetRuntime }),
 }));
 
+// The certificate scope check reads the database for a scoped caller; it is
+// tested in its own file, and these tests save no certificates.
+vi.mock('../../services/connector-tls-resolver.js', () => ({
+  assertCertificatesInScope: vi.fn(async () => undefined),
+}));
+
 vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
@@ -449,6 +455,47 @@ describe('ChannelController', () => {
 
       expect(mockService.update).toHaveBeenCalledOnce();
       expect(mockService.getById).not.toHaveBeenCalled();
+    });
+
+    it('refuses someone who can deploy only in another channel group', async () => {
+      const elsewhere = { userId: 'u3', grants: standingFor({ id: 'u3', role: 'channel-deployer', groups: ['group-b'] }).grants };
+      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: elsewhere, channelScope: ['group-a'] } as Partial<Request>);
+      const res = makeRes();
+
+      await ChannelController.update(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockService.update).not.toHaveBeenCalled();
+    });
+
+    it('lets someone who can deploy in the channel\'s own group change it', async () => {
+      const here = { userId: 'u4', grants: standingFor({ id: 'u4', role: 'channel-deployer', groups: ['group-a'] }).grants };
+      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: here, channelScope: ['group-a'] } as Partial<Request>);
+
+      await ChannelController.update(req, makeRes());
+
+      expect(mockService.update).toHaveBeenCalledOnce();
+    });
+
+    it('refuses the save when the channel cannot be read to check, instead of skipping the check', async () => {
+      mockService.getById.mockResolvedValue({ ok: false, value: null, error: new Error('connection terminated') });
+      const res = makeRes();
+
+      await ChannelController.update(updateReq({ enabled: true }, developer), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(mockService.update).not.toHaveBeenCalled();
+    });
+
+    it('lets the update answer a channel that does not exist', async () => {
+      mockService.getById.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Channel not found') });
+      mockService.update.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Channel not found') });
+      const res = makeRes();
+
+      await ChannelController.update(updateReq({ enabled: true }, developer), res);
+
+      expect(mockService.update).toHaveBeenCalledOnce();
+      expect(res.status).toHaveBeenCalledWith(404);
     });
   });
 
