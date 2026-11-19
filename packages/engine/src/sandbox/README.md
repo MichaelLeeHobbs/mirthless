@@ -69,16 +69,7 @@ Result: `logger.info.constructor`, `({}).constructor.constructor`,
 present, user scripts may `await`; the executor additionally races the resulting
 promise against the abort signal for an async wall-clock timeout.
 
-The script's code and its IO settles share one deadline that starts when the
-script does. Building the sandbox's globals and collecting the script's result
-are not counted against it: each has a limit of its own, as long as the script's,
-so a script that finished in time is never reported as timed out because a busy
-host reached its result late (D-323). One execution can therefore take the setup
-time, the limit, and the collection time; a toJSON or getter in the result that
-loops is stopped by the collection's limit. IO results that are
-ready are settled together in one timed call, one result at a time inside it,
-because each timed call starts a watchdog thread that a busy machine is slow to
-schedule (D-300). A timeout always names the whole limit.
+The script's code and its IO settles share one deadline that starts when the script does. Building the sandbox's globals and collecting the script's result are not counted against it: each has a limit of its own, as long as the script's, so a script that finished in time is never reported as timed out because a busy host reached its result late (D-323). One execution can therefore take the setup time, the limit, and the collection time; a toJSON or getter in the result that loops is stopped by the collection's limit. A worker test run is terminated 5 s after both limits. IO results that are ready are settled together in one timed call, one result at a time inside it, because each timed call starts a watchdog thread that a busy machine is slow to schedule (D-300). A timeout always names the whole limit.
 
 ## Notes / limitations
 
