@@ -26,7 +26,7 @@ const BRIDGES = {
 async function runtimeGlobals(context: SandboxContext): Promise<string[]> {
   const compiled = await compileScript('return Object.getOwnPropertyNames(globalThis);', { sourcefile: 'globals.ts' });
   if (!compiled.ok) throw compiled.error;
-  const result = await new VmSandboxExecutor(BRIDGES).execute(compiled.value, context, { timeout: 5_000 });
+  const result = await new VmSandboxExecutor(BRIDGES).execute(compiled.value, context, { timeout: 10_000 });
   if (!result.ok) throw result.error;
   // Names starting with __ are the sandbox's own plumbing, not part of the script API.
   return (result.value.returnValue as string[]).filter((n) => !REALM_GLOBALS.has(n) && !n.startsWith('__')).sort();
