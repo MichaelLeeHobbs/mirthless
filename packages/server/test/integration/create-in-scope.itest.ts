@@ -1,10 +1,6 @@
-// ===========================================
-// New channels land in the creator's scope (real Postgres, #266 slice 9b)
-// ===========================================
-// Create, clone and JSON import (which Mirth import runs through) put the new channel in a group
-// inside the creator's channels:write scope, in the creating transaction: a
-// scoped writer's channel would otherwise be in no group and out of their own
-// reach. Import OVERWRITE needs channels:write on each channel it replaces.
+// A new channel goes into a group in the creator's channels:write scope, or a
+// scoped writer could not reach what they made (#266). Mirth import runs
+// through JSON import, so this covers it too.
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -54,7 +50,6 @@ describeIntegration('new channels land in the creator\'s scope (real Postgres)',
     return { status: res.status, id };
   }
 
-  /** A JSON export entry for a plain channel with this id. */
   const entry = (id: string, name: string): Record<string, unknown> => ({
     id, name, description: '', enabled: false, revision: 1, inboundDataType: 'RAW', outboundDataType: 'RAW',
     sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE', responseConnectorName: null,
@@ -96,7 +91,6 @@ describeIntegration('new channels land in the creator\'s scope (real Postgres)',
       `SELECT attributes FROM audit_log WHERE action = 'CHANNEL_GROUPS_CHANGED' AND channel_id = $1`, [made.id],
     );
     expect(rows.map((r) => r.attributes)).toEqual([{ before: [], after: [lab], created: true }]);
-    // The writer can open what they made.
     expect((await call(writer.token, 'GET', `/channels/${made.id!}`)).status).toBe(200);
   });
 

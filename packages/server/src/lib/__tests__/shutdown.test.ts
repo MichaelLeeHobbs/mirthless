@@ -1,11 +1,5 @@
-// ===========================================
-// Graceful Shutdown Handler Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createShutdownHandler, type ShutdownDeps } from '../shutdown.js';
-
-// ----- Mocks -----
 
 const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
@@ -37,8 +31,6 @@ function createMockDeps(overrides?: Partial<ShutdownDeps>): ShutdownDeps {
   };
 }
 
-// ----- Tests -----
-
 describe('createShutdownHandler', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -64,7 +56,7 @@ describe('createShutdownHandler', () => {
     const handler = createShutdownHandler(deps);
     handler('SIGTERM');
 
-    // Flush all microtasks (the async IIFE)
+    // Runs the async IIFE.
     await vi.advanceTimersByTimeAsync(0);
 
     expect(callOrder).toEqual([
@@ -142,7 +134,6 @@ describe('createShutdownHandler', () => {
       { signal: 'SIGINT' },
       'Duplicate shutdown signal ignored',
     );
-    // stopAccepting should only be called once
     expect(deps.stopAccepting).toHaveBeenCalledTimes(1);
   });
 
@@ -206,10 +197,8 @@ describe('createShutdownHandler', () => {
     handler('SIGTERM');
     await vi.advanceTimersByTimeAsync(0);
 
-    // stopSocketIO and stopAccepting run before stopEngine
     expect(deps.stopSocketIO).toHaveBeenCalledTimes(1);
     expect(deps.stopAccepting).toHaveBeenCalledTimes(1);
-    // stopPrunerScheduler, stopQueue, closePool should NOT run
     expect(deps.stopPrunerScheduler).not.toHaveBeenCalled();
     expect(deps.stopQueue).not.toHaveBeenCalled();
     expect(deps.closePool).not.toHaveBeenCalled();
@@ -244,7 +233,6 @@ describe('createShutdownHandler', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockExit).toHaveBeenCalledWith(0);
-    // The force timer should not have fired
     expect(mockExit).not.toHaveBeenCalledWith(1);
   });
 });

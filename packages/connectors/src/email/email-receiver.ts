@@ -1,10 +1,3 @@
-// ===========================================
-// Email Receiver (Source Connector)
-// ===========================================
-// Polls a mailbox via IMAP for unread messages,
-// dispatches each as a message, then applies
-// post-processing (delete, mark read, or move).
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
@@ -13,34 +6,27 @@ import { withTimeout } from '../timeout.js';
 import { connectFresh, closeQuietly } from '../client-lifecycle.js';
 import { createRequire } from 'node:module';
 
-// The package is ESM, so a bare `require` is undefined at runtime (vitest
-// injects one, which hid this). Load the CJS client library through createRequire.
+// ESM has no bare `require` at runtime (vitest injects one, which hid this).
 const require = createRequire(import.meta.url);
 
-/** Bound each IMAP operation — a hung mailbox must not wedge the poll loop. */
 const IMAP_OP_TIMEOUT_MS = 30_000;
 
 /**
- * IMAP keyword set on an email once it has been dispatched. It lives on the
- * mail server, so a restart before the post-action succeeds retries only the
- * post-action instead of dispatching the email a second time.
+ * Lives on the mail server, so a restart before the post-action succeeds retries
+ * only the post-action, not the dispatch.
  */
 export const DISPATCHED_KEYWORD = '$GalvaniGraphDispatched';
 
 /**
- * Keywords set under the product's earlier names: GalvaniFlow (D-309) and
- * Mirthless (D-205). Still read as dispatched, never set, so an email handled
- * before a rename is not delivered again.
+ * Keywords from earlier names (D-309, D-205): read as dispatched, never set, so an
+ * email handled before a rename is not delivered again.
  */
 export const LEGACY_DISPATCHED_KEYWORDS: readonly string[] = ['$GalvaniFlowDispatched', '$MirthlessDispatched'];
 
-/** True when the flags carry the current or a legacy dispatched keyword. */
 export function hasDispatchedKeyword(flags: ReadonlySet<string> | undefined): boolean {
   if (flags === undefined) return false;
   return flags.has(DISPATCHED_KEYWORD) || LEGACY_DISPATCHED_KEYWORDS.some((keyword) => flags.has(keyword));
 }
-
-// ----- Constants -----
 
 const EMAIL_PROTOCOL = {
   IMAP: 'IMAP',
@@ -54,8 +40,6 @@ const EMAIL_POST_ACTION = {
   MOVE: 'MOVE',
 } as const;
 type EmailPostAction = typeof EMAIL_POST_ACTION[keyof typeof EMAIL_POST_ACTION];
-
-// ----- Config -----
 
 export interface EmailReceiverConfig {
   readonly host: string;
@@ -75,9 +59,6 @@ export interface EmailReceiverConfig {
 export { EMAIL_PROTOCOL, EMAIL_POST_ACTION };
 export type { EmailProtocol, EmailPostAction };
 
-// ----- IMAP Client abstraction (for testability) -----
-
-/** A single email message fetched from the mailbox. */
 export interface EmailMessage {
   readonly uid: number;
   readonly subject: string;
@@ -90,22 +71,18 @@ export interface EmailMessage {
   readonly dispatched: boolean;
 }
 
-/** Abstraction over IMAP client for testability. */
 export interface ImapClient {
   connect(): Promise<void>;
   fetchUnread(folder: string): Promise<readonly EmailMessage[]>;
   markRead(uid: number): Promise<void>;
-  /** Set {@link DISPATCHED_KEYWORD}. Resolves false when the mailbox does not accept custom keywords. */
+  /** Resolves false when the mailbox does not accept custom keywords. */
   markDispatched(uid: number): Promise<boolean>;
   moveMessage(uid: number, folder: string): Promise<void>;
   deleteMessage(uid: number): Promise<void>;
   disconnect(): Promise<void>;
 }
 
-/** Factory function to create an IMAP client. Defaults to imapflow. */
 export type ImapClientFactory = (config: EmailReceiverConfig) => ImapClient;
-
-// ----- Receiver -----
 
 export class EmailReceiver implements SourceConnectorRuntime {
   private readonly config: EmailReceiverConfig;
@@ -114,14 +91,12 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
-  /** The email being dispatched and post-processed, which stop waits for so it gets its post-action. */
+  /** Stop waits for this so the email gets its post-action. */
   private dispatchInFlight: Promise<void> | null = null;
   private client: ImapClient | null = null;
   /**
-   * UIDs already dispatched whose post-action (mark read / move / delete) has
-   * not succeeded yet. The email is still unread on the server, so later polls
-   * only retry the post-action for these instead of dispatching them again.
-   * Backs up {@link DISPATCHED_KEYWORD} for mailboxes that reject custom keywords.
+   * Dispatched UIDs whose post-action has not succeeded: later polls retry only the
+   * post-action. Backs up {@link DISPATCHED_KEYWORD} for mailboxes that reject custom keywords.
    */
   private readonly awaitingPostAction = new Set<number>();
   /** UIDs the pipeline recorded with an error: no post-action and no second dispatch. */
@@ -140,8 +115,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   async onDeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
-      // Only IMAP is implemented. Previously a POP3 config was silently accepted and
-      // then used IMAP anyway — reject it so the misconfiguration is obvious.
+      // Only IMAP is implemented; reject POP3 rather than silently use IMAP.
       if (this.config.protocol !== EMAIL_PROTOCOL.IMAP) {
         throw new Error(`Unsupported email protocol: ${this.config.protocol}. Only IMAP is supported.`);
       }
@@ -201,7 +175,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Execute one poll cycle: fetch unread, filter, dispatch, post-process. */
   private async pollCycle(): Promise<void> {
     if (this.polling || !this.dispatcher) return;
     this.polling = true;
@@ -226,9 +199,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
         }
       }
     } catch (err) {
-      // A dropped IMAP connection otherwise leaves the channel STARTED yet
-      // silently idle. Surface it and drop the client so the next cycle
-      // reconnects.
+      // Otherwise a dropped connection leaves the channel STARTED but silently idle.
       this.logger.error(errorInfo(err), 'Email poll cycle failed; will reconnect');
       await this.safeDisconnect();
       this.client = null;
@@ -237,13 +208,11 @@ export class EmailReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** (Re)establish the IMAP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
     const client = this.createClient(this.config);
     this.client = await connectFresh(client, IMAP_OP_TIMEOUT_MS, 'IMAP connect', () => client.disconnect());
   }
 
-  /** Disconnect the current client under a timeout, logging and ignoring errors. */
   private async safeDisconnect(): Promise<void> {
     const client = this.client;
     if (!client) return;
@@ -256,13 +225,11 @@ export class EmailReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Check if a message matches the subject filter (if configured). */
   private matchesSubjectFilter(msg: EmailMessage): boolean {
     if (!this.config.subjectFilter) return true;
     return msg.subject.toLowerCase().includes(this.config.subjectFilter.toLowerCase());
   }
 
-  /** Dispatch a single email message and apply post-processing. */
   private async processMessage(msg: EmailMessage): Promise<void> {
     if (!this.dispatcher || !this.client) return;
 
@@ -311,10 +278,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /**
-   * Persist that the email was dispatched by setting the IMAP keyword. A failure
-   * is logged, not fatal: the in-memory set still prevents a duplicate until restart.
-   */
+  /** A failure is logged, not fatal: the in-memory set still prevents a duplicate until restart. */
   private async recordDispatched(uid: number): Promise<void> {
     const client = this.client;
     try {
@@ -335,7 +299,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** Apply post-processing action to a processed email. */
   private async postProcess(uid: number): Promise<void> {
     // Throw rather than return: the caller would take a silent return as done and
     // stop tracking an email that is still unread, which a later poll then dispatches again.
@@ -354,7 +317,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** Disconnect the IMAP client if connected. */
   private async disconnectClient(): Promise<void> {
     const client = this.client;
     if (!client) return;
@@ -363,7 +325,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
     await withTimeout(client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
   }
 
-  /** Clear the poll interval timer. */
   private clearPollTimer(): void {
     if (this.pollTimer !== null) {
       clearInterval(this.pollTimer);
@@ -372,9 +333,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
   }
 }
 
-// ----- Default IMAP client factory (imapflow) -----
-
-/** Create an imapflow-based IMAP client. Requires imapflow to be installed. */
 function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
   const { ImapFlow } = require('imapflow') as { ImapFlow: new (opts: Record<string, unknown>) => ImapFlowInstance };
 
@@ -386,9 +344,8 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
     logger: false,
   });
 
-  // ImapFlow is an EventEmitter that emits 'error' when the connection drops
-  // between polls. With no listener, Node treats it as an uncaughtException and
-  // kills the whole engine process. Swallow it here — the poll loop reconnects.
+  // ImapFlow emits 'error' when the connection drops between polls; with no listener
+  // Node kills the engine process. The poll loop reconnects.
   const factoryLogger = createConnectorLogger('EMAIL');
   client.on('error', (err: unknown) => {
     factoryLogger.warn(errorInfo(err), 'IMAP client error (will reconnect on next poll)');
@@ -447,8 +404,6 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
 function requireDone(done: boolean, action: string, uid: number): void {
   if (!done) throw new Error(`IMAP server refused to ${action} for UID ${uid}`);
 }
-
-// ----- ImapFlow type helpers (minimal interface for require) -----
 
 interface ImapFlowEnvelopeAddress {
   readonly address?: string;

@@ -1,18 +1,8 @@
-// ===========================================
-// Log Stream Service
-// ===========================================
-// In-memory ring buffer for server log entries.
-// Captures Pino log output and emits to Socket.IO.
-
 import { Writable } from 'node:stream';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
 import { emitToRoom } from '../lib/socket.js';
 
-// ----- Constants -----
-
 const MAX_ENTRIES = 10_000;
-
-// ----- Types -----
 
 export interface LogEntry {
   readonly timestamp: string;
@@ -34,8 +24,6 @@ export interface LogQueryResult {
   readonly total: number;
 }
 
-// ----- Pino Level Map -----
-
 const LEVEL_LABELS: Record<number, string> = {
   10: 'TRACE',
   20: 'DEBUG',
@@ -44,8 +32,6 @@ const LEVEL_LABELS: Record<number, string> = {
   50: 'ERROR',
   60: 'FATAL',
 };
-
-// ----- Ring Buffer -----
 
 const buffer: LogEntry[] = [];
 let writeIndex = 0;
@@ -65,31 +51,24 @@ function getEntries(): readonly LogEntry[] {
   if (totalWritten <= MAX_ENTRIES) {
     return buffer;
   }
-  // Ring has wrapped: entries from writeIndex to end, then 0 to writeIndex
   return [...buffer.slice(writeIndex), ...buffer.slice(0, writeIndex)];
 }
 
-// ----- Service -----
-
 export class LogStreamService {
-  /** Query log entries with optional filtering and pagination. */
   static query(params: LogQueryParams = {}): LogQueryResult {
     const { level, search, offset = 0, limit = 100 } = params;
 
     let entries = [...getEntries()];
 
-    // Filter by level (show entries >= specified level)
     if (level !== undefined) {
       entries = entries.filter((e) => e.level >= level);
     }
 
-    // Filter by search text
     if (search) {
       const lower = search.toLowerCase();
       entries = entries.filter((e) => e.message.toLowerCase().includes(lower));
     }
 
-    // Newest first
     entries.reverse();
 
     const total = entries.length;
@@ -98,10 +77,6 @@ export class LogStreamService {
     return { entries: paged, total };
   }
 
-  /**
-   * Create a Writable stream that parses Pino JSON lines
-   * and pushes entries into the ring buffer + Socket.IO.
-   */
   static createWritableStream(): Writable {
     return new Writable({
       write(chunk: Buffer, _encoding: string, callback: () => void): void {
@@ -143,19 +118,18 @@ export class LogStreamService {
     });
   }
 
-  /** Get the current buffer size. */
   static getBufferSize(): number {
     return buffer.length;
   }
 
-  /** Reset the buffer (for testing). */
+  /** Tests only. */
   static _reset(): void {
     buffer.length = 0;
     writeIndex = 0;
     totalWritten = 0;
   }
 
-  /** Add an entry directly (for testing or manual injection). */
+  /** Tests only. */
   static _addEntry(entry: LogEntry): void {
     addEntry(entry);
   }

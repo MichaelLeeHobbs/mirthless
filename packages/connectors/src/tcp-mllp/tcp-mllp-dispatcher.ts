@@ -1,11 +1,3 @@
-// ===========================================
-// TCP/MLLP Dispatcher (Destination Connector)
-// ===========================================
-// Sends messages to a remote TCP/MLLP server over a pooled connection
-// (optionally TLS). Validates the HL7 acknowledgement: a NAK surfaces as an
-// ERROR (never a silent SENT). Pooled sockets carry persistent error handlers
-// so an idle-socket error can never become an uncaughtException.
-
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import * as genericPool from 'generic-pool';
@@ -16,24 +8,17 @@ import type { TlsClientOptions } from '../tls.js';
 import { classifyAckResponse, controlIdOf, type SentControlId } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
-// ----- Config -----
-
 export interface TcpMllpDispatcherConfig {
   readonly host: string;
   readonly port: number;
   readonly maxConnections: number;
   readonly responseTimeout: number;
-  /** Max time to wait for a pooled connection before failing. Default 30s. */
   readonly acquireTimeoutMs: number;
-  /** Payload charset for framing/parsing. Defaults to utf-8. */
   readonly charset: BufferEncoding;
-  /** Optional TLS. When present the client connects over TLS. */
   readonly tls?: TlsClientOptions | undefined;
-  /** Frame bytes around each message and response (default MLLP). */
+  /** MLLP when unset. */
   readonly framing?: Framing | undefined;
 }
-
-// ----- Dispatcher -----
 
 export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   private readonly config: TcpMllpDispatcherConfig;
@@ -97,10 +82,6 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /**
-   * Acquire a pooled socket, honoring the AbortSignal and the pool's acquire
-   * timeout so a down/slow destination fails promptly instead of hanging.
-   */
   private async acquireSocket(signal: AbortSignal): Promise<net.Socket> {
     if (signal.aborted) throw new Error('Send aborted');
     const pool = this.pool!;
@@ -154,7 +135,6 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /** Create a new TCP/TLS connection to the destination. */
   private async createConnection(): Promise<net.Socket> {
     const connectTimeout = Math.min(this.config.responseTimeout, 5_000);
     return new Promise<net.Socket>((resolve, reject) => {
@@ -177,7 +157,6 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /** Open a plain or TLS socket to the destination. */
   private openSocket(timeout: number, onConnect: () => void): net.Socket {
     if (this.config.tls) {
       const t = this.config.tls;
@@ -197,11 +176,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     );
   }
 
-  /**
-   * Attach persistent error/close handlers to a pooled socket. Without these,
-   * an error on an idle socket becomes an uncaughtException that would take
-   * down the entire engine. Destroying the socket lets the pool evict it.
-   */
+  /** Without these, an error on an idle socket becomes an uncaughtException that takes down the engine. */
   private attachIdleHandlers(socket: net.Socket): void {
     socket.on('error', (err) => {
       this.logger.error(errorInfo(err), 'Idle pooled MLLP socket error; evicting');
@@ -210,7 +185,6 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     socket.on('close', () => { socket.destroy(); });
   }
 
-  /** Send an MLLP-framed message and validate the acknowledgement. */
   private async sendAndReceive(
     socket: net.Socket,
     content: string,
@@ -276,7 +250,6 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   }
 }
 
-/** Convert an acknowledgement frame into a connector response. */
 function toResponse(ack: string, sentControlId: SentControlId | undefined): ConnectorResponse {
   const classification = classifyAckResponse(ack, sentControlId);
   if (classification.accepted) {

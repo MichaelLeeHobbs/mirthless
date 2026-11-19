@@ -1,33 +1,21 @@
-// ===========================================
-// HL7v2 Encoding
-// ===========================================
-// Detects delimiter characters from MSH segment
-// and handles escape/unescape of special characters.
-
-/** HL7v2 encoding characters detected from a message header. */
 export interface Hl7Encoding {
   readonly fieldSep: string;
   readonly componentSep: string;
   readonly repetitionSep: string;
   readonly escapeChar: string;
   /**
-   * The subcomponent separator, or the field separator when MSH-2 declares none
-   * (three characters, as some legacy senders send). A field never contains the
-   * field separator, so nothing is then split at subcomponent level.
+   * The field separator when MSH-2 declares none (legacy three-character MSH-2):
+   * a field never contains it, so nothing splits at subcomponent level.
    */
   readonly subComponentSep: string;
   readonly segmentSep: string;
 }
 
 /**
- * Detect encoding characters from an MSH segment line.
- *
- * MSH-2 holds 4 distinct characters (component, repetition, escape,
- * subcomponent), or 5 from v2.7, which adds the truncation character. Some
- * legacy senders send 3, with no subcomponent separator; that is read as Mirth
- * reads it, with no subcomponent splitting. Anything else is refused: reading
- * delimiters from a malformed header would split every field in the wrong place
- * without an error.
+ * MSH-2 holds 4 distinct characters, or 5 from v2.7 (truncation). Legacy
+ * senders send 3 with no subcomponent separator, read as Mirth reads it.
+ * Anything else is refused: delimiters read from a malformed header would split
+ * every field in the wrong place without an error.
  */
 export function detectEncoding(mshSegment: string): Hl7Encoding {
   const fieldSep = /^MSH([^\r\n])/.exec(mshSegment)?.[1];
@@ -48,25 +36,19 @@ export function detectEncoding(mshSegment: string): Hl7Encoding {
   };
 }
 
-/** Build the MSH.2 encoding characters string (`^~\&`, or `^~\` when there is no subcomponent separator). */
 export function encodingCharsString(enc: Hl7Encoding): string {
   const sub = enc.subComponentSep === enc.fieldSep ? '' : enc.subComponentSep;
   return `${enc.componentSep}${enc.repetitionSep}${enc.escapeChar}${sub}`;
 }
 
-/** Escape a regex special character for use in RegExp constructor. */
 function escapeRegex(char: string): string {
   return char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
- * Split message text into segment lines.
- *
- * The standard separator is a carriage return, but files and HTTP bodies often
- * arrive with CRLF or bare line feeds. A CR (with or without a following LF)
- * always ends a segment. A bare LF ends one only when the next line starts like a
- * segment (three-character ID then the field separator) or is blank, because
- * some senders put raw line feeds inside free-text fields.
+ * A CR (with or without LF) always ends a segment. A bare LF ends one only
+ * before a line that starts like a segment or is blank: files and HTTP bodies
+ * arrive with LF endings, and some senders put raw LFs inside free text.
  */
 export function splitSegments(text: string, enc: Pick<Hl7Encoding, 'fieldSep'>): string[] {
   const sep = escapeRegex(enc.fieldSep);
@@ -74,7 +56,6 @@ export function splitSegments(text: string, enc: Pick<Hl7Encoding, 'fieldSep'>):
   return text.replace(/[\r\n]+$/, '').split(boundary).filter((line) => line.trim() !== '');
 }
 
-/** Escape a value for embedding in an HL7 field. */
 export function escapeValue(value: string, enc: Hl7Encoding): string {
   let result = value;
   // Escape char first to prevent double-encoding
@@ -109,23 +90,18 @@ const WINDOWS_1252_80_9F: readonly number[] = [
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
- * The charset for `\X..\` escapes from MSH-18 (HL7 table 0211). `UNICODE
- * UTF-8` is UTF-8, in any case and ignoring spaces, `_` and `-`, so
- * `Unicode_UTF8`, `UTF-8` and `UTF 8` are too. Anything else, including no
- * MSH-18, `ASCII` and `8859/1`, is read as Windows-1252, as browsers read a
- * `latin1` label.
+ * MSH-18 values are HL7 table 0211. Anything but UTF-8, including no MSH-18,
+ * `ASCII` and `8859/1`, is read as Windows-1252, as browsers read a `latin1` label.
  */
 export function hexEscapeCharset(msh18: string | undefined): HexEscapeCharset {
   const name = (msh18 ?? '').toUpperCase().replace(/[\s_-]/g, '');
   return name === 'UNICODEUTF8' || name === 'UTF8' ? 'utf-8' : 'windows-1252';
 }
 
-/** One character per byte: 0x80 to 0x9F as Windows-1252, every other byte as Latin-1. */
 function decodeWindows1252(bytes: readonly number[]): string {
   return bytes.map((b) => String.fromCharCode(WINDOWS_1252_80_9F[b - 0x80] ?? b)).join('');
 }
 
-/** The run as UTF-8, or undefined when its bytes are not valid UTF-8. */
 function decodeUtf8(bytes: readonly number[]): string | undefined {
   try {
     return UTF8_DECODER.decode(Uint8Array.from(bytes));
@@ -136,7 +112,7 @@ function decodeUtf8(bytes: readonly number[]): string | undefined {
   }
 }
 
-/** Decode the bytes of a run of `\X..\` escapes (`\XC3\\XA9\` is the bytes C3 A9). */
+/** `\XC3\\XA9\` is the bytes C3 A9. */
 function decodeHexRun(run: string, escapeChar: string, charset: HexEscapeCharset): string {
   const bytes: number[] = [];
   for (const piece of run.split(escapeChar)) {
@@ -149,17 +125,10 @@ function decodeHexRun(run: string, escapeChar: string, charset: HexEscapeCharset
 }
 
 /**
- * Unescape HL7 escape sequences back to their original characters.
- *
- * One pass over the text, so a decoded escape character can never join the
- * characters after it into a second sequence (the literal text `\F\` is
- * encoded as `\E\F\E\` and must decode to itself). Sequences this function
- * does not know, such as the formatting commands `\H\` and `\.br\`, are kept.
- *
- * Adjacent `\X..\` escapes are decoded as one byte run in `charset` (see
- * {@link HexEscapeCharset}), so a UTF-8 character split across two escapes
- * still decodes. Under UTF-8, a run whose bytes are not valid UTF-8 (a lone
- * Latin-1 byte such as `\XE9\`) is read byte by byte as Windows-1252 instead.
+ * One pass, so a decoded escape character never joins what follows into a
+ * second sequence (`\E\F\E\` must decode to the text `\F\`). Unknown sequences
+ * such as `\H\` and `\.br\` are kept. Adjacent `\X..\` escapes decode as one
+ * byte run, so a UTF-8 character split across two escapes still decodes.
  */
 export function unescapeValue(value: string, enc: Hl7Encoding, charset: HexEscapeCharset = 'windows-1252'): string {
   const e = escapeRegex(enc.escapeChar);
@@ -175,9 +144,8 @@ export function unescapeValue(value: string, enc: Hl7Encoding, charset: HexEscap
 }
 
 /**
- * Escape only what can never be part of a value: the field separator and line
- * breaks. Used when a caller sets a value that may be a deliberate composite
- * (`CODE^Text`), where the other delimiters are structure and must be kept.
+ * Escapes only what can never be part of a value (field separator, line
+ * breaks), for a value that may be a deliberate composite (`CODE^Text`).
  */
 export function escapeStructural(value: string, enc: Hl7Encoding): string {
   const x = enc.escapeChar;

@@ -1,11 +1,3 @@
-// ===========================================
-// Dashboard Page
-// ===========================================
-// Live overview: summary cards, channel status table, quick actions.
-// Auto-refreshes via TanStack Query polling (60s interval) with
-// WebSocket events for throttled cache invalidation (D-306).
-// Supports tag filtering and grouped view toggle.
-
 import { lazy, Suspense, useState, useMemo, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
@@ -84,24 +76,20 @@ export function DashboardPage(): ReactNode {
   const groups = groupsQuery.data ?? EMPTY_GROUPS;
   const memberships = membershipsQuery.data ?? EMPTY_MEMBERSHIPS;
 
-  // --- WebSocket: join/leave dashboard room (re-joins on reconnect) ---
   useSocketRoom('join:dashboard', 'leave:dashboard');
 
-  // --- WebSocket: invalidate deployment cache on channel state changes ---
   const handleChannelState = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: DEPLOYMENT_KEYS.all });
   }, [queryClient]);
 
   useSocketEvent('channel:state', handleChannelState);
 
-  // --- WebSocket: invalidate stats cache on stats updates (throttled, D-306) ---
   const handleStatsUpdate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: STATS_KEYS.all });
   }, [queryClient]);
 
   useThrottledSocketEvent(SOCKET_EVENT.STATS_UPDATE, handleStatsUpdate);
 
-  // --- Tags per channel (for inline chips) ---
   const tagsByChannel = useMemo(() => {
     const tagMap = new Map(tags.map((t) => [t.id, t]));
     const byChannel = new Map<string, TagSummary[]>();
@@ -115,7 +103,6 @@ export function DashboardPage(): ReactNode {
     return byChannel;
   }, [tags, assignments]);
 
-  // --- Client-side tag filtering ---
   const filteredStatistics = useMemo(() => {
     if (selectedTagIds.length === 0) return statistics;
 
@@ -130,7 +117,6 @@ export function DashboardPage(): ReactNode {
     return statistics.filter((s) => channelIdsWithSelectedTags.has(s.channelId));
   }, [statistics, assignments, selectedTagIds]);
 
-  // --- Derived counts ---
   const { deployedCount, stoppedCount, erroredCount } = useMemo(() => {
     const deployMap = new Map<string, string>();
     for (const s of deploymentStatuses) {

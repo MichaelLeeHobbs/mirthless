@@ -1,7 +1,3 @@
-// ===========================================
-// RequirePermission Route Guard Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router';

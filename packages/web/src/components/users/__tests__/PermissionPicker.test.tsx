@@ -1,9 +1,3 @@
-// ===========================================
-// PermissionPicker Tests
-// ===========================================
-// The within rule on screen (D-310): a permission the editor does not hold
-// cannot be added, but one the role already had can be removed and put back.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
@@ -33,12 +27,10 @@ describe('PermissionPicker', () => {
   });
 
   it('lets the editor remove a permission they lack, and put it back if the role had it', () => {
-    // users:write is in the role but not held: checked, so removable.
     renderPicker(['users:write'], [], ['users:write']);
     expect(box('Change users').checked).toBe(true);
     expect(box('Change users').disabled).toBe(false);
     cleanup();
-    // Removed in this edit: still addable, since the role had it when loaded.
     renderPicker([], [], ['users:write']);
     expect(box('Change users').disabled).toBe(false);
   });

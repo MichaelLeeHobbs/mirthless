@@ -1,8 +1,3 @@
-// ===========================================
-// Configuration Map Schemas
-// ===========================================
-// Zod validation schemas for categorized configuration map.
-
 import { z } from 'zod/v4';
 
 export const configMapParamSchema = z.object({

@@ -1,9 +1,3 @@
-// ===========================================
-// Message search and export query strings
-// ===========================================
-// Pins the exact strings both builders send, parameter order included, so the
-// shared filter serialisation cannot drift from what the server receives today.
-
 import { describe, it, expect } from 'vitest';
 import { buildSearchQuery, type MessageSearchParams } from '../use-messages.js';
 import { buildExportQuery } from '../use-message-export.js';

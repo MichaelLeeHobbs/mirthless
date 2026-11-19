@@ -1,10 +1,3 @@
-// ===========================================
-// Code Templates E2E Tests
-// ===========================================
-// Creates a library of this spec's own, adds a template to it, edits the
-// template's name, contexts and code, then deletes the template and the
-// library. Each step is checked in the tree and through the API.
-
 import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, getData } from './fixtures/api.js';
@@ -22,19 +15,16 @@ async function testLibraries(): Promise<Library[]> {
   return libs.filter((l) => l.name === TEST_LIBRARY.name);
 }
 
-/** The templates in this spec's library, read from the API. */
 async function libraryTemplates(): Promise<Template[]> {
   const [lib] = await testLibraries();
   expect(lib, `Library "${TEST_LIBRARY.name}" not found`).toBeDefined();
   return getData<Template[]>(api, `/code-templates?libraryId=${lib?.id ?? ''}`);
 }
 
-/** The library's row in the tree (its add, edit and delete buttons sit inside it). */
 function libraryRow(page: Page): Locator {
   return page.getByRole('button').filter({ hasText: TEST_LIBRARY.name });
 }
 
-/** A template's row in the tree, scoped to this spec's library. */
 function templateItem(page: Page, name: string): Locator {
   return libraryRow(page).locator('..').getByRole('button', { name, exact: true });
 }
@@ -89,7 +79,6 @@ test.describe('Code Templates', () => {
     await openCodeTemplates(page);
     await libraryRow(page).getByRole('button', { name: 'Add template', exact: true }).click();
 
-    // The new template opens in the editor and shows under the library.
     await expect(page.getByLabel('Name', { exact: true })).toHaveValue(NEW_TEMPLATE_NAME);
     await expect(templateItem(page, NEW_TEMPLATE_NAME)).toBeVisible();
     await expect.poll(async () => (await libraryTemplates()).map((t) => t.name)).toEqual([NEW_TEMPLATE_NAME]);

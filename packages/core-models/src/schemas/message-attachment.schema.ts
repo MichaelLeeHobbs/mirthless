@@ -1,8 +1,3 @@
-// ===========================================
-// Message Attachment Schemas
-// ===========================================
-// Zod validation schemas for attachment route params.
-
 import { z } from 'zod/v4';
 
 export const attachmentListParamsSchema = z.object({

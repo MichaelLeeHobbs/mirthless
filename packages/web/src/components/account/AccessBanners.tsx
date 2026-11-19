@@ -1,12 +1,3 @@
-// ===========================================
-// Access Banners
-// ===========================================
-// Two notices above every page (D-310, plan sections 4 and 8):
-// - "Your access changed": a refresh after a refused or missing record found
-//   the user's grants had changed, so "not found" may mean "not yours now".
-// - "Your temporary access ends at ...": an hour before a time-limited grant
-//   ends. When it ends the client refreshes, which updates the screens.
-
 import { useEffect, useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
@@ -21,7 +12,6 @@ const EXPIRY_JITTER_MS = 30_000;
 const EXPIRY_RETRY_MS = 60_000;
 const EXPIRY_RETRIES = 5;
 
-/** The current time, moved on when the warning moment or the end comes. */
 function useExpiryClock(nextExpiryAt: string | null | undefined): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -33,10 +23,6 @@ function useExpiryClock(nextExpiryAt: string | null | undefined): number {
   return now;
 }
 
-/**
- * At the end of temporary access, refresh so the screens follow the narrower
- * access; ask again a few times while the server still reports the same end.
- */
 function useRefreshAtExpiry(nextExpiryAt: string | null | undefined): void {
   useEffect(() => {
     const endsAt = nextExpiryAt ? Date.parse(nextExpiryAt) : Number.NaN;

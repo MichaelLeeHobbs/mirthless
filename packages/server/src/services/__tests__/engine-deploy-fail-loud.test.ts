@@ -1,16 +1,9 @@
-// ===========================================
-// Engine Deploy: Fail Loud Tests
-// ===========================================
 // A channel must never start with fewer scripts than it was configured with.
-// These tests use the real engine package (compiler and sandbox) and fake only
-// the database, the services that read it and the connectors that open sockets.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { isServiceError } from '../../lib/service-error.js';
 import type { DeploymentBundle } from '../deployment-record.service.js';
 import { bundleOf, deployedTemplate } from '../../../test/deployment-bundle.js';
-
-// ----- Mock Dependencies -----
 
 vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue({
@@ -93,8 +86,6 @@ vi.mock('../../config/index.js', () => ({
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const OK_EMPTY = { ok: true, value: [], error: null };
 const DB_DOWN = { ok: false, value: null, error: new Error('connection refused') };
@@ -163,8 +154,6 @@ async function deployError(bundle: DeploymentBundle = bundleOf(makeChannel())): 
   if (outcome !== 'deployed') expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
   return outcome;
 }
-
-// ----- Tests -----
 
 describe('EngineManager.deploy refuses to start a channel it cannot run as configured', () => {
   it('refuses a channel that responds from a destination it does not have (renamed or removed)', async () => {
@@ -321,9 +310,8 @@ describe('EngineManager.deploy passes the File roots to the connectors it builds
 
 describe('EngineManager.deploy with a connector that cannot be built', () => {
   it('fails the deploy with the connector error and registers no runtime', async () => {
-    // The real factory, so the test covers what a deploy does with a non-object
-    // tls. Which check refuses it (the TCP/MLLP property schema or the TLS reader)
-    // is the factory's business; the deploy must fail with that error and keep no runtime.
+    // The real factory: which check refuses a non-object tls is its business;
+    // the deploy must fail with that error and keep no runtime.
     const actual = await vi.importActual<typeof import('@galvanigraph/connectors')>('@galvanigraph/connectors');
     const props = { port: 6661, tls: 'abc' };
     let factoryError = '';

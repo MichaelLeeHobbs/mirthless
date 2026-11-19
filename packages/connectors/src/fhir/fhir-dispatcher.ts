@@ -1,14 +1,6 @@
-// ===========================================
-// FHIR R4 Dispatcher (Destination Connector)
-// ===========================================
-// Sends messages as FHIR resources to a FHIR R4 server.
-// Uses native fetch for HTTP communication.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { redirectMessage } from '../redirect.js';
-
-// ----- Auth Types -----
 
 const FHIR_AUTH_TYPE = {
   NONE: 'NONE',
@@ -20,8 +12,6 @@ type FhirAuthType = typeof FHIR_AUTH_TYPE[keyof typeof FHIR_AUTH_TYPE];
 
 export { FHIR_AUTH_TYPE };
 export type { FhirAuthType };
-
-// ----- Config -----
 
 export interface FhirAuthConfig {
   readonly username?: string | undefined;
@@ -41,8 +31,6 @@ export interface FhirDispatcherConfig {
   readonly timeout: number;
   readonly headers: Readonly<Record<string, string>>;
 }
-
-// ----- Dispatcher -----
 
 export class FhirDispatcher implements DestinationConnectorRuntime {
   private readonly config: FhirDispatcherConfig;
@@ -76,8 +64,7 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
       if (!this.started) throw new Error('Dispatcher not started');
       if (signal.aborted) throw new Error('Send aborted');
 
-      // FHIR update (PUT) targets a specific instance: PUT /{type}/{id}.
-      // A bare `PUT /{type}` is rejected by R4 servers, so require the id.
+      // R4 servers reject a bare `PUT /{type}`: an update targets /{type}/{id}.
       const resourceId = this.config.method === 'PUT'
         ? extractResourceId(message.content, this.config.format)
         : undefined;
@@ -139,16 +126,10 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
   }
 }
 
-// ----- Helpers -----
-
-/** FHIR resource logical id: `[A-Za-z0-9-.]{1,64}` (FHIR spec). */
+/** The FHIR spec's logical id grammar. */
 const FHIR_ID_RE = /^[A-Za-z0-9\-.]{1,64}$/;
 
-/**
- * Build FHIR endpoint URL. Appends the resource id for instance-level ops. The id
- * comes from message content, so it is validated against the FHIR id grammar — an
- * id containing `/`, `?`, or `..` would otherwise rewrite the request path.
- */
+/** The id comes from message content: validated so `/`, `?` or `..` cannot rewrite the request path. */
 export function buildFhirUrl(baseUrl: string, resourceType: string, resourceId?: string): string {
   const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   if (resourceId !== undefined) {
@@ -160,7 +141,6 @@ export function buildFhirUrl(baseUrl: string, resourceType: string, resourceId?:
   return `${base}/${resourceType}`;
 }
 
-/** Extract the resource id from a serialized FHIR resource (json or xml). */
 export function extractResourceId(content: string, format: 'json' | 'xml'): string | undefined {
   if (format === 'json') {
     try {
@@ -174,7 +154,6 @@ export function extractResourceId(content: string, format: 'json' | 'xml'): stri
   return match?.[1];
 }
 
-/** Build HTTP headers including auth and content type. */
 export function buildHeaders(config: FhirDispatcherConfig): Record<string, string> {
   const contentType = config.format === 'json'
     ? 'application/fhir+json'
@@ -214,7 +193,6 @@ export function buildHeaders(config: FhirDispatcherConfig): Record<string, strin
   return headers;
 }
 
-/** Validate auth config based on auth type. */
 function validateAuth(authType: FhirAuthType, authConfig: FhirAuthConfig): void {
   switch (authType) {
     case FHIR_AUTH_TYPE.BASIC:

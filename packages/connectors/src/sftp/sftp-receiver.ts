@@ -1,11 +1,4 @@
-// ===========================================
-// SFTP Receiver (Source Connector)
-// ===========================================
-// Polls a remote SFTP directory for files matching a glob pattern, downloads
-// each, dispatches its content as a message, then applies post-processing
-// (delete, move, or leave). Mirrors the File connector: reentrancy guard,
-// file-age skip, durable quarantine, and loud poll-cycle logging. The
-// quarantine ledger lives as a sidecar in the remote directory so a restart
+// The quarantine ledger lives as a sidecar in the remote directory so a restart
 // (new instance) does not re-dispatch an already-dispatched file.
 
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
@@ -33,10 +26,8 @@ import {
   type SftpPathKind,
 } from './sftp-client.js';
 
-/** Bound each SFTP operation — a hung server must not wedge the poll loop. */
+/** A hung server must not wedge the poll loop. */
 const SFTP_OP_TIMEOUT_MS = 30_000;
-
-// ----- Constants -----
 
 const SFTP_POST_ACTION = {
   DELETE: 'DELETE',
@@ -48,8 +39,6 @@ type SftpPostAction = typeof SFTP_POST_ACTION[keyof typeof SFTP_POST_ACTION];
 export { SFTP_POST_ACTION };
 export type { SftpPostAction };
 
-// ----- Config -----
-
 export interface SftpReceiverConfig extends SftpConnectionOptions {
   readonly remoteDirectory: string;
   readonly filePattern: string;
@@ -59,19 +48,14 @@ export interface SftpReceiverConfig extends SftpConnectionOptions {
   readonly minFileAgeMs: number;
   /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
   readonly ignoreDot: boolean;
-  /** Character encoding of the remote files. Defaults to UTF-8. */
+  /** UTF-8 when unset. */
   readonly charset?: string | undefined;
 }
 
-// ----- Remote path helper -----
-
-/** Join a remote directory and filename using POSIX ('/') separators. */
 export function joinRemote(dir: string, name: string): string {
   const trimmed = dir.endsWith('/') ? dir.slice(0, -1) : dir;
   return `${trimmed}/${name}`;
 }
-
-// ----- Receiver -----
 
 export class SftpReceiver implements SourceConnectorRuntime {
   private readonly config: SftpReceiverConfig;
@@ -83,11 +67,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
   /** False once stop or halt is asked for, so a poll cycle in progress takes no more files. */
   private running = false;
   private client: SftpClient | null = null;
-  /**
-   * Files already dispatched whose pipeline recorded an error or whose
-   * post-action (delete/move) failed, keyed by name+modifyTime so they are NOT
-   * re-dispatched. Persisted to a remote sidecar ledger.
-   */
+  /** Dispatched files whose pipeline errored or whose post-action failed, so they are not re-dispatched. */
   private readonly quarantine: QuarantineLedger;
 
   constructor(config: SftpReceiverConfig, createClient?: SftpClientFactory, logger?: ConnectorLogger) {
@@ -169,7 +149,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Execute one poll cycle: list, filter, download, dispatch, post-process. */
   private async pollCycle(): Promise<void> {
     if (this.polling || !this.dispatcher) return;
     this.polling = true;
@@ -208,13 +187,11 @@ export class SftpReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** (Re)establish the SFTP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
     const client = this.createClient(this.config);
     this.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
   }
 
-  /** List remote entries matching the glob, sorted by name, respecting file age. */
   private async listMatchingFiles(): Promise<readonly SftpFileInfo[]> {
     if (!this.client) return [];
     const entries = await withTimeout(
@@ -224,7 +201,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     const results: SftpFileInfo[] = [];
     for (const entry of entries) {
       if (!entry.isFile) continue;
-      if (isQuarantineLedgerName(entry.name)) continue; // never dispatch a ledger
+      if (isQuarantineLedgerName(entry.name)) continue;
       if (!selectsFileName(entry.name, this.config.filePattern, this.config.ignoreDot)) continue;
       if (now - entry.modifyTime < this.config.minFileAgeMs) continue; // still being written
       results.push(entry);
@@ -233,7 +210,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
     return results;
   }
 
-  /** Download a single file, dispatch it, and apply post-processing. */
   private async processFile(entry: SftpFileInfo): Promise<void> {
     if (!this.dispatcher || !this.client) return;
     const client = this.client;
@@ -248,7 +224,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Download one file into a message. Throws when the download fails or times out. */
   private async downloadMessage(client: SftpClient, entry: SftpFileInfo): Promise<RawMessage> {
     const remotePath = joinRemote(this.config.remoteDirectory, entry.name);
     const buffer = await withTimeout(client.get(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP get');
@@ -263,7 +238,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
     };
   }
 
-  /** Apply post-processing action to a processed file. */
   private async postProcess(entry: SftpFileInfo): Promise<void> {
     if (!this.client) return;
     const remotePath = joinRemote(this.config.remoteDirectory, entry.name);
@@ -283,11 +257,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /**
-   * Ledgers in the remote directory, every operation under a timeout. With no
-   * client, or when the existence check fails, a ledger reads as absent and a
-   * write is skipped.
-   */
   private remoteLedgerStorage(): LedgerStorage {
     return {
       read: async (ledgerPath: string): Promise<string | null> => {
@@ -309,7 +278,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
     };
   }
 
-  /** Disconnect the current client under a timeout, logging and ignoring errors. */
   private async safeDisconnect(): Promise<void> {
     const client = this.client;
     if (!client) return;
@@ -322,7 +290,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Clear the poll interval timer. */
   private clearPollTimer(): void {
     if (this.pollTimer !== null) {
       clearInterval(this.pollTimer);

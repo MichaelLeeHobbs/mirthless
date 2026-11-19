@@ -1,7 +1,3 @@
-// ===========================================
-// TCP/MLLP Destination Connector Form
-// ===========================================
-// Configuration form for TCP/MLLP client destination connectors.
 // Property keys are tcpMllpDestinationPropertiesSchema's in core-models. TLS,
 // frame bytes and template are not surfaced: TCP TLS is inline PEM until it
 // gets the certificate-store lookup HTTP, Kafka and AMQP have.
@@ -33,7 +29,6 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
 
   return (
     <Grid container spacing={3}>
-      {/* Network settings */}
       <Grid
         size={{
           xs: 12,
@@ -69,7 +64,6 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
         />
       </Grid>
 
-      {/* Connection settings */}
       <Grid
         size={{
           xs: 12,

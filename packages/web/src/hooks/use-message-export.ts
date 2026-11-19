@@ -1,10 +1,4 @@
-// ===========================================
-// Message Export Hook
-// ===========================================
-// Downloads a channel's messages as CSV or JSON honoring the current filters.
-// The export endpoint streams a file (not the JSON ApiResponse envelope), so we
-// fetch the blob directly, attaching the Bearer token from the auth store, then
-// trigger a browser download via an object URL.
+// The export answers a file, not the ApiResponse envelope, so it is fetched directly.
 
 import { useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/auth.store.js';
@@ -14,12 +8,10 @@ import { saveBlob } from '../lib/download.js';
 
 export type ExportFormat = 'csv' | 'json';
 
-/** Filter subset shared with the message list query. */
 export type MessageExportFilters = MessageFilters;
 
 const BASE_URL = '/api/v1';
 
-/** Build the export query string from format, filters and reason. Exported for testing. */
 export function buildExportQuery(format: ExportFormat, filters: MessageExportFilters, reason: string): string {
   return [`format=${format}`, ...messageFilterParts(filters), `reason=${encodeURIComponent(reason)}`].join('&');
 }
@@ -29,7 +21,7 @@ interface ExportArgs {
   readonly channelName: string;
   readonly format: ExportFormat;
   readonly filters: MessageExportFilters;
-  /** Why the export is taken: required, recorded in the audit log and the file's header. */
+  /** Recorded in the audit log and the file's header. */
   readonly reason: string;
 }
 

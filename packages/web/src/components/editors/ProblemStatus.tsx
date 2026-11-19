@@ -1,9 +1,3 @@
-// ===========================================
-// Problem status
-// ===========================================
-// The status line's problem summary: a count, and the first problem as a
-// button that jumps to it.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -22,11 +16,7 @@ function plural(n: number, word: string): string {
   return `${String(n)} ${word}${n === 1 ? '' : 's'}`;
 }
 
-/**
- * "1 syntax error, 2 type errors, 1 warning". One missing bracket makes the
- * parser report errors all the way down, so syntax errors after the first are
- * counted as following it: fix the first and the rest usually go.
- */
+/** One missing bracket makes the parser report errors all the way down, so syntax errors after the first are counted as following it. */
 export function problemSummary(problems: readonly Problem[]): string {
   const syntax = problems.filter((p) => p.severity === 'error' && p.kind === 'syntax').length;
   const type = problems.filter((p) => p.severity === 'error' && p.kind === 'type').length;

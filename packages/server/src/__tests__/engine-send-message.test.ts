@@ -1,9 +1,4 @@
-// ===========================================
-// EngineManager.sendMessage Tests
-// ===========================================
-// The one implementation of "send a raw message to a started channel", used by
-// the send-message API (through DeploymentService) and by routeMessage. Its
-// ServiceError codes decide the HTTP status of POST /channels/:id/send-message.
+// The ServiceError codes decide the HTTP status of POST /channels/:id/send-message.
 
 import { describe, it, expect, vi } from 'vitest';
 import { EngineManager, type DeployedChannel } from '../engine.js';

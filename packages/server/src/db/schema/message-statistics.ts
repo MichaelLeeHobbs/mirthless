@@ -1,7 +1,3 @@
-// ===========================================
-// Message Statistics Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, integer, bigint, primaryKey } from 'drizzle-orm/pg-core';
 
 export const messageStatistics = pgTable('message_statistics', {

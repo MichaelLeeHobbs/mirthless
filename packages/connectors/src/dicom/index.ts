@@ -1,7 +1,3 @@
-// ===========================================
-// DICOM Connector Exports
-// ===========================================
-
 export {
   DicomReceiver,
   DICOM_POST_ACTION,

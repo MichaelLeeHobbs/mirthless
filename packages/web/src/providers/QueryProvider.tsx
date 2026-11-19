@@ -3,13 +3,10 @@ import type { ReactNode } from 'react';
 import { useNotificationStore } from '../stores/notification.store.js';
 import { errorMessage } from '../lib/error-message.js';
 
-/** Toast text when a failed mutation carries no message. */
 const MUTATION_ERROR_FALLBACK = 'An unexpected error occurred';
 
-// Global safety net: any mutation that rejects surfaces an error toast, even if
-// the call site forgot an onError handler. This upholds "fail loudly" — a failed
-// save/toggle/delete must never be silent. Per-call onError still runs and can
-// add context; this only guarantees the user is told something went wrong.
+// A failed save, toggle or delete must never be silent, even where the call
+// site forgot an onError handler.
 const mutationCache = new MutationCache({
   onError: (error, _variables, _context, mutation) => {
     // Respect an explicit opt-out or a call site that already notifies.

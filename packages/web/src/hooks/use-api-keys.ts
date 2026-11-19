@@ -1,8 +1,4 @@
-// ===========================================
-// API Key Hooks
-// ===========================================
-// TanStack Query hooks for API keys (D-313). An issue or a replace answers the
-// key's token once; nothing else ever carries a secret.
+// D-313: only an issue or a replace answers a key's token, and only once.
 
 import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
 import type { ApiKeyView, ApiResponse, CreateApiKeyInput, IssuedApiKey } from '@galvanigraph/core-models';
@@ -10,7 +6,7 @@ import { api } from '../api/client.js';
 
 const KEY_KEYS = { all: ['api-keys'] as const } as const;
 
-/** Every API key, by name. Pass `enabled: false` when the user may not read keys. */
+/** Pass `false` when the user may not read keys. */
 export function useApiKeys(enabled = true): UseQueryResult<readonly ApiKeyView[]> {
   return useQuery({
     queryKey: KEY_KEYS.all,
@@ -24,9 +20,8 @@ export function useApiKeys(enabled = true): UseQueryResult<readonly ApiKeyView[]
 }
 
 /**
- * A key change that refreshes the list when it lands. An issue or a replace
- * answers a token, so its result is dropped from the mutation cache as soon as
- * nothing watches it (gcTime 0); the page also resets it once shown.
+ * gcTime 0: an issue or a replace answers a token, so its result leaves the
+ * mutation cache once nothing watches it. The page also resets it once shown.
  */
 function useKeyMutation<TInput, TResult>(send: (input: TInput) => Promise<TResult>): UseMutationResult<TResult, Error, TInput> {
   const queryClient = useQueryClient();

@@ -1,7 +1,3 @@
-// ===========================================
-// Registry: CHANNEL, FHIR and SMTP properties parsed by the core-models schemas
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { createSourceConnector, createDestinationConnector, fhirDispatcherConfig, smtpDispatcherConfig } from '../registry.js';
 

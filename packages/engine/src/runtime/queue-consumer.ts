@@ -1,13 +1,5 @@
-// ===========================================
-// Queue Consumer
-// ===========================================
-// Polls for queued messages and processes them through destination connectors.
-// Uses SKIP LOCKED to allow concurrent consumers.
-
 import type { Result } from '@galvanigraph/core-util';
 import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler } from '../pipeline/message-processor.js';
-
-// ----- Types -----
 
 export interface QueueConsumerConfig {
   readonly channelId: string;
@@ -43,11 +35,10 @@ export interface QueueConsumerConfig {
 const CT_RAW = 1;
 const CT_SENT = 5;
 const CT_RESPONSE = 6;
-/** A destination's stored variables (MessageProcessor.storeVariables). */
+/** Holds a destination's stored variables, not only its channel map. */
 const CT_CHANNEL_MAP = 10;
 const CT_ERROR = 11;
 
-/** Stored variables as a record; undefined when none were stored. */
 function parseVariables(stored: string | null): Record<string, unknown> | undefined | 'INVALID' {
   if (stored === null) return undefined;
   try {
@@ -65,9 +56,7 @@ interface QueuedMessage {
   readonly sendAttempts: number;
 }
 
-// ----- Consumer -----
-
-/** What happened to one queued message. RETRY_LATER means it failed and is back on the queue. */
+/** RETRY_LATER: it failed and is back on the queue. */
 type Outcome = 'DONE' | 'RETRY_LATER';
 
 export class QueueConsumer {
@@ -77,12 +66,9 @@ export class QueueConsumer {
   private running = false;
   private stopRequested = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  /** The poll cycle currently running, so stop() can wait for it. */
   private inFlight: Promise<void> | null = null;
-  /** No delivery is attempted before this time (set after a failed send). */
   private retryNotBefore = 0;
   private queueReadFailing = false;
-  /** A delivery failure has been alerted and nothing has been delivered since. */
   private failureAlerted = false;
 
   constructor(
@@ -95,7 +81,6 @@ export class QueueConsumer {
     this.sendFn = sendFn;
   }
 
-  /** Start polling for queued messages. */
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -118,15 +103,10 @@ export class QueueConsumer {
   }
 
   /**
-   * Execute one poll cycle. Exposed for testing.
-   *
-   * Messages are delivered in message order. When a send fails and will be
-   * retried, the messages behind it are held and nothing is attempted again until
-   * retryIntervalMs has passed, so an outage neither reorders the queue nor burns
-   * through every message's retries in a few seconds.
-   *
-   * With `rotate` on, a failure does not hold the queue: the rest of the batch is
-   * still attempted, and the wait applies only when every message in it failed.
+   * Exposed for testing. After a failed send the messages behind it are held and
+   * nothing is attempted until retryIntervalMs has passed, so an outage neither
+   * reorders the queue nor burns through every message's retries in seconds.
+   * With `rotate`, the wait applies only when every message in the batch failed.
    */
   async poll(): Promise<void> {
     if (Date.now() < this.retryNotBefore) return;
@@ -165,13 +145,12 @@ export class QueueConsumer {
       await this.putBack(messages.slice(i + 1));
       return;
     }
-    // Rotating: wait only when nothing in the batch could be delivered.
     if (failed > 0 && failed === messages.length) {
       this.retryNotBefore = Date.now() + this.config.retryIntervalMs;
     }
   }
 
-  /** Return claimed-but-unsent messages to the queue. No attempt was made, so none is counted. */
+  /** No attempt was made, so none is counted. */
   private async putBack(messages: readonly QueuedMessage[]): Promise<void> {
     for (const msg of messages) {
       const released = await this.store.release(this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED');
@@ -248,8 +227,6 @@ export class QueueConsumer {
       return 'DONE';
     }
 
-    // Send failed. retryCount is the number of retries AFTER the first attempt;
-    // 0 means keep retrying until the message is delivered.
     const attempts = (msg.sendAttempts ?? 0) + 1;
     const reason = sendResult.ok
       ? (sendResult.value.errorMessage ?? sendResult.value.content)
@@ -282,7 +259,6 @@ export class QueueConsumer {
     return 'RETRY_LATER';
   }
 
-  /** Delivered: keep the response, mark SENT, then count it. */
   private async finishSent(msg: QueuedMessage, response: string): Promise<void> {
     const { channelId, serverId } = this.config;
     // Keep the destination's response, as the direct-send path does, so the
@@ -349,11 +325,7 @@ export class QueueConsumer {
     );
   }
 
-  /**
-   * A persistence write failed. Raise it as an alert instead of carrying on as
-   * if the message were finalized. A row whose status was not saved stays
-   * PENDING, and deploy re-queues PENDING rows, so it is retried, never lost.
-   */
+  /** A row whose status was not saved stays PENDING, and deploy re-queues PENDING rows, so it is retried, never lost. */
   private async reportUnrecorded(msg: QueuedMessage, what: string, cause: string): Promise<void> {
     await this.alert(
       `Queued destination ${String(msg.metaDataId)} could not save ${what} for message ` +
@@ -361,7 +333,6 @@ export class QueueConsumer {
     );
   }
 
-  /** Alert on the first failure of a streak, not on every retry. */
   private async alertOnce(errorMessage: string): Promise<void> {
     if (this.failureAlerted) return;
     this.failureAlerted = true;
@@ -378,10 +349,7 @@ export class QueueConsumer {
     });
   }
 
-  /**
-   * Final failure: mark ERROR, keep the reason as error content and raise an
-   * alert, so a message the queue gives up on is never silently dropped.
-   */
+  /** Keeps the reason and alerts, so a message the queue gives up on is never silently dropped. */
   private async giveUp(msg: QueuedMessage, reason: string): Promise<void> {
     const { channelId, serverId } = this.config;
     const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_ERROR, reason, 'TEXT');

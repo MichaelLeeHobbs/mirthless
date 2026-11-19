@@ -1,9 +1,5 @@
-// ===========================================
-// Startup Configuration Tests
-// ===========================================
-// Validates the config schema used at server startup.
-// We recreate the schema here rather than importing from config/index.ts,
-// because that module calls process.exit(1) on validation failure.
+// A copy of the config schema: config/index.ts calls process.exit(1) on a
+// validation failure.
 
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod/v4';

@@ -1,7 +1,3 @@
-// ===========================================
-// Status Level Mapping Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { channelStateLevel, messageStatusLevel, eventLevelLevel, eventOutcomeLevel } from '../status.js';
 

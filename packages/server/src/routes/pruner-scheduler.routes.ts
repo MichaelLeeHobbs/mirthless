@@ -1,7 +1,3 @@
-// ===========================================
-// Pruner Scheduler Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { PrunerSchedulerController } from '../controllers/pruner-scheduler.controller.js';

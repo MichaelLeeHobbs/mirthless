@@ -1,9 +1,3 @@
-// ===========================================
-// Channel Source Connector Form
-// ===========================================
-// Configuration form for channel source connectors.
-// Minimal — the source receives messages from other channels automatically.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';

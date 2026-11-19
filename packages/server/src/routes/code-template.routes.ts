@@ -1,7 +1,3 @@
-// ===========================================
-// Code Template Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import {
   createCodeTemplateLibrarySchema,
@@ -16,8 +12,6 @@ import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
-
-// ----- Libraries -----
 
 router.get(
   '/libraries',
@@ -45,8 +39,6 @@ router.delete(
   validate({ params: codeTemplateUuidParamSchema }),
   CodeTemplateController.deleteLibrary,
 );
-
-// ----- Templates -----
 
 router.get(
   '/',

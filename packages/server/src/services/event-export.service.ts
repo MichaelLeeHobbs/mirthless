@@ -1,9 +1,3 @@
-// ===========================================
-// Event Export Service
-// ===========================================
-// Exports audit events as CSV or JSON for HIPAA compliance downloads.
-// Uses the event list's filters but returns full result sets.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { desc } from 'drizzle-orm';
 import type { EventExportQuery } from '@galvanigraph/core-models';
@@ -13,8 +7,6 @@ import { events } from '../db/schema/index.js';
 import { buildEventWhereConditions } from './event.service.js';
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import type { ChannelScope } from '../lib/channel-scope.js';
-
-// ----- Types -----
 
 interface EventRow {
   readonly id: number;
@@ -26,8 +18,6 @@ interface EventRow {
   readonly attributes: Record<string, unknown> | null;
   readonly createdAt: Date;
 }
-
-// ----- Helpers -----
 
 const CSV_COLUMNS = ['id', 'name', 'level', 'outcome', 'userId', 'ipAddress', 'attributes', 'createdAt'] as const;
 
@@ -69,8 +59,6 @@ function rowToCsvFields(row: EventRow): string {
   return fields.map(escapeCsvField).join(',');
 }
 
-// ----- Service -----
-
 export class EventExportService {
   /** Export matching events as RFC 4180 CSV. */
   static async exportAsCsv(query: EventExportQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<string>> {
@@ -82,7 +70,6 @@ export class EventExportService {
     });
   }
 
-  /** Export matching events as JSON array. */
   static async exportAsJson(query: EventExportQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<string>> {
     return tryCatch(async () => {
       const rows = await fetchRows(query, scope);

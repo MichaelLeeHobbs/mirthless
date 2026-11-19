@@ -1,14 +1,8 @@
-// ===========================================
-// JavaScript Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { JavaScriptReceiver, normalizeScriptResult, type JavaScriptReceiverConfig, type ScriptRunner } from '../javascript-receiver.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<JavaScriptReceiverConfig>): JavaScriptReceiverConfig {
   return {
@@ -42,8 +36,6 @@ function makeFailingRunner(message: string): ScriptRunner {
   });
 }
 
-// ----- Lifecycle -----
-
 let receiver: JavaScriptReceiver | null = null;
 
 beforeEach(() => {
@@ -58,8 +50,6 @@ afterEach(async () => {
     receiver = null;
   }
 });
-
-// ----- normalizeScriptResult -----
 
 describe('normalizeScriptResult', () => {
   it('returns empty array for null', () => {
@@ -96,8 +86,6 @@ describe('normalizeScriptResult', () => {
   });
 });
 
-// ----- onDeploy -----
-
 describe('JavaScriptReceiver.onDeploy', () => {
   it('succeeds with valid config', async () => {
     receiver = new JavaScriptReceiver(makeConfig());
@@ -117,8 +105,6 @@ describe('JavaScriptReceiver.onDeploy', () => {
     expect(result.ok).toBe(false);
   });
 });
-
-// ----- onStart / onStop -----
 
 describe('JavaScriptReceiver lifecycle', () => {
   it('starts and creates poll timer', async () => {
@@ -157,8 +143,6 @@ describe('JavaScriptReceiver lifecycle', () => {
     expect(result.ok).toBe(true);
   });
 });
-
-// ----- Polling -----
 
 describe('JavaScriptReceiver poll cycle', () => {
   it('dispatches string result from script runner', async () => {
@@ -242,7 +226,6 @@ describe('JavaScriptReceiver poll cycle', () => {
 
     receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }));
     receiver.setDispatcher(dispatcher);
-    // No setScriptRunner call — tests fallback path
     await receiver.onStart();
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -264,7 +247,6 @@ describe('JavaScriptReceiver poll cycle', () => {
     receiver.setScriptRunner(slowRunner);
     await receiver.onStart();
 
-    // First tick triggers poll; second tick should be skipped because first is still running
     await vi.advanceTimersByTimeAsync(500);
     await vi.advanceTimersByTimeAsync(500);
 
@@ -290,11 +272,9 @@ describe('JavaScriptReceiver poll cycle', () => {
     receiver.setScriptRunner(errorThenSuccess);
     await receiver.onStart();
 
-    // First poll: error
     await vi.advanceTimersByTimeAsync(1_000);
     expect(dispatched).toHaveLength(0);
 
-    // Second poll: success
     await vi.advanceTimersByTimeAsync(1_000);
     expect(dispatched).toHaveLength(1);
   });

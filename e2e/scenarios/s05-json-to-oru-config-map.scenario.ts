@@ -1,8 +1,5 @@
-// S05: JSON report becomes an HL7 ORU sent to a host from the configuration map.
-// Production pattern: "HL7 Report Processor - <customer>" Report Sender. A
-// destination transformer builds the ORU from JSON; the TCP Sender's address is
-// ${MIRTH_SENDER_HOST}:${MIRTH_SENDER_PORT}, configuration map entries an
-// operator adds with the same names they had in Mirth.
+// Production pattern: "HL7 Report Processor - <customer>" Report Sender. Its address comes from
+// configuration map entries an operator adds with the names they had in Mirth.
 
 import { expect, request } from '@playwright/test';
 import { channelExport, httpListener, tcpSender } from './support/mirth-xml.js';

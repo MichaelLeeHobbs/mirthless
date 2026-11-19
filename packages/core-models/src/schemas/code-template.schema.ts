@@ -1,10 +1,4 @@
-// ===========================================
-// Code Template Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
-
-// ----- Context Values -----
 
 export const CODE_TEMPLATE_CONTEXTS = [
   'GLOBAL_DEPLOY',
@@ -30,17 +24,14 @@ export const CODE_TEMPLATE_TYPES = ['FUNCTION', 'CODE_BLOCK'] as const;
 
 export const codeTemplateTypeSchema = z.enum(CODE_TEMPLATE_TYPES);
 
-// ----- Language (editor authoring mode; the engine transpiles TS→JS regardless) -----
-
+// The editor's authoring mode; the engine transpiles TS to JS regardless.
 export const CODE_TEMPLATE_LANGUAGES = ['JAVASCRIPT', 'TYPESCRIPT'] as const;
 
 export const codeTemplateLanguageSchema = z.enum(CODE_TEMPLATE_LANGUAGES);
 
 export type CodeTemplateLanguage = (typeof CODE_TEMPLATE_LANGUAGES)[number];
 
-// ----- Library Schemas -----
-
-/** The channels whose scripts get a library's templates; null: every channel. */
+/** null: every channel. */
 const libraryChannelIdsSchema = z.array(z.string().uuid()).max(10_000).nullable();
 
 export const createCodeTemplateLibrarySchema = z.object({
@@ -59,8 +50,6 @@ export const updateCodeTemplateLibrarySchema = z.object({
 });
 
 export type UpdateCodeTemplateLibraryInput = z.infer<typeof updateCodeTemplateLibrarySchema>;
-
-// ----- Template Schemas -----
 
 export const createCodeTemplateSchema = z.object({
   libraryId: z.string().uuid(),
@@ -85,8 +74,6 @@ export const updateCodeTemplateSchema = z.object({
 });
 
 export type UpdateCodeTemplateInput = z.infer<typeof updateCodeTemplateSchema>;
-
-// ----- Query Params -----
 
 export const codeTemplateListQuerySchema = z.object({
   libraryId: z.string().uuid().optional(),

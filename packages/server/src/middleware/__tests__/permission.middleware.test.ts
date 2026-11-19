@@ -1,7 +1,3 @@
-// ===========================================
-// Permission Middleware Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 import type { Request, Response } from 'express';
 
@@ -45,7 +41,6 @@ function makeReq(parts: ReqParts = {}): Request {
   } as unknown as Request;
 }
 
-/** The attributes of the one event recorded so far. */
 function recorded(): Record<string, unknown> {
   expect(emitEvent).toHaveBeenCalledOnce();
   return (emitEvent.mock.calls[0]?.[0] as { attributes: Record<string, unknown> }).attributes;

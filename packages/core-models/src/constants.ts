@@ -1,11 +1,3 @@
-// ===========================================
-// Domain Constants
-// ===========================================
-// Const objects used instead of enums per coding standards.
-// Based on design doc 01-core-models.md.
-
-// --- Channel ---
-
 export const CHANNEL_STATE = {
   UNDEPLOYED: 'UNDEPLOYED',
   STARTED: 'STARTED',
@@ -23,19 +15,15 @@ export const MESSAGE_STORAGE_MODE = {
 } as const;
 export type MessageStorageMode = (typeof MESSAGE_STORAGE_MODE)[keyof typeof MESSAGE_STORAGE_MODE];
 
-// --- Connector ---
-
 export const CONNECTOR_MODE = {
   SOURCE: 'SOURCE',
   DESTINATION: 'DESTINATION',
 } as const;
 export type ConnectorMode = (typeof CONNECTOR_MODE)[keyof typeof CONNECTOR_MODE];
 
-// --- Connector Types ---
 // The one list of connector types per direction. They must equal the factory
 // keys in packages/connectors/src/registry.ts; a connectors test asserts it.
 
-/** Connector types that can be a channel's source. */
 export const SOURCE_CONNECTOR_TYPES = [
   'TCP_MLLP',
   'HTTP',
@@ -51,7 +39,6 @@ export const SOURCE_CONNECTOR_TYPES = [
 ] as const;
 export type SourceConnectorType = (typeof SOURCE_CONNECTOR_TYPES)[number];
 
-/** Connector types that can be a channel's destination. */
 export const DESTINATION_CONNECTOR_TYPES = [
   'TCP_MLLP',
   'HTTP',
@@ -70,17 +57,14 @@ export type DestinationConnectorType = (typeof DESTINATION_CONNECTOR_TYPES)[numb
 
 export type ConnectorType = SourceConnectorType | DestinationConnectorType;
 
-/** True when the type can be a channel's source. */
 export function isSourceConnectorType(type: string): type is SourceConnectorType {
   return (SOURCE_CONNECTOR_TYPES as readonly string[]).includes(type);
 }
 
-/** True when the type can be a channel's destination. */
 export function isDestinationConnectorType(type: string): type is DestinationConnectorType {
   return (DESTINATION_CONNECTOR_TYPES as readonly string[]).includes(type);
 }
 
-/** Every connector type, in either direction. */
 export const CONNECTOR_TYPES = [
   ...SOURCE_CONNECTOR_TYPES,
   ...DESTINATION_CONNECTOR_TYPES.filter((t) => !isSourceConnectorType(t)),
@@ -103,8 +87,6 @@ export const QUEUE_MODE = {
 } as const;
 export type QueueMode = (typeof QUEUE_MODE)[keyof typeof QUEUE_MODE];
 
-// --- Data Types ---
-
 export const DATA_TYPE = {
   RAW: 'RAW',
   HL7V2: 'HL7V2',
@@ -118,8 +100,6 @@ export const DATA_TYPE = {
 } as const;
 export type DataType = (typeof DATA_TYPE)[keyof typeof DATA_TYPE];
 
-// --- Message ---
-
 export const MESSAGE_STATUS = {
   RECEIVED: 'RECEIVED',
   FILTERED: 'FILTERED',
@@ -130,8 +110,6 @@ export const MESSAGE_STATUS = {
   PENDING: 'PENDING',
 } as const;
 export type MessageStatus = (typeof MESSAGE_STATUS)[keyof typeof MESSAGE_STATUS];
-
-// --- Content Types ---
 
 export const CONTENT_TYPE = {
   RAW: 1,
@@ -150,8 +128,6 @@ export const CONTENT_TYPE = {
 } as const;
 export type ContentType = (typeof CONTENT_TYPE)[keyof typeof CONTENT_TYPE];
 
-// --- Filter ---
-
 export const RULE_OPERATOR = {
   NONE: 'NONE',
   AND: 'AND',
@@ -166,8 +142,6 @@ export const FILTER_RULE_TYPE = {
 } as const;
 export type FilterRuleType = (typeof FILTER_RULE_TYPE)[keyof typeof FILTER_RULE_TYPE];
 
-// --- Transformer ---
-
 export const TRANSFORMER_STEP_TYPE = {
   JAVASCRIPT: 'JAVASCRIPT',
   MAPPER: 'MAPPER',
@@ -177,8 +151,6 @@ export const TRANSFORMER_STEP_TYPE = {
 } as const;
 export type TransformerStepType =
   (typeof TRANSFORMER_STEP_TYPE)[keyof typeof TRANSFORMER_STEP_TYPE];
-
-// --- Code Templates ---
 
 export const CODE_TEMPLATE_TYPE = {
   FUNCTION: 'FUNCTION',
@@ -205,8 +177,6 @@ export const CODE_TEMPLATE_CONTEXT = {
 } as const;
 export type CodeTemplateContext =
   (typeof CODE_TEMPLATE_CONTEXT)[keyof typeof CODE_TEMPLATE_CONTEXT];
-
-// --- Alerts ---
 
 export const ERROR_EVENT_TYPE = {
   ANY: 'ANY',
@@ -235,8 +205,6 @@ export const ALERT_TEMPLATE_VARIABLES = [
 ] as const;
 export type AlertTemplateVariable = (typeof ALERT_TEMPLATE_VARIABLES)[number]['name'];
 
-// --- Channel Scripts ---
-
 export const CHANNEL_SCRIPT_TYPE = {
   PREPROCESSOR: 'PREPROCESSOR',
   POSTPROCESSOR: 'POSTPROCESSOR',
@@ -246,8 +214,6 @@ export const CHANNEL_SCRIPT_TYPE = {
 } as const;
 export type ChannelScriptType = (typeof CHANNEL_SCRIPT_TYPE)[keyof typeof CHANNEL_SCRIPT_TYPE];
 
-// --- Metadata Column Types ---
-
 export const METADATA_COLUMN_TYPE = {
   STRING: 'STRING',
   NUMBER: 'NUMBER',
@@ -256,14 +222,7 @@ export const METADATA_COLUMN_TYPE = {
 } as const;
 export type MetadataColumnType = (typeof METADATA_COLUMN_TYPE)[keyof typeof METADATA_COLUMN_TYPE];
 
-// --- What scope promises ---
-
-/**
- * What a scoped assignment does and does not limit (RBAC plan section 3). The
- * role editor, the assignment picker, the key form and
- * docs/user/access-control.md show this text, and a docs guard checks the page
- * carries it word for word.
- */
+/** docs/user/access-control.md must carry this word for word; a docs guard checks it. */
 export const SCOPE_PROMISE =
   'Scope limits what a person or key can see and change through GalvaniGraph\'s screens and API. '
   + 'Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can\'t change or delete; '
@@ -273,8 +232,6 @@ export const SCOPE_PROMISE =
   + 'can reach every channel\'s messages and credentials through that code, and that reach is not recorded. '
   + 'A database owner can still alter the audit log.';
 
-// --- User Roles ---
-
 export const USER_ROLE = {
   ADMIN: 'admin',
   DEPLOYER: 'deployer',
@@ -283,9 +240,7 @@ export const USER_ROLE = {
 } as const;
 export type UserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];
 
-// --- Permissions ---
-// The one list of permission strings (resource:action). The server checks them
-// on routes and socket rooms and seeds them per role; the web gates UI with them.
+// The one list of permission strings (resource:action).
 
 export const PERMISSIONS = {
   CHANNELS_READ: 'channels:read',
@@ -339,17 +294,16 @@ export const PERMISSIONS = {
   SYSTEM_BACKUP: 'system:backup',
   SYSTEM_RESTORE: 'system:restore',
 
-  /** Read the protected audit log (D-312): PHI reads, grant changes, sign-ins, refusals. Admin only. */
+  /** The protected audit log (D-312). */
   AUDIT_READ: 'audit:read',
 
-  /** See roles and their permissions (D-310). */
   ROLES_READ: 'roles:read',
-  /** Create, edit, clone and delete roles, within what the editor holds (D-310). */
+  /** Within what the editor holds (D-310). */
   ROLES_WRITE: 'roles:write',
 
-  /** See API keys: name, issuer, grants, expiry and last use, never the secret (D-313). */
+  /** Never the secret (D-313). */
   API_KEYS_READ: 'api_keys:read',
-  /** Issue, replace, enable, disable and revoke API keys, within what the holder holds (D-313). */
+  /** Within what the holder holds (D-313). */
   API_KEYS_MANAGE: 'api_keys:manage',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -360,8 +314,6 @@ export const USER_KIND = {
   API_KEY: 'api_key',
 } as const;
 export type UserKind = (typeof USER_KIND)[keyof typeof USER_KIND];
-
-// --- Event Levels ---
 
 export const EVENT_LEVEL = {
   INFO: 'INFO',
@@ -376,8 +328,6 @@ export const EVENT_OUTCOME = {
 } as const;
 export type EventOutcome = (typeof EVENT_OUTCOME)[keyof typeof EVENT_OUTCOME];
 
-// --- Global Script Types ---
-
 export const GLOBAL_SCRIPT_TYPE = {
   DEPLOY: 'DEPLOY',
   UNDEPLOY: 'UNDEPLOY',
@@ -386,11 +336,7 @@ export const GLOBAL_SCRIPT_TYPE = {
 } as const;
 export type GlobalScriptType = (typeof GLOBAL_SCRIPT_TYPE)[keyof typeof GLOBAL_SCRIPT_TYPE];
 
-// --- Channel Groups ---
-
 export const DEFAULT_GROUP_NAME = 'Default';
-
-// --- Socket Events ---
 
 export const SOCKET_EVENT = {
   CHANNEL_STATE: 'channel:state',

@@ -1,14 +1,7 @@
-// ===========================================
-// Permission Catalog
-// ===========================================
-// What each permission is, for the role editor, the assignment picker and the
-// access views, and the rules that decide where it may be held (D-310, RBAC
-// plan section 1). The permission list itself stays PERMISSIONS in
-// constants.ts (D-268).
+// D-310. The permission list itself is PERMISSIONS in constants.ts (D-268).
 
 import type { Permission } from '../constants.js';
 
-/** Where a permission may be held. */
 export const PERMISSION_CLASS = {
   /** Scoped by the assignment: a channel's own data and actions. */
   CHANNEL: 'channel',
@@ -28,7 +21,6 @@ export interface PermissionInfo {
   readonly area: string;
   readonly description: string;
   readonly class: PermissionClass;
-  /** Whether an API key may hold it. */
   readonly keyAllowed: boolean;
   /**
    * Its holder can make the server run code they wrote. That code reaches every
@@ -116,7 +108,6 @@ export const PERMISSION_CATALOG: Readonly<Record<Permission, PermissionInfo>> = 
   'audit:read': info('Audit', 'Read the audit log', 'Read the protected audit log: sign-ins, PHI reads, refusals and grant changes.', IDENTITY, { readsEveryChannel: true }),
 };
 
-/** Whether `permission` may be held only through an all-channel assignment. */
 export function allChannelsOnly(permission: Permission): boolean {
   const cls = PERMISSION_CATALOG[permission].class;
   return cls === EVERY_CHANNEL_READ || cls === TRUST || cls === IDENTITY;

@@ -1,6 +1,3 @@
-// ===========================================
-// safeHttpFetch Tests
-// ===========================================
 // DNS is mocked (external boundary) so names resolve to chosen addresses. The
 // transport tests talk to a real local HTTP server; for those, the address policy
 // is narrowed to 10.0.0.0/8 so loopback is reachable without weakening the

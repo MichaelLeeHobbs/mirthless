@@ -1,7 +1,3 @@
-// ===========================================
-// QueryProvider Global Mutation Error Handler Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MutationObserver } from '@tanstack/react-query';
 import { queryClient } from '../QueryProvider.js';

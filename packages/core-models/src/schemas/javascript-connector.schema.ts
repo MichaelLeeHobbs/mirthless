@@ -1,10 +1,4 @@
-// ===========================================
-// JAVASCRIPT Connector Property Schemas
-// ===========================================
-// Properties of the JavaScript Reader (source) and Writer (destination), as a
-// channel stores them. The server validates them at deploy and the connector
-// registry parses them, so defaults live here only. A key not listed here
-// fails validation.
+// Defaults live here only (D-274).
 //
 // The engine compiles `script` at deploy (packages/server/src/engine.ts), and
 // the deploy type check reads `scriptLanguage` (D-296).
@@ -19,7 +13,7 @@ import {
 } from './connector-property-fields.js';
 import { scriptLanguageSchema } from './script-language.schema.js';
 
-/** Missing means JavaScript (D-296); the editor saves one of the two languages. */
+/** Missing means JavaScript (D-296). */
 const scriptLanguage = scriptLanguageSchema.optional();
 
 /** The source's keys; the docs guard compares them with the connector reference. */

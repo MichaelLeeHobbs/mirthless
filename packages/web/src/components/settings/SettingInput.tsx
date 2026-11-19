@@ -1,10 +1,3 @@
-// ===========================================
-// Setting Input
-// ===========================================
-// The control for one setting, picked by its type: a switch for booleans, a
-// number field, a monospace box for JSON, a write-only field for secrets and a
-// text field for the rest.
-
 import { useState, type ReactNode } from 'react';
 import TextField from '@mui/material/TextField';
 import Switch from '@mui/material/Switch';
@@ -22,7 +15,7 @@ interface SettingInputProps {
   readonly onChange: (value: string) => void;
   readonly disabled: boolean;
   readonly error: string | null;
-  /** Set for a secret: the field starts empty and says whether a value is stored. */
+  /** Defined (even false) only for a secret, which renders the write-only field. */
   readonly secretStored?: boolean;
   readonly placeholder?: string;
 }

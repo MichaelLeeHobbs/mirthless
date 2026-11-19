@@ -1,9 +1,3 @@
-// ===========================================
-// Channel Controller
-// ===========================================
-// Handles HTTP requests for channel CRUD operations.
-// Validates input, calls service, formats responses.
-
 import type { Request, Response } from 'express';
 import type {
   CreateChannelInput,
@@ -29,18 +23,17 @@ import { isServiceError } from '../lib/service-error.js';
 import { errorInfo } from '@galvanigraph/core-util';
 
 /**
- * Refuse a save that changes the channel's enabled flag from a caller without
- * `channels:deploy` on it: whether an enabled channel comes back at a restart
- * is deploy control (#225). A save that sends the stored value passes, since
- * the editor always sends it. Answers the request and returns false when refused.
+ * Refuses a save that changes the enabled flag from a caller without
+ * `channels:deploy` on the channel: it decides what a restart brings back (#225).
+ * The editor always sends the flag, so sending the stored value passes.
+ * Answers the request itself when it returns false.
  */
 async function enabledChangeAllowed(req: Request, res: Response, id: string, input: UpdateChannelInput): Promise<boolean> {
   if (input.enabled === undefined) return true;
   if (req.principal && can(req.principal.grants, 'channels:deploy', { groupIds: req.channelScope ?? [] })) return true;
   const current = await ChannelService.getById(id);
   if (!current.ok) {
-    // A missing channel is answered by the update itself; any other failure
-    // refuses the save rather than skip the check.
+    // The update answers a missing channel; any other failure refuses the save.
     if (isServiceError(current.error, 'NOT_FOUND')) return true;
     logger.error({ ...errorInfo(current.error), channelId: id }, 'Could not read a channel to check an enabled change');
     res.status(mapErrorToStatus(current.error)).json({ success: false, error: errorResponse(current.error) });
@@ -52,9 +45,8 @@ async function enabledChangeAllowed(req: Request, res: Response, id: string, inp
 }
 
 /**
- * Refuse a save that puts a store certificate's private key to use outside
- * the writer's channels (D-310). Answers the request and returns false when
- * refused; an unexpected failure is logged and answered as a server fault.
+ * Refuses a save that puts a store certificate's private key to use outside
+ * the writer's channels (D-310). Answers the request itself when it returns false.
  */
 async function certificatesAllowed(req: Request, res: Response, connectorProps: readonly unknown[]): Promise<boolean> {
   try {
@@ -68,7 +60,6 @@ async function certificatesAllowed(req: Request, res: Response, connectorProps: 
 }
 
 export class ChannelController {
-  /** GET /channels/:id/access: who can access the channel now, or as of `asOf`, and how. */
   static async access(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const { asOf } = req.query as unknown as ChannelAccessQuery;
@@ -105,10 +96,7 @@ export class ChannelController {
       return;
     }
 
-    // Mask connector credentials (DB/SFTP passwords, API keys, private keys)
-    // for read-only callers. Only a caller who can already edit the channel
-    // (`channels:write`) sees the real values; everyone else, notably the
-    // `viewer` role, gets the redacted marker.
+    // Connector credentials are unmasked only for a caller who could edit them anyway.
     const canWrite = holdsPermission(req.user?.permissions, 'channels:write');
     const data = canWrite
       ? result.value

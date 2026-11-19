@@ -1,8 +1,3 @@
-// ===========================================
-// Message Search Bar
-// ===========================================
-// Filter controls for the message browser: date range, status, connector, content search.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -29,9 +24,7 @@ interface MessageSearchBarProps {
   readonly metaDataId: string;
   readonly messageId: string;
   readonly contentSearch: string;
-  /** The channel encrypts stored content, which a text search cannot read. */
   readonly contentEncrypted?: boolean;
-  /** Actual destination connectors (metaDataId + name) to populate the filter. */
   readonly connectors?: readonly { readonly metaDataId: number; readonly name: string }[];
   readonly onReceivedFromChange: (value: string) => void;
   readonly onReceivedToChange: (value: string) => void;

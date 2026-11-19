@@ -1,11 +1,5 @@
-// ===========================================
-// A token with no session id is refused over HTTP (GHSA-r434-hwqg-cvcw)
-// ===========================================
-// Anyone holding JWT_SECRET could sign { userId: <an admin>, type: 'access' }
-// with no sessionId, and the revocation check let it through. The request here
-// goes through the real authenticate middleware and the real token checks; only
-// the database and the resolver are fake, and they answer that the admin and a
-// live session exist.
+// GHSA-r434-hwqg-cvcw: anyone holding JWT_SECRET could sign an access token with
+// no sessionId, and the revocation check let it through.
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import express from 'express';

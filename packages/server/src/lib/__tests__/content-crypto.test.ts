@@ -1,7 +1,3 @@
-// ===========================================
-// Content Crypto Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const cfg: { CONTENT_ENCRYPTION_KEY: string | undefined } = {
@@ -68,14 +64,12 @@ describe('content-crypto', () => {
     const enc = encryptContent('secret');
     expect(enc.ok).toBe(true);
     if (!enc.ok) return;
-    // Flip characters in the base64 body.
     const tampered = enc.value.slice(0, -4) + (enc.value.endsWith('AAAA') ? 'BBBB' : 'AAAA');
     const result = decryptContent(tampered);
     expect(result.ok).toBe(false);
   });
 
-  // Every caller decrypts stored data (message content, data source passwords),
-  // so a bad envelope is a server-side integrity fault, never a client error.
+  // Callers decrypt stored data, so a bad envelope is a server fault, never a client error.
   it.each([
     ['not an envelope', 'plainish'],
     ['a truncated envelope', 'enc:v1:AAAA'],

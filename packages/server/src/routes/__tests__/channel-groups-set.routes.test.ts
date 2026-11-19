@@ -1,9 +1,4 @@
-// ===========================================
-// PUT /channels/:id/groups route tests (#223)
-// ===========================================
-// Sends real requests through the channel router, the real permission and
-// validation middleware and the real controller. Only the service (the database
-// boundary) and auth are stubbed.
+// PUT /channels/:id/groups (#223).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
@@ -11,7 +6,6 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 vi.mock('../../middleware/auth.middleware.js', () => ({
-  // Stands in for JWT auth: the test names the caller's permissions in a header.
   authenticate: vi.fn((req: express.Request, _res: express.Response, next: express.NextFunction) => {
     const header = req.header('x-test-permissions') ?? '';
     req.user = {

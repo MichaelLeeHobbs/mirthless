@@ -1,10 +1,5 @@
-// ===========================================
-// Message Export Service
-// ===========================================
-// Exports channel message metadata as CSV or JSON for operational review.
-// Metadata only by default (no PHI content); the caller may opt into the raw
-// source column with includeContent (audited at the controller). Reuses the
-// message-browser filter shape (status + received date range).
+// Metadata only by default (no PHI); includeContent adds the raw source, which the
+// controller audits.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { sql } from 'drizzle-orm';
@@ -14,35 +9,27 @@ import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { escapeCsvField } from '../lib/csv.js';
 import { CONTENT_TYPE } from '../db/schema/message-content.js';
 
-// ----- Types -----
-
 export interface MessageExportRow {
   readonly messageId: number;
   readonly correlationId: string;
   readonly receivedAt: string;
   readonly processed: boolean;
-  /** Flattened per-connector status, e.g. "Dest A(1)=SENT; Dest B(2)=ERROR". */
   readonly statuses: string;
-  /** Decrypted raw source content — only present when includeContent is set. */
+  /** Decrypted PHI; present only with includeContent. */
   readonly content?: string;
 }
 
 export interface MessageExportData {
   readonly rows: readonly MessageExportRow[];
   readonly total: number;
-  /** True when total matching rows exceeded the limit and the export was capped. */
   readonly truncated: boolean;
 }
 
 const CSV_COLUMNS = ['messageId', 'correlationId', 'receivedAt', 'processed', 'statuses'] as const;
 
-// ----- CSV Helpers -----
-
 function toIso(value: string | Date): string {
   return typeof value === 'string' ? value : value.toISOString();
 }
-
-// ----- Query -----
 
 function buildWhere(channelId: string, query: MessageExportQuery): ReturnType<typeof sql> {
   const conditions = [sql`m.channel_id = ${channelId}`];
@@ -94,10 +81,7 @@ async function loadRawContent(channelId: string, ids: readonly number[]): Promis
   return map;
 }
 
-// ----- Service -----
-
 export class MessageExportService {
-  /** Collect matching messages (capped at query.limit) as structured export rows. */
   static async collect(channelId: string, query: MessageExportQuery): Promise<Result<MessageExportData>> {
     return tryCatch(async () => {
       const where = buildWhere(channelId, query);
@@ -133,7 +117,7 @@ export class MessageExportService {
     });
   }
 
-  /** Render export rows as RFC 4180 CSV with formula-injection guarding. */
+  /** RFC 4180 CSV. */
   static toCsv(data: MessageExportData, includeContent: boolean): string {
     const columns = includeContent ? [...CSV_COLUMNS, 'content'] : [...CSV_COLUMNS];
     const header = columns.join(',');
@@ -151,7 +135,6 @@ export class MessageExportService {
     return `${header}\r\n${lines.join('\r\n')}${data.rows.length > 0 ? '\r\n' : ''}`;
   }
 
-  /** Render export rows as a pretty-printed JSON array. */
   static toJson(data: MessageExportData, includeContent: boolean): string {
     const out = data.rows.map((row) => {
       const base: Record<string, unknown> = {

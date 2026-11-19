@@ -1,7 +1,3 @@
-// ===========================================
-// Schema Barrel Export
-// ===========================================
-
 export * from './users.js';
 export * from './sessions.js';
 export * from './roles.js';

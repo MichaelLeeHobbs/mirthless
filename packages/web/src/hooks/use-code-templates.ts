@@ -1,8 +1,3 @@
-// ===========================================
-// Code Template API Hooks
-// ===========================================
-// TanStack Query hooks for code template library + template CRUD.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateCodeTemplateLibraryInput,
@@ -12,16 +7,12 @@ import type {
 } from '@galvanigraph/core-models';
 import { api, type CodeTemplateLibrary, type CodeTemplateDetail } from '../api/client.js';
 
-// ----- Query Keys -----
-
 const CT_KEYS = {
   all: ['code-templates'] as const,
   libraries: () => [...CT_KEYS.all, 'libraries'] as const,
   templates: () => [...CT_KEYS.all, 'templates'] as const,
   templatesByLibrary: (libraryId: string) => [...CT_KEYS.templates(), { libraryId }] as const,
 } as const;
-
-// ----- Library Hooks -----
 
 export function useCodeTemplateLibraries(): ReturnType<typeof useQuery<readonly CodeTemplateLibrary[]>> {
   return useQuery({
@@ -80,8 +71,6 @@ export function useDeleteLibrary(): ReturnType<typeof useMutation<void, Error, s
     },
   });
 }
-
-// ----- Template Hooks -----
 
 export function useCodeTemplates(libraryId?: string): ReturnType<typeof useQuery<readonly CodeTemplateDetail[]>> {
   const queryKey = libraryId ? CT_KEYS.templatesByLibrary(libraryId) : CT_KEYS.templates();

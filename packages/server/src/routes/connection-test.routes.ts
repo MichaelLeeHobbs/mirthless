@@ -1,8 +1,3 @@
-// ===========================================
-// Connection Test Routes
-// ===========================================
-// POST / — test connector connectivity
-
 import { Router, type IRouter } from 'express';
 import { connectionTestSchema } from '@galvanigraph/core-models';
 import { ConnectionTestController } from '../controllers/connection-test.controller.js';

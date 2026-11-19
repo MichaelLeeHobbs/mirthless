@@ -1,15 +1,7 @@
-// ===========================================
-// Database Seed Script
-// ===========================================
-// Idempotent seed: safe to run multiple times.
-// Seeds: settings -> admin user and their admin assignment -> default group.
-// The built-in roles are rows written by migration 0018 (db/seeds/roles.ts).
-// Demo content (example channels, showcase data, example messages) is seeded
-// only when demoDataEnabled() says so — never by default in production, where
-// it would add a global preprocessor that runs on every channel, a data source
-// with a dev password, an enabled alert and fabricated messages.
-//
-// Usage: tsx src/db/seeds/run-seed.ts
+// Idempotent: safe to run more than once. The built-in roles are rows written by
+// migration 0018 (db/seeds/roles.ts). Demo content is never seeded by default in
+// production, where it would add a global preprocessor that runs on every channel,
+// a data source with a dev password, an enabled alert and fabricated messages.
 
 import { config as loadEnv } from 'dotenv';
 import pg from 'pg';
@@ -90,7 +82,6 @@ async function seed(): Promise<void> {
             email: ADMIN_EMAIL,
             passwordHash,
             enabled: true,
-            // Force the default admin to set a new password on first login.
             mustChangePassword: true,
           })
           .returning({ id: schema.users.id });
@@ -159,21 +150,18 @@ async function seed(): Promise<void> {
       return;
     }
 
-    // Seed example channels (separate from main transaction — uses channel IDs)
+    // Separate from the main transaction: it uses channel IDs.
     const { seedExampleChannels } = await import('./seed-examples.js');
     const exampleDb = drizzle(pool, { schema });
     await seedExampleChannels(exampleDb);
     // The example channels joined groups directly; start the access replay after them.
     await exampleDb.execute(sql`SELECT public.record_grant_baseline('seed: example channels')`);
 
-    // Seed showcase example data for otherwise-empty feature pages
     const { seedShowcase } = await import('./seed-showcase.js');
     await seedShowcase(exampleDb);
 
-    // Seed browsable example messages for the example channels (uses the
-    // MessageService write-path via the server db singleton — no db argument).
-    // Close that pool as well: its idle connections otherwise keep the process
-    // alive for its 30s idle timeout after the seed is done.
+    // seedExampleMessages writes through the server's db singleton, so close that
+    // pool too: its idle connections would keep the process alive for 30s.
     const { seedExampleMessages } = await import('./seed-example-messages.js');
     const { pool: serverPool } = await import('../../lib/db.js');
     try {

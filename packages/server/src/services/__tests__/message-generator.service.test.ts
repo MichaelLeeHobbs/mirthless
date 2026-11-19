@@ -1,7 +1,3 @@
-// ===========================================
-// Message Generator Service Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { generateMessagesInputSchema } from '@galvanigraph/core-models';
 import { MessageGeneratorService } from '../message-generator.service.js';

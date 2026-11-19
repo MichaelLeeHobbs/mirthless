@@ -1,8 +1,3 @@
-// ===========================================
-// User Preference Routes
-// ===========================================
-// Mounted under /users/me/preferences.
-
 import { Router, type IRouter } from 'express';
 import {
   preferenceKeyParamSchema,

@@ -1,16 +1,9 @@
-// ===========================================
-// Application Configuration
-// ===========================================
-// Validates environment variables at startup using Zod.
-// If validation fails, the app exits immediately.
-
 import * as path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import type { SignOptions } from 'jsonwebtoken';
 import { z } from 'zod/v4';
 
-// Load .env from project root and local fallback. quiet: dotenv 17+ otherwise
-// prints an unstructured "injected env" line that pollutes the JSON log stream.
+// quiet: dotenv 17+ otherwise prints an unstructured line into the JSON log stream.
 loadEnv({ path: '../../.env', quiet: true });
 loadEnv({ path: '.env', quiet: true });
 
@@ -29,10 +22,9 @@ const UNIT_MS: ReadonlyArray<readonly [RegExp, number]> = [
 ];
 
 /**
- * A duration with a unit ('15m', '7d', '1 hour') in milliseconds, or null.
- * A bare number is null on purpose: jsonwebtoken reads '604800' as
- * milliseconds, not seconds, which nobody setting a token lifetime means.
- * This mirrors `ms`, which jsonwebtoken uses but this package does not depend on.
+ * A bare number is null on purpose: jsonwebtoken reads '604800' as milliseconds, not seconds,
+ * which nobody setting a token lifetime means. Mirrors `ms`, which jsonwebtoken uses but this
+ * package does not depend on.
  */
 export function durationMs(value: string): number | null {
   const match = /^(\d+(?:\.\d+)?)\s?([a-z]+)$/i.exec(value);
@@ -42,7 +34,6 @@ export function durationMs(value: string): number | null {
   return perUnit === undefined ? null : Number(match[1]) * perUnit;
 }
 
-/** A jsonwebtoken `expiresIn` duration with a unit and above zero, such as '15m', '7d' or '1 hour'. */
 export const jwtDuration = z
   .string()
   .refine((v) => durationMs(v) !== null, 'must be a number with a unit (ms, s, m, h, d, w or y), such as 15m or 7d')
@@ -50,35 +41,30 @@ export const jwtDuration = z
   .transform((v) => v as NonNullable<SignOptions['expiresIn']>);
 
 export const configSchema = z.object({
-  // Application
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
 
-  // Database
   DATABASE_URL: z.string().url(),
   DATABASE_SSL: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
-  // PEM contents of a private CA bundle to verify the Postgres server cert against
-  // (for hospital/internal CAs). When set, TLS still verifies the certificate.
+  // PEM CA bundle for a hospital or internal CA; TLS still verifies the certificate.
   DATABASE_SSL_CA: z.string().optional(),
-  // Escape hatch to disable cert verification (INSECURE — MITM-able PHI link).
-  // Defaults to verifying. Only set 'false' for a throwaway/self-signed dev setup.
+  // 'false' turns off certificate verification, a MITM-able PHI link: only for a
+  // throwaway self-signed dev setup.
   DATABASE_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
   // Server-side limit for one SQL statement, in milliseconds. 0 turns it off.
   // Two minutes leaves room for pruning and backup queries.
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(120_000),
 
-  // API requests one client address may make per minute. Read by the rate
-  // limiter; declared here so a value that is not a positive whole number stops
-  // the server at startup instead of being ignored.
+  // Per client address per minute. Read by the rate limiter; declared here so a
+  // bad value stops the server at startup instead of being ignored.
   API_RATE_LIMIT_MAX: z.coerce.number().int().positive().optional(),
 
-  // Authentication
   JWT_SECRET: z.string().min(32),
   JWT_ACCESS_EXPIRES_IN: jwtDuration.default('15m'),
   JWT_REFRESH_EXPIRES_IN: jwtDuration.default('7d'),
 
-  // Proxy — accepts 'true', 'false', 'loopback', number, or specific IPs
+  // 'true', 'false', a hop count, or what Express's trust proxy takes ('loopback', IPs).
   TRUST_PROXY: z.string().default('false')
     .transform((v): boolean | number | string => {
       if (v === 'true') return true;
@@ -102,22 +88,18 @@ export const configSchema = z.object({
     .transform((v): ReadonlyArray<string> => v.split(',').map((p) => p.trim()).filter((p) => p.length > 0))
     .refine((roots) => roots.every((p) => path.isAbsolute(p)), 'every FILE_CONNECTOR_ROOTS entry must be an absolute path'),
 
-  // Logging
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_HTTP_HEADERS: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
 
-  // At-rest content encryption key (AES-256-GCM). 64 hex chars = 32 bytes.
-  // Optional; required only for channels with encryptData enabled.
+  // At-rest AES-256-GCM key; required only for channels with encryptData enabled.
   CONTENT_ENCRYPTION_KEY: z
     .string()
     .regex(/^[0-9a-fA-F]{64}$/, 'CONTENT_ENCRYPTION_KEY must be 64 hex characters (32 bytes)')
     .optional(),
 
-  // Observability exposure — default to protected/off in production.
-  // METRICS_PUBLIC=true exposes /metrics without auth (for a network-isolated
-  // Prometheus scraper). Otherwise /metrics requires auth.
+  // true serves /metrics without auth, for a network-isolated Prometheus scraper.
   METRICS_PUBLIC: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
-  // Serve the Swagger UI at /api-docs. Defaults on outside production.
+  // Swagger UI at /api-docs; on by default outside production.
   API_DOCS_ENABLED: z
     .enum(['true', 'false'])
     .optional()
@@ -125,11 +107,8 @@ export const configSchema = z.object({
 });
 
 /**
- * A JWT secret is unusable in production if it is a shipped placeholder or an
- * obviously low-entropy value. `min(32)` alone passes the 45-char placeholder in
- * .env.production.example, which would give every un-edited deployment the same
- * publicly-known signing key (admin-token forgery). We reject those in production,
- * along with the development secret shipped in .env.example.
+ * `min(32)` alone passes the 45-character placeholder in .env.production.example, which would
+ * give every un-edited deployment the same publicly known signing key (admin-token forgery).
  */
 export function isWeakJwtSecret(secret: string): boolean {
   const lower = secret.toLowerCase();
@@ -142,7 +121,6 @@ export function isWeakJwtSecret(secret: string): boolean {
   return false;
 }
 
-/** configSchema plus the checks that compare fields; this is what startup validates the environment with. */
 export const validatedConfigSchema = configSchema.superRefine((data, ctx) => {
   // A refresh token that dies before the access token it renews makes every
   // session end at the refresh lifetime with a confusing failed refresh.

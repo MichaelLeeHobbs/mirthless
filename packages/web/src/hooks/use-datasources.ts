@@ -1,13 +1,8 @@
-// ===========================================
-// Data Source API Hooks
-// ===========================================
-// TanStack Query hooks for data source CRUD + connection test.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateDataSourceInput, UpdateDataSourceInput, TestDataSourceInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 
-// ----- Types (never include the password) -----
+// The server never returns the password.
 
 export interface DataSourceSummary {
   readonly id: string;
@@ -32,14 +27,10 @@ export interface TestConnectionResult {
   readonly error?: string;
 }
 
-// ----- Query Keys -----
-
 const DS_KEYS = {
   all: ['datasources'] as const,
   list: () => [...DS_KEYS.all, 'list'] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useDataSources(): ReturnType<typeof useQuery<readonly DataSourceSummary[]>> {
   return useQuery({

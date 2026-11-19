@@ -1,8 +1,3 @@
-// ===========================================
-// Destination Transformer Section
-// ===========================================
-// Reuses TransformerStepEditor from source. Scoped to a single destination's transformer.
-
 import { useCallback, type ReactNode, type ChangeEvent } from 'react';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';

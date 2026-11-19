@@ -1,11 +1,5 @@
-// ===========================================
-// POST /auth/refresh returns the user's current permissions (#219)
-// ===========================================
-// The web keeps the permission list it was given at sign-in. A refresh answers
-// with the user as they are now, so a role change reaches the browser at the
-// next refresh instead of the next sign-in. The request goes through the real
-// router, controller and service; only the database, the resolver that reads
-// the user's assignments, and token signing are fake.
+// The web keeps the permission list it got at sign-in, so a refresh must answer
+// with the user as they are now (#219).
 
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import express from 'express';
@@ -108,7 +102,7 @@ describe('POST /auth/refresh', () => {
   it('shows a role change at the next refresh', async () => {
     expect((await refresh()).data?.user?.permissions).toContain('channels:deploy');
 
-    state.role = 'viewer'; // an admin demotes the user
+    state.role = 'viewer';
     const after = await refresh();
 
     expect(after.data?.user?.role).toBe('viewer');

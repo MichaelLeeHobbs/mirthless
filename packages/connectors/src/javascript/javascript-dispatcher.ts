@@ -1,31 +1,16 @@
-// ===========================================
-// JavaScript Dispatcher (Destination Connector)
-// ===========================================
-// Executes a user script with message content in scope.
-// The script's return value becomes the response content.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-
-// ----- Config -----
 
 export interface JavaScriptDispatcherConfig {
   readonly script: string;
 }
 
-// ----- Script runner callback (injected by engine) -----
-
-/**
- * Callback provided by the engine to execute a user script in the sandbox.
- * Receives the script source, message content, and the full connector message.
- */
+/** Supplied by the engine: runs the script in its sandbox. */
 export type DestScriptRunner = (
   script: string,
   content: string,
   connectorMessage: ConnectorMessage,
 ) => Promise<Result<unknown>>;
-
-// ----- Dispatcher -----
 
 export class JavaScriptDispatcher implements DestinationConnectorRuntime {
   private readonly config: JavaScriptDispatcherConfig;
@@ -36,7 +21,6 @@ export class JavaScriptDispatcher implements DestinationConnectorRuntime {
     this.config = config;
   }
 
-  /** Set the callback used to execute scripts in the sandbox. */
   setScriptRunner(runner: DestScriptRunner): void {
     this.scriptRunner = runner;
   }

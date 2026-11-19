@@ -1,8 +1,3 @@
-// ===========================================
-// Cross-Channel Message Results Table
-// ===========================================
-// Shared table for the Traffic view's triage feed and search results.
-
 import { type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import Paper from '@mui/material/Paper';
@@ -39,7 +34,6 @@ interface MessageResultsTableProps {
   readonly emptyDescription: string;
   readonly onPageChange: (page: number) => void;
   readonly onRowsPerPageChange: (rows: number) => void;
-  /** When set, each row gets a Reprocess action calling this. */
   readonly onReprocess?: ((channelId: string, messageId: number) => void) | undefined;
   readonly reprocessingKey?: string | null | undefined;
 }

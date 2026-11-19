@@ -1,9 +1,3 @@
-// ===========================================
-// Config Map E2E Tests
-// ===========================================
-// Adds, filters, edits and deletes a configuration map entry of this spec's
-// own, checking the table and the API after each step.
-
 import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { API_BASE, adminApi, deleteOk, getData } from './fixtures/api.js';
@@ -18,13 +12,11 @@ interface ConfigMapEntry { readonly category: string; readonly name: string; rea
 
 let api: APIRequestContext;
 
-/** The entry's value from the API, or null when the entry does not exist. */
 async function storedValue(): Promise<string | null> {
   const entries = await getData<ConfigMapEntry[]>(api, `/config-map?category=${TEST_CATEGORY}`);
   return entries.find((e) => e.name === TEST_NAME)?.value ?? null;
 }
 
-/** The table row for this spec's entry, matched on its exact name cell. */
 function entryRow(page: Page): Locator {
   return page.getByRole('row').filter({ has: page.getByRole('cell', { name: TEST_NAME, exact: true }) });
 }
@@ -80,7 +72,6 @@ test.describe('Config Map', () => {
     await expect(row.getByText(TEST_CATEGORY, { exact: true })).toBeVisible();
     await expect(row.getByRole('cell', { name: TEST_VALUE, exact: true })).toBeVisible();
 
-    // The category tab narrows the table to this spec's category.
     await page.getByRole('tab', { name: TEST_CATEGORY, exact: true }).click();
     await expect(page.getByRole('tab', { name: TEST_CATEGORY, exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(row).toHaveCount(1);
@@ -94,7 +85,6 @@ test.describe('Config Map', () => {
 
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: 'Edit Entry' })).toBeVisible();
-    // The key is fixed on edit; only the value changes.
     await expect(dialog.getByLabel('Category')).toBeDisabled();
     await expect(dialog.getByLabel('Name')).toBeDisabled();
     await dialog.getByLabel('Value').fill(UPDATED_VALUE);

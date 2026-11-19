@@ -1,8 +1,3 @@
-// ===========================================
-// Message Controller
-// ===========================================
-// HTTP adapter for message search, detail, and deletion.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type MessageSearchQuery } from '@galvanigraph/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
@@ -12,7 +7,6 @@ import { recordReadOrRefuse } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class MessageController {
-  /** GET /channels/:id/messages — Search messages with filters and pagination. */
   static async search(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const filters = req.query as unknown as MessageSearchQuery;
@@ -38,7 +32,6 @@ export class MessageController {
     res.json({ success: true, data: result.value });
   }
 
-  /** GET /channels/:id/messages/:msgId — Get message detail with all content. */
   static async getDetail(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const msgId = Number(req.params['msgId']);
@@ -62,7 +55,6 @@ export class MessageController {
     res.json({ success: true, data: result.value });
   }
 
-  /** DELETE /channels/:id/messages/:msgId — Delete message and related data. */
   static async delete(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const msgId = Number(req.params['msgId']);
@@ -75,8 +67,7 @@ export class MessageController {
       return;
     }
 
-    // HIPAA audit: deleting a message destroys PHI and must be recorded, like
-    // content view/search/export.
+    // HIPAA: deleting a message destroys PHI and must be recorded.
     emitEvent({
       level: 'WARN', name: 'MESSAGE_DELETED', outcome: 'SUCCESS',
       userId: req.user?.id ?? null, channelId,

@@ -1,10 +1,4 @@
-// ===========================================
-// Test Mock SFTP Client
-// ===========================================
-// A stateful in-memory fake of the SftpClient abstraction so the SFTP receiver
-// and dispatcher can be tested without a real SFTP server. A single
-// RemoteState can back multiple client instances (across a simulated restart),
-// mirroring a persistent remote filesystem.
+// One RemoteState can back several clients, so a test can restart against the same remote files.
 
 import type { SftpClient, SftpFileInfo, SftpPathKind } from '../sftp/sftp-client.js';
 
@@ -20,7 +14,6 @@ export interface RemoteFile {
   bytes?: Buffer;
 }
 
-/** Options to force specific operations to fail (for unhappy-path tests). */
 export interface MockFailures {
   connect?: boolean;
   list?: boolean;
@@ -32,11 +25,9 @@ export interface MockFailures {
   getNames?: readonly string[];
 }
 
-/** Shared, persistent remote-filesystem state for a directory. */
 export class RemoteState {
   readonly files = new Map<string, RemoteFile>();
   ledger: string | null = null;
-  /** Legacy ledgers present in the directory, by file name. */
   readonly legacyLedgers = new Map<string, string>();
   readonly deleted: string[] = [];
   readonly renamed: Array<readonly [string, string]> = [];
@@ -53,7 +44,6 @@ function basename(remotePath: string): string {
   return remotePath.split('/').pop() ?? remotePath;
 }
 
-/** Create a mock SftpClient backed by the given RemoteState. */
 export function makeMockSftpClient(state: RemoteState, failures: MockFailures = {}): SftpClient {
   return {
     async connect(): Promise<void> {

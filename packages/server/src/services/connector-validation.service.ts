@@ -1,10 +1,3 @@
-// ===========================================
-// Connector Validation Service
-// ===========================================
-// Validates connector properties at deploy time using Zod schemas.
-// Each connector type has required fields that must be present and valid.
-// Returns Result<void> — never throws.
-
 import { z } from 'zod/v4';
 import { stderr, type Result } from 'stderr-lib';
 import {
@@ -37,8 +30,6 @@ import { ServiceError } from '../lib/service-error.js';
 
 // Every connector type's properties have one schema in core-models (#115).
 
-// ----- Schema Registries -----
-
 const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   TCP_MLLP: tcpMllpSourcePropertiesSchema,
   HTTP: httpSourcePropertiesSchema,
@@ -68,12 +59,9 @@ const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   AMQP: amqpDestinationPropertiesSchema,
 };
 
-// ----- Public API -----
-
 /**
- * Validate connector properties for a given type and mode. A type with no
- * schema in that mode fails: the registry could not build it either, and a new
- * connector type must not skip validation silently.
+ * A type with no schema in a mode fails: the registry could not build it
+ * either, and a new connector type must not skip validation silently.
  */
 export function validateConnectorProperties(
   connectorType: string,

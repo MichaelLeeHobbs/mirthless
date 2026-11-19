@@ -1,20 +1,11 @@
-// ===========================================
-// System Health
-// ===========================================
-// Turns the /system snapshot into what the System Information page shows: a
-// level, a word and a one-line reason for each part of the server, plus the
-// plain-text summary that "Copy diagnostics" puts on the clipboard. Pure
-// functions, no React, so the thresholds are easy to test.
-
 import type { SystemInfo } from '../hooks/use-system-info.js';
 import type { StatusLevel } from './status.js';
 
-/** One cell of the status strip. */
 export interface HealthCell {
   readonly key: 'server' | 'database' | 'engine' | 'memory' | 'host';
   readonly label: string;
   readonly level: StatusLevel;
-  /** One or two words that carry the level without colour, e.g. "Connected". */
+  /** Carries the level without colour. */
   readonly word: string;
   readonly summary: string;
 }
@@ -24,7 +15,6 @@ export const SLOW_DB_MS = 250;
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
-/** 1536 → "1.5 KB". Binary units, one decimal; "0 B" at or below zero, "—" when not a finite number. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes)) return '—';
   if (bytes <= 0) return '0 B';
@@ -33,7 +23,6 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${UNITS[i]}`;
 }
 
-/** 93784 → "1d 2h 3m". Minutes are always shown, so a fresh start reads "0m". */
 export function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
@@ -45,12 +34,10 @@ export function formatUptime(seconds: number): string {
   return parts.join(' ');
 }
 
-/** Share of `total` used, 0 to 100. Zero when the total is unknown. */
 export function percentOf(used: number, total: number): number {
   return total > 0 ? Math.min((used / total) * 100, 100) : 0;
 }
 
-/** Level for a usage percentage: warning from 75%, critical from 90%. */
 export function usageLevel(percent: number): StatusLevel {
   if (percent >= 90) return 'critical';
   if (percent >= 75) return 'warning';
@@ -111,7 +98,6 @@ function hostCell(info: SystemInfo): HealthCell {
   return { key: 'host', label: 'Host', level, word, summary: `Memory ${percent.toFixed(0)}% used${load}` };
 }
 
-/** The status strip, in reading order: server, database, engine, heap, host. */
 export function healthCells(info: SystemInfo): readonly HealthCell[] {
   return [
     { key: 'server', label: 'Server', level: 'healthy', word: 'Running', summary: `v${info.server.version} · up ${formatUptime(info.server.uptime)}` },
@@ -122,10 +108,7 @@ export function healthCells(info: SystemInfo): readonly HealthCell[] {
   ];
 }
 
-/**
- * A plain-text snapshot for support tickets and chat. Facts only: no message
- * content, no settings values, no credentials.
- */
+/** For support tickets: no message content, settings values or credentials. */
 export function diagnosticsText(info: SystemInfo, now: Date): string {
   const { server, os, memory, engine, database } = info;
   const load = hasLoadAverage(info) ? os.loadAverage.map((n) => n.toFixed(2)).join(' / ') : 'n/a';

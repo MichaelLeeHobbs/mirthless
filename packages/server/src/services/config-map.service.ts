@@ -1,9 +1,3 @@
-// ===========================================
-// Configuration Map Service
-// ===========================================
-// Business logic for categorized configuration map CRUD.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, asc } from 'drizzle-orm';
 import { ServiceError } from '../lib/service-error.js';
@@ -11,18 +5,13 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { configuration } from '../db/schema/index.js';
 
-// ----- Response Types -----
-
 export interface ConfigMapEntry {
   readonly category: string;
   readonly name: string;
   readonly value: string | null;
 }
 
-// ----- Service -----
-
 export class ConfigMapService {
-  /** List all entries, optionally filtered by category. */
   static async list(query?: { readonly category?: string }): Promise<Result<readonly ConfigMapEntry[]>> {
     return tryCatch(async () => {
       const q = db.select().from(configuration);
@@ -39,7 +28,6 @@ export class ConfigMapService {
     });
   }
 
-  /** Get a single entry by composite key. */
   static async getByKey(category: string, name: string): Promise<Result<ConfigMapEntry>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -62,7 +50,6 @@ export class ConfigMapService {
     });
   }
 
-  /** Create or update an entry by composite key. */
   static async upsert(
     category: string,
     name: string,
@@ -94,7 +81,6 @@ export class ConfigMapService {
     });
   }
 
-  /** Bulk create/update multiple entries in a transaction. */
   static async bulkUpsert(
     entries: ReadonlyArray<{ readonly category: string; readonly name: string; readonly value: string }>,
     context?: AuditContext,
@@ -132,7 +118,6 @@ export class ConfigMapService {
     });
   }
 
-  /** Delete a single entry by composite key. */
   static async delete(
     category: string,
     name: string,

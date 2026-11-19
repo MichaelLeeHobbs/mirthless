@@ -1,11 +1,3 @@
-// ===========================================
-// CollectionRecordsPage Tests
-// ===========================================
-// The records grid asks the server for the sort, search and page the user
-// picked, opens a record with one click, and saves exactly what was typed.
-// Users without collections:write can read a record but not change it.
-// Data and permission hooks are mocked at the API boundary.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router';

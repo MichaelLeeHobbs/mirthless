@@ -1,10 +1,3 @@
-// ===========================================
-// SMTP Destination Form — Attachments Editor Tests
-// ===========================================
-// Verifies the config-driven multi-attachment editor (rank-9): add/remove rows
-// and field edits write the { filename, mimeType, content } shape into
-// props.attachments that the SMTP schema in core-models accepts.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,7 +5,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { useState, type ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
 
-// TestConnectionButton pulls in socket/query wiring irrelevant here.
+// Pulls in socket and query wiring.
 vi.mock('../../common/TestConnectionButton.js', () => ({
   TestConnectionButton: () => null,
 }));

@@ -1,8 +1,3 @@
-// ===========================================
-// Event Export Hook
-// ===========================================
-// Triggers browser download of audit events as CSV or JSON.
-
 import { useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/auth.store.js';
 import { definedSearchParams } from '../lib/search-params.js';
@@ -19,7 +14,7 @@ export interface EventExportParams {
   readonly name?: string;
   readonly outcome?: string;
   readonly maxRows?: number;
-  /** Why the export is taken: required, recorded in the audit log and the file's header. */
+  /** Recorded in the audit log and the file's header. */
   readonly reason: string;
 }
 
@@ -29,7 +24,6 @@ interface EventExportState {
   readonly exportEvents: (params: EventExportParams) => Promise<void>;
 }
 
-/** The export endpoint URL for the format and the filters that are set. Exported for testing. */
 export function buildExportUrl(params: EventExportParams): string {
   const searchParams = definedSearchParams({
     format: params.format,

@@ -9,8 +9,6 @@ import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse }
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import { createDimseSender } from './dcmjs-dimse-adapter.js';
 
-// ----- Config -----
-
 export interface DicomDispatcherConfig {
   readonly host: string;
   readonly port: number;
@@ -27,22 +25,17 @@ export interface DicomDispatcherConfig {
   readonly roots: FileRoots;
 }
 
-// ----- dcmtk abstraction (for testability) -----
-
-/** Result of a successful send operation. */
 export interface DcmtkSendResult {
   readonly files: readonly string[];
   readonly fileCount: number;
   readonly durationMs: number;
 }
 
-/** Minimal interface for the underlying DICOM sender. */
 export interface DcmtkSender {
   send(files: readonly string[]): Promise<Result<DcmtkSendResult>>;
   stop(): Promise<void>;
 }
 
-/** Factory that creates a DcmtkSender. */
 export type SenderFactory = (options: {
   readonly host: string;
   readonly port: number;
@@ -52,8 +45,6 @@ export type SenderFactory = (options: {
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
 }) => Result<DcmtkSender>;
-
-// ----- Dispatcher -----
 
 export class DicomDispatcher implements DestinationConnectorRuntime {
   private readonly config: DicomDispatcherConfig;

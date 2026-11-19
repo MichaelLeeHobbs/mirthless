@@ -1,14 +1,6 @@
-// ===========================================
-// Channel Controller Tests
-// ===========================================
-// Tests controller response format and error handling.
-// Verifies the API contract between server and frontend.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 import type { ChannelGroupId } from '@galvanigraph/core-models';
-
-// ----- Mock Service -----
 
 const mockService = {
   list: vi.fn(),
@@ -41,8 +33,6 @@ vi.mock('../../lib/logger.js', () => ({
 const { ChannelController } = await import('../channel.controller.js');
 const { ServiceError } = await import('../../lib/service-error.js');
 const { standingFor } = await import('../../../test/standing.js');
-
-// ----- Helpers -----
 
 function makeRes(): Response {
   const res = {
@@ -88,14 +78,11 @@ function makeChannelDetail(overrides: Record<string, unknown> = {}): Record<stri
   };
 }
 
-// ----- Tests -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('ChannelController', () => {
-  // ========== LIST ==========
   describe('list', () => {
     it('returns nested data with pagination matching frontend ChannelListResponse type', async () => {
       const channels = [
@@ -114,14 +101,11 @@ describe('ChannelController', () => {
 
       await ChannelController.list(req, res);
 
-      // Verify the response structure the frontend expects:
-      // { success: true, data: { data: [...], pagination: {...} } }
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: listResult,
       });
 
-      // Extract the actual call argument and verify it's nested correctly
       const response = (res.json as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
       expect(response['success']).toBe(true);
 
@@ -149,7 +133,6 @@ describe('ChannelController', () => {
     });
   });
 
-  // ========== GET BY ID ==========
   describe('getById', () => {
     it('returns channel detail in standard ApiResponse format', async () => {
       const channel = makeChannelDetail();
@@ -241,7 +224,6 @@ describe('ChannelController', () => {
     });
   });
 
-  // ========== CREATE ==========
   describe('create', () => {
     it('returns 201 with channel detail after successful creation', async () => {
       const channel = makeChannelDetail({ name: 'New Channel' });
@@ -285,7 +267,6 @@ describe('ChannelController', () => {
     });
   });
 
-  // ========== UPDATE ==========
   describe('update', () => {
     it('returns updated channel detail', async () => {
       const channel = makeChannelDetail({ name: 'Updated', revision: 2 });
@@ -339,7 +320,6 @@ describe('ChannelController', () => {
     });
   });
 
-  // ========== DELETE ==========
   describe('delete', () => {
     it('returns 204 on successful delete', async () => {
       mockService.delete.mockResolvedValue({ ok: true, value: undefined, error: null });
@@ -388,7 +368,6 @@ describe('ChannelController', () => {
     });
   });
 
-  // ========== SET ENABLED ==========
   describe('setEnabled', () => {
     it('returns channel detail after toggling enabled', async () => {
       const channel = makeChannelDetail({ enabled: true });
@@ -411,8 +390,7 @@ describe('ChannelController', () => {
     });
   });
 
-  // ========== UPDATE: the enabled flag is deploy control (#225) ==========
-  describe('update of the enabled flag', () => {
+  describe('update of the enabled flag (#225)', () => {
     const CHANNEL = '00000000-0000-0000-0000-000000000001';
     const developer = { userId: 'u1', grants: standingFor({ id: 'u1', role: 'developer' }).grants };
     const deployer = { userId: 'u2', grants: standingFor({ id: 'u2', role: 'deployer' }).grants };
@@ -502,13 +480,11 @@ describe('ChannelController', () => {
     });
   });
 
-  // ========== WORKFLOW: Create → Get → Update → List → Delete ==========
   describe('workflow: full channel lifecycle', () => {
     it('creates, retrieves, updates, lists, and deletes a channel', async () => {
       const channelV1 = makeChannelDetail({ name: 'Lifecycle Channel', revision: 1 });
       const channelV2 = makeChannelDetail({ name: 'Lifecycle Channel (Updated)', revision: 2, enabled: true });
 
-      // Step 1: Create
       mockService.create.mockResolvedValue({ ok: true, value: channelV1, error: null });
 
       const createReq = makeReq({
@@ -528,7 +504,6 @@ describe('ChannelController', () => {
       const channelId = createResponse.data.id;
       expect(channelId).toBeDefined();
 
-      // Step 2: Get by ID
       mockService.getById.mockResolvedValue({ ok: true, value: channelV1, error: null });
 
       const getReq = makeReq({ params: { id: channelId } as Request['params'] });
@@ -539,7 +514,6 @@ describe('ChannelController', () => {
       expect(getResponse.success).toBe(true);
       expect(getResponse.data.name).toBe('Lifecycle Channel');
 
-      // Step 3: Update
       mockService.update.mockResolvedValue({ ok: true, value: channelV2, error: null });
 
       // Enabling the channel is deploy control (#225): a deployer may.
@@ -556,7 +530,6 @@ describe('ChannelController', () => {
       expect(updateResponse.data.revision).toBe(2);
       expect(updateResponse.data.name).toBe('Lifecycle Channel (Updated)');
 
-      // Step 4: List (verify response structure for frontend)
       const listResult = {
         data: [channelV2],
         pagination: { page: 1, pageSize: 25, total: 1, totalPages: 1 },
@@ -575,7 +548,6 @@ describe('ChannelController', () => {
       expect(listResponse.data.data).toHaveLength(1);
       expect(listResponse.data.pagination.total).toBe(1);
 
-      // Step 5: Delete
       mockService.delete.mockResolvedValue({ ok: true, value: undefined, error: null });
 
       const deleteReq = makeReq({ params: { id: channelId } as Request['params'] });
@@ -584,7 +556,6 @@ describe('ChannelController', () => {
 
       expect(deleteRes.status).toHaveBeenCalledWith(204);
 
-      // Step 6: Verify not found after delete
       const notFoundError = new ServiceError('NOT_FOUND', 'Channel not found');
       mockService.getById.mockResolvedValue({ ok: false, value: null, error: notFoundError });
 

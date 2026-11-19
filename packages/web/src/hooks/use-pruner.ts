@@ -1,12 +1,5 @@
-// ===========================================
-// Pruner Scheduler API Hooks
-// ===========================================
-// TanStack Query hooks for data pruner scheduling.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 interface PrunerScheduleStatus {
   readonly enabled: boolean;
@@ -31,14 +24,10 @@ interface PruneAllResult {
   readonly failedChannelIds: readonly string[];
 }
 
-// ----- Query Keys -----
-
 const PRUNER_KEYS = {
   all: ['pruner'] as const,
   status: () => [...PRUNER_KEYS.all, 'status'] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function usePrunerStatus(): ReturnType<typeof useQuery<PrunerScheduleStatus>> {
   return useQuery({

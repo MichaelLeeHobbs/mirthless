@@ -1,9 +1,4 @@
-// ===========================================
-// Headers Key/Value Editor
-// ===========================================
-// Edits an HTTP header map as a Record<string, string>. The connector
-// dispatchers spread `headers` as a Record, so the form must produce an
-// object — never a raw string.
+// The connector dispatchers spread `headers` as a Record, so the form must produce an object, never a raw string.
 
 import { type ReactNode, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
@@ -21,8 +16,7 @@ interface HeadersEditorProps {
   readonly label?: string;
 }
 
-/** Parse a possibly-legacy value into a header record. Accepts an object or a
- * newline/colon delimited string (for records saved before this editor existed). */
+/** Also accepts header text, as records saved before this editor hold. */
 export function coerceHeaders(raw: unknown): Record<string, string> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     const out: Record<string, string> = {};

@@ -1,8 +1,3 @@
-// ===========================================
-// Map Shortcuts Tests
-// ===========================================
-// Tests for the Mirth-compatible $, $c, $co, $r, $g, $gc, $s, $cfg shortcuts and map injection.
-
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   VmSandboxExecutor,
@@ -11,8 +6,6 @@ import {
   type CompiledScript,
 } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
-
-// ----- Helpers -----
 
 function makeScript(code: string): CompiledScript {
   return { code };
@@ -26,8 +19,6 @@ function makeContext(overrides?: Partial<SandboxContext>): SandboxContext {
   const base = createSandboxContext('test msg', 'raw data');
   return { ...base, ...overrides };
 }
-
-// ----- Tests -----
 
 let executor: VmSandboxExecutor;
 

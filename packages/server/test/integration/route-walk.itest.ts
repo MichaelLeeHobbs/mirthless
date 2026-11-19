@@ -1,21 +1,7 @@
-// ===========================================
-// Route walk per principal (real authenticate, real Postgres)
-// ===========================================
-// public-routes.test.ts proves every non-public route refuses a caller with no
-// session (D-299). This walks the same routes signed in as each seeded role, and
-// as a disabled user, a user who must change their password and a revoked
-// session. Nothing is mocked: each caller is a users row with a sessions row and
-// a token the server signed, so the real authenticate resolves who they are.
-//
-// For each role and route:
-// - a role without the route's permission gets the guard's 403;
-// - a role with it gets past the guard. GETs run their handler. Other methods
-//   are sent input their validator refuses, so the 400 shows the guard let them
-//   through and nothing changed. A non-GET route with no validator would run on
-//   any request (POST /admin/prune prunes every channel), so it is not called.
-//
-// Refusals are recorded once a minute per caller, route and reason (#158); the
-// last tests read those records back from audit_log.
+// A role holding a non-GET route's permission is sent input the route's
+// validator refuses, so the 400 shows the guard let it through and nothing
+// changed. A non-GET route with no validator would run on any request, so it is
+// not called. Refusals are recorded once a minute per caller, route and reason (#158).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -28,18 +14,13 @@ import type { ApiRoute, WalkedRoute } from '../../src/routes/__tests__/api-route
 
 const ID = '3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c';
 const NOT_AN_ID = 'route-walk-not-an-id';
-/** Every built-in role, the channel roles included (D-310). */
 const ROLES = defaultRoles.map((r) => r.name);
-/** What authenticate still lets through for a user who must change their password. */
 const PASSWORD_CHANGE_EXEMPT: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/v1/users/me/password' },
   { method: 'POST', path: '/api/v1/auth/logout' },
 ];
 
-/**
- * Non-GET routes whose handler would run on any request the walk could send,
- * so a role that passes the guard does not call them. Their refusals are still walked.
- */
+/** Non-GET routes whose handler would run on any request the walk could send. Their refusals are still walked. */
 const NOT_CALLED_WHEN_ALLOWED: ReadonlyArray<ApiRoute & { readonly reason: string }> = [
   { method: 'POST', path: '/api/v1/admin/prune', reason: 'No validator: prunes every channel.' },
   { method: 'DELETE', path: '/api/v1/global-map', reason: 'No validator: clears the global map.' },
@@ -189,8 +170,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
   }, 120_000);
 
   /**
-   * The ACCESS_DENIED records that open a window for one user, as route and
-   * reason. A run that crosses a minute also gets the sweep's held-back counts
+   * A run that crosses a minute also gets the sweep's held-back counts
    * (repeatsSinceLast above 0), which these checks leave out. Recording is
    * fire-and-forget, so callers poll.
    */

@@ -1,8 +1,3 @@
-// ===========================================
-// Destination Filter Section
-// ===========================================
-// Reuses FilterRuleEditor from source. Scoped to a single destination's filter.
-
 import { useCallback, type ReactNode } from 'react';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';

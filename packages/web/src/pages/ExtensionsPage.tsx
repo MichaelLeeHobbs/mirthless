@@ -1,8 +1,3 @@
-// ===========================================
-// Extensions Page
-// ===========================================
-// Read-only inventory of the built-in connectors and data types.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';

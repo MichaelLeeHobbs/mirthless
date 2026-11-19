@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Settings Tab
-// ===========================================
-// Combined channel identity, data config, and advanced settings with collapsible sections.
-
 import { useMemo, useCallback, type ReactNode, type ChangeEvent } from 'react';
 import { Controller, type Control, type FieldErrors } from 'react-hook-form';
 import Box from '@mui/material/Box';
@@ -63,7 +58,6 @@ function copyToClipboard(text: string): void {
 const NONE_GROUP = '__none__';
 
 export function SummaryTab({ control, errors, isEditMode, channelId, revision, advancedValues, onAdvancedChange }: SummaryTabProps): ReactNode {
-  // ----- Group dropdown (edit mode only) -----
   const groupsQuery = useChannelGroups();
   const membershipsQuery = useGroupMemberships();
   const setChannelGroups = useSetChannelGroups();
@@ -95,7 +89,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
   return (
     <Box>
       <Grid container spacing={3}>
-        {/* Left column -- Identity & Description */}
         <Grid
           size={{
             xs: 12,
@@ -193,7 +186,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
           ) : null}
         </Grid>
 
-        {/* Right column -- Data Types & Connector */}
         <Grid
           size={{
             xs: 12,
@@ -258,9 +250,7 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
         </Grid>
       </Grid>
 
-      {/* --- Advanced Settings (collapsible) --- */}
       <Box sx={{ mt: 3 }}>
-        {/* Message Storage */}
         <Accordion defaultExpanded={false}>
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Message Storage</Typography>
@@ -316,7 +306,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
           </AccordionDetails>
         </Accordion>
 
-        {/* Message Pruning */}
         <Accordion defaultExpanded={false}>
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Message Pruning</Typography>
@@ -359,7 +348,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
           </AccordionDetails>
         </Accordion>
 
-        {/* Script Execution */}
         <Accordion defaultExpanded={false}>
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Script Execution</Typography>

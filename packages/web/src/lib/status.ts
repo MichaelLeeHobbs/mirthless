@@ -1,21 +1,9 @@
-// ===========================================
-// Status Level Mapping
-// ===========================================
-// The one place that decides what a status "means". Channel deployment states
-// and per-message statuses both collapse onto a small set of semantic levels so
-// a colour reads the same everywhere in the app. Pure functions — no React — so
-// they are trivially testable.
-
 import type { ApiKeyStatus } from '@galvanigraph/core-models';
 import { ROLE_FLAG } from './role-flags.js';
 
-/** Semantic status levels, keyed to `theme.palette.status`. */
+/** Keys of `theme.palette.status`. */
 export type StatusLevel = 'healthy' | 'warning' | 'critical' | 'info' | 'neutral';
 
-/**
- * Map a channel deployment state to a semantic level.
- * STARTED → healthy, PAUSED → warning, STOPPED → critical, UNDEPLOYED → neutral.
- */
 export function channelStateLevel(state: string): StatusLevel {
   switch (state) {
     case 'STARTED': return 'healthy';
@@ -26,11 +14,6 @@ export function channelStateLevel(state: string): StatusLevel {
   }
 }
 
-/**
- * Map a message (or connector) status to a semantic level.
- * SENT → healthy, ERROR → critical, QUEUED → warning,
- * FILTERED/RECEIVED/TRANSFORMED → info, otherwise neutral.
- */
 export function messageStatusLevel(status: string): StatusLevel {
   switch (status) {
     case 'SENT': return 'healthy';
@@ -43,10 +26,6 @@ export function messageStatusLevel(status: string): StatusLevel {
   }
 }
 
-/**
- * Map an audit event level to a semantic level.
- * ERROR → critical, WARN → warning, INFO → info, otherwise neutral.
- */
 export function eventLevelLevel(level: string): StatusLevel {
   switch (level) {
     case 'ERROR': return 'critical';
@@ -56,15 +35,12 @@ export function eventLevelLevel(level: string): StatusLevel {
   }
 }
 
-/** A group a live assignment is scoped to: adding a channel to it gives people access → warning. */
+/** Adding a channel to a group a live assignment is scoped to gives people access. */
 export function groupAccessLevel(): StatusLevel {
   return 'warning';
 }
 
-/**
- * An API key's status (D-313): active → healthy; disabled → warning (it can be
- * switched back on); ended or revoked → neutral (it never works again).
- */
+/** D-313: a disabled key can be switched back on; an expired or revoked one never works again. */
 export function apiKeyLevel(status: ApiKeyStatus): StatusLevel {
   switch (status) {
     case 'active': return 'healthy';
@@ -78,15 +54,11 @@ export function apiKeyLevel(status: ApiKeyStatus): StatusLevel {
   }
 }
 
-/** An assignment that has expired gives nothing until renewed → warning; a live one → healthy. */
+/** An expired assignment gives nothing until renewed. */
 export function assignmentLevel(expired: boolean): StatusLevel {
   return expired ? 'warning' : 'healthy';
 }
 
-/**
- * Map a role flag (lib/role-flags.ts) to a semantic level. As strong as admin →
- * critical; runs code or reads PHI → warning; all channels only → info.
- */
 export function roleFlagLevel(flag: string): StatusLevel {
   switch (flag) {
     case ROLE_FLAG.ADMIN_EQUIVALENT: return 'critical';
@@ -97,7 +69,6 @@ export function roleFlagLevel(flag: string): StatusLevel {
   }
 }
 
-/** Map an audit event outcome to a semantic level. SUCCESS → healthy, FAILURE → critical. */
 export function eventOutcomeLevel(outcome: string): StatusLevel {
   switch (outcome) {
     case 'SUCCESS': return 'healthy';

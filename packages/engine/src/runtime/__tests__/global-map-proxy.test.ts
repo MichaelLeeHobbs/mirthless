@@ -1,7 +1,3 @@
-// ===========================================
-// Global Map Proxy Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GlobalMapProxy, type GlobalMapStore } from '../global-map-proxy.js';
 
@@ -206,7 +202,6 @@ describe('GlobalMapProxy', () => {
   });
 
   describe('an API edit while a script value is being saved', () => {
-    /** Make the next save hang until the returned function is called. */
     function holdNextSave(): () => void {
       let release: () => void = () => {};
       s.save.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));

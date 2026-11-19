@@ -1,8 +1,3 @@
-// ===========================================
-// Configuration Table Schema
-// ===========================================
-// Key-value settings for simple server config.
-
 import { pgTable, varchar, text, primaryKey } from 'drizzle-orm/pg-core';
 
 export const configuration = pgTable('configuration', {

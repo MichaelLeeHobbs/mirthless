@@ -1,7 +1,3 @@
-// ===========================================
-// Filter Rule Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
 import { scriptLanguageSchema } from './script-language.schema.js';
 
@@ -14,9 +10,9 @@ export const filterRuleInputSchema = z.object({
   operator: z.enum(FILTER_OPERATORS).default('AND'),
   type: z.enum(FILTER_RULE_TYPES),
   script: z.string().nullable().default(null),
-  /** The language of `script`. Create stores JavaScript when it is left out; update requires it with a script (D-294). */
+  /** Create stores JavaScript when it is left out; update requires it with a script (D-294). */
   language: scriptLanguageSchema.optional(),
-  // Rule builder fields (null for JavaScript type)
+  // Rule builder only; null for JAVASCRIPT.
   field: z.string().max(255).nullable().default(null),
   condition: z.string().max(50).nullable().default(null),
   values: z.array(z.string()).nullable().default(null),
@@ -26,8 +22,7 @@ export type FilterRuleInput = z.infer<typeof filterRuleInputSchema>;
 
 export const filterInputSchema = z.object({
   connectorId: z.string().uuid().nullable().default(null),
-  // metaDataId: used to resolve connectorId when destinations are being reinserted
-  // null or absent = source filter, number = destination filter (maps to destination array index + 1)
+  // null: the source's filter; a number: destination array index + 1, resolving connectorId when destinations are reinserted.
   metaDataId: z.number().int().positive().nullable().default(null),
   rules: z.array(filterRuleInputSchema).default([]),
 });

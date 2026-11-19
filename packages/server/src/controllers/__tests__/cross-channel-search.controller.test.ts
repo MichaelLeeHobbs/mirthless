@@ -1,8 +1,4 @@
-// ===========================================
-// Cross-Channel Search Controller Tests
-// ===========================================
-// The Traffic page's list of messages across channels is recorded before it
-// is sent (D-312).
+// The Traffic page's list is recorded before it is sent (D-312).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';

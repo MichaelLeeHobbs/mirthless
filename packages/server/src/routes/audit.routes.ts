@@ -1,8 +1,4 @@
-// ===========================================
-// Audit Routes
-// ===========================================
-// The protected audit log (D-312): sign-ins, refusals, purges and, as later
-// slices add them, PHI reads and grant changes. Readable only with audit:read.
+// The protected audit log (D-312).
 
 import { Router, type IRouter } from 'express';
 import { auditListQuerySchema, auditIdParamSchema } from '@galvanigraph/core-models';

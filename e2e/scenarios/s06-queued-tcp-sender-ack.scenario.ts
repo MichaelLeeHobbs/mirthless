@@ -1,7 +1,4 @@
-// S06: a queued TCP Sender waits out a partner outage and validates the ACK.
-// Production pattern: Gov per-site sender channels (queued TCP Sender, ACK
-// validation on). While the partner is down the message stays queued; when it
-// comes back the message is delivered once. A partner AE marks it ERROR.
+// Production pattern: Gov per-site sender channels (queued TCP Sender, ACK validation on).
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, tcpSender } from './support/mirth-xml.js';
@@ -34,18 +31,15 @@ scenario('S06 queued TCP sender delivers after an outage and errors on a NACK', 
     return m?.connectors.find((c) => c.metaDataId === 1)?.status ?? 'NONE';
   };
 
-  // Partner down: the message is accepted and queued.
   expect(await sendMllp(PORT, oru('S06A'))).toContain('MSA|AA|S06A');
   await expect.poll(() => destStatus(0), { timeout: 15_000 }).toBe('QUEUED');
 
-  // Partner back: delivered exactly once.
   const sink = new MllpSink(SINK);
   await sink.listen();
   try {
     await expect.poll(() => destStatus(0), { timeout: 20_000 }).toBe('SENT');
     expect(sink.received.filter((m) => m.includes('|S06A|'))).toHaveLength(1);
 
-    // Partner rejects: ACK validation marks the send ERROR.
     sink.ackCode = 'AE';
     expect(await sendMllp(PORT, oru('S06B'))).toContain('MSA|AA|S06B');
     await expect.poll(() => destStatus(1), { timeout: 15_000 }).toMatch(/ERROR|QUEUED/);

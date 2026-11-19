@@ -1,7 +1,3 @@
-// ===========================================
-// Registry: DATABASE properties parsed by the core-models schema
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 

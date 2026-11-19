@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Import Dialog
-// ===========================================
-// Upload dialog with file picker, preview, collision mode select, and import button.
-
 import { useState, useRef, type ReactNode, type ChangeEvent } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';

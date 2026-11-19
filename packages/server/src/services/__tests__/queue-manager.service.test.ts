@@ -1,10 +1,4 @@
-// ===========================================
-// Queue Manager Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 const mockExecute = vi.fn();
 
@@ -29,22 +23,15 @@ vi.mock('drizzle-orm', () => ({
 // Must import after mocks
 const { QueueManagerService } = await import('../queue-manager.service.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 const META_DATA_ID = 1;
-
-// ----- Setup -----
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockExecute.mockResolvedValue({ rows: [] });
 });
 
-// ----- Tests -----
-
 describe('QueueManagerService', () => {
-  // ========== REQUEUE FAILED ==========
   describe('requeueFailed', () => {
     it('resets ERROR messages under retry limit', async () => {
       mockExecute.mockResolvedValue({
@@ -64,7 +51,6 @@ describe('QueueManagerService', () => {
     });
 
     it('skips messages over retry limit (returns 0)', async () => {
-      // When all ERROR messages already exceed maxRetries, no rows match
       mockExecute.mockResolvedValue({ rows: [] });
 
       const result = await QueueManagerService.requeueFailed(CHANNEL_ID, 0);
@@ -93,7 +79,6 @@ describe('QueueManagerService', () => {
     });
   });
 
-  // ========== GET QUEUE DEPTH ==========
   describe('getQueueDepth', () => {
     it('returns correct count for queued messages', async () => {
       mockExecute.mockResolvedValue({ rows: [{ count: '15' }] });

@@ -1,8 +1,4 @@
-// ===========================================
-// Queue Settings Section Tests
-// ===========================================
-// "Wait for Previous Destination" controls destination ordering, so it must be
-// available whatever the queue mode, and toggling it must write waitForPrevious.
+// "Wait for Previous Destination" orders destinations, so it applies in every queue mode.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';

@@ -1,9 +1,3 @@
-// ===========================================
-// Code Diff Editor
-// ===========================================
-// Side-by-side, read-only comparison in the shared editor frame, with the two
-// sides labelled and a change count.
-
 import { type ReactNode, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';

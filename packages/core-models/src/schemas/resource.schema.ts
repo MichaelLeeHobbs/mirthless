@@ -1,10 +1,4 @@
-// ===========================================
-// Resource Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
-
-// ----- Resource CRUD -----
 
 export const createResourceSchema = z.object({
   name: z.string().min(1).max(255),
@@ -23,8 +17,6 @@ export const updateResourceSchema = z.object({
 });
 
 export type UpdateResourceInput = z.infer<typeof updateResourceSchema>;
-
-// ----- Params -----
 
 export const resourceUuidParamSchema = z.object({
   id: z.string().uuid(),

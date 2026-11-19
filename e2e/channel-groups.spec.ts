@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Groups E2E Tests
-// ===========================================
-
 import { test, expect, request } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { ADMIN_USER } from './fixtures/test-data.js';
@@ -10,7 +6,6 @@ const API_BASE = 'http://localhost:3000/api/v1';
 const TEST_GROUP_NAME = 'E2E Test Group';
 
 test.describe('Channel Groups', () => {
-  // Clean up stale test data from previous runs
   test.beforeAll(async () => {
     const ctx = await request.newContext({ baseURL: API_BASE });
     try {
@@ -49,8 +44,6 @@ test.describe('Channel Groups', () => {
     await login(page);
   });
 
-  // Channel groups live on the Dashboard (New Group button + grouped view);
-  // the standalone /channel-groups page was folded in there.
   test('create a new channel group from the dashboard', async ({ page }) => {
     await page.getByRole('button', { name: 'New Group' }).click();
 

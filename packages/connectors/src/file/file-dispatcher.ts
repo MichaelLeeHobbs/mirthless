@@ -1,10 +1,3 @@
-// ===========================================
-// File Dispatcher (Destination Connector)
-// ===========================================
-// Writes message content to files on disk.
-// Supports output filename patterns, temp-file-then-rename,
-// and append mode.
-
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -13,8 +6,6 @@ import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse }
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { resolveWithinRoots, type FileRoots } from './file-roots.js';
-
-// ----- Config -----
 
 export interface FileDispatcherConfig {
   readonly directory: string;
@@ -27,14 +18,7 @@ export interface FileDispatcherConfig {
   readonly roots: FileRoots;
 }
 
-// ----- Pattern Substitution -----
-
-/**
- * Resolve an output filename by substituting placeholders in the pattern with
- * values from the message context, by the shared rule in
- * {@link fillPlaceholders}. One pass over the pattern: a value is inserted
- * as-is and never scanned for further placeholders.
- */
+/** One pass: an inserted value is never scanned for further placeholders. */
 export function resolveOutputFilename(
   pattern: string,
   context: Readonly<Record<string, unknown>>,
@@ -42,26 +26,18 @@ export function resolveOutputFilename(
   return fillPlaceholders(pattern, recordLookup(context));
 }
 
-/** Placeholders an output filename pattern can use. */
 export const FILENAME_PLACEHOLDERS: readonly string[] = ['messageId', 'timestamp'];
 
-/**
- * Names of the `${...}` placeholders in a pattern that cannot be filled. A
- * pattern with one is refused at deploy: left in place it would be written
- * into the filename as literal text.
- */
+/** Refused at deploy: left in place, a placeholder would be written into the filename as literal text. */
 export function unknownPlaceholders(pattern: string): readonly string[] {
   return placeholderNames(pattern).filter((name) => !FILENAME_PLACEHOLDERS.includes(name));
 }
 
-/** Error text for a pattern that failed {@link unknownPlaceholders}. */
 export function unknownPlaceholderMessage(names: readonly string[]): string {
   const bad = names.map((n) => '${' + n + '}').join(', ');
   const good = FILENAME_PLACEHOLDERS.map((n) => '${' + n + '}').join(' and ');
   return `The filename pattern uses ${bad}, which is not available. Use ${good}.`;
 }
-
-// ----- Dispatcher -----
 
 export class FileDispatcher implements DestinationConnectorRuntime {
   private readonly config: FileDispatcherConfig;
@@ -158,21 +134,13 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /**
-   * Write content to a temp file, then rename to final path. The temp name is
-   * unique per write: two messages that resolve to the same file name must not
-   * write into one temp file at the same time.
-   */
+  /** Unique temp name per write: two messages resolving to one file name must not share a temp file. */
   private async writeViaTempFile(outputPath: string, content: string): Promise<void> {
     const tmpPath = `${outputPath}.${randomUUID()}.tmp`;
     await this.writeFile(tmpPath, content);
     await fs.rename(tmpPath, outputPath);
   }
 
-  /**
-   * The bytes and fs options for writing content: binary mode decodes base64
-   * and passes no encoding, text mode writes in the normalized charset.
-   */
   private encodeForWrite(content: string): {
     readonly data: string | Buffer;
     readonly options: { readonly encoding: BufferEncoding } | undefined;
@@ -183,13 +151,11 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     return { data: content, options: { encoding: normalizeEncoding(this.config.charset) } };
   }
 
-  /** Append content to a file. */
   private async appendToFile(outputPath: string, content: string): Promise<void> {
     const { data, options } = this.encodeForWrite(content);
     await fs.appendFile(outputPath, data, options);
   }
 
-  /** Write content directly to a file. */
   private async writeFile(outputPath: string, content: string): Promise<void> {
     const { data, options } = this.encodeForWrite(content);
     await fs.writeFile(outputPath, data, options);

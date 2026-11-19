@@ -1,10 +1,4 @@
-// ===========================================
-// Settings Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -83,8 +77,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 
 const { SettingsService } = await import('../settings.service.js');
 
-// ----- Fixtures -----
-
 const NOW = new Date('2026-03-01T12:00:00Z');
 const SETTING_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
@@ -102,8 +94,6 @@ function makeSettingRow(overrides?: Partial<Record<string, unknown>>): Record<st
   };
 }
 
-// ----- Tests -----
-
 beforeEach(() => {
   resetSelectState();
   vi.clearAllMocks();
@@ -111,8 +101,6 @@ beforeEach(() => {
 });
 
 describe('SettingsService', () => {
-  // ===== list =====
-
   describe('list', () => {
     it('returns all settings', async () => {
       const settings = [
@@ -162,8 +150,6 @@ describe('SettingsService', () => {
       expect(result.value[0]!.category).toBeNull();
     });
   });
-
-  // ===== getByKey =====
 
   describe('getByKey', () => {
     it('returns setting detail', async () => {
@@ -217,8 +203,6 @@ describe('SettingsService', () => {
     });
   });
 
-  // ===== upsert =====
-
   describe('upsert', () => {
     it('creates a new setting', async () => {
       const row = makeSettingRow();
@@ -257,8 +241,6 @@ describe('SettingsService', () => {
     });
   });
 
-  // ===== bulkUpsert =====
-
   describe('bulkUpsert', () => {
     it('upserts multiple settings in transaction', async () => {
       const row1 = makeSettingRow();
@@ -278,8 +260,6 @@ describe('SettingsService', () => {
       expect(mockTransaction).toHaveBeenCalled();
     });
   });
-
-  // ===== delete =====
 
   describe('delete', () => {
     it('deletes existing setting', async () => {

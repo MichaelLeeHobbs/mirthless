@@ -1,25 +1,14 @@
-// ===========================================
-// Channel Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
 import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } from '../constants.js';
 import { filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
 import { scriptLanguageSchema } from './script-language.schema.js';
 
-// ----- Shared Enums -----
-
-/** Every connector type, in either direction. */
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
 
-/** A type that can be a channel's source (SMTP and FHIR only send). */
 export const sourceConnectorTypeSchema = z.enum(SOURCE_CONNECTOR_TYPES);
 
-/** A type that can be a channel's destination (EMAIL only receives). */
 export const destinationConnectorTypeSchema = z.enum(DESTINATION_CONNECTOR_TYPES);
-
-// ----- Channel Properties -----
 
 export const channelPropertiesSchema = z.object({
   initialState: z.enum(['UNDEPLOYED', 'STARTED', 'PAUSED', 'STOPPED']).default('STOPPED'),
@@ -35,8 +24,6 @@ export const channelPropertiesSchema = z.object({
   scriptTimeoutSeconds: z.number().int().min(1).max(300).default(30),
 });
 
-// ----- Destination Input -----
-
 export const destinationInputSchema = z.object({
   name: z.string().min(1).max(255),
   enabled: z.boolean().default(true),
@@ -48,15 +35,12 @@ export const destinationInputSchema = z.object({
   rotateQueue: z.boolean().default(false),
   queueThreadCount: z.number().int().positive().default(1),
   waitForPrevious: z.boolean().default(false),
-  /** Optional per-destination response transformer script (JS/TS source). */
   responseTransformer: z.string().nullish(),
-  /** The language of `responseTransformer`. Create stores JavaScript when it is left out; update requires it with a script (D-294). */
+  /** Create stores JavaScript when it is left out; update requires it with a script (D-294). */
   responseTransformerLanguage: scriptLanguageSchema.optional(),
 });
 
 export type DestinationInput = z.infer<typeof destinationInputSchema>;
-
-// ----- Metadata Column Input -----
 
 export const metadataColumnInputSchema = z.object({
   name: z.string().min(1).max(255),
@@ -66,10 +50,7 @@ export const metadataColumnInputSchema = z.object({
 
 export type MetadataColumnInput = z.infer<typeof metadataColumnInputSchema>;
 
-/**
- * The language of each channel script. One left out is JavaScript on create
- * and keeps its stored language on update (D-294).
- */
+/** One left out is JavaScript on create and keeps its stored language on update (D-294). */
 export const channelScriptLanguagesSchema = z.object({
   deploy: scriptLanguageSchema.optional(),
   undeploy: scriptLanguageSchema.optional(),
@@ -118,14 +99,12 @@ export const createChannelSchema = z.object({
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 
-/** A script whose language the request must give on update. */
 interface LanguagedScript {
   readonly script: string | null | undefined;
   readonly language: string | undefined;
   readonly path: ReadonlyArray<string | number>;
 }
 
-/** Every filter rule, transformer step and response transformer script in an update, with its language. */
 function updateScripts(input: z.infer<typeof updateChannelBaseSchema>): ReadonlyArray<LanguagedScript> {
   const found: LanguagedScript[] = [];
   input.filters?.forEach((f, i) => f.rules.forEach((r, j) => {
@@ -146,11 +125,9 @@ const updateChannelBaseSchema = createChannelSchema.omit({ groupId: true }).part
 });
 
 /**
- * An update replaces filter rules, transformer steps and destinations by
- * position, with no id to find the stored row by, so it cannot keep a stored
- * language the request leaves out. Defaulting it would silently turn a
- * TypeScript script into JavaScript and switch off its deploy type check, so
- * an update must give the language of every script it sends (D-294).
+ * Update replaces rules, steps and destinations by position, so it cannot keep
+ * a stored language the request leaves out; defaulting would turn TypeScript
+ * into JavaScript and switch off its deploy type check (D-294).
  */
 export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
   for (const s of updateScripts(input)) {

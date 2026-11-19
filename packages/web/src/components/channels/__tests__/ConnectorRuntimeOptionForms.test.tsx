@@ -1,13 +1,3 @@
-// ===========================================
-// Connector Runtime-Option Form Tests (rank-4 surfacing)
-// ===========================================
-// Verifies the newly surfaced runtime options render, toggle/select, and write
-// the exact prop keys the connector registry reads:
-//   TCP source: responseMode, charset, maxFrameBytes
-//   TCP dest:   acquireTimeoutMs, charset
-//   HTTP source: errorStatusCode, maxBodyBytes
-//   SMTP dest:  requireTLS
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -15,12 +5,12 @@ import { ThemeProvider } from '@mui/material/styles';
 import { useState, type ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
 
-// Mock TestConnectionButton — it pulls in socket/query wiring irrelevant here.
+// Pulls in socket and query wiring.
 vi.mock('../../common/TestConnectionButton.js', () => ({
   TestConnectionButton: () => null,
 }));
 
-// Mock the certificate list hook (HttpSourceForm imports CertificateSelect).
+// HttpSourceForm imports CertificateSelect.
 vi.mock('../../../hooks/use-certificates.js', () => ({
   useCertificates: () => ({ data: [], isLoading: false }),
 }));
@@ -53,7 +43,6 @@ function renderForm(Form: FormLike, initial: Record<string, unknown>): void {
   );
 }
 
-/** Open an MUI TextField-select and click the option with the given label. */
 function selectOption(triggerLabel: string, optionName: string | RegExp): void {
   fireEvent.mouseDown(screen.getByLabelText(triggerLabel));
   const listbox = screen.getByRole('listbox');

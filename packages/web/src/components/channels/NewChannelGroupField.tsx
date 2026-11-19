@@ -1,9 +1,4 @@
-// ===========================================
-// New Channel Group Field
-// ===========================================
-// The group a new channel joins, shown only to someone who can change channels
-// in several groups but not on every channel (D-310); anyone else's channel
-// goes to Default or their one group without asking.
+// Without this field a new channel goes to Default or the creator's one group (D-310).
 
 import type { ReactNode, ChangeEvent } from 'react';
 import MenuItem from '@mui/material/MenuItem';

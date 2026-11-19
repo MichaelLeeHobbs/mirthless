@@ -1,9 +1,3 @@
-// ===========================================
-// Assignment Hooks
-// ===========================================
-// A user's assignments: a role on every channel or on channel groups, with an
-// optional expiry and reason (D-310). The server judges every change.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AssignmentInput, AssignmentView } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
@@ -13,7 +7,7 @@ const ASSIGNMENT_KEYS = {
   user: (id: string) => [...ASSIGNMENT_KEYS.all, id] as const,
 } as const;
 
-/** A user's assignments, live and expired. */
+/** Includes expired assignments. */
 export function useAssignments(userId: string | null): ReturnType<typeof useQuery<readonly AssignmentView[]>> {
   return useQuery({
     queryKey: ASSIGNMENT_KEYS.user(userId ?? ''),
@@ -28,7 +22,6 @@ export function useAssignments(userId: string | null): ReturnType<typeof useQuer
   });
 }
 
-/** Replace a user's assignments. */
 export function useSetAssignments(): ReturnType<typeof useMutation<readonly AssignmentView[], Error, { id: string; assignments: readonly AssignmentInput[] }>> {
   const queryClient = useQueryClient();
   return useMutation({

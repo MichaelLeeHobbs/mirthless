@@ -1,9 +1,4 @@
-// ===========================================
-// Users and their roles (real Postgres, #265 slice 6)
-// ===========================================
-// A user's role is an assignment the grant service writes, with its audit row,
-// in the same transaction as the change. The last enabled admin is protected
-// under the admin role lock. Concurrency is in last-admin.itest.ts.
+// Concurrency is in last-admin.itest.ts.
 
 import { randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';

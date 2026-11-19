@@ -1,15 +1,7 @@
-// ===========================================
-// Socket Emission Tests
-// ===========================================
-// Verifies that deployment and message services emit
-// real-time Socket.IO events after successful operations.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from 'stderr-lib';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
 import { bundleOf } from '../../../test/deployment-bundle.js';
-
-// ----- Mock Socket -----
 
 const mockEmitToChannel = vi.fn();
 const mockEmitToRoom = vi.fn();
@@ -20,8 +12,6 @@ vi.mock('../../lib/socket.js', () => ({
   emitToRoom: (...args: unknown[]) => mockEmitToRoom(...args),
   emitToRoomCoalesced: (...args: unknown[]) => mockEmitToRoomCoalesced(...args),
 }));
-
-// ----- Mock Engine (for DeploymentService) -----
 
 const mockRuntime = {
   getState: vi.fn().mockReturnValue('STOPPED'),
@@ -72,8 +62,6 @@ vi.mock('../deployment-record.service.js', () => ({
   DeploymentRecordService: mockRecords,
 }));
 
-// ----- Mock DB (for MessageService) -----
-
 const mockInsertValues = vi.fn().mockResolvedValue(undefined);
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
@@ -98,11 +86,8 @@ vi.mock('drizzle-orm', () => ({
   ),
 }));
 
-// Must import after mocks
 const { DeploymentService } = await import('../deployment.service.js');
 const { MessageService } = await import('../message.service.js');
-
-// ----- Fixtures -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const SERVER_ID = 'server-01';
@@ -125,8 +110,6 @@ function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   deployedChannels.clear();
@@ -141,8 +124,6 @@ beforeEach(() => {
   mockRecords.record.mockResolvedValue(ok(undefined));
   mockRecords.markUndeployed.mockResolvedValue(ok(undefined));
 });
-
-// ----- Tests -----
 
 describe('Socket emission on deployment state changes', () => {
   it('emits channel:state with STOPPED after deploy', async () => {
@@ -196,7 +177,6 @@ describe('Socket emission on deployment state changes', () => {
   });
 
   it('does not emit when operation fails', async () => {
-    // Channel not deployed -> start fails
     const result = await DeploymentService.start(CHANNEL_ID);
 
     expect(result.ok).toBe(false);
@@ -232,9 +212,7 @@ describe('Socket emission on message operations', () => {
   });
 
   it('does not throw when socket is not initialized', async () => {
-    // emitToRoom and emitToAll are mocked — they won't throw by default.
-    // This confirms the service completes successfully even when emission is a no-op.
-    mockEmitToRoomCoalesced.mockImplementation(() => { /* no-op, simulating null IO */ });
+    mockEmitToRoomCoalesced.mockImplementation(() => {});
 
     const result = await MessageService.incrementStats(
       CHANNEL_ID, 0, SERVER_ID, 'sent',
@@ -249,7 +227,6 @@ describe('Socket emission on message operations', () => {
     );
 
     expect(result.ok).toBe(true);
-    // The emission was called but the result is still ok (void)
     expect(mockEmitToRoomCoalesced).toHaveBeenCalledOnce();
   });
 });

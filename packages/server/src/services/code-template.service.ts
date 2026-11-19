@@ -1,9 +1,3 @@
-// ===========================================
-// Code Template Service
-// ===========================================
-// Business logic for code template library + template CRUD.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { assertScriptCompiles } from './script-validation.service.js';
 import { tryCatch, type Result } from 'stderr-lib';
 import { and, eq, count, asc, or, isNull, sql } from 'drizzle-orm';
@@ -24,15 +18,13 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
 import { codeTemplateLibraries, codeTemplates, type CodeTemplate } from '../db/schema/index.js';
 
-// ----- Response Types -----
-
 export interface LibrarySummary {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
   readonly revision: number;
   readonly templateCount: number;
-  /** The channels whose scripts get this library's templates; null: every channel. */
+  /** null: every channel. */
   readonly channelIds: readonly string[] | null;
   /** Links outside the reader's code_templates:read scope, left out of `channelIds`. */
   readonly outsideScopeCount: number;
@@ -54,7 +46,6 @@ export interface TemplateDetail {
   readonly updatedAt: Date;
 }
 
-/** A template row as the API returns it. */
 function toTemplateDetail(r: CodeTemplate): TemplateDetail {
   return {
     id: r.id,
@@ -71,19 +62,16 @@ function toTemplateDetail(r: CodeTemplate): TemplateDetail {
   };
 }
 
-// ----- Scope (D-310, plan section 2) -----
 // A library's templates are compiled into the channels it links to, so a
-// library or template write needs the permission on every linked channel.
+// library or template write needs the permission on every linked channel (D-310).
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** The grants of the user making a change; none (failing every check) for no user or a disabled one. */
 async function writerGrants(reader: DbReader, context?: AuditContext): Promise<FoldedGrants> {
   const standing = context?.userId ? await queryUserStanding(reader, context.userId) : null;
   return standing?.enabled === true ? standing.grants : new Map();
 }
 
-/** A scoped writer's own channels, or null (every channel) for an all-channel one. */
 async function defaultLinks(grants: FoldedGrants): Promise<string[] | null> {
   const scope = await grantedChannels(grants, PERMISSIONS.CODE_TEMPLATES_WRITE);
   if (scope === ALL_CHANNELS) return null;
@@ -91,45 +79,32 @@ async function defaultLinks(grants: FoldedGrants): Promise<string[] | null> {
   return [...scope];
 }
 
-/** Refuse unless `grants` hold `permission` on every channel `links` reach (null: every channel). */
 async function assertLinksHeld(reader: DbReader, grants: FoldedGrants, permission: Permission, links: readonly string[] | null): Promise<void> {
   if (await holdsOnEveryChannel(grants, permission, links, reader)) return;
   const reach = links === null ? 'every channel' : links.length === 0 ? 'no channel, which only someone holding it on every channel may set' : 'channels outside your scope';
   throw new ServiceError('FORBIDDEN', `This needs ${permission} on every channel the library links to, and it links to ${reach}`);
 }
 
-/** A library row, locked for the rest of the transaction, or NOT_FOUND. */
 async function lockLibrary(tx: Tx, id: string, mode: 'update' | 'share'): Promise<typeof codeTemplateLibraries.$inferSelect> {
   const [row] = await tx.select().from(codeTemplateLibraries).where(eq(codeTemplateLibraries.id, id)).for(mode);
   if (!row) throw new ServiceError('NOT_FOUND', `Library ${id} not found`);
   return row;
 }
 
-/**
- * Refuse a write to a template in library `libraryId` unless the writer holds
- * `permission` on its links. FOR SHARE keeps the links from changing until the
- * write commits.
- */
+/** FOR SHARE keeps the links from changing until the write commits. */
 async function assertLibraryWritable(tx: Tx, libraryId: string, permission: Permission, context?: AuditContext): Promise<void> {
   const library = await lockLibrary(tx, libraryId, 'share');
   await assertLinksHeld(tx, await writerGrants(tx, context), permission, library.channelIds ?? null);
 }
 
-/** A template row, or NOT_FOUND. */
 async function findTemplate(reader: DbReader, id: string): Promise<CodeTemplate> {
   const [row] = await reader.select().from(codeTemplates).where(eq(codeTemplates.id, id));
   if (!row) throw new ServiceError('NOT_FOUND', `Template ${id} not found`);
   return row;
 }
 
-// ----- Service -----
-
 export class CodeTemplateService {
-  /**
-   * Refuse unless the writer holds code_templates:write on every set of links
-   * (null: every channel): for an import that must check all its libraries
-   * before writing any.
-   */
+  /** For an import, which must check all its libraries before writing any. */
   static async assertCanWriteLinks(linkSets: ReadonlyArray<readonly string[] | null>, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const grants = await writerGrants(db, context);
@@ -137,12 +112,7 @@ export class CodeTemplateService {
     });
   }
 
-  // ===== Libraries =====
-
-  /**
-   * List all libraries with template counts. A library's links outside
-   * `scope` (the reader's code_templates:read channels) show as a count only.
-   */
+  /** Links outside `scope` (the reader's code_templates:read channels) show as a count only. */
   static async listLibraries(scope: ChannelScope = ALL_CHANNELS): Promise<Result<readonly LibrarySummary[]>> {
     return tryCatch(async () => {
       const libs = await db
@@ -176,17 +146,11 @@ export class CodeTemplateService {
     });
   }
 
-  /**
-   * Create a new library. Its links must be channels the writer holds
-   * code_templates:write on; without links, a scoped writer's library links
-   * to their own channels and an all-channel writer's to every channel.
-   */
   static async createLibrary(
     input: CreateCodeTemplateLibraryInput,
     context?: AuditContext,
   ): Promise<Result<LibrarySummary>> {
     return tryCatch(async () => {
-      // Check for duplicate name
       const [existing] = await db
         .select({ id: codeTemplateLibraries.id })
         .from(codeTemplateLibraries)
@@ -230,11 +194,6 @@ export class CodeTemplateService {
     });
   }
 
-  /**
-   * Update a library (optimistic locking). The writer needs
-   * code_templates:write on its links before the change and after it, judged
-   * under a lock on the library row.
-   */
   static async updateLibrary(
     id: string,
     input: UpdateCodeTemplateLibraryInput,
@@ -252,7 +211,6 @@ export class CodeTemplateService {
         await assertLinksHeld(tx, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, existing.channelIds ?? null);
         if (input.channelIds !== undefined) await assertLinksHeld(tx, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, input.channelIds);
 
-        // Check duplicate name if changing
         if (input.name && input.name !== existing.name) {
           const [dup] = await tx
             .select({ id: codeTemplateLibraries.id })
@@ -306,7 +264,7 @@ export class CodeTemplateService {
     });
   }
 
-  /** Delete a library (cascades to templates); needs code_templates:delete on its links. */
+  /** Cascades to its templates. */
   static async deleteLibrary(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       await db.transaction(async (tx) => {
@@ -326,9 +284,7 @@ export class CodeTemplateService {
     });
   }
 
-  // ===== Templates =====
-
-  /** The templates a channel's scripts get: those in libraries for every channel or that name this one. */
+  /** A deploy passes its transaction, so the templates are read with the channel. */
   static async listTemplatesForChannel(channelId: string, reader: DbReader = db): Promise<Result<readonly TemplateDetail[]>> {
     return tryCatch(async () => {
       const rows = await reader
@@ -344,7 +300,6 @@ export class CodeTemplateService {
     });
   }
 
-  /** List templates, optionally filtered by library. */
   static async listTemplates(
     libraryId?: string,
   ): Promise<Result<readonly TemplateDetail[]>> {
@@ -364,7 +319,6 @@ export class CodeTemplateService {
     });
   }
 
-  /** Get a single template by ID. */
   static async getTemplate(id: string): Promise<Result<TemplateDetail>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -380,7 +334,6 @@ export class CodeTemplateService {
     });
   }
 
-  /** Create a new template. */
   static async createTemplate(
     input: CreateCodeTemplateInput,
     context?: AuditContext,
@@ -417,7 +370,6 @@ export class CodeTemplateService {
     });
   }
 
-  /** Update a template (optimistic locking). */
   static async updateTemplate(
     id: string,
     input: UpdateCodeTemplateInput,
@@ -467,7 +419,6 @@ export class CodeTemplateService {
     });
   }
 
-  /** Delete a template. */
   static async deleteTemplate(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       await db.transaction(async (tx) => {

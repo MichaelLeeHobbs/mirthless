@@ -1,8 +1,3 @@
-// ===========================================
-// Collection API Hooks
-// ===========================================
-// TanStack Query hooks for collection CRUD + record browsing.
-
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type {
   CreateCollectionInput,
@@ -12,8 +7,6 @@ import type {
 } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 import type { RecordColumn } from '../lib/collections.js';
-
-// ----- Types -----
 
 export interface CollectionSummary {
   readonly id: string;
@@ -38,7 +31,6 @@ export interface RecordPage {
   readonly total: number;
 }
 
-/** What the records grid asks the server for. */
 export interface RecordListParams {
   readonly page: number;
   readonly pageSize: number;
@@ -49,8 +41,6 @@ export interface RecordListParams {
   readonly in: RecordColumn | '';
 }
 
-// ----- Query Keys -----
-
 const COL_KEYS = {
   all: ['collections'] as const,
   list: () => [...COL_KEYS.all, 'list'] as const,
@@ -58,8 +48,6 @@ const COL_KEYS = {
   records: (id: string) => [...COL_KEYS.all, 'records', id] as const,
   recordPage: (id: string, params: RecordListParams) => [...COL_KEYS.records(id), params] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useCollections(enabled = true): ReturnType<typeof useQuery<readonly CollectionSummary[]>> {
   return useQuery({
@@ -98,7 +86,6 @@ function recordQueryString(params: RecordListParams): string {
   return search.toString();
 }
 
-/** One sorted, searched page of records. Keeps the last page on screen while the next loads. */
 export function useCollectionRecords(id: string, params: RecordListParams): ReturnType<typeof useQuery<RecordPage>> {
   return useQuery({
     queryKey: COL_KEYS.recordPage(id, params),

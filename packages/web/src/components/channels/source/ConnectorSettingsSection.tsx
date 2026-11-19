@@ -1,8 +1,3 @@
-// ===========================================
-// Connector Settings Section
-// ===========================================
-// Dynamically renders the correct settings form based on connector type.
-
 import { type ReactNode, type ComponentType } from 'react';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';

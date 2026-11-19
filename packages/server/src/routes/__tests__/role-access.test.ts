@@ -1,14 +1,5 @@
-// ===========================================
-// Role access: the guard on every route
-// ===========================================
-// docs/user/access-control.md says which permission guards each PHI or
-// destructive endpoint. This reads the real routers, with nothing mocked, and
-// checks that every route runs a permission guard before anything else, and
-// that each endpoint below is guarded by the permission the doc names and
-// answered by the controller method named here.
-//
-// Which role that guard lets through is proved over HTTP, signed in as each
-// role against Postgres, by test/integration/route-walk.itest.ts.
+// Which role each guard lets through is proved over HTTP, against Postgres, by
+// test/integration/route-walk.itest.ts.
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import type { Permission } from '@galvanigraph/core-models';
@@ -37,7 +28,6 @@ import { CrossChannelSearchController } from '../../controllers/cross-channel-se
 interface Endpoint extends ApiRoute {
   /** The permission docs/user/access-control.md says guards it. */
   readonly permission: Permission;
-  /** The controller method that answers it. */
   readonly handler: unknown;
 }
 
@@ -104,7 +94,6 @@ beforeAll(async () => {
   routes = await walkApiRoutes((await import('../index.js')).default);
 }, 60_000); // Loads every router and controller; under a full parallel run that outlasts the 10 s hook default.
 
-/** Routes that are neither public nor session-only and do not run a permission guard first. */
 function unguarded(walked: readonly WalkedRoute[]): readonly string[] {
   return walked
     .filter((r) => !isPublic(r) && !SESSION_ONLY_ROUTES.some(same(r)))

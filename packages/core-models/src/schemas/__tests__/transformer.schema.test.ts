@@ -1,7 +1,3 @@
-// ===========================================
-// Transformer Schema Validation Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { transformerStepInputSchema, transformerInputSchema, delimitedOptionsSchema } from '../transformer.schema.js';
 

@@ -1,7 +1,3 @@
-// ===========================================
-// TCP/MLLP Receiver Tests
-// ===========================================
-
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
@@ -15,8 +11,6 @@ import type { RawMessage, DispatchResult } from '../../base.js';
 import { DISPATCH_STATUS } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
-
-// ----- Helpers -----
 
 const TEST_PORT = 16661;
 
@@ -34,7 +28,6 @@ function makeConfig(overrides?: Partial<TcpMllpReceiverConfig>): TcpMllpReceiver
   };
 }
 
-/** A mock logger capturing structured calls. */
 function makeLogger(): {
   logger: { error: (o: unknown, m: string) => void; warn: (o: unknown, m: string) => void; info: () => void; debug: () => void };
   errors: Array<{ obj: unknown; msg: string }>;
@@ -51,7 +44,6 @@ function makeLogger(): {
   };
 }
 
-/** Dispatcher that returns a failed Result (processing error → AE). */
 function failingDispatcher(): (raw: RawMessage) => Promise<Result<DispatchResult>> {
   return async () => ({ ok: false as const, value: null, error: stderr('pipeline boom') });
 }
@@ -94,7 +86,6 @@ async function connectAndSend(
   });
 }
 
-/** Connect over TLS and return the first framed response. */
 async function connectAndSendTls(port: number, message: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const client = tls.connect({ host: '127.0.0.1', port, ca: TEST_CERT_PEM }, () => {
@@ -110,8 +101,6 @@ async function connectAndSendTls(port: number, message: string): Promise<string>
   });
 }
 
-// ----- Lifecycle -----
-
 let receiver: TcpMllpReceiver | null = null;
 
 afterEach(async () => {
@@ -121,8 +110,6 @@ afterEach(async () => {
     receiver = null;
   }
 });
-
-// ----- Tests -----
 
 describe('TcpMllpReceiver', () => {
   it('validates port on deploy', async () => {
@@ -158,7 +145,6 @@ describe('TcpMllpReceiver', () => {
 
   it('auto-generates a real HL7 ACK (AA) from the inbound MSH, not destination content', async () => {
     receiver = new TcpMllpReceiver(makeConfig());
-    // Destination "response" is a FILE PATH — it must NEVER be framed as the ACK.
     receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, response: '/var/data/out/123.txt' })));
     await receiver.onDeploy();
     await receiver.onStart();
@@ -214,7 +200,6 @@ describe('TcpMllpReceiver', () => {
         const msgs = parser.parse(chunk);
         responses.push(...msgs);
         if (responses.length === 1) {
-          // Send second message on same connection
           client.write(wrapMllp('MSG2'));
         }
         if (responses.length >= 2) {
@@ -225,7 +210,6 @@ describe('TcpMllpReceiver', () => {
     });
 
     expect(received).toEqual(['MSG1', 'MSG2']);
-    // AUTO_ACK ignores destination content and returns two acknowledgements.
     expect(responses).toHaveLength(2);
     for (const r of responses) expect(r).toContain('MSA|AA');
   });
@@ -236,7 +220,6 @@ describe('TcpMllpReceiver', () => {
     await receiver.onDeploy();
     await receiver.onStart();
 
-    // Connect a client
     const client = net.createConnection({ host: '127.0.0.1', port: TEST_PORT });
     await new Promise<void>((resolve) => { client.on('connect', resolve); });
 

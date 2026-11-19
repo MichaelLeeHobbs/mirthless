@@ -1,9 +1,5 @@
-// ===========================================
-// Role API Hooks
-// ===========================================
-// TanStack Query hooks for roles (D-310). The server refuses a change that
-// gives more than the editor holds, or deletes a role still assigned; those
-// refusals carry what is in the way in `details`.
+// D-310: the server refuses a role change that gives more than the editor
+// holds, or deleting a role still assigned, and names what is in the way in `details`.
 
 import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from '@tanstack/react-query';
 import type { CreateRoleInput, UpdateRoleInput } from '@galvanigraph/core-models';
@@ -14,7 +10,6 @@ const ROLE_KEYS = {
   list: () => [...ROLE_KEYS.all, 'list'] as const,
 } as const;
 
-/** A refused role change: the server's message, its code, and what it named. */
 export class RoleRequestError extends Error {
   constructor(message: string, readonly code: string, readonly details: Record<string, unknown> | undefined) {
     super(message);
@@ -39,7 +34,7 @@ function failure(error: { code: string; message: string; details?: unknown }): R
   return new RoleRequestError(error.message, error.code, details);
 }
 
-/** Every role, by name. Pass `enabled: false` when the user may not read roles. */
+/** Pass `false` when the user may not read roles. */
 export function useRoles(enabled = true): UseQueryResult<readonly RoleSummary[]> {
   return useQuery({
     queryKey: ROLE_KEYS.list(),

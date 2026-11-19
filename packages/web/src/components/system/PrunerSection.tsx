@@ -1,8 +1,3 @@
-// ===========================================
-// Pruner Section
-// ===========================================
-// Data pruner scheduling UI: enable/disable, cron input, run now, last run info.
-
 import { useState, useEffect, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';

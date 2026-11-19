@@ -1,10 +1,4 @@
-// ===========================================
-// TCP/MLLP Source Connector Form
-// ===========================================
-// Configuration form for TCP/MLLP listener source connectors.
-// Property keys are tcpMllpSourcePropertiesSchema's in core-models. TLS,
-// frame bytes and processBatch are not surfaced: TCP TLS is inline PEM until
-// it gets the certificate-store lookup HTTP, Kafka and AMQP have.
+// Keys are tcpMllpSourcePropertiesSchema's. TLS, frame bytes and processBatch are not surfaced: TCP TLS is inline PEM, without the certificate-store lookup HTTP, Kafka and AMQP have.
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
@@ -21,7 +15,6 @@ import { getStr, getNum, propertyUpdaters } from '../common/connector-properties
 export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
 
-  // Populate defaults on mount if properties are empty
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
@@ -35,7 +28,6 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
 
   return (
     <Grid container spacing={3}>
-      {/* Network settings */}
       <Grid
         size={{
           xs: 12,
@@ -82,7 +74,6 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
         />
       </Grid>
 
-      {/* MLLP settings */}
       <Grid
         size={{
           xs: 12,

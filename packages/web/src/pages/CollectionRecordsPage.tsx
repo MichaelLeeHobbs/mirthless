@@ -1,9 +1,4 @@
-// ===========================================
-// Collection Records Page
-// ===========================================
-// Grid of one collection's records: a column per indexed field, sortable
-// heads, a search box, paging, and add/edit/delete in a dialog. Sorting,
-// searching and paging run on the server, so they cover every record.
+// Sorting, searching and paging run on the server, so they cover every record.
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router';
@@ -59,7 +54,7 @@ const PAGE_SIZES = [25, 50, 100] as const;
 const SEARCH_DELAY_MS = 300;
 const MONO_CELL = { fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' } as const;
 
-/** The dialog's subject: a new record, or one from the grid. */
+/** `record: null` is a new record. */
 type DialogTarget = { readonly record: CollectionRecord | null } | null;
 
 function collectionSubtitle(collection: CollectionSummary): string {
@@ -67,7 +62,7 @@ function collectionSubtitle(collection: CollectionSummary): string {
   return collection.description ? `${collection.description}. ${ttl}.` : `${ttl}.`;
 }
 
-/** The search text, settled for a moment so each keystroke isn't a request. */
+/** Settles for a moment so each keystroke isn't a request. */
 function useSettled(value: string): string {
   const [settled, setSettled] = useState(value);
   useEffect(() => {
@@ -108,7 +103,6 @@ function RecordsGrid({ collection }: { readonly collection: CollectionSummary })
   const [searchIn, setSearchIn] = useState<RecordColumn | ''>('');
   const q = useSettled(search);
 
-  // A new search starts at the first page.
   useEffect(() => { setPage(0); }, [q, searchIn]);
 
   const params: RecordListParams = { page: page + 1, pageSize, sort: sort.sort, order: sort.order, q, in: searchIn };

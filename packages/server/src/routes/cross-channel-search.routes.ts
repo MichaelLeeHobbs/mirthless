@@ -1,7 +1,3 @@
-// ===========================================
-// Cross-Channel Search Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { crossChannelSearchQuerySchema } from '@galvanigraph/core-models';
 import { CrossChannelSearchController } from '../controllers/cross-channel-search.controller.js';

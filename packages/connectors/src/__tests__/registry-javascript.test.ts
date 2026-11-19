@@ -1,7 +1,3 @@
-// ===========================================
-// Registry: JAVASCRIPT properties parsed by the core-models schema
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 import type { JavaScriptReceiver } from '../javascript/javascript-receiver.js';

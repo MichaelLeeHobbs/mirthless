@@ -1,9 +1,3 @@
-// ===========================================
-// Transformer Step Editor
-// ===========================================
-// Shared component for editing a single transformer step.
-// Used by both source and destination transformer sections.
-
 import { type ReactNode, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
@@ -25,7 +19,6 @@ interface TransformerStepEditorProps {
   readonly onRemove: () => void;
   readonly onMoveUp: () => void;
   readonly onMoveDown: () => void;
-  /** Source steps can choose destinations; the stage also picks the code templates offered. */
   readonly stage?: ScriptStage;
   /** Names the enabled steps before this one declare; deploy runs the steps joined. */
   readonly earlierNames?: readonly string[];

@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Metadata Columns Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 

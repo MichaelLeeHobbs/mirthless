@@ -1,7 +1,3 @@
-// ===========================================
-// AMQP Connector Exports
-// ===========================================
-
 export { AmqpReceiver, type AmqpReceiverConfig } from './amqp-receiver.js';
 export { AmqpDispatcher, type AmqpDispatcherConfig } from './amqp-dispatcher.js';
 export {

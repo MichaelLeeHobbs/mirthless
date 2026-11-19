@@ -1,10 +1,5 @@
-// ===========================================
-// Role Controller
-// ===========================================
 // Roles are rows (D-310). Every write goes through GrantService in one
-// transaction with its audit row; a refusal that names what is in the way
-// (the permissions the editor lacks, the assignments that keep a role in use)
-// carries them in `details`.
+// transaction with its audit row.
 
 import type { Request, Response } from 'express';
 import { tryCatch, type Result } from 'stderr-lib';
@@ -19,7 +14,6 @@ function actorOf(req: Request): GrantActor {
   return { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
 }
 
-/** Answer a failed result: its status, its code and message, and its details when the service gave any. */
 function fail(res: Response, error: unknown, what: string): void {
   const status = mapErrorToStatus(error);
   if (status === 500) logger.error({ errMsg: error instanceof Error ? error.message : String(error) }, `Failed to ${what}`);

@@ -1,11 +1,4 @@
-// ===========================================
-// Assignments Editor
-// ===========================================
-// The user dialog's access list for an existing user: each row gives a role on
-// every channel or on chosen channel groups, optionally until a time and with
-// a reason (D-310, plan section 8). The server judges the whole list on save.
-// Choosing groups disables roles that may only be held on every channel, and
-// the Default group is never offered: every new channel may join it.
+// D-310. The Default group is never offered as a scope: every new channel may join it.
 
 import type { ReactNode, ChangeEvent } from 'react';
 import Alert from '@mui/material/Alert';
@@ -122,7 +115,7 @@ function AssignmentRow({ draft, roles, groups, onChange, onRemove }: RowProps): 
   );
 }
 
-/** Keys for rows added here; a counter, since crypto.randomUUID needs HTTPS. */
+/** A counter, since crypto.randomUUID needs HTTPS. */
 let nextRowKey = 0;
 
 /** A new row: the first role, on every channel, permanent. */

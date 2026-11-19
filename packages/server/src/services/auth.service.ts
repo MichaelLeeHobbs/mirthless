@@ -1,9 +1,3 @@
-// ===========================================
-// Auth Service
-// ===========================================
-// Handles user login, token refresh, and logout.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { verifyPassword } from '../lib/password.js';
 import { hashToken } from '../lib/token-hash.js';
 import { tryCatch, type Result } from 'stderr-lib';
@@ -17,7 +11,7 @@ import { emitAuditEvent } from '../lib/event-emitter.js';
 import { AUDIT_ACTION, USER_KIND, serializeGrants, type GrantEntry } from '@galvanigraph/core-models';
 
 const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 /**
  * A bcrypt hash (cost 12, like real ones) of a random value nobody knows. A
  * login for a username that does not exist is compared against it so that it
@@ -25,10 +19,9 @@ const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
  */
 const UNKNOWN_USER_HASH = '$2b$12$HhlOWRMeDl0myMDRClZP7e/jD1W8DQWGrtRSTDJK5m6T22C3vyJLG';
 
-/** The longest username (users.username is varchar(100)). */
+/** users.username is varchar(100). */
 const MAX_USERNAME_LENGTH = 100;
 
-/** Audit-log a rejected login. Every rejection is recorded, including unknown usernames. */
 function auditLoginFailure(
   username: string,
   userId: string | null,
@@ -44,16 +37,12 @@ function auditLoginFailure(
   });
 }
 
-/** What counting a wrong password did to the account. */
 type FailedAttemptOutcome = 'counted' | 'locked_now' | 'already_locked';
 
 /**
- * Count a wrong password in one UPDATE, so concurrent wrong guesses each count
- * and a late write cannot clear a lock another request set (#174). The row is
- * updated only while it is not locked at `now`. A lock that has expired no
- * longer counts: the count starts again at one and the old lock is cleared.
- * Reaching MAX_FAILED_ATTEMPTS sets a new lock. No row updated means a
- * concurrent request locked the account first.
+ * One UPDATE, so concurrent wrong guesses each count and a late write cannot
+ * clear a lock another request set (#174). An expired lock restarts the count
+ * at one. No row updated means a concurrent request locked the account first.
  */
 async function recordFailedAttempt(userId: string, now: Date): Promise<FailedAttemptOutcome> {
   const lockExpired = sql`(${users.lockedUntil} IS NOT NULL AND ${users.lockedUntil} <= ${now}::timestamptz)`;
@@ -92,24 +81,18 @@ export interface UserResponse {
   permissions: readonly string[];
   /** Each held permission with the scope it covers (D-310). */
   grants: readonly GrantEntry[];
-  /** When the first live assignment with an end time ends (ISO), or null: the web warns an hour before. */
+  /** When the first live assignment with an end time ends (ISO). */
   nextExpiryAt: string | null;
-  /** True when the user must change their password before proceeding. */
   mustChangePassword: boolean;
 }
 
-/** What a login or a refresh returns: the user as they are now, and the new tokens. */
 export interface LoginResult {
   user: UserResponse;
   accessToken: string;
   refreshToken: string;
 }
 
-/**
- * The user as the web sees them, resolved live from their assignments, so each
- * login and refresh carries their current access (D-298). Null when the user is
- * gone or disabled.
- */
+/** Resolved live from assignments, so each login and refresh carries current access (D-298). */
 async function currentUserResponse(userId: string): Promise<UserResponse | null> {
   const standing = await loadUserStanding(userId);
   if (!standing || !standing.enabled) return null;
@@ -132,7 +115,6 @@ export class AuthService {
     metadata?: SessionMetadata
   ): Promise<Result<LoginResult>> {
     return tryCatch(async () => {
-      // Find user by username
       const [user] = await db
         .select()
         .from(users)
@@ -147,7 +129,6 @@ export class AuthService {
         throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
       }
 
-      // Check account lockout
       if (user.lockedUntil && user.lockedUntil > new Date()) {
         auditLoginFailure(username, user.id, 'account_locked', metadata);
         const minutesRemaining = Math.ceil(
@@ -156,13 +137,11 @@ export class AuthService {
         throw new ServiceError('ACCOUNT_LOCKED', 'Account is locked', { minutesRemaining });
       }
 
-      // Check if account is enabled
       if (!user.enabled) {
         auditLoginFailure(username, user.id, 'account_disabled', metadata);
         throw new ServiceError('ACCOUNT_DEACTIVATED', 'Account is deactivated');
       }
 
-      // Verify password
       const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) {
         const outcome = await recordFailedAttempt(user.id, new Date());
@@ -170,7 +149,6 @@ export class AuthService {
           auditLoginFailure(username, user.id, 'invalid_password', metadata);
           throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
         }
-        // This attempt locked the account, or a concurrent one did first.
         auditLoginFailure(username, user.id, outcome === 'locked_now' ? 'invalid_password_locked' : 'account_locked', metadata);
         throw new ServiceError(
           'ACCOUNT_LOCKED',
@@ -179,7 +157,6 @@ export class AuthService {
         );
       }
 
-      // Reset failed attempts and update last login
       await db
         .update(users)
         .set({
@@ -195,7 +172,6 @@ export class AuthService {
         throw new ServiceError('ACCOUNT_DEACTIVATED', 'Account is deactivated');
       }
 
-      // Create session and tokens
       const tokens = await this.createTokens(user.id, metadata);
 
       emitAuditEvent({
@@ -209,9 +185,9 @@ export class AuthService {
   }
 
   /**
-   * Rotate a session: check the refresh token, drop its session and open a new
-   * one that records the client details of the request doing the rotation.
-   * Returns the user as they are now, so the web picks up a role change (#219).
+   * The new session records the client details of the request doing the
+   * rotation. Returns the user as they are now, so the web picks up a role
+   * change (#219).
    */
   static async refreshSession(refreshToken: string, metadata?: SessionMetadata): Promise<Result<LoginResult>> {
     return tryCatch(async () => {
@@ -255,8 +231,7 @@ export class AuthService {
   ): Promise<AuthTokens> {
     const refreshToken = signRefreshToken({ userId });
 
-    // Store hashed refresh token in database with metadata. The session ends
-    // when the token does, so JWT_REFRESH_EXPIRES_IN sets both.
+    // The session ends when the token does, so JWT_REFRESH_EXPIRES_IN sets both.
     const expiresAt = tokenExpiresAt(refreshToken);
 
     const [session] = await db

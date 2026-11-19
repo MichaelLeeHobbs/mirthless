@@ -1,6 +1,3 @@
-// ===========================================
-// Scenario suite global setup
-// ===========================================
 // db:seed creates the admin with mustChangePassword=true and the server refuses
 // other calls until it changes. The scenario database is a throwaway *_test
 // database, so re-set the same password through the API once.

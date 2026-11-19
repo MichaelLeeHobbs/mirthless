@@ -1,10 +1,4 @@
-// ===========================================
-// Role Access Section
-// ===========================================
-// The user dialog's access field: the roles from the server (D-310), each with
-// its flags, and before saving a change, what the user gains and loses. A role
-// holding a permission the editor lacks cannot be given (the within rule), so
-// it is shown but cannot be picked.
+// A role holding a permission the editor lacks cannot be given (the within rule, D-310).
 
 import type { ReactNode, ChangeEvent } from 'react';
 import Alert from '@mui/material/Alert';
@@ -25,7 +19,7 @@ import type { RoleSummary } from '../../api/client.js';
 
 interface RoleAccessSectionProps {
   readonly value: string;
-  /** The roles the user holds now; none for a new user. A save replaces them all with `value`. */
+  /** A save replaces all of these with `value`. */
   readonly current: readonly string[];
   readonly onChange: (role: string) => void;
 }
@@ -34,11 +28,7 @@ function labelOf(p: string): string {
   return Object.hasOwn(PERMISSION_CATALOG, p) ? PERMISSION_CATALOG[p as Permission].label : p;
 }
 
-/**
- * What moving from the roles in `from` to the one role `to` gives and takes,
- * by permission label. A user holding several roles loses what all of them
- * gave, since the save replaces every assignment.
- */
+/** A user holding several roles loses what all of them gave, since the save replaces every assignment. */
 export function accessChange(from: readonly RoleSummary[], to: RoleSummary | undefined): { readonly gains: readonly string[]; readonly losses: readonly string[] } {
   const before = new Set(from.flatMap((r) => r.permissions));
   const after = new Set(to?.permissions ?? []);

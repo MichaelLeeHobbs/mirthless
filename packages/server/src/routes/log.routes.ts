@@ -1,7 +1,3 @@
-// ===========================================
-// Log Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { LogController } from '../controllers/log.controller.js';

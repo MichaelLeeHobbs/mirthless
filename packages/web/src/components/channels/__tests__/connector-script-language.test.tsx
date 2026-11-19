@@ -1,8 +1,6 @@
-// #228: a JavaScript connector's script with no stored scriptLanguage. Empty,
-// the editor shows TypeScript, as for every new script; deploy reads a missing
-// language as JavaScript. Typing in it must store the language the editor
-// showed, or the script typed as TypeScript deploys unchecked. Monaco is faked
-// (fake-monaco.tsx) so the editor can be typed in.
+// #228: an empty script with no stored language shows as TypeScript, but deploy
+// reads a missing language as JavaScript, so a script typed as TypeScript would
+// deploy unchecked.
 
 import { useState, type ReactElement } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';

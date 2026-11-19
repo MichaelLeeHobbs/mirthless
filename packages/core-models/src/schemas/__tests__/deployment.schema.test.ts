@@ -1,7 +1,3 @@
-// ===========================================
-// Deployment Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { sendMessageInputSchema } from '../deployment.schema.js';
 

@@ -1,18 +1,6 @@
-// ===========================================
-// Connector Logging
-// ===========================================
-// Structured logging for connectors via pino. Failures in poll cycles,
-// connection handling, and dispatch must be VISIBLE — never swallowed.
-// Connectors accept an optional injected logger for testability; when
-// none is provided they use a child of the package root logger.
-
 import { pino, type Logger } from 'pino';
 
-/**
- * Minimal logging surface used across connectors.
- * Structurally satisfied by a pino {@link Logger}, but narrow enough
- * to mock in tests without pulling in pino.
- */
+/** Narrow so tests can fake it without pino; a pino {@link Logger} satisfies it. */
 export interface ConnectorLogger {
   error(obj: Readonly<Record<string, unknown>>, msg: string): void;
   warn(obj: Readonly<Record<string, unknown>>, msg: string): void;
@@ -20,20 +8,13 @@ export interface ConnectorLogger {
   debug(obj: Readonly<Record<string, unknown>>, msg: string): void;
 }
 
-// ----- Root logger -----
-
 const rootLogger: Logger = pino({
   name: '@galvanigraph/connectors',
   level: process.env['LOG_LEVEL'] ?? 'info',
 });
 
-/**
- * Create a child logger bound to a connector name/type.
- * @param connector - Connector identifier (e.g. 'FILE', 'TCP_MLLP').
- */
 export function createConnectorLogger(connector: string): ConnectorLogger {
   return rootLogger.child({ connector });
 }
 
-/** Loggable record for a caught value; connectors log errors through this. */
 export { errorInfo } from '@galvanigraph/core-util';

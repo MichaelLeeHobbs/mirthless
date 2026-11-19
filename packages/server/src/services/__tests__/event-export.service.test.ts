@@ -1,11 +1,5 @@
-// ===========================================
-// Event Export Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { EventExportQuery } from '@galvanigraph/core-models';
-
-// ----- Mock DB -----
 
 let queryRows: readonly Record<string, unknown>[] = [];
 
@@ -45,8 +39,6 @@ vi.mock('drizzle-orm', async (importOriginal) => ({
 
 const { EventExportService } = await import('../event-export.service.js');
 
-// ----- Fixtures -----
-
 function makeRow(overrides?: Partial<Record<string, unknown>>): Record<string, unknown> {
   return {
     id: 1,
@@ -68,8 +60,6 @@ function baseQuery(overrides?: Partial<EventExportQuery>): EventExportQuery {
     ...overrides,
   } as EventExportQuery;
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   queryRows = [];
@@ -124,7 +114,6 @@ describe('EventExportService', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // The JSON-stringified attributes should be double-quoted because it contains commas
       expect(result.value).toContain('"{""key"":""val');
     });
 
@@ -135,8 +124,6 @@ describe('EventExportService', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // JSON.stringify produces \" for inner quotes, then CSV escaping doubles the outer wrapping quotes
-      // The entire attributes field should be wrapped in double quotes with internal quotes doubled
       expect(result.value).toContain('""note""');
       expect(result.value).toContain('hello');
     });
@@ -148,7 +135,6 @@ describe('EventExportService', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // Field with newline should be wrapped in double quotes
       expect(result.value).toContain('"');
     });
 
@@ -160,7 +146,7 @@ describe('EventExportService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const dataLine = result.value.split('\r\n')[1]!;
-      // Two consecutive commas for empty userId and ipAddress
+      // Empty userId and ipAddress
       expect(dataLine).toContain('SUCCESS,,,');
     });
 
@@ -184,7 +170,6 @@ describe('EventExportService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value).toContain('\r\n');
-      // Verify no bare LF (that isn't preceded by CR)
       const withoutCrlf = result.value.replace(/\r\n/g, '');
       expect(withoutCrlf).not.toContain('\n');
     });

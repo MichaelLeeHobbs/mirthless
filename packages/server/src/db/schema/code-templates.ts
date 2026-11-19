@@ -1,7 +1,3 @@
-// ===========================================
-// Code Templates Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, timestamp, integer, jsonb } from 'drizzle-orm/pg-core';
 
 export const codeTemplateLibraries = pgTable('code_template_libraries', {

@@ -1,10 +1,4 @@
-// ===========================================
-// Resource Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -80,8 +74,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 
 const { ResourceService } = await import('../resource.service.js');
 
-// ----- Fixtures -----
-
 const NOW = new Date('2026-03-02T12:00:00Z');
 const RES_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -98,8 +90,6 @@ function makeResourceRow(overrides?: Partial<Record<string, unknown>>): Record<s
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();

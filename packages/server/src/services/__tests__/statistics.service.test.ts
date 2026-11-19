@@ -1,10 +1,4 @@
-// ===========================================
-// Statistics Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -54,10 +48,7 @@ vi.mock('drizzle-orm', () => ({
   ),
 }));
 
-// Must import after mocks
 const { StatisticsService } = await import('../statistics.service.js');
-
-// ----- Fixtures -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const SERVER_ID = 'server-01';
@@ -79,8 +70,6 @@ function makeStatsRow(overrides?: Partial<Record<string, unknown>>): Record<stri
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
@@ -89,10 +78,7 @@ beforeEach(() => {
   mockSet.mockReturnValue({ where: mockUpdateWhere });
 });
 
-// ----- Tests -----
-
 describe('StatisticsService', () => {
-  // ========== GET CHANNEL STATISTICS ==========
   describe('getChannelStatistics', () => {
     it('returns per-channel stats with connector breakdown', async () => {
       pushSelectResponse([
@@ -131,7 +117,6 @@ describe('StatisticsService', () => {
     });
   });
 
-  // ========== GET ALL CHANNEL STATISTICS ==========
   describe('getAllChannelStatistics', () => {
     it('returns summary for all channels', async () => {
       mockExecute.mockResolvedValue({
@@ -178,7 +163,6 @@ describe('StatisticsService', () => {
     });
   });
 
-  // ========== RESET STATISTICS ==========
   describe('resetStatistics', () => {
     it('resets current-window counters to zero', async () => {
       const result = await StatisticsService.resetStatistics(CHANNEL_ID);

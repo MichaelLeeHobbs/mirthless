@@ -1,7 +1,3 @@
-// ===========================================
-// Users Table Schema
-// ===========================================
-
 import { sql } from 'drizzle-orm';
 import { pgTable, uuid, varchar, text, timestamp, boolean, integer, index, check } from 'drizzle-orm/pg-core';
 

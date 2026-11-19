@@ -1,10 +1,3 @@
-// ===========================================
-// File Receiver (Source Connector)
-// ===========================================
-// Polls a directory for files matching a glob pattern,
-// reads each file, dispatches as a message, then applies
-// post-processing (delete, move, or leave).
-
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
@@ -21,8 +14,6 @@ import {
 } from '../quarantine-ledger.js';
 import { resolveWithinRoots, type FileRoots } from './file-roots.js';
 
-// ----- Constants -----
-
 const FILE_SORT_BY = {
   NAME: 'NAME',
   DATE: 'DATE',
@@ -37,13 +28,12 @@ const FILE_POST_ACTION = {
 } as const;
 type FilePostAction = typeof FILE_POST_ACTION[keyof typeof FILE_POST_ACTION];
 
-/** Ledgers on the local filesystem. A missing ledger (ENOENT) reads as absent. */
 const LOCAL_LEDGER_STORAGE: LedgerStorage = {
   async read(ledgerPath: string): Promise<string | null> {
     try {
       return await fs.readFile(ledgerPath, { encoding: 'utf8' });
     } catch (err) {
-      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return null; // no ledger yet
+      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return null;
       throw err;
     }
   },
@@ -51,8 +41,6 @@ const LOCAL_LEDGER_STORAGE: LedgerStorage = {
     await fs.writeFile(ledgerPath, text, { encoding: 'utf8' });
   },
 };
-
-// ----- Config -----
 
 export interface FileReceiverConfig {
   readonly directory: string;
@@ -74,17 +62,12 @@ export interface FileReceiverConfig {
 export { FILE_SORT_BY, FILE_POST_ACTION };
 export type { FileSortBy, FilePostAction };
 
-// ----- Glob Matching -----
-
 /**
- * Match a filename against a simple glob pattern (supports * and ?).
- * Does NOT support ** or character classes. Case-sensitive on every platform,
- * as a Mirth File Reader's filter is (D-304): `*.hl7` does not match `A.HL7`.
+ * `*` and `?` only, no `**` or character classes. Case-sensitive on every platform,
+ * as a Mirth File Reader's filter is (D-304).
  */
 export function matchGlob(pattern: string, filename: string): boolean {
-  // Convert glob pattern to regex. Every non-wildcard character is escaped, so a
-  // filter like `report(1)*.hl7` or `data[0]*.txt` produces a valid regex instead
-  // of throwing on `new RegExp` every poll cycle (which silently wedged the channel).
+  // Escape every other character: `report(1)*.hl7` threw on every poll and silently wedged the channel.
   let regex = '^';
   for (let i = 0; i < pattern.length; i++) {
     const ch = pattern[i]!;
@@ -102,11 +85,7 @@ export function matchGlob(pattern: string, filename: string): boolean {
   return new RegExp(regex).test(filename);
 }
 
-/**
- * Whether a polling file source takes a file by its name: the glob matches and,
- * with `ignoreDot`, the name does not start with a dot. The File and SFTP
- * sources both use it, so they pick the files a Mirth File Reader would.
- */
+/** Shared by the File and SFTP sources, so both pick the files a Mirth File Reader would. */
 export function selectsFileName(name: string, pattern: string, ignoreDot: boolean): boolean {
   if (ignoreDot && name.startsWith('.')) return false;
   return matchGlob(pattern, name);
@@ -118,12 +97,9 @@ export function selectsFileName(name: string, pattern: string, ignoreDot: boolea
  */
 const IGNORE_SUFFIX = '.ignore';
 
-/** True when the name is a `.ignore` sentinel or one sits next to it in the listing. */
 function heldBack(name: string, listed: ReadonlySet<string>): boolean {
   return name.endsWith(IGNORE_SUFFIX) || listed.has(name + IGNORE_SUFFIX);
 }
-
-// ----- File Entry -----
 
 interface FileEntry {
   readonly name: string;
@@ -131,8 +107,6 @@ interface FileEntry {
   readonly mtime: number;
   readonly size: number;
 }
-
-// ----- Receiver -----
 
 export class FileReceiver implements SourceConnectorRuntime {
   private readonly config: FileReceiverConfig;
@@ -145,10 +119,8 @@ export class FileReceiver implements SourceConnectorRuntime {
   /** The poll cycle in flight, so stop can wait for the file being processed. */
   private cycle: Promise<void> | null = null;
   /**
-   * Files already dispatched whose pipeline recorded an error or whose
-   * post-action (delete/move) failed, keyed by name+mtime so they are NOT
-   * re-dispatched. Requires operator intervention. Persisted to a sidecar
-   * ledger in the watched directory so a restart does not re-dispatch them.
+   * Dispatched files whose pipeline recorded an error or whose post-action failed,
+   * keyed by name+mtime: never re-dispatched, even after a restart. Needs an operator.
    */
   private readonly quarantine: QuarantineLedger;
 
@@ -194,8 +166,7 @@ export class FileReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      // Restore the current and legacy (pre-rename) quarantine ledgers so files
-      // quarantined before a restart are still skipped (never re-dispatched).
+      // Pre-rename ledger names too, so files quarantined before a restart stay skipped.
       await this.quarantine.load(QUARANTINE_LEDGER_NAMES.map((name) => path.join(this.config.directory, name)));
 
       this.running = true;
@@ -206,7 +177,6 @@ export class FileReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Stop taking files and wait for the one being processed to finish. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.running = false;
@@ -215,7 +185,6 @@ export class FileReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Stop taking files without waiting for the one being processed. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.running = false;
@@ -229,7 +198,6 @@ export class FileReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Execute one poll cycle: list, filter, read, dispatch, post-process. */
   private async pollCycle(): Promise<void> {
     if (this.polling || !this.dispatcher) return;
     this.polling = true;
@@ -247,9 +215,8 @@ export class FileReceiver implements SourceConnectorRuntime {
         }
       }
     } catch (err) {
-      // Non-fatal (next cycle retries) but MUST be visible: a vanished
-      // directory or permission change otherwise leaves the channel STARTED
-      // yet silently processing nothing.
+      // The next cycle retries, but log it: otherwise a vanished directory leaves
+      // the channel STARTED yet silently processing nothing.
       this.logger.error(
         { ...errorInfo(err), directory: this.config.directory },
         'File poll cycle failed',
@@ -260,10 +227,8 @@ export class FileReceiver implements SourceConnectorRuntime {
   }
 
   /**
-   * List directory entries matching the glob and file-age filter. The directory
-   * is checked against the roots on every poll: it may have been replaced by a
-   * symlink since deploy. Symlinked files in it are skipped (`isFile` is false
-   * for a link), so each file read is the directory's own.
+   * Checks the roots every poll: the directory may have become a symlink since deploy.
+   * Symlinked files are skipped (`isFile` is false for a link).
    */
   private async listMatchingFiles(): Promise<readonly FileEntry[]> {
     const directory = await resolveWithinRoots(this.config.directory, this.config.roots);
@@ -290,14 +255,12 @@ export class FileReceiver implements SourceConnectorRuntime {
     return results;
   }
 
-  /** Whether a listed name is one to read: not a ledger, not held back, and selected by the filter. */
   private takesName(name: string, listed: ReadonlySet<string>): boolean {
-    if (isQuarantineLedgerName(name)) return false; // never dispatch a ledger
+    if (isQuarantineLedgerName(name)) return false;
     if (heldBack(name, listed)) return false;
     return selectsFileName(name, this.config.fileFilter, this.config.ignoreDot);
   }
 
-  /** Sort file entries by the configured sort criterion. */
   private sortEntries(entries: readonly FileEntry[]): readonly FileEntry[] {
     const copy = [...entries];
     switch (this.config.sortBy) {
@@ -315,7 +278,6 @@ export class FileReceiver implements SourceConnectorRuntime {
     return copy;
   }
 
-  /** Read a single file, dispatch it, and apply post-processing. */
   private async processFile(entry: FileEntry): Promise<void> {
     if (!this.dispatcher) return;
     await dispatchQuarantined({
@@ -329,11 +291,7 @@ export class FileReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /**
-   * Read one file into a message. A file that cannot be read is reported and
-   * skipped, so it does not hold up the files after it; it is tried again on
-   * the next poll.
-   */
+  /** Null for an unreadable file: reported and skipped, then tried again next poll. */
   private async readMessage(entry: FileEntry): Promise<RawMessage | null> {
     let content: string;
     try {
@@ -358,7 +316,6 @@ export class FileReceiver implements SourceConnectorRuntime {
     };
   }
 
-  /** Apply post-processing action to a processed file. */
   private async postProcess(entry: FileEntry): Promise<void> {
     switch (this.config.postAction) {
       case FILE_POST_ACTION.DELETE:
@@ -375,7 +332,6 @@ export class FileReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** Clear the poll interval timer. */
   private clearPollTimer(): void {
     if (this.pollTimer !== null) {
       clearInterval(this.pollTimer);

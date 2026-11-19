@@ -1,8 +1,3 @@
-// ===========================================
-// Certificates Table Schema
-// ===========================================
-// SSL/TLS certificates for secure connector communication.
-
 import { pgTable, uuid, varchar, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const certificates = pgTable('certificates', {

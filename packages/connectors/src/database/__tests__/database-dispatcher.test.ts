@@ -1,14 +1,8 @@
-// ===========================================
-// Database Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DatabaseDispatcher, type DatabaseDispatcherConfig } from '../database-dispatcher.js';
 import type { DatabasePool, TxQuery } from '../connection-pool.js';
 import { DATABASE_VENDOR } from '../database-vendor.js';
 import type { ConnectorMessage } from '../../base.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<DatabaseDispatcherConfig>): DatabaseDispatcherConfig {
   return {
@@ -50,8 +44,7 @@ function makeMockPool(): {
     error: null,
   });
   const destroyFn = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
-  // The transaction runs the callback against txQueryFn, failing as a real pool
-  // does (an error Result) when the callback throws.
+  // Fails as a real pool does (an error Result) when the callback throws.
   const txQueryFn = vi.fn().mockResolvedValue({ rows: [{ id: 7 }], rowCount: 1 });
   const transactionFn = vi.fn().mockImplementation(async (fn: (tx: TxQuery) => Promise<unknown>) => {
     try {
@@ -71,8 +64,6 @@ function makeMockPool(): {
   return { pool, createFn, queryFn, destroyFn, transactionFn, txQueryFn };
 }
 
-// ----- Lifecycle -----
-
 let dispatcher: DatabaseDispatcher | null = null;
 
 beforeEach(() => {
@@ -86,8 +77,6 @@ afterEach(async () => {
     dispatcher = null;
   }
 });
-
-// ----- Tests -----
 
 describe('DatabaseDispatcher', () => {
   describe('onDeploy', () => {
@@ -205,7 +194,6 @@ describe('DatabaseDispatcher', () => {
 
       const [sql, params] = queryFn.mock.calls[0]!;
       expect(sql).toBe('INSERT INTO messages (content, channel_id) VALUES ($1, $2)');
-      // content comes from the parsed JSON, channelId from the ConnectorMessage
       expect(params).toEqual(['{"name":"patient1","id":1}', '00000000-0000-0000-0000-000000000001']);
     });
 
@@ -431,7 +419,6 @@ describe('DatabaseDispatcher', () => {
       const undeployResult = await dispatcher.onUndeploy();
       expect(undeployResult.ok).toBe(true);
 
-      // Should fail on send since no longer started
       const sendResult = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
       expect(sendResult.ok).toBe(false);
 

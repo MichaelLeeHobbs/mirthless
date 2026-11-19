@@ -1,11 +1,5 @@
-// ===========================================
-// Metrics Middleware Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
-
-// ----- Hoisted Mocks -----
 
 const { mockObserve, mockInc } = vi.hoisted(() => ({
   mockObserve: vi.fn(),
@@ -17,12 +11,8 @@ vi.mock('../../lib/metrics.js', () => ({
   httpRequestTotal: { inc: mockInc },
 }));
 
-// ----- Import after mocks -----
-
 import { metricsMiddleware, normalizePath } from '../metrics.middleware.js';
 import type { Request, Response } from 'express';
-
-// ----- Helpers -----
 
 interface MockRequest {
   path: string;
@@ -46,8 +36,6 @@ function createMockResponse(): Response & EventEmitter {
   (res as unknown as { statusCode: number }).statusCode = 200;
   return res;
 }
-
-// ----- Tests -----
 
 describe('metricsMiddleware', () => {
   beforeEach(() => {
@@ -73,7 +61,6 @@ describe('metricsMiddleware', () => {
     expect(mockObserve).not.toHaveBeenCalled();
     expect(mockInc).not.toHaveBeenCalled();
 
-    // Simulate response finish
     res.emit('finish');
 
     expect(mockObserve).toHaveBeenCalledTimes(1);
@@ -85,7 +72,6 @@ describe('metricsMiddleware', () => {
       route: '/api/v1/channels',
       status_code: '200',
     });
-    // Duration should be a non-negative number
     expect(typeof observeArgs[1]).toBe('number');
     expect(observeArgs[1]).toBeGreaterThanOrEqual(0);
 
@@ -119,7 +105,6 @@ describe('metricsMiddleware', () => {
       method: 'GET',
       path: '/api/v1/channels/550e8400-e29b-41d4-a716-446655440000',
     });
-    // Do not set req.route
     delete (req as Partial<MockRequest>).route;
     const res = createMockResponse();
     const next = vi.fn();
@@ -143,8 +128,6 @@ describe('metricsMiddleware', () => {
     const labels = mockObserve.mock.calls[0]![0] as Record<string, string>;
     expect(labels['status_code']).toBe('404');
   });
-
-  // ----- Skip paths -----
 
   it('skips recording for /health', () => {
     const req = createMockRequest({ path: '/health' });
@@ -207,8 +190,6 @@ describe('metricsMiddleware', () => {
   });
 });
 
-// ----- normalizePath -----
-
 describe('normalizePath', () => {
   it('replaces a single UUID with :id', () => {
     const result = normalizePath('/api/v1/channels/550e8400-e29b-41d4-a716-446655440000');
@@ -243,7 +224,7 @@ describe('normalizePath', () => {
   });
 
   it('does not replace partial UUID-like strings', () => {
-    // Only 7 chars in first group (should be 8)
+    // 7 hex digits in the first group, not 8
     const result = normalizePath('/api/v1/channels/50e8400-e29b-41d4-a716-446655440000');
     expect(result).toBe('/api/v1/channels/50e8400-e29b-41d4-a716-446655440000');
   });

@@ -1,12 +1,6 @@
-// ===========================================
-// Roles become rows: nobody's access changes (real Postgres, #265 slice 6)
-// ===========================================
 // Builds a throwaway database at migration 0017, when each user's permissions
-// came from users.role through a table in code, adds a user for every role the
-// code knew plus one it did not, then applies the remaining migrations. Each
-// user must hold exactly the permissions they held before, now resolved from
-// their assignments by the resolver every request uses. The built-in role rows
-// the migration wrote must match db/seeds/roles.ts.
+// came from users.role through a table in code, then applies the remaining
+// migrations: each user must hold exactly the permissions they held before (#265).
 
 import { randomUUID } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -53,7 +47,6 @@ function urlFor(database: string): string {
   return url.toString();
 }
 
-/** A copy of the migrations folder holding only the migrations up to `last`. */
 function migrationsUpTo(last: number): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'gf-rolemig-'));
   mkdirSync(path.join(dir, 'meta'));

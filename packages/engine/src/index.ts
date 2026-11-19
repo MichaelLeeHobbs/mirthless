@@ -1,8 +1,3 @@
-// ===========================================
-// @galvanigraph/engine
-// ===========================================
-// Message processing engine: channel runtime, routing, queuing, sandbox.
-
 export * from './sandbox/index.js';
 export { BatchProcessor, BATCH_MODE } from './batch/index.js';
 export type { BatchConfig, BatchMode, BatchJsOptions } from './batch/index.js';

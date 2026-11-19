@@ -1,8 +1,3 @@
-// ===========================================
-// Templates Section
-// ===========================================
-// Alert notification templates and limits.
-
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -29,7 +24,6 @@ type TemplateField = 'subjectTemplate' | 'bodyTemplate';
 
 const KNOWN_VARIABLES: ReadonlySet<string> = new Set(ALERT_TEMPLATE_VARIABLES.map((v) => v.name));
 
-/** Placeholders in a template that the engine will not substitute, e.g. `${error}`. */
 export function findUnknownVariables(template: string): readonly string[] {
   return placeholderNames(template).filter((n) => !KNOWN_VARIABLES.has(n));
 }

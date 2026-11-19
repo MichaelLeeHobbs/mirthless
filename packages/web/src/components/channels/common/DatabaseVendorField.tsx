@@ -1,9 +1,6 @@
-// ===========================================
-// Database Vendor Field
-// ===========================================
-// Which database a Database Reader or Writer talks to. The server has drivers
-// for PostgreSQL and MySQL/MariaDB (D-259); a channel imported from Mirth with
-// another database keeps that value, and the field says it will not deploy.
+// The server has drivers for PostgreSQL and MySQL/MariaDB only (D-259); a
+// channel imported from Mirth with another database keeps that value, and the
+// field says it will not deploy.
 
 import type { ReactNode } from 'react';
 import TextField from '@mui/material/TextField';
@@ -11,21 +8,17 @@ import MenuItem from '@mui/material/MenuItem';
 import { defaultDatabasePort } from '@galvanigraph/core-models';
 import { getStr } from './connector-properties.js';
 
-/** The core-models DATABASE_VENDORS with their names on screen; a test keeps the two lists equal. */
+/** Must match core-models DATABASE_VENDORS; a test checks. */
 export const DATABASE_VENDOR_OPTIONS = [
   { value: 'postgresql', label: 'PostgreSQL' },
   { value: 'mysql', label: 'MySQL or MariaDB' },
 ] as const;
 
-/** The saved vendor; a connector saved before vendors existed is PostgreSQL. */
+/** A connector saved before vendors existed is PostgreSQL. */
 export function databaseVendor(properties: Readonly<Record<string, unknown>>): string {
   return getStr(properties, 'vendor', 'postgresql');
 }
 
-/**
- * The properties with a new vendor. A port still at the old vendor's default
- * moves to the new one's; a port someone typed stays.
- */
 export function withDatabaseVendor(properties: Readonly<Record<string, unknown>>, vendor: string): Record<string, unknown> {
   const port = properties['port'];
   const followsDefault = port === undefined || port === defaultDatabasePort(databaseVendor(properties));

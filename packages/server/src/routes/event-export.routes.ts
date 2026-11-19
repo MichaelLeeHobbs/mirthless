@@ -1,7 +1,3 @@
-// ===========================================
-// Event Export Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { eventExportQuerySchema } from '@galvanigraph/core-models';
 import { EventExportController } from '../controllers/event-export.controller.js';

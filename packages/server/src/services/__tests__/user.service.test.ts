@@ -1,15 +1,10 @@
-// ===========================================
-// User Service Tests
-// ===========================================
-// The paths that touch no roles, against a faked database. Roles, the last
-// admin, and session revocation on disable or delete run through the grant
-// service's queries and locks, and are proven against Postgres in
-// test/integration/user-roles.itest.ts and last-admin.itest.ts.
+// Only the paths that touch no roles. Roles, the last admin, and session
+// revocation on disable or delete run through the grant service's locks, and
+// are proven against Postgres in test/integration/user-roles.itest.ts and
+// last-admin.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import bcrypt from 'bcrypt';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -21,7 +16,6 @@ function resetSelectState(): void {
 
 function pushResponse(value: unknown, opts?: { orderable?: boolean; forUpdate?: boolean }): void {
   selectResponses.push(() => {
-    // A row read under lock: select ... where ... for no key update.
     if (opts?.forUpdate) {
       return { for: vi.fn().mockResolvedValue(value) };
     }
@@ -51,7 +45,6 @@ const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
-// A transaction just runs its callback against the same mockDb.
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
 
 const mockDb = {
@@ -81,17 +74,13 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-// Must import after mocks
 const { UserService } = await import('../user.service.js');
-
-// ----- Fixtures -----
 
 const NOW = new Date('2026-02-28T12:00:00Z');
 const ADMIN_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000002';
 const OTHER_ID = '00000000-0000-0000-0000-000000000003';
 
-/** A user row as the select returns it, with the held role names aggregated. */
 function makeUser(overrides?: Partial<Record<string, unknown>>): Record<string, unknown> {
   return {
     id: USER_ID,
@@ -111,7 +100,6 @@ function makeUser(overrides?: Partial<Record<string, unknown>>): Record<string, 
   };
 }
 
-/** A user's standing row as the resolver's query returns it. */
 function standingRow(id: string, permissions: readonly string[]): Record<string, unknown> {
   return {
     id, username: 'u', email: 'u@test.com', enabled: true, mustChangePassword: false,
@@ -119,20 +107,15 @@ function standingRow(id: string, permissions: readonly string[]): Record<string,
   };
 }
 
-/** The target rule's two reads: the target's standing, then the actor's. */
 function pushTargetRule(targetPermissions: readonly string[], actorPermissions: readonly string[]): void {
   pushResponse([standingRow(USER_ID, targetPermissions)]);
   pushResponse([standingRow(ADMIN_ID, actorPermissions)]);
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
 });
-
-// ----- Tests -----
 
 describe('UserService', () => {
   describe('listUsers', () => {
@@ -193,7 +176,7 @@ describe('UserService', () => {
 
   describe('createUser', () => {
     it('returns ALREADY_EXISTS for duplicate username', async () => {
-      pushResponse([{ id: USER_ID }]); // Username exists
+      pushResponse([{ id: USER_ID }]);
 
       const result = await UserService.createUser({
         username: 'jsmith',
@@ -323,7 +306,6 @@ describe('UserService', () => {
     });
   });
 
-  // ----- Self password change (finding 8) -----
   describe('changeOwnPassword', () => {
     it('verifies the current password, updates, and clears other sessions', async () => {
       vi.mocked(bcrypt.compare).mockResolvedValueOnce(true as unknown as never);
@@ -333,7 +315,7 @@ describe('UserService', () => {
 
       expect(result.ok).toBe(true);
       expect(mockUpdate).toHaveBeenCalled();
-      expect(mockDelete).toHaveBeenCalled(); // other sessions removed
+      expect(mockDelete).toHaveBeenCalled();
     });
 
     it('rejects when the current password is wrong', async () => {

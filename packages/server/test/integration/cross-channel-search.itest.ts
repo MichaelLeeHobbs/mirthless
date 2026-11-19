@@ -1,11 +1,3 @@
-// ===========================================
-// Cross-Channel Search — real Postgres integration
-// ===========================================
-// Proves the triage feed surfaces DESTINATION send failures (not just source
-// errors) and displays the errored connector — the metaDataId=0 blind-spot fix.
-// Also exercises the status / channelIds where-clause branches that the old
-// mock-the-ORM unit test never touched.
-
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { MessageStatus } from '@galvanigraph/core-models';
@@ -30,7 +22,7 @@ describeIntegration('CrossChannelSearchService (real Postgres)', () => {
     await mods?.pool.end();
   });
 
-  /** Insert a message with the given per-connector statuses. metaDataId 0 = source. */
+  /** metaDataId 0 is the source. */
   async function seedMessage(
     channelId: string,
     connectors: ReadonlyArray<{ metaDataId: number; name: string; status: MessageStatus }>,
@@ -50,7 +42,6 @@ describeIntegration('CrossChannelSearchService (real Postgres)', () => {
   it('surfaces a DESTINATION-only error and displays the errored connector', async () => {
     const channelId = randomUUID();
     channelIds.push(channelId);
-    // Source succeeded, destination failed — the dominant healthcare failure mode.
     const failedId = await seedMessage(channelId, [
       { metaDataId: 0, name: 'TCP Listener', status: 'SENT' },
       { metaDataId: 1, name: 'HTTP Writer', status: 'ERROR' },
@@ -68,7 +59,6 @@ describeIntegration('CrossChannelSearchService (real Postgres)', () => {
     expect(result.total).toBe(1);
     expect(result.items).toHaveLength(1);
     expect(result.items[0]!.messageId).toBe(failedId);
-    // Displayed status/connector reflect the errored DESTINATION, not the source.
     expect(result.items[0]!.status).toBe('ERROR');
     expect(result.items[0]!.connectorName).toBe('HTTP Writer');
   });

@@ -1,16 +1,9 @@
-// ===========================================
-// Scenario suite: test wrapper and partner helpers
-// ===========================================
-
 import { test } from '@playwright/test';
 import { ImapFlow } from 'imapflow';
 import SftpClient from 'ssh2-sftp-client';
 import { Api } from './api.js';
 
-/**
- * Declare one scenario. The title must start with its id ("S07 ..."): the
- * scorer matches results to weights in manifest.ts by that id.
- */
+/** The title must start with its id ("S07 ..."): the scorer matches results to weights in manifest.ts by that id. */
 export function scenario(title: string, body: (api: Api) => Promise<void>): void {
   test(title, async () => {
     const api = await Api.login();
@@ -22,17 +15,15 @@ export function scenario(title: string, body: (api: Api) => Promise<void>): void
   });
 }
 
-/** A UUID-shaped Mirth channel id that is stable per scenario and slot. */
 export function mirthId(scenarioNo: number, slot = 1): string {
   const s = String(scenarioNo).padStart(4, '0');
   return `5c${s.slice(0, 2)}${s.slice(2)}00-0000-4000-8000-${String(slot).padStart(12, '0')}`;
 }
 
-// ----- GreenMail (docker compose --profile test) -----
+// GreenMail, from docker compose --profile test.
 
 export const MAIL = { smtpPort: 3025, imapPort: 3143, user: 'mirth', password: 'mirthpw', address: 'mirth@example.com' } as const;
 
-/** Subjects of messages in the GreenMail inbox whose subject contains `needle`. */
 export async function mailSubjects(needle: string): Promise<string[]> {
   const client = new ImapFlow({ host: '127.0.0.1', port: MAIL.imapPort, secure: false, auth: { user: MAIL.user, pass: MAIL.password }, logger: false });
   await client.connect();
@@ -55,7 +46,7 @@ export async function mailSubjects(needle: string): Promise<string[]> {
   }
 }
 
-// ----- SFTP (docker compose --profile test) -----
+// SFTP, from docker compose --profile test.
 
 export const SFTP = { host: '127.0.0.1', port: 2222, username: 'mirth', password: 'mirthpw', base: '/upload' } as const;
 

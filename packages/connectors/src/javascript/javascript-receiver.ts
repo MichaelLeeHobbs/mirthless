@@ -1,30 +1,18 @@
-// ===========================================
-// JavaScript Receiver (Source Connector)
-// ===========================================
-// Poll-based source that executes a user script in the
-// sandbox and dispatches the returned value(s) as messages.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
-
-// ----- Config -----
 
 export interface JavaScriptReceiverConfig {
   readonly script: string;
   readonly pollingIntervalMs: number;
 }
 
-// ----- Script runner callback (injected by engine) -----
-
 /**
  * Callback provided by the engine to execute a user script in the sandbox.
  * Returns the script's return value as a string or array of strings.
  */
 export type ScriptRunner = (script: string) => Promise<Result<unknown>>;
-
-// ----- Receiver -----
 
 export class JavaScriptReceiver implements SourceConnectorRuntime {
   private readonly config: JavaScriptReceiverConfig;
@@ -39,7 +27,6 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     this.logger = logger ?? createConnectorLogger('JAVASCRIPT');
   }
 
-  /** Set the callback used to execute scripts in the sandbox. */
   setScriptRunner(runner: ScriptRunner): void {
     this.scriptRunner = runner;
   }
@@ -90,7 +77,6 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Execute one poll cycle: run script, dispatch returned messages. */
   private async pollCycle(): Promise<void> {
     if (this.polling || !this.dispatcher) return;
     this.polling = true;
@@ -109,15 +95,13 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
         }
       }
     } catch (err) {
-      // Non-fatal but MUST be visible so a broken source script does not leave
-      // the channel STARTED yet silently producing nothing.
+      // Log it: otherwise a broken script leaves the channel STARTED yet silently producing nothing.
       this.logger.error(errorInfo(err), 'JavaScript source poll cycle failed');
     } finally {
       this.polling = false;
     }
   }
 
-  /** Run the user script and normalize the result to an array of strings. */
   private async executeScript(): Promise<readonly string[]> {
     if (!this.scriptRunner) {
       return this.executeScriptFallback();
@@ -125,10 +109,7 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
 
     const result = await this.scriptRunner(this.config.script);
     if (!result.ok) {
-      // A script Result error was previously swallowed silently, leaving the
-      // channel STARTED but producing nothing with no signal. Log it (thrown
-      // errors are already logged by the caller) so a broken source script is
-      // visible instead of an invisible dead channel.
+      // The caller logs only thrown errors; unlogged, this leaves a silently dead channel.
       this.logger.error(errorInfo(result.error), 'JavaScript source script returned an error');
       return [];
     }
@@ -141,7 +122,6 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     return [];
   }
 
-  /** Clear the poll interval timer. */
   private clearPollTimer(): void {
     if (this.pollTimer !== null) {
       clearInterval(this.pollTimer);
@@ -150,7 +130,6 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
   }
 }
 
-/** Normalize a script return value to an array of strings. */
 export function normalizeScriptResult(value: unknown): readonly string[] {
   if (value === null || value === undefined) return [];
   if (typeof value === 'string') return value.length > 0 ? [value] : [];

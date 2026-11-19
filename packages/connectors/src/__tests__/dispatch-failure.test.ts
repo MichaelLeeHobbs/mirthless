@@ -1,9 +1,3 @@
-// ===========================================
-// dispatchFailure Tests
-// ===========================================
-// The one rule every source connector uses to decide whether a dispatched
-// message may be reported as handled.
-
 import { describe, it, expect } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { dispatchFailure, DISPATCH_STATUS, type DispatchResult } from '../base.js';

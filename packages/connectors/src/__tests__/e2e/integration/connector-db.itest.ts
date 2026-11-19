@@ -1,10 +1,3 @@
-// ===========================================
-// Database destination connector — real Postgres
-// ===========================================
-// Sends a message through a channel whose destination is the Database dispatcher,
-// then reads the row back from a real table to prove it landed.
-// Runs only when DATABASE_URL points at a *_test database.
-
 import { it, expect, beforeAll, afterAll } from 'vitest';
 import { ConnectionPool, DatabaseDispatcher, clearChannelRegistry } from '../../../index.js';
 import { deployChannel, teardownAll } from '../support/e2e-harness.js';

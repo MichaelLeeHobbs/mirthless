@@ -1,7 +1,3 @@
-// The test-run service scopes a run to the channel being edited and audits it
-// without recording the sample. The engine's test run is real here; the
-// database-backed services are stubbed.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Each run starts a worker thread and compiles with esbuild, and one test waits
@@ -27,7 +23,6 @@ const { ScriptTestRunService, TEST_RUN_TIMEOUT_MS } = await import('../script-te
 
 const ADT = 'MSH|^~\\&|EPIC|HOSP|GF|HOSP|20261115093000||ADT^A01|MSG1|P|2.5.1\rPID|1||4821193^^^HOSP^MR||NGUYEN^AVERY';
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
-/** A caller holding resources:read and collections:read. */
 const BOTH_READS = { resources: true, collections: true } as const;
 
 function ok<T>(value: T): { ok: true; value: T; error: null } {
@@ -116,7 +111,6 @@ describe('ScriptTestRunService.run', () => {
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.error).toHaveProperty('code', 'CONFLICT');
     await first;
-    // Once the first finishes, the next run is accepted.
     expect((await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, undefined, BOTH_READS)).ok).toBe(true);
   });
 

@@ -1,10 +1,3 @@
-// ===========================================
-// UsersPage Tests
-// ===========================================
-// Enabled state is one switch per row, like every other admin list. Disabling
-// asks first (the user loses sign-in) and needs users:delete; enabling is one
-// click and needs users:write. Data and permission hooks are mocked.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
@@ -27,22 +20,19 @@ vi.mock('../../hooks/use-permissions.js', () => ({
   usePermissions: () => ({ has: (p: string) => granted.includes(p), permissions: new Set(granted) }),
 }));
 
-// The role picker's list; these tests are about the password, not the role.
 vi.mock('../../hooks/use-roles.js', () => ({
   useRoles: () => ({ data: undefined, error: null }),
 }));
 
-// The access list stays loading: these tests are about the details and password,
-// which save without it. The access list is covered by e2e/assignments.spec.ts.
+// The access list stays loading: the details and password save without it.
+// e2e/assignments.spec.ts covers the access list.
 const setAssignmentsAsync = vi.fn();
 vi.mock('../../hooks/use-assignments.js', () => ({
   useAssignments: () => ({ data: undefined, isError: false, dataUpdatedAt: 0 }),
   useSetAssignments: () => ({ mutateAsync: setAssignmentsAsync, isPending: false }),
 }));
 
-// The keys a user issued, for the offboarding step: jmorales issued one.
 let issuedKeys: readonly Record<string, unknown>[] = [];
-// The signed-in admin's grants, for whether they cover a key.
 let grants: readonly Record<string, unknown>[] = [];
 vi.mock('../../stores/auth.store.js', () => ({
   useAuthStore: (pick: (s: { user: { grants: readonly Record<string, unknown>[] } }) => unknown) => pick({ user: { grants } }),

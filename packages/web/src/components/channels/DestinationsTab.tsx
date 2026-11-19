@@ -1,8 +1,3 @@
-// ===========================================
-// Destinations Tab
-// ===========================================
-// Two-panel layout: destination list (left) + settings (right).
-
 import { useState, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -73,7 +68,6 @@ export function DestinationsTab({ destinations, onChange }: DestinationsTabProps
 
   return (
     <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, minHeight: { md: 500 } }}>
-      {/* Left panel — destination list */}
       <Paper
         variant="outlined"
         sx={{ width: { xs: '100%', md: 260 }, flexShrink: 0, display: 'flex', flexDirection: 'column' }}
@@ -89,7 +83,6 @@ export function DestinationsTab({ destinations, onChange }: DestinationsTabProps
         />
       </Paper>
 
-      {/* Right panel — settings */}
       <Box sx={{ flexGrow: 1, minWidth: 0 }}>
         {selected ? (
           <DestinationSettingsPanel

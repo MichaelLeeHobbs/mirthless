@@ -1,9 +1,3 @@
-// ===========================================
-// System Settings Schema
-// ===========================================
-// Runtime-configurable application settings stored in database.
-// No pgEnum — uses varchar for type column.
-
 import { pgTable, uuid, varchar, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const systemSettings = pgTable('system_settings', {

@@ -1,9 +1,3 @@
-// ===========================================
-// AlertEditorPage Tests
-// ===========================================
-// Behavior tests for the alert editor: section rendering + field/state interaction.
-// Data hooks and react-router are mocked; react-hook-form runs for real.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -11,8 +5,6 @@ import { ThemeProvider } from '@mui/material/styles';
 import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router';
 import { darkTheme } from '../../styles/theme.js';
-
-// ----- Mocks -----
 
 const navigateMock = vi.fn();
 const createMutateAsync = vi.fn();
@@ -38,7 +30,6 @@ vi.mock('../../hooks/use-alerts.js', () => ({
   useUpdateAlert: () => ({ mutateAsync: updateMutateAsync, isPending: false }),
 }));
 
-// Both ChannelsSection and ActionsSection pull channels from this hook.
 vi.mock('../../hooks/use-channels.js', () => ({
   useChannels: () => ({ data: { data: [] }, isLoading: false }),
 }));
@@ -70,11 +61,9 @@ describe('AlertEditorPage (create mode)', () => {
   it('renders the create header and all editor sections', () => {
     renderPage();
 
-    // Header for create mode
     expect(screen.getByRole('heading', { name: 'New Alert' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Create' })).toBeTruthy();
 
-    // Each section heading is present
     expect(screen.getByRole('heading', { name: 'General' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Trigger' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Channels' })).toBeTruthy();
@@ -100,7 +89,6 @@ describe('AlertEditorPage (create mode)', () => {
 
   it('toggles an error-event-type checkbox in the trigger section', () => {
     renderPage();
-    // Default trigger has errorTypes: ['ANY'] -> ANY checked, others not.
     const any = screen.getByRole('checkbox', { name: 'Any' }) as HTMLInputElement;
     const src = screen.getByRole('checkbox', { name: 'Source connector' }) as HTMLInputElement;
     expect(any.checked).toBe(true);
@@ -112,12 +100,10 @@ describe('AlertEditorPage (create mode)', () => {
 
   it('adds an action row when Add Action is clicked', () => {
     renderPage();
-    // No actions initially.
     expect(screen.getByText(/No actions configured/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Add Action/ }));
 
-    // A new action card appears with a Type selector defaulting to Email.
     expect(screen.getByText('Action 1')).toBeTruthy();
     const typeField = screen.getByLabelText('Type');
     expect(within(typeField.closest('.MuiFormControl-root') as HTMLElement).getByText('Email')).toBeTruthy();

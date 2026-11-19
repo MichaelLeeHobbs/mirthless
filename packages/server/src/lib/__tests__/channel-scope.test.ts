@@ -1,6 +1,3 @@
-// ===========================================
-// Channel scope: which channels a caller's grants cover (D-310)
-// ===========================================
 // The database half (expanding groups to channel ids) is proven against
 // Postgres in test/integration/channel-scope.itest.ts.
 

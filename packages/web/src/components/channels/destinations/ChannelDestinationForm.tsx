@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Destination Connector Form
-// ===========================================
-// Configuration form for channel destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';

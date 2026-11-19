@@ -109,7 +109,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | Anything | `pnpm gate` | |
 | `packages/web` UI | `pnpm shots --only <pages>` with `pnpm dev:web` running | Look at the light, dark and phone images (`create-ui` skill) |
 | A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/`. Spec files run in parallel against one database, so a spec uses rows with names of its own and puts back any server-wide setting it changes (D-289). A step waits on a condition (`await expect(...)`), never a fixed sleep or an `if (await x.isVisible())` guard; lint fails both (D-293) |
-| `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres. A migration that adds or changes a field a channel deploys with must also update the stored deployments in `channel_deployments`, or raise `DEPLOYMENT_FORMAT` in `deployment-record.service.ts`: a restart deploys those records, not the channel tables (D-327) |
+| `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres. A migration that adds or changes a field a channel deploys with must also update the stored deployments in `channel_deployments`, or raise `DEPLOYMENT_FORMAT` in `deployment-record.service.ts`: a restart deploys those records, not the channel tables (D-328) |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
 | Engine pipeline or a connector | The package's tests (`pnpm --filter @galvanigraph/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes. For a connector, `pnpm --filter @galvanigraph/connectors test:integration` with the compose `test` profile up (CI job `connector-integration` runs it, D-273) |
 | A connector's type, direction or properties | `pnpm --filter @galvanigraph/server test` (the docs guards) | Update `docs/user/connector-reference.md`; for a new connector, work through "Adding a connector" below |
@@ -251,7 +251,7 @@ Key rules:
 - Exhaustive switch with `default: assertUnreachable(x)`
 - Explicit function return types
 - Cyclomatic complexity ≤10
-- TSDoc on all public APIs
+- Comments, doc comments included, say only what the code and types cannot: a reason, an outside fact, a deliberate oddity, or a caller rule. No comment that repeats a name, a type or the code (D-327)
 - The copies in `docs/standards/` are what applies here. Their upstream is the mission-critical-ts project (see Related Projects).
 
 ---

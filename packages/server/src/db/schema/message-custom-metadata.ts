@@ -1,7 +1,3 @@
-// ===========================================
-// Message Custom Metadata Table Schema
-// ===========================================
-
 import { pgTable, uuid, integer, bigint, jsonb, primaryKey, index } from 'drizzle-orm/pg-core';
 
 export const messageCustomMetadata = pgTable('message_custom_metadata', {

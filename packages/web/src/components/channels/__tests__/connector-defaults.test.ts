@@ -1,7 +1,4 @@
 /// <reference types="node" />
-// ===========================================
-// Connector Defaults Tests (SFTP + response transformer)
-// ===========================================
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -58,7 +55,6 @@ import {
 } from '@galvanigraph/core-models';
 import { DATABASE_VENDOR_OPTIONS } from '../common/DatabaseVendorField.js';
 
-// Exact keys the SFTP connectors read — must not drift.
 const SFTP_SOURCE_KEYS = [
   'host', 'port', 'username', 'password', 'privateKey', 'passphrase',
   'remoteDirectory', 'filePattern', 'pollingIntervalMs', 'afterProcessing',
@@ -113,7 +109,6 @@ describe('HTTP TLS defaults (id-based, no raw PEM)', () => {
     const tls = HTTP_DEST_DEFAULTS['tls'] as Record<string, unknown>;
     expect(Object.keys(tls).sort()).toEqual(['caCertId', 'clientCertId', 'rejectUnauthorized']);
     expect(tls['rejectUnauthorized']).toBe(true);
-    // Hard cut — no raw PEM keys leak into defaults.
     expect(tls['ca']).toBeUndefined();
     expect(tls['cert']).toBeUndefined();
     expect(tls['key']).toBeUndefined();
@@ -151,9 +146,8 @@ describe('the charset field', () => {
 });
 
 describe('FILE defaults match the core-models schema', () => {
-  // The schema returns the defaults unchanged once the directory a user must
-  // fill in is set: it rejects unknown keys, and it would add any defaulted
-  // key the form left out.
+  // The schema returns the defaults unchanged: it rejects unknown keys, and
+  // it would add any defaulted key the form left out.
   it.each([
     ['source', fileSourcePropertiesSchema, { ...FILE_SOURCE_DEFAULTS, directory: '/in' }],
     ['destination', fileDestinationPropertiesSchema, { ...FILE_DEST_DEFAULTS, directory: '/out' }],
@@ -163,9 +157,8 @@ describe('FILE defaults match the core-models schema', () => {
 });
 
 describe('JAVASCRIPT defaults match the core-models schema', () => {
-  // The schema returns the defaults unchanged once the script a user must
-  // write is set: it rejects unknown keys and a blank script, and it would add
-  // any defaulted key the form left out.
+  // The schema returns the defaults unchanged: it rejects unknown keys and a
+  // blank script, and it would add any defaulted key the form left out.
   it.each([
     ['source', javascriptSourcePropertiesSchema, { ...JAVASCRIPT_SOURCE_DEFAULTS, script: 'return "x";' }],
     ['destination', javascriptDestinationPropertiesSchema, { ...JAVASCRIPT_DEST_DEFAULTS, script: 'return msg;' }],
@@ -175,9 +168,8 @@ describe('JAVASCRIPT defaults match the core-models schema', () => {
 });
 
 describe('CHANNEL, FHIR, SMTP, DICOM, EMAIL and SFTP defaults match the core-models schemas', () => {
-  // The schema returns the defaults unchanged once the fields a user must fill
-  // in are set (deploy sets the CHANNEL source's id): it rejects unknown keys,
-  // and it would add any defaulted key the form left out.
+  // The schema returns the defaults unchanged: it rejects unknown keys, and it
+  // would add any defaulted key the form left out. Deploy sets the CHANNEL source's id.
   it.each([
     ['CHANNEL source', channelSourcePropertiesSchema, { ...CHANNEL_SOURCE_DEFAULTS, channelId: 'c1' }],
     ['CHANNEL destination', channelDestinationPropertiesSchema, { ...CHANNEL_DEST_DEFAULTS, targetChannelId: 'c2' }],
@@ -205,9 +197,8 @@ describe('HTTP defaults match the core-models schema', () => {
 });
 
 describe('DATABASE defaults match the core-models schema', () => {
-  // The schema returns the defaults unchanged once the fields a user must
-  // fill in are set: it rejects unknown keys, and it would add any defaulted
-  // key the form left out. `vendor` and `port` stay as the form saves them.
+  // The schema returns the defaults unchanged: it rejects unknown keys, and
+  // it would add any defaulted key the form left out.
   it.each([
     ['source', databaseSourcePropertiesSchema, { ...DATABASE_SOURCE_DEFAULTS, database: 'lab', selectQuery: 'SELECT 1' }],
     ['destination', databaseDestinationPropertiesSchema, { ...DATABASE_DEST_DEFAULTS, database: 'lab', query: 'SELECT 1' }],

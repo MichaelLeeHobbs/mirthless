@@ -1,8 +1,3 @@
-// ===========================================
-// Log Controller
-// ===========================================
-// Handles HTTP requests for server log queries.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { LogStreamService } from '../services/log-stream.service.js';

@@ -1,9 +1,3 @@
-// ===========================================
-// Alert Service — real Postgres integration
-// ===========================================
-// Round-trips both trigger types through the trigger_type/trigger_script
-// columns, including switching an alert from one type to the other.
-
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 

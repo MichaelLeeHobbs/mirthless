@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Tags Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, primaryKey } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 

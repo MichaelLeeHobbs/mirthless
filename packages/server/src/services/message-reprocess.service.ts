@@ -1,8 +1,3 @@
-// ===========================================
-// Message Reprocess Service
-// ===========================================
-// Reprocessing and bulk deletion of messages.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, inArray } from 'drizzle-orm';
 import { ServiceError } from '../lib/service-error.js';
@@ -14,12 +9,8 @@ import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { deleteMessagesByIds } from './message-delete-helper.js';
 import { getEngine } from '../engine.js';
 
-// ----- Response Types -----
-
 export interface ReprocessResult {
-  /** The original message that was reprocessed. */
   readonly messageId: number;
-  /** The new message produced by re-injecting the raw content through the pipeline. */
   readonly newMessageId: number;
 }
 
@@ -27,7 +18,6 @@ export interface BulkDeleteResult {
   readonly deletedCount: number;
 }
 
-/** Per-message outcome of a bulk reprocess. */
 export interface BulkReprocessItemResult {
   readonly messageId: number;
   readonly newMessageId?: number;
@@ -43,18 +33,12 @@ export interface BulkReprocessResult {
 export interface ResendResult {
   readonly messageId: number;
   readonly metaDataId: number;
-  /** The destination was re-queued; the queue consumer redispatches on next poll. */
+  /** Not sent yet: the queue consumer redispatches on its next poll. */
   readonly status: 'QUEUED';
 }
 
-// ----- Service -----
-
 export class MessageReprocessService {
-  /**
-   * Reprocess a message by re-injecting its stored raw source content through the
-   * deployed channel's pipeline as a new message. The channel must be deployed and
-   * STARTED. Returns the original and newly-produced message ids.
-   */
+  /** Re-injects the stored raw source as a new message. */
   static async reprocessMessage(
     channelId: string,
     messageId: number,
@@ -77,12 +61,10 @@ export class MessageReprocessService {
         throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}. Reprocess requires stored raw content (DEVELOPMENT/RAW storage mode).`);
       }
 
-      // Decrypt at-rest encrypted raw content before re-injecting it.
       const decrypted = decryptIfEncrypted(row.content);
       if (!decrypted.ok) throw decrypted.error;
       const rawContent = decrypted.value ?? '';
 
-      // Re-inject the raw content through the deployed channel's pipeline.
       const deployed = getEngine().getRuntime(channelId);
       if (!deployed) {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is not deployed; deploy and start it to reprocess.`);
@@ -108,12 +90,7 @@ export class MessageReprocessService {
     });
   }
 
-  /**
-   * Reprocess many messages by re-injecting each one's stored raw content. The
-   * channel must be deployed and STARTED (checked once up front — a 409 aborts
-   * before any work). Individual message failures are captured per-item and do
-   * not abort the batch. Emits one aggregate MESSAGES_REPROCESSED audit event.
-   */
+  /** A failing message is recorded in its result and does not abort the batch. */
   static async bulkReprocess(
     channelId: string,
     messageIds: readonly number[],
@@ -153,13 +130,8 @@ export class MessageReprocessService {
   }
 
   /**
-   * Resend a single destination connector's stored SENT content in isolation.
-   *
-   * Re-enqueues exactly one connector message (status → QUEUED, attempts reset)
-   * so the channel's already-running queue consumer redispatches it. This is
-   * side-effect isolated: no other destination is touched. Only queue-enabled
-   * destinations can be resent this way — a NEVER-queue destination has no
-   * consumer, so re-enqueuing would strand the message; that case is rejected.
+   * Re-queues one destination; no other is touched. A NEVER-queue destination has no
+   * consumer, so re-queuing would strand the message: refused.
    */
   static async resendDestination(
     channelId: string,
@@ -231,7 +203,6 @@ export class MessageReprocessService {
     });
   }
 
-  /** Bulk delete messages by IDs using dependency-order deletion. */
   static async bulkDelete(
     channelId: string,
     messageIds: readonly number[],
@@ -244,7 +215,6 @@ export class MessageReprocessService {
 
       const ids = [...messageIds];
 
-      // Verify messages exist
       const existing = await db
         .select({ id: messages.id })
         .from(messages)
@@ -261,7 +231,6 @@ export class MessageReprocessService {
 
       const existingIds = existing.map((m) => m.id);
 
-      // Delete in dependency order (transactional)
       await deleteMessagesByIds(channelId, existingIds);
 
       emitEvent({

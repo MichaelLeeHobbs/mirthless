@@ -1,22 +1,10 @@
-// ===========================================
-// Script type-check settings
-// ===========================================
-// The compiler settings for checking TypeScript scripts, shared by the web
-// editor and the server's deploy check so both report the same errors.
-
-/**
- * TypeScript compiler options for user scripts. Numeric enum values, because
- * the editor's bundled TypeScript and the server's are different copies.
- */
+/** Numeric enum values: the editor's bundled TypeScript and the server's are different copies. */
 export const SCRIPT_COMPILER_OPTIONS = {
   /** ScriptTarget.ES2022: the engine compiles scripts for es2022. */
   target: 9,
   /** ModuleKind.ESNext. */
   module: 99,
-  /**
-   * ModuleDetectionKind.Force: each script is its own module, so two scripts
-   * that both declare `const hl7` do not collide.
-   */
+  /** ModuleDetectionKind.Force: each script is its own module, so top-level names in two scripts do not collide. */
   moduleDetection: 3,
   /** No DOM: scripts run in the engine, not a browser. */
   lib: ['es2022'],
@@ -25,27 +13,22 @@ export const SCRIPT_COMPILER_OPTIONS = {
   allowNonTsExtensions: true,
 } as const;
 
-/** The first line of the function the engine runs every script in. */
 export const SCRIPT_BODY_OPEN = 'async function __galvanigraphScript() {';
 
 /**
- * A script as the body of the function the engine runs it in, which is how the
- * compiler builds it and how the type checks check it: TypeScript does not
- * check the expression of a `return` outside a function (#206). Line N of the
- * script is line N + 1 of the result, at the same column.
+ * Wrapped because TypeScript does not check the expression of a `return`
+ * outside a function (#206). Script line N is line N + 1 here, same column.
  */
 export function wrapScriptBody(code: string): string {
   return `${SCRIPT_BODY_OPEN}\n${code}\n}`;
 }
 
-/** The line breaks TypeScript counts lines by: CR LF, LF, CR, U+2028 and U+2029. */
 const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
 
 /**
- * A 1-based line and column in {@link wrapScriptBody}'s output, on the
- * script's own lines, counted as TypeScript counts them. A position on the
- * wrapper's first line goes to the script's start, one on its closing brace
- * (an unclosed block, say) to the script's end.
+ * Maps a 1-based position in {@link wrapScriptBody}'s output onto the script's
+ * own lines, counted as TypeScript counts them. Positions on the wrapper's own
+ * lines clamp to the script's start or end.
  */
 export function scriptBodyPosition(code: string, line: number, column: number): { readonly line: number; readonly column: number } {
   const lines = code.split(LINE_BREAK);

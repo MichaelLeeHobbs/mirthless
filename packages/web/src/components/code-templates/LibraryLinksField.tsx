@@ -1,11 +1,4 @@
-// ===========================================
-// Library Links Field
-// ===========================================
-// The channels whose scripts get a library's templates: every channel, or
-// chosen ones (D-310, plan section 2). A library write needs Change code
-// templates on every linked channel, before and after the change, so a writer
-// limited to some groups can link only their own channels. Links outside the
-// reader's access show as a count only and are never sent back.
+// D-310: a library write needs Change code templates on every linked channel, before and after, so a group-limited writer can link only their own channels. Links outside the reader's access show only as a count and are never sent back.
 
 import type { ReactNode, ChangeEvent } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
@@ -31,7 +24,6 @@ export function LibraryLinksField({ value, outsideScopeCount, onChange }: Librar
   const { data, isLoading } = useChannels(1, 100);
   const channels = data?.data ?? [];
   const chosen = channels.filter((c) => value?.includes(c.id) === true);
-  // Links the list does not show stay linked when the selection changes.
   const unseen = (value ?? []).filter((id) => !channels.some((c) => c.id === id));
 
   return (

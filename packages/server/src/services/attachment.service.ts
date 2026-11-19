@@ -1,16 +1,8 @@
-// ===========================================
-// Attachment Service
-// ===========================================
-// Business logic for querying message attachments.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { and, eq } from 'drizzle-orm';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { messageAttachments } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface AttachmentSummary {
   readonly id: string;
@@ -24,10 +16,7 @@ export interface AttachmentDetail extends AttachmentSummary {
   readonly content: string;
 }
 
-// ----- Service -----
-
 export class AttachmentService {
-  /** List all attachments for a message. */
   static async listByMessage(
     channelId: string,
     messageId: number,
@@ -53,7 +42,6 @@ export class AttachmentService {
     });
   }
 
-  /** Get a single attachment by ID (includes content). */
   static async getById(
     channelId: string,
     messageId: number,

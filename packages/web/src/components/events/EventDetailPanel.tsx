@@ -1,8 +1,3 @@
-// ===========================================
-// Event Detail Panel
-// ===========================================
-// Shows full event details including attributes as formatted JSON.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';

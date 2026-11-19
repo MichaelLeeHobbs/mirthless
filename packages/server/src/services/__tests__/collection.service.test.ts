@@ -1,24 +1,14 @@
-// ===========================================
-// Collection Service Tests (unit, mocked DB)
-// ===========================================
 // The happy paths for store/find/pruneExpired need a real jsonb column and are
-// covered by collection.itest.ts against Postgres. This unit test exercises the
-// pure control-flow branches that integration can't easily force: update() field
-// changes, the ALREADY_EXISTS duplicate-name guards on create()/update(), and the
-// NOT_FOUND Result.error branches on getById()/update()/delete().
+// covered by collection.itest.ts against Postgres.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// db.select().from(x).where(...) is awaited directly and returns an array of rows.
 const selectWhere = vi.fn().mockResolvedValue([]);
-// db.update(x).set(...).where(...).returning() — capture `set` to assert the patch.
 const updateReturning = vi.fn();
 const updateWhere = vi.fn(() => ({ returning: updateReturning }));
 const updateSet = vi.fn((_patch: Record<string, unknown>) => ({ where: updateWhere }));
-// db.insert(x).values(...).returning()
 const insertReturning = vi.fn();
 const insertValues = vi.fn(() => ({ returning: insertReturning }));
-// db.delete(x).where(...)
 const deleteWhere = vi.fn().mockResolvedValue(undefined);
 
 const mockDb = {
@@ -47,7 +37,6 @@ const { sql } = await import('drizzle-orm');
 
 const { CollectionService } = await import('../collection.service.js');
 
-// A full collections.$inferSelect-shaped row (what toSummary reads).
 function makeRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'col-1',
@@ -63,7 +52,7 @@ function makeRow(overrides: Record<string, unknown> = {}): Record<string, unknow
 
 beforeEach(() => {
   vi.clearAllMocks();
-  selectWhere.mockResolvedValue([]); // default: no row / no duplicate
+  selectWhere.mockResolvedValue([]);
 });
 
 describe('CollectionService.update', () => {
@@ -75,7 +64,7 @@ describe('CollectionService.update', () => {
       defaultTtlSeconds: 3600,
       updatedAt: new Date('2026-02-02T00:00:00Z'),
     });
-    selectWhere.mockResolvedValueOnce([existing]); // existing lookup
+    selectWhere.mockResolvedValueOnce([existing]);
     updateReturning.mockResolvedValue([updatedRow]);
 
     const result = await CollectionService.update('col-1', {
@@ -90,7 +79,6 @@ describe('CollectionService.update', () => {
     expect(result.value.indexedFields).toEqual(['mrn', 'dob']);
     expect(result.value.defaultTtlSeconds).toBe(3600);
 
-    // The patch carried exactly the provided fields (plus updatedAt) and NOT name.
     const patch = updateSet.mock.calls[0]?.[0] ?? {};
     expect(patch['description']).toBe('updated demographics');
     expect(patch['indexedFields']).toEqual(['mrn', 'dob']);
@@ -98,15 +86,15 @@ describe('CollectionService.update', () => {
     expect(patch).toHaveProperty('updatedAt');
     expect(patch).not.toHaveProperty('name');
 
-    // No duplicate-name check ran (name was unchanged), so only one select.
+    // Name unchanged, so no duplicate-name select.
     expect(mockDb.select).toHaveBeenCalledTimes(1);
     expect(emitEvent).toHaveBeenCalledTimes(1);
   });
 
   it('returns ALREADY_EXISTS when renaming to a name another collection holds', async () => {
     selectWhere
-      .mockResolvedValueOnce([makeRow({ name: 'patients' })]) // existing
-      .mockResolvedValueOnce([makeRow({ id: 'col-2', name: 'labs' })]); // dup on new name
+      .mockResolvedValueOnce([makeRow({ name: 'patients' })])
+      .mockResolvedValueOnce([makeRow({ id: 'col-2', name: 'labs' })]);
 
     const result = await CollectionService.update('col-1', { name: 'labs' });
 
@@ -118,7 +106,7 @@ describe('CollectionService.update', () => {
   });
 
   it('returns NOT_FOUND when the collection to update does not exist', async () => {
-    selectWhere.mockResolvedValueOnce([]); // existing lookup: empty
+    selectWhere.mockResolvedValueOnce([]);
 
     const result = await CollectionService.update('missing', { description: 'x' });
 
@@ -161,7 +149,6 @@ describe('CollectionService.getById', () => {
 });
 
 describe('CollectionService.listRecords search', () => {
-  /** Mock the three queries listRecords runs: the collection, one page of rows, the count. */
   function mockListQueries(): void {
     mockDb.select
       .mockReturnValueOnce({ from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([makeRow()]) })) })
@@ -169,7 +156,6 @@ describe('CollectionService.listRecords search', () => {
       .mockReturnValueOnce({ from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ total: 0 }]) })) });
   }
 
-  /** The string values bound into sql`` fragments that look like LIKE patterns. */
   function boundPatterns(): unknown[] {
     return vi.mocked(sql).mock.calls.flatMap((call) => call.slice(1)).filter((v) => typeof v === 'string' && v.startsWith('%'));
   }
@@ -190,7 +176,7 @@ describe('CollectionService.listRecords search', () => {
 
 describe('CollectionService audit events', () => {
   it('records a COLLECTION_UPDATED success event with the caller and attributes on create', async () => {
-    selectWhere.mockResolvedValueOnce([]); // no duplicate name
+    selectWhere.mockResolvedValueOnce([]);
     insertReturning.mockResolvedValue([makeRow()]);
 
     const result = await CollectionService.create(
@@ -237,7 +223,7 @@ describe('CollectionService.delete', () => {
 
 describe('CollectionService.create', () => {
   it('returns ALREADY_EXISTS on a duplicate name and never inserts', async () => {
-    selectWhere.mockResolvedValueOnce([{ id: 'col-existing' }]); // name already taken
+    selectWhere.mockResolvedValueOnce([{ id: 'col-existing' }]);
 
     const result = await CollectionService.create({
       name: 'patients',

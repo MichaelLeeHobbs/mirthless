@@ -1,8 +1,3 @@
-// ===========================================
-// Destination Connector Settings
-// ===========================================
-// Dynamically renders the correct destination form based on connector type.
-
 import { type ReactNode, type ComponentType } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';

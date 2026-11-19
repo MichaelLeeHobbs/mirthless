@@ -1,18 +1,8 @@
-// ===========================================
-// Kafka Receiver (Source Connector)
-// ===========================================
-// Reads a topic as a member of a consumer group, one record at a time, and
-// commits a record's offset only after the pipeline has stored it. A record
-// the pipeline could not take is not committed: the receiver drops the
-// subscription and rejoins from the last committed offset, so that record is
-// read again (at-least-once). A crash between storing and committing also
-// reads it again, so a channel may see a duplicate; the source map's
-// topic/partition/offset identify one.
-//
-// A record the pipeline refuses every time (one the store rejects) would block
-// its partition forever. After `maxStoreAttempts` failures in a row on the same
-// record the receiver stops, leaves the record uncommitted and reports a fatal
-// error, which stops the channel. An operator fixes the cause and starts it.
+// At-least-once: an offset is committed only after the pipeline stored the record. A record
+// not stored is read again after a rejoin, and so is one stored just before a crash (the
+// source map's topic/partition/offset identify the duplicate). A record refused every time
+// would block its partition forever, so after `maxStoreAttempts` failures in a row the
+// receiver stops the channel and leaves it uncommitted.
 
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
@@ -32,7 +22,6 @@ import {
 
 /** Wait before rejoining after a failure, so a down broker is not hammered. */
 const DEFAULT_RETRY_DELAY_MS = 5_000;
-/** Bound on committing an offset, and on closing a subscription. */
 const KAFKA_OP_TIMEOUT_MS = 30_000;
 
 export interface KafkaReceiverConfig extends KafkaConnectionConfig {
@@ -45,25 +34,20 @@ export interface KafkaReceiverConfig extends KafkaConnectionConfig {
   readonly maxStoreAttempts?: number;
 }
 
-/** Where a record is, for logs and errors (never its content). */
+/** For logs and errors, which never carry the record's content. */
 interface RecordPosition {
   readonly topic: string;
   readonly partition: number;
   readonly offset: string;
 }
 
-/** Header names and values as UTF-8 text. */
 function headersToRecord(headers: ReadonlyMap<Buffer, Buffer>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [name, value] of headers) result[name.toString('utf8')] = value.toString('utf8');
   return result;
 }
 
-/**
- * The message the pipeline receives for a record, its value decoded with the
- * source's charset. A value that is not valid UTF-8 (in UTF-8 mode) gets a
- * `charsetError` in the source map, so the stored message shows it.
- */
+/** A value that is not valid UTF-8 (in UTF-8 mode) gets a `charsetError` in the source map. */
 export function toRawMessage(record: KafkaInboundRecord, charset: QueueCharset = 'utf-8'): RawMessage {
   const decoded = record.value ? decodePayload(record.value, charset) : { text: '', replaced: false };
   return {
@@ -93,10 +77,8 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   private loop: Promise<void> | null = null;
   /** The record being dispatched and committed, so a stop can let it finish. */
   private current: Promise<boolean> | null = null;
-  /** Ends the wait between attempts early when the channel stops. */
   private wake: (() => void) | null = null;
   private onFatal: SourceFatalHandler | null = null;
-  /** Failures in a row per record (`partition:offset`); a stored record is removed. */
   private readonly failures = new Map<string, number>();
 
   /** Throws when the configured charset cannot be decoded here, so the deploy fails. */
@@ -136,7 +118,6 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Let the record in progress finish and commit, then leave the group. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.running = false;
@@ -167,12 +148,10 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** True while this loop belongs to the current start. */
   private isCurrent(generation: number): boolean {
     return this.running && generation === this.generation;
   }
 
-  /** Read until stopped; after any failure, wait and rejoin from the committed offsets. */
   private async run(generation: number, first: KafkaSubscription): Promise<void> {
     let subscription: KafkaSubscription | null = first;
     while (this.isCurrent(generation)) {
@@ -192,7 +171,6 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** Dispatch records in order until one is not stored or the stream ends. */
   private async consume(generation: number, subscription: KafkaSubscription): Promise<void> {
     for await (const record of subscription) {
       if (!this.isCurrent(generation)) return;
@@ -204,11 +182,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     if (this.isCurrent(generation)) this.logger.warn({ topic: this.config.topic }, 'Kafka stream ended; rejoining');
   }
 
-  /**
-   * Convert and dispatch a record. A throw (a decoder that cannot be built, a
-   * dispatcher bug) becomes a failed result, so it counts toward the cap like
-   * any record the pipeline did not store.
-   */
+  /** A throw becomes a failed result, so it counts toward the cap like any record not stored. */
   private async dispatchRecord(dispatcher: MessageDispatcher, record: KafkaInboundRecord, where: RecordPosition): Promise<Result<DispatchResult>> {
     return tryCatch(async () => {
       const raw = toRawMessage(record, this.config.charset);
@@ -221,7 +195,6 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Dispatch one record; commit unless the pipeline did not take it. */
   private async handle(generation: number, record: KafkaInboundRecord): Promise<boolean> {
     const dispatcher = this.dispatcher;
     if (!dispatcher) return false;
@@ -250,7 +223,6 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     return true;
   }
 
-  /** Count a failure to store the record; at the cap, stop instead of reading it again. */
   private notStored(position: string, cause: Error, where: RecordPosition): void {
     const attempts = (this.failures.get(position) ?? 0) + 1;
     this.failures.set(position, attempts);
@@ -261,11 +233,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     this.logger.error({ ...errorInfo(cause), ...where, attempts }, 'Pipeline did not store the Kafka record; it is not committed and will be read again');
   }
 
-  /**
-   * Stop reading after a record failed `attempts` times in a row. The record
-   * stays uncommitted (the loop closes the subscription without committing),
-   * so a restart reads it first.
-   */
+  /** The record stays uncommitted, so a restart reads it first. */
   private giveUp(cause: Error, where: RecordPosition, attempts: number): void {
     this.running = false;
     this.wake?.();
@@ -288,7 +256,6 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** Wait before the next attempt; a stop ends the wait. */
   private async pause(): Promise<void> {
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, this.retryDelayMs);

@@ -1,23 +1,16 @@
-// ===========================================
-// Configuration map references in connector settings
-// ===========================================
-// A connector field may name a configuration map entry: `${MIRTH_SENDER_HOST}`
-// or `${site.MIRTH_SENDER_HOST}`. They are resolved when the channel deploys, so
-// one export runs against each environment's own hosts and ports.
+// Configuration map references (`${name}`, `${category.name}`) in connector
+// settings resolve at deploy, so one export runs against each environment's own
+// hosts and ports.
 
 import { fillPlaceholders } from '@galvanigraph/core-util';
 
-/** A configuration map entry as the service lists it. */
 export interface ConfigEntry {
   readonly category: string;
   readonly name: string;
   readonly value: string | null;
 }
 
-/**
- * Values by `category.name`, and by bare `name` when only one category has
- * that name (a name in two categories is ambiguous and is not resolved bare).
- */
+/** A name in two categories is ambiguous, so it resolves only as `category.name`. */
 export function configLookup(entries: readonly ConfigEntry[]): ReadonlyMap<string, string> {
   const lookup = new Map<string, string>();
   const bareCount = new Map<string, number>();
@@ -31,17 +24,12 @@ export function configLookup(entries: readonly ConfigEntry[]): ReadonlyMap<strin
 }
 
 /**
- * Settings whose text is code or SQL. A `${name}` there is the language's own
- * (a template literal) or a query parameter the connector binds; inlining a
- * configuration value would change the code or put unescaped text in the SQL.
+ * A `${name}` in code or SQL is a template literal or a bound query parameter;
+ * inlining a value would change the code or put unescaped text in the SQL.
  */
 const CODE_OR_SQL_KEYS: ReadonlySet<string> = new Set(['script', 'query', 'selectQuery', 'updateQuery']);
 
-/**
- * A copy of `properties` with every `${key}` that names a configuration entry
- * replaced by its value, except in code and SQL settings. Any other `${...}`
- * (a message variable such as `${oru}`) is left for the message to fill.
- */
+/** A `${...}` that names no entry (a message variable such as `${oru}`) is left for the message to fill. */
 export function resolveConfigReferences(
   properties: Readonly<Record<string, unknown>>,
   lookup: ReadonlyMap<string, string>,

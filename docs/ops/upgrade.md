@@ -85,7 +85,7 @@ migration will not migrate it for you. From 1.0 onward, migrations will be data-
 
 ## A restart redeploys what was deployed (#225)
 
-From migration 0026 the server records what each deploy deployed: the channel, the code templates compiled into it and the global scripts. A restart redeploys that record, so configuration saved but not deployed no longer goes live when the server restarts (D-327).
+From migration 0026 the server records what each deploy deployed: the channel, the code templates compiled into it and the global scripts. A restart redeploys that record, so configuration saved but not deployed no longer goes live when the server restarts (D-328).
 
 An install upgrading to it has no records yet. On the first start after the upgrade, each channel that was enabled when the migration ran has its saved configuration deployed and recorded, once, so it comes back as it did before. Each one is logged and recorded as a `CHANNEL_DEPLOYMENT_ADOPTED` WARN event. That start still runs whatever was saved, so **before upgrading, deploy or revert every channel, code template and global script with saved changes you have not deployed**.
 

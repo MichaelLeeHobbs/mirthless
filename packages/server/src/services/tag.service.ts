@@ -1,9 +1,3 @@
-// ===========================================
-// Tag Service
-// ===========================================
-// Business logic for channel tag CRUD + assignment.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, count, asc } from 'drizzle-orm';
 import { ALL_CHANNELS, type CreateTagInput, type UpdateTagInput } from '@galvanigraph/core-models';
@@ -13,8 +7,6 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { channelTags, channelTagAssignments, channels } from '../db/schema/index.js';
 
-// ----- Response Types -----
-
 export interface TagSummary {
   readonly id: string;
   readonly name: string;
@@ -22,10 +14,8 @@ export interface TagSummary {
   readonly assignmentCount: number;
 }
 
-// ----- Service -----
-
 export class TagService {
-  /** List all tags with how many channels inside `scope` (the reader's settings:read channels) carry each. */
+  /** `scope` is the reader's settings:read channels; only those are counted. */
   static async listTags(scope: ChannelScope = ALL_CHANNELS): Promise<Result<readonly TagSummary[]>> {
     return tryCatch(async () => {
       const tags = await db
@@ -53,7 +43,6 @@ export class TagService {
     });
   }
 
-  /** List all tag-channel assignments. */
   static async listAssignments(): Promise<Result<ReadonlyArray<{ readonly tagId: string; readonly channelId: string }>>> {
     return tryCatch(async () => {
       const rows = await db
@@ -67,7 +56,6 @@ export class TagService {
     });
   }
 
-  /** Create a new tag. */
   static async create(
     input: CreateTagInput,
     context?: AuditContext,
@@ -106,7 +94,6 @@ export class TagService {
     });
   }
 
-  /** Update a tag. */
   static async update(
     id: string,
     input: UpdateTagInput,
@@ -168,7 +155,6 @@ export class TagService {
     });
   }
 
-  /** Delete a tag (cascades assignments). */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -193,7 +179,6 @@ export class TagService {
     });
   }
 
-  /** Assign a tag to a channel. */
   static async assign(
     tagId: string,
     channelId: string,
@@ -243,7 +228,6 @@ export class TagService {
     });
   }
 
-  /** Unassign a tag from a channel. */
   static async unassign(
     tagId: string,
     channelId: string,

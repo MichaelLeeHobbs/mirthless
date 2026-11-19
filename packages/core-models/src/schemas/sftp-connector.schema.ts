@@ -1,10 +1,4 @@
-// ===========================================
-// SFTP Connector Property Schemas
-// ===========================================
-// Properties of the SFTP Reader (source) and Writer (destination), as a
-// channel stores them. The server validates them at deploy and the connector
-// registry parses them, so defaults live here only. A key not listed here
-// fails validation.
+// Defaults live here only (D-274).
 //
 // Which `${name}` placeholders a file name template may use is checked by the
 // dispatcher (packages/connectors/src/sftp/sftp-dispatcher.ts), which fills them.
@@ -22,7 +16,6 @@ import {
 
 export const SFTP_POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
 
-/** The connection keys both directions share. */
 const connection = {
   host: requiredTextSchema,
   port: connectorPortSchema.default(22),
@@ -31,7 +24,7 @@ const connection = {
   privateKey: z.string().optional(),
   passphrase: z.string().optional(),
   remoteDirectory: requiredTextSchema,
-  /** Check the server's host key against `hostKey` (on unless turned off). */
+  /** Check the server's host key against `hostKey`. */
   strictHostKey: z.boolean().default(true),
   hostKey: z.string().optional(),
 } as const;
@@ -39,7 +32,7 @@ const connection = {
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const sftpSourceObjectSchema = z.strictObject({
   ...connection,
-  /** Glob for the files to read, case-sensitive as Mirth's (D-304). */
+  /** Glob, case-sensitive as Mirth's (D-304). */
   filePattern: requiredTextSchema.default('*'),
   /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
   ignoreDot: z.boolean().default(true),

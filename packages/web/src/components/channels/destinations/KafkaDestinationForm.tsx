@@ -1,9 +1,4 @@
-// ===========================================
-// Kafka Destination Connector Form
-// ===========================================
-// Publishes to a topic. Topic, key and header values may use ${name}, filled
-// per message. Property keys must match the Kafka destination schema in
-// core-models (see connector-defaults.ts).
+// Property keys must match the Kafka destination schema in core-models (see connector-defaults.ts).
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';

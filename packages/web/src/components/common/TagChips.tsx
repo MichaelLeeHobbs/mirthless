@@ -1,16 +1,9 @@
-// ===========================================
-// Tag Chips
-// ===========================================
-// Compact colored chips for a channel's tags, with luminance-aware text color so
-// labels stay readable on both light and dark tag colors.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import type { TagSummary } from '../../hooks/use-tags.js';
 import { TAG_COLOR } from '../../styles/tokens.js';
 
-/** Pick black or white text for readability over a hex background color. */
 export function contrastText(hex: string | null): string | undefined {
   if (!hex) return undefined;
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
@@ -26,7 +19,6 @@ export function contrastText(hex: string | null): string | undefined {
 
 interface TagChipsProps {
   readonly tags: readonly TagSummary[];
-  /** Max chips to render before collapsing the rest into a "+N" chip. */
   readonly max?: number;
 }
 

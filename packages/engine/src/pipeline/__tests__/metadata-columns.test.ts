@@ -1,7 +1,3 @@
-// ===========================================
-// Custom metadata column tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { MessageProcessor, metadataValues } from '../message-processor.js';

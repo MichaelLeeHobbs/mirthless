@@ -1,7 +1,3 @@
-// ===========================================
-// Message Reprocess Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import {
   reprocessParamsSchema,
@@ -18,8 +14,8 @@ const router: IRouter = Router();
 // Every route here that names a channel checks its permission on that channel (D-310).
 scopeToChannel(router);
 
-// Specific/static routes are declared before the greedy `/:msgId` patterns so
-// literal segments (bulk, bulk-reprocess) are not captured as message ids.
+// Literal segments (bulk, bulk-reprocess) come before `/:msgId` routes so they
+// are not captured as message ids.
 router.post(
   '/:id/messages/bulk-reprocess',
   requirePermission('messages:reprocess'),

@@ -1,11 +1,3 @@
-// ===========================================
-// Needs Attention strip
-// ===========================================
-// The dashboard's first answer to "is anything wrong?": the channels that are
-// stopped or have errored messages, worst first, each one click from what an
-// operator does next. Renders nothing when every channel is fine, so a calm
-// engine shows a calm page.
-
 import type { ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router';
 import Box from '@mui/material/Box';
@@ -16,7 +8,6 @@ import { StatusChip } from '../common/StatusChip.js';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
 
-/** One channel that needs an operator, with the reason. */
 export interface AttentionItem {
   readonly channelId: string;
   readonly channelName: string;
@@ -24,10 +15,6 @@ export interface AttentionItem {
   readonly stopped: boolean;
 }
 
-/**
- * Channels that are stopped or have errored messages, most errors first, then
- * stopped channels with no errors, each group by name.
- */
 export function rankAttention(
   statistics: readonly ChannelStatisticsSummary[],
   statuses: readonly ChannelStatus[],
@@ -76,7 +63,6 @@ function AttentionRow({ item }: { readonly item: AttentionItem }): ReactNode {
   );
 }
 
-/** The ranked list of channels needing attention, or nothing when all are fine. */
 export function NeedsAttention({ statistics, statuses }: NeedsAttentionProps): ReactNode {
   const items = rankAttention(statistics, statuses);
   if (items.length === 0) return null;

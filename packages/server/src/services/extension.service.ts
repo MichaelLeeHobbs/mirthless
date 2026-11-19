@@ -1,15 +1,7 @@
-// ===========================================
-// Extension Service
-// ===========================================
-// Static catalog of built-in connector types and data types.
-// Enable/disable stored in system_settings table.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { EXTENSION_TYPE, type ExtensionType } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { SettingsService } from './settings.service.js';
-
-// ----- Types -----
 
 export interface ExtensionInfo {
   readonly id: string;
@@ -21,10 +13,7 @@ export interface ExtensionInfo {
   readonly capabilities: readonly string[];
 }
 
-// ----- Built-in Extensions -----
-
 const BUILTIN_EXTENSIONS: ReadonlyArray<Omit<ExtensionInfo, 'enabled'>> = [
-  // Connectors
   { id: 'tcp-mllp', name: 'TCP/MLLP', version: '1.0.0', type: EXTENSION_TYPE.CONNECTOR, description: 'HL7v2 MLLP over TCP connector for sending and receiving HL7 messages', capabilities: ['source', 'destination'] },
   { id: 'http', name: 'HTTP', version: '1.0.0', type: EXTENSION_TYPE.CONNECTOR, description: 'HTTP/REST connector for web service integration', capabilities: ['source', 'destination'] },
   { id: 'file', name: 'File', version: '1.0.0', type: EXTENSION_TYPE.CONNECTOR, description: 'File system connector for reading and writing files', capabilities: ['source', 'destination'] },
@@ -34,7 +23,6 @@ const BUILTIN_EXTENSIONS: ReadonlyArray<Omit<ExtensionInfo, 'enabled'>> = [
   { id: 'dicom', name: 'DICOM', version: '1.0.0', type: EXTENSION_TYPE.CONNECTOR, description: 'DICOM connector for medical imaging', capabilities: ['source', 'destination'] },
   { id: 'smtp', name: 'SMTP', version: '1.0.0', type: EXTENSION_TYPE.CONNECTOR, description: 'SMTP connector for sending email', capabilities: ['destination'] },
   { id: 'fhir', name: 'FHIR', version: '1.0.0', type: EXTENSION_TYPE.CONNECTOR, description: 'FHIR REST connector for modern healthcare APIs', capabilities: ['destination'] },
-  // Data types
   { id: 'dt-raw', name: 'Raw', version: '1.0.0', type: EXTENSION_TYPE.DATA_TYPE, description: 'Raw text data type with no parsing', capabilities: ['inbound', 'outbound'] },
   { id: 'dt-hl7v2', name: 'HL7 v2.x', version: '1.0.0', type: EXTENSION_TYPE.DATA_TYPE, description: 'HL7 v2.x pipe-delimited message format', capabilities: ['inbound', 'outbound'] },
   { id: 'dt-hl7v3', name: 'HL7 v3', version: '1.0.0', type: EXTENSION_TYPE.DATA_TYPE, description: 'HL7 v3 CDA/XML message format', capabilities: ['inbound', 'outbound'] },
@@ -45,22 +33,17 @@ const BUILTIN_EXTENSIONS: ReadonlyArray<Omit<ExtensionInfo, 'enabled'>> = [
   { id: 'dt-fhir', name: 'FHIR', version: '1.0.0', type: EXTENSION_TYPE.DATA_TYPE, description: 'FHIR R4 resource data type', capabilities: ['inbound', 'outbound'] },
 ];
 
-// ----- Helpers -----
-
 function settingsKey(extId: string): string {
   return `extension.${extId}.enabled`;
 }
 
 async function isEnabled(extId: string): Promise<boolean> {
   const result = await SettingsService.getByKey(settingsKey(extId));
-  if (!result.ok) return true; // Default to enabled
+  if (!result.ok) return true;
   return result.value.value !== 'false';
 }
 
-// ----- Service -----
-
 export class ExtensionService {
-  /** List all built-in extensions with their enabled status. */
   static async list(): Promise<Result<readonly ExtensionInfo[]>> {
     return tryCatch(async () => {
       // Fetch all extension settings in one query instead of N+1
@@ -79,7 +62,6 @@ export class ExtensionService {
     });
   }
 
-  /** Get a single extension by ID. */
   static async getById(id: string): Promise<Result<ExtensionInfo>> {
     return tryCatch(async () => {
       const ext = BUILTIN_EXTENSIONS.find((e) => e.id === id);
@@ -91,7 +73,6 @@ export class ExtensionService {
     });
   }
 
-  /** Enable or disable an extension. */
   static async setEnabled(id: string, enabled: boolean): Promise<Result<ExtensionInfo>> {
     return tryCatch(async () => {
       const ext = BUILTIN_EXTENSIONS.find((e) => e.id === id);

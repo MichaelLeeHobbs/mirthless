@@ -1,15 +1,9 @@
-// ===========================================
-// Assign Group Dialog Tests (#223)
-// ===========================================
-// The dialog shows every group the channel is in and changes its group with one
-// server call, so a failure cannot leave it in no group or in some of its old ones.
+// #223: the group changes in one server call, so a failure cannot leave the channel in no group or in some of its old ones.
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { darkTheme } from '../../../styles/theme.js';
-
-// ----- Mocks -----
 
 const setGroups = vi.fn();
 const notify = vi.fn();

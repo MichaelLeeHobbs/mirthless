@@ -1,19 +1,10 @@
-// ===========================================
-// Database Connection
-// ===========================================
-
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { config } from '../config/index.js';
 import * as schema from '../db/schema/index.js';
 import logger from './logger.js';
 
-/**
- * Build the pg TLS config. When DATABASE_SSL is on we VERIFY the server cert by
- * default (previously verification was disabled, leaving the PHI link MITM-able).
- * Supply DATABASE_SSL_CA for a private CA, or explicitly set
- * DATABASE_SSL_REJECT_UNAUTHORIZED=false to opt out (insecure).
- */
+/** Verifies the server certificate unless explicitly opted out: the link carries PHI. */
 export function buildDbSslConfig(): false | { rejectUnauthorized: boolean; ca?: string } {
   if (!config.DATABASE_SSL) return false;
   return {
@@ -23,10 +14,8 @@ export function buildDbSslConfig(): false | { rejectUnauthorized: boolean; ca?: 
 }
 
 /**
- * Pool settings. Every statement gets a server-side time limit
- * (DATABASE_STATEMENT_TIMEOUT_MS, 0 for none): without one a query stuck
- * behind a lock holds its connection for good, and twenty of those stop the
- * server.
+ * Without a statement timeout a query stuck behind a lock holds its connection
+ * for good, and a pool's worth of those stops the server.
  */
 export function buildPoolConfig(): pg.PoolConfig {
   return {

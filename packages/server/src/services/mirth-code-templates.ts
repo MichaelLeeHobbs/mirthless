@@ -1,20 +1,14 @@
-// ===========================================
-// Mirth Connect code template libraries
-// ===========================================
-// A Mirth server backup carries its code template libraries next to the
-// channels. Channel scripts call those templates (`msg = stampSite(msg)`), so a
-// channel imported without them fails on its first message.
+// A Mirth server backup carries its code template libraries beside the channels, and
+// channel scripts call those templates, so a channel imported without them fails on its
+// first message.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { CODE_TEMPLATE_CONTEXTS } from '@galvanigraph/core-models';
 import { CodeTemplateService, type TemplateDetail } from './code-template.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 
-// ----- Types -----
-
 type CodeTemplateContext = (typeof CODE_TEMPLATE_CONTEXTS)[number];
 
-/** One template as converted from the export. */
 export interface MirthCodeTemplate {
   readonly name: string;
   readonly description: string;
@@ -23,23 +17,20 @@ export interface MirthCodeTemplate {
   readonly contexts: readonly CodeTemplateContext[];
 }
 
-/** One library as converted from the export. */
 export interface MirthCodeTemplateLibrary {
   readonly name: string;
   readonly description: string;
-  /** The channels Mirth enabled the library for; null: every channel. */
+  /** null: every channel. */
   readonly channelIds: readonly string[] | null;
   readonly templates: readonly MirthCodeTemplate[];
 }
 
-/** What importing the libraries did. */
 export interface CodeTemplateImportCounts {
   readonly created: number;
   readonly updated: number;
   readonly skipped: number;
 }
 
-/** Readers for the parsed XML, shared with the channel importer. */
 export interface XmlReaders {
   readonly isRecord: (v: unknown) => v is Record<string, unknown>;
   readonly getString: (obj: unknown, key: string) => string | null;
@@ -47,8 +38,6 @@ export interface XmlReaders {
   /** The `<string>` children of a Mirth string list; [] when there are none. */
   readonly stringList: (node: unknown) => string[];
 }
-
-// ----- Conversion -----
 
 const KNOWN_CONTEXTS: ReadonlySet<string> = new Set(CODE_TEMPLATE_CONTEXTS);
 
@@ -93,7 +82,6 @@ function libraryScope(lib: Record<string, unknown>, name: string, xml: XmlReader
   return xml.stringList(lib['enabledChannelIds']);
 }
 
-/** Libraries in a server backup (`serverConfiguration/codeTemplateLibraries`), scoped as Mirth scoped them. */
 export function extractCodeTemplateLibraries(
   parsed: Record<string, unknown>,
   xml: XmlReaders,
@@ -115,13 +103,6 @@ export function extractCodeTemplateLibraries(
   });
 }
 
-// ----- Persistence -----
-
-/**
- * Create each library and template that does not exist, matched by name.
- * OVERWRITE replaces an existing library's channel scope and an existing
- * template's code, type and contexts; any other mode leaves them as they are.
- */
 export async function importCodeTemplateLibraries(
   libraries: readonly MirthCodeTemplateLibrary[],
   overwrite: boolean,

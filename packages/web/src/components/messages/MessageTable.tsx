@@ -1,8 +1,3 @@
-// ===========================================
-// Message Table
-// ===========================================
-// Server-side paginated table of messages with row selection.
-
 import type { ReactNode } from 'react';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -116,7 +111,6 @@ export function MessageTable({
                     hover
                     selected={selectedId === msg.messageId}
                     onClick={() => onSelect(msg.messageId)}
-                    // A failed message carries a critical edge, so it stands out in a long list.
                     sx={(t) => ({
                       cursor: 'pointer',
                       boxShadow: messageStatusLevel(worstStatus) === 'critical' ? `inset 3px 0 0 ${t.palette.status.critical}` : 'none',

@@ -1,8 +1,3 @@
-// ===========================================
-// Attachment Controller
-// ===========================================
-// Handles HTTP requests for message attachment queries.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { AttachmentService } from '../services/attachment.service.js';

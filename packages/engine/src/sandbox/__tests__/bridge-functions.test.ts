@@ -1,13 +1,7 @@
-// ===========================================
-// Bridge Functions Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createBridgeFunctions, type BridgeFunctions } from '../bridge-functions.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS, type CompiledScript } from '../sandbox-executor.js';
 import { createSandboxContext } from '../sandbox-context.js';
-
-// ----- Test Data -----
 
 const HL7_ADT = [
   'MSH|^~\\&|SENDER|FACILITY|RECEIVER|FACILITY|20260228120000||ADT^A01|12345|P|2.5',
@@ -15,8 +9,6 @@ const HL7_ADT = [
   'PID|||12345^^^MRN||DOE^JOHN||19800101|M',
   'PV1||I|ICU^101^A',
 ].join('\r');
-
-// ----- Tests -----
 
 describe('createBridgeFunctions', () => {
   let bridges: BridgeFunctions;
@@ -41,7 +33,6 @@ describe('createBridgeFunctions', () => {
 
     it('proxy.get reads field values correctly', () => {
       const proxy = bridges.parseHL7(HL7_ADT);
-      // MSH.9 auto-resolves to first subcomponent (ADT), MSH.9.2 gets A01
       expect(proxy.get('MSH.9')).toBe('ADT');
       expect(proxy.get('MSH.9.2')).toBe('A01');
       expect(proxy.get('MSH.10')).toBe('12345');
@@ -51,7 +42,6 @@ describe('createBridgeFunctions', () => {
 
     it('proxy.messageType returns MSH.9 first component', () => {
       const proxy = bridges.parseHL7(HL7_ADT);
-      // messageType calls get('MSH.9') which auto-resolves to first subcomponent
       expect(proxy.messageType).toBe('ADT');
     });
 

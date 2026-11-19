@@ -1,8 +1,3 @@
-// ===========================================
-// JavaScript Destination Connector Form
-// ===========================================
-// Configuration form for JavaScript destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Typography from '@mui/material/Typography';
 import { CODE_TEMPLATE_CONTEXT } from '@galvanigraph/core-models';

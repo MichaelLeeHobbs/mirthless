@@ -1,8 +1,3 @@
-// ===========================================
-// Resources Page
-// ===========================================
-// Resource management: list, create/edit with content editor.
-
 import { useState, useEffect, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -66,7 +61,6 @@ export function ResourcesPage(): ReactNode {
 
   const { data: editingDetail, isLoading: isDetailLoading } = useResource(editingId ?? '');
 
-  // Sync content when resource detail finishes loading
   useEffect(() => {
     if (editingDetail?.content != null) {
       setContent(editingDetail.content);
@@ -102,7 +96,6 @@ export function ResourcesPage(): ReactNode {
     setDirty(false);
   };
 
-  // Guard against losing unsaved edits when closing/cancelling the dialog.
   const handleRequestClose = (): void => {
     if (dirty) {
       setConfirmDiscardOpen(true);

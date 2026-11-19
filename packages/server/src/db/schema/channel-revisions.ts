@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Revisions Table Schema
-// ===========================================
-
 import { pgTable, uuid, text, timestamp, integer, jsonb } from 'drizzle-orm/pg-core';
 
 export const channelRevisions = pgTable('channel_revisions', {

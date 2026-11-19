@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Revision Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod';
 import { channelRevisionParamsSchema } from '@galvanigraph/core-models';

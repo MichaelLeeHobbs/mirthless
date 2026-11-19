@@ -1,9 +1,3 @@
-// ===========================================
-// Notification Snackbar
-// ===========================================
-// Global snackbar component that reads from the notification store.
-// Renders one snackbar at a time (the latest notification).
-
 import type { ReactNode } from 'react';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';

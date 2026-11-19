@@ -1,10 +1,5 @@
-// ===========================================
-// Issue Key Dialog
-// ===========================================
-// The form for a new API key (D-313): name, permissions (never ones a key may
-// not hold), every channel or chosen groups, a required end, and a reason when
-// the key reads every channel's messages. The server checks the key is within
-// what the issuer holds, now and until it ends, and says what is missing.
+// The server checks the key is within what the issuer holds, now and until it
+// ends, and says what is missing (D-313).
 
 import { useState, type ChangeEvent, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';

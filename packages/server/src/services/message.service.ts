@@ -1,10 +1,3 @@
-// ===========================================
-// Message Service
-// ===========================================
-// Data access layer for message storage and retrieval.
-// Used by the engine to persist messages as they flow through the pipeline.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, sql, gt, lte, asc, max } from 'drizzle-orm';
 import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@galvanigraph/core-models';
@@ -23,8 +16,6 @@ import {
   type MessageStatistic,
 } from '../db/schema/index.js';
 
-// ----- Response Types -----
-
 export interface CreateMessageResult {
   readonly messageId: number;
   readonly correlationId: string;
@@ -35,28 +26,20 @@ export interface ChannelStatistics {
   readonly entries: readonly MessageStatistic[];
 }
 
-// ----- Stat Field Type -----
-
 type StatField = 'received' | 'filtered' | 'sent' | 'errored';
 
-// ----- Live Events -----
-// Both are coalesced per room (D-306): listeners only refetch, so the payload
+// Both events are coalesced per room (D-306): listeners only refetch, so the payload
 // carries only what stays true for every event a window collapses.
 
-/** Tell the channel's open message browsers that its message list changed. */
 function emitMessageNew(channelId: string): void {
   emitToRoomCoalesced(`channel:${channelId}`, SOCKET_EVENT.MESSAGE_NEW, { channelId });
 }
 
-/** Tell open dashboards that some channel's statistics changed. */
 function emitStatsUpdate(): void {
   emitToRoomCoalesced('dashboard', SOCKET_EVENT.STATS_UPDATE, {});
 }
 
-// ----- Service -----
-
 export class MessageService {
-  /** Create a new message record. Returns the auto-generated message ID and correlation ID. */
   static async createMessage(
     channelId: string,
     serverId: string,
@@ -74,7 +57,7 @@ export class MessageService {
     });
   }
 
-  /** Create a connector message (source metaDataId=0, destinations 1+). */
+  /** metaDataId 0 is the source; destinations are 1 and up. */
   static async createConnectorMessage(
     channelId: string,
     messageId: number,
@@ -95,7 +78,6 @@ export class MessageService {
     });
   }
 
-  /** Update a connector message status. Optionally set errorCode. */
   static async updateConnectorMessageStatus(
     channelId: string,
     messageId: number,
@@ -131,12 +113,9 @@ export class MessageService {
   }
 
   /**
-   * Store message content (raw, transformed, sent, response, etc.).
-   *
-   * There is one row per connector message and content type. Storing the same
-   * type again replaces it (a response after a queued retry, a later error), so
-   * the row always holds the most recent value instead of the write failing on
-   * the primary key and the newer content being lost.
+   * One row per connector message and content type. Storing a type again replaces it (a
+   * response after a queued retry, a later error), so the newer content is not lost to a
+   * primary-key failure.
    */
   static async storeContent(
     channelId: string,
@@ -163,7 +142,7 @@ export class MessageService {
     });
   }
 
-  /** Remove one content type of a connector message. Nothing to remove is a success. */
+  /** Nothing to remove is a success. */
   static async removeContent(
     channelId: string,
     messageId: number,
@@ -180,7 +159,6 @@ export class MessageService {
     });
   }
 
-  /** Store a connector message's custom metadata column values, replacing any stored before. */
   static async storeCustomMetadata(
     channelId: string,
     messageId: number,
@@ -197,7 +175,6 @@ export class MessageService {
     });
   }
 
-  /** Mark a message as fully processed. */
   static async markProcessed(
     channelId: string,
     messageId: number,
@@ -215,9 +192,6 @@ export class MessageService {
     });
   }
 
-  /**
-   * Enqueue a connector message for async delivery.
-   */
   static async enqueue(
     channelId: string,
     messageId: number,
@@ -238,14 +212,10 @@ export class MessageService {
   }
 
   /**
-   * Atomically claim queued messages for processing.
-   *
-   * Transitions the selected rows from QUEUED to PENDING in the same statement
-   * so a concurrent poll cannot re-dequeue an in-flight message (which would
-   * double-dispatch it). FOR UPDATE SKIP LOCKED lets multiple consumers claim
-   * disjoint batches without blocking each other. Columns are aliased to
-   * camelCase so the returned rows match the QueuedMessage shape the consumer reads.
-   * @param rotate - Order by fewest send attempts first (a rotating queue).
+   * Rows go QUEUED to PENDING in the same statement, so a concurrent poll cannot dequeue an
+   * in-flight message and dispatch it twice. SKIP LOCKED lets consumers claim disjoint batches
+   * without blocking each other. Columns are aliased to camelCase so the rows match the
+   * QueuedMessage shape the consumer reads.
    */
   static async dequeue(
     channelId: string,
@@ -287,11 +257,8 @@ export class MessageService {
   }
 
   /**
-   * Reset any messages stuck in PENDING back to QUEUED for a destination.
-   *
-   * PENDING rows are claimed-but-not-finished dispatches. After a crash or
-   * restart they would otherwise be stranded (no consumer owns them), so they
-   * must be re-queued for redelivery — a message must never be silently lost.
+   * PENDING rows are claimed but unfinished dispatches. After a crash or restart no consumer
+   * owns them, so they must be re-queued: a message must never be silently lost.
    */
   static async resetPending(
     channelId: string,
@@ -311,9 +278,6 @@ export class MessageService {
     });
   }
 
-  /**
-   * Release a dequeued message with a new status (SENT or ERROR).
-   */
   static async release(
     channelId: string,
     messageId: number,
@@ -338,7 +302,6 @@ export class MessageService {
     });
   }
 
-  /** Increment statistics counters for a channel connector. */
   static async incrementStats(
     channelId: string,
     metaDataId: number,
@@ -360,7 +323,6 @@ export class MessageService {
     });
   }
 
-  /** Load stored content for a specific message and content type. */
   static async loadContent(
     channelId: string,
     messageId: number,
@@ -380,15 +342,13 @@ export class MessageService {
           ),
         );
 
-      // Decrypt if the stored value is an encryption envelope; plaintext (mixed
-      // legacy rows / non-encrypted channels) passes through unchanged.
+      // Plaintext (older rows, channels without encryption) passes through unchanged.
       const decrypted = decryptIfEncrypted(row?.content ?? null);
       if (!decrypted.ok) throw decrypted.error;
       return decrypted.value;
     });
   }
 
-  /** Get statistics for all connectors of a channel. */
   static async getStats(
     channelId: string,
   ): Promise<Result<ChannelStatistics>> {
@@ -403,9 +363,8 @@ export class MessageService {
   }
 
   /**
-   * The newest message id a channel has, or 0 when it has none. Taken at
-   * deploy, before the channel starts, it marks which messages are left over
-   * from an earlier run and so are safe to recover.
+   * Taken at deploy, before the channel starts, it marks which messages are left over from an
+   * earlier run and so are safe to recover.
    */
   static async getLatestMessageId(channelId: string): Promise<Result<number>> {
     return tryCatch(async () => {
@@ -418,13 +377,8 @@ export class MessageService {
   }
 
   /**
-   * One page of unprocessed messages for recovery, in id order.
-   *
-   * @param channelId - Channel to read.
-   * @param range - Ids above `afterId` and up to `maxId`. `maxId` is the id from
-   *   getLatestMessageId at deploy, so messages the running channel is still
-   *   working on are never returned.
-   * @param limit - Page size.
+   * `range.maxId` is getLatestMessageId at deploy, so messages the running channel is still
+   * working on are never returned.
    */
   static async getUnprocessedMessages(
     channelId: string,
@@ -449,7 +403,6 @@ export class MessageService {
     });
   }
 
-  /** Get all connector messages for a single message (used by recovery to decide per-connector action). */
   static async getConnectorMessages(
     channelId: string,
     messageId: number,
@@ -472,7 +425,6 @@ export class MessageService {
     });
   }
 
-  /** Get queued connector messages for a specific destination. */
   static async getQueuedMessages(
     channelId: string,
     metaDataId: number,
@@ -492,11 +444,6 @@ export class MessageService {
     });
   }
 
-  /**
-   * Whether every connector of a message (source and destinations) finished
-   * without an error: all rows SENT or FILTERED. False while anything is
-   * queued, in flight or failed, and for a message with no rows.
-   */
   static async isFullyDelivered(channelId: string, messageId: number): Promise<Result<boolean>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -510,7 +457,6 @@ export class MessageService {
     });
   }
 
-  /** Delete all stored content for a message. */
   static async deleteContent(
     channelId: string,
     messageId: number,
@@ -527,7 +473,6 @@ export class MessageService {
     });
   }
 
-  /** Store a single attachment for a message. */
   static async storeAttachment(
     channelId: string,
     messageId: number,
@@ -550,7 +495,6 @@ export class MessageService {
     });
   }
 
-  /** Delete all attachments for a message. */
   static async deleteAttachments(
     channelId: string,
     messageId: number,
@@ -567,12 +511,7 @@ export class MessageService {
     });
   }
 
-  /**
-   * Build the content-insert CTE body. Binds each content row's message_id to
-   * the new message via `CROSS JOIN new_msg` (not currval), so the id always
-   * belongs to this message. The first VALUES row carries explicit casts to fix
-   * the column types of the VALUES construct.
-   */
+  /** The first VALUES row carries explicit casts to fix the column types of the VALUES construct. */
   private static buildContentInsert(
     channelId: string,
     contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
@@ -592,18 +531,11 @@ export class MessageService {
   }
 
   /**
-   * Batch: create message + source connector + received stat (+ optional content rows)
-   * in one round-trip. Uses a single CTE query to minimize latency.
+   * The message, source connector and received-stat rows are always written, whatever the
+   * storage mode; only content rows follow the storage policy. An empty `contentRows` skips the
+   * content insert: an empty VALUES list is invalid SQL and would lose the whole message.
    *
-   * The message, source connector, and received-stat rows are ALWAYS written,
-   * regardless of the channel's storage mode. Only the content rows are subject
-   * to the storage policy: when `contentRows` is empty the content INSERT is
-   * skipped entirely (an empty VALUES list is invalid SQL and, previously, threw
-   * — silently losing the whole message in PRODUCTION/METADATA/DISABLED modes).
-   *
-   * `encrypted` marks the content rows as encrypted (is_encrypted = true). The
-   * caller (message store adapter) is responsible for having already encrypted
-   * each row's content when the channel has encryptData enabled.
+   * `encrypted` only marks the rows; the caller must already have encrypted each row's content.
    */
   static async initializeMessage(
     channelId: string,
@@ -655,9 +587,6 @@ export class MessageService {
     });
   }
 
-  /**
-   * Batch: set source SENT + increment sent stat + mark processed in one round-trip.
-   */
   static async finalizeMessage(
     channelId: string,
     messageId: number,

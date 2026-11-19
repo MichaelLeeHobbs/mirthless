@@ -23,9 +23,7 @@ const { SopClass, StorageClass, TransferSyntax, PresentationContextResult, Statu
 const { CStoreRequest } = requests;
 const { CEchoResponse, CStoreResponse } = responses;
 
-// Silence dcmjs-dimse's per-association protocol chatter (loglevel INFO); the
-// connector surfaces failures through its own ConnectorLogger. Warnings/errors
-// from the library still pass through.
+// Quiets the library's per-association INFO chatter; the connector logs failures itself.
 log.setLevel('warn');
 
 type AssociationType = InstanceType<typeof pkg.association.Association>;
@@ -43,8 +41,8 @@ function fail<T>(error: Error): Result<T> {
   return { ok: false, value: null, error } as unknown as Result<T>;
 }
 
-// ----- Accepted presentation contexts -----
-
+// An SCP must accept each requested presentation context whose SOP class and a transfer
+// syntax it supports, or the peer sees the association rejected ("Source: Service User").
 const ACCEPTED_TRANSFER_SYNTAXES: ReadonlySet<string> = new Set<string>([
   TransferSyntax.ImplicitVRLittleEndian,
   TransferSyntax.ExplicitVRLittleEndian,
@@ -59,14 +57,12 @@ const ACCEPTED_TRANSFER_SYNTAXES: ReadonlySet<string> = new Set<string>([
   TransferSyntax.Jpeg2000Lossy,
 ]);
 
-// All storage SOP classes plus Verification (C-ECHO). The channel connector only
-// stores, so we accept everything storable rather than a narrow modality list.
+// Every storage SOP class rather than a modality list, since the connector only stores.
 const ACCEPTED_ABSTRACT_SYNTAXES: ReadonlySet<string> = new Set<string>([
   SopClass.Verification,
   ...Object.values(StorageClass) as string[],
 ]);
 
-/** Negotiate presentation contexts on an inbound association: accept storable SOP classes. */
 function negotiatePresentationContexts(association: AssociationType): void {
   const contexts = association.getPresentationContexts();
   for (const { id } of contexts) {
@@ -89,8 +85,6 @@ function negotiatePresentationContexts(association: AssociationType): void {
     }
   }
 }
-
-// ----- SCP receiver -----
 
 interface ReceiverOptions {
   readonly port: number;
@@ -188,7 +182,6 @@ class DimseReceiver implements DcmtkReceiver {
   }
 
   async start(): Promise<Result<void>> {
-    // Capture just what the per-connection Scp needs, to avoid aliasing `this`.
     const storageDir = this.options.storageDir;
     const handleInstance = this.handleInstance.bind(this);
     const emitAssociation = (data: DcmtkAssociationData): void => { this.assocListener?.(data); };
@@ -268,7 +261,6 @@ class DimseReceiver implements DcmtkReceiver {
   }
 }
 
-/** Factory: a dcmjs-dimse-backed DICOM SCP receiver. */
 export function createDimseReceiver(options: {
   readonly port: number;
   readonly storageDir: string;
@@ -284,8 +276,6 @@ export function createDimseReceiver(options: {
     roots: options.roots,
   }));
 }
-
-// ----- SCU sender -----
 
 interface SenderOptions {
   readonly host: string;
@@ -341,7 +331,6 @@ class DimseSender implements DcmtkSender {
   async stop(): Promise<void> { /* clients are created per send */ }
 }
 
-/** Factory: a dcmjs-dimse-backed DICOM SCU sender. */
 export function createDimseSender(options: {
   readonly host: string;
   readonly port: number;

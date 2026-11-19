@@ -1,9 +1,5 @@
-// ===========================================
-// Principal resolver: stored assignments to grants
-// ===========================================
 // The database half (one query, expiry filtered in SQL) is proven against
 // Postgres in test/integration/role-migration.itest.ts and route-walk.itest.ts.
-// This covers what the resolver does with the rows it gets back.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -16,7 +12,6 @@ import { toAssignmentGrants, queryUserStanding, roleLabel, nextExpiryOf } from '
 
 const USER = '00000000-0000-4000-8000-000000000001';
 
-/** An executor whose select() resolves to `rows`, as Drizzle's builder does. */
 function executorReturning(rows: readonly unknown[]): Parameters<typeof queryUserStanding>[0] {
   const chain = { from: () => chain, where: () => Promise.resolve(rows) };
   return { select: () => chain } as unknown as Parameters<typeof queryUserStanding>[0];

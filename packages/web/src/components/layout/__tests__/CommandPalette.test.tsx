@@ -1,10 +1,3 @@
-// ===========================================
-// CommandPalette Tests
-// ===========================================
-// Type, arrow, Enter: the palette jumps to pages, channels, collections and actions the
-// user is allowed to use. Permission and channel hooks are mocked at the API
-// boundary; routing and the UI store run for real.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router';

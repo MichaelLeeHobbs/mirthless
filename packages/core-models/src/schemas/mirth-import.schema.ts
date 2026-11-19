@@ -1,8 +1,3 @@
-// ===========================================
-// Mirth Connect XML Import Schema
-// ===========================================
-// Zod schema for Mirth Connect XML import requests.
-
 import { z } from 'zod/v4';
 
 export const mirthImportSchema = z.object({

@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Group Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import {
   createChannelGroupSchema,

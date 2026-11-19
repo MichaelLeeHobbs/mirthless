@@ -1,18 +1,8 @@
-// ===========================================
-// Sandbox Context
-// ===========================================
-// Defines the context injected into sandbox scripts.
-// Contains message data, maps, and a logger.
-
-// ----- Log Entry -----
-
 export interface LogEntry {
   readonly level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
   readonly message: string;
   readonly timestamp: Date;
 }
-
-// ----- Sandbox Logger -----
 
 export interface SandboxLogger {
   info(message: string): void;
@@ -21,35 +11,27 @@ export interface SandboxLogger {
   debug(message: string): void;
 }
 
-// ----- Sandbox Context -----
-
-/** Context available to user scripts inside the sandbox. */
 export interface SandboxContext {
-  /** Parsed inbound message. */
   readonly msg: unknown;
-  /** Outbound message being built (mutable by transformer scripts). */
   readonly tmp: unknown;
-  /** Original raw content string. */
   readonly rawData: string;
-  /** Source-scoped key-value store, set by the source connector. */
+  /** Set by the source connector. */
   readonly sourceMap: Readonly<Record<string, unknown>>;
-  /** Channel-scoped key-value store, shared across all connectors. */
+  /** Shared across all connectors of the message. */
   readonly channelMap: Record<string, unknown>;
-  /** Connector-scoped key-value store, per destination. */
+  /** Per destination. */
   readonly connectorMap: Record<string, unknown>;
-  /** Response key-value store, available in postprocessor. */
+  /** Read by the postprocessor. */
   readonly responseMap: Record<string, unknown>;
-  /** Per-channel map that persists across messages within a deployment. */
+  /** Persists across messages within a deployment. */
   readonly globalChannelMap?: Readonly<Record<string, unknown>> | undefined;
-  /** Global map that persists across all channels (read-write, flushed to DB). */
+  /** Persists across all channels; flushed to the DB. */
   readonly globalMap?: Record<string, unknown> | undefined;
-  /** Configuration map (read-only, loaded from DB at deploy). */
+  /** Loaded from the DB at deploy. */
   readonly configMap?: Readonly<Record<string, unknown>> | undefined;
-  /** Extra objects to inject into the sandbox (e.g. destinationSet). */
   readonly extras?: Readonly<Record<string, unknown>> | undefined;
 }
 
-/** Create a fresh sandbox context with default empty maps. */
 export function createSandboxContext(
   msg: unknown,
   rawData: string,

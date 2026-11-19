@@ -1,8 +1,3 @@
-// ===========================================
-// Certificate Controller
-// ===========================================
-// Handles HTTP requests for certificate CRUD.
-
 import type { Request, Response } from 'express';
 import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvanigraph/core-models';
 import { CertificateService } from '../services/certificate.service.js';

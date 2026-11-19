@@ -1,10 +1,4 @@
-// ===========================================
-// Alert Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -18,8 +12,6 @@ function pushResponse(value: unknown): void {
   selectResponses.push(() => value);
 }
 
-// pushResponse is used for all select queries (where, orderBy, and direct from)
-
 function consumeResponse(): unknown {
   const fn = selectResponses[selectCallIndex];
   selectCallIndex++;
@@ -32,7 +24,6 @@ const mockSelectWhere = vi.fn().mockImplementation(() => consumeResponse());
 const mockSelectFrom = vi.fn().mockImplementation(() => {
   return {
     then(resolve: (v: unknown) => void, reject?: (e: unknown) => void): Promise<unknown> {
-      // Direct await on .from() — consume the response
       const value = consumeResponse();
       return Promise.resolve(value).then(resolve, reject);
     },
@@ -107,8 +98,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 
 const { AlertService } = await import('../alert.service.js');
 
-// ----- Fixtures -----
-
 const NOW = new Date('2026-03-01T12:00:00Z');
 const ALERT_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 const CHANNEL_ID = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b22';
@@ -152,26 +141,19 @@ function makeActionRow(overrides?: Partial<Record<string, unknown>>): Record<str
   };
 }
 
-// ----- Tests -----
-
 beforeEach(() => {
   resetSelectState();
   vi.clearAllMocks();
 });
 
 describe('AlertService', () => {
-  // ===== list =====
-
   describe('list', () => {
     it('returns paginated alerts with counts', async () => {
       const alert = makeAlertRow();
-      // Total count
+      // In query order: total, page, then the alert's channel and action counts.
       pushResponse([{ value: 1 }]);
-      // Alerts list (orderable with limit/offset)
       pushResponse([alert]);
-      // Channel count for alert
       pushResponse([{ value: 2 }]);
-      // Action count for alert
       pushResponse([{ value: 1 }]);
 
       const result = await AlertService.list({ page: 1, pageSize: 25 });
@@ -212,15 +194,10 @@ describe('AlertService', () => {
     });
   });
 
-  // ===== getById =====
-
   describe('getById', () => {
     it('returns full alert detail', async () => {
-      // Alert row
       pushResponse([makeAlertRow()]);
-      // Channel rows
       pushResponse([makeChannelRow()]);
-      // Action rows
       pushResponse([makeActionRow()]);
 
       const result = await AlertService.getById(ALERT_ID);
@@ -261,20 +238,14 @@ describe('AlertService', () => {
     });
   });
 
-  // ===== create =====
-
   describe('create', () => {
     it('creates alert with unique name', async () => {
       const created = makeAlertRow();
-      // Check duplicate name
+      // Duplicate-name check, then the detail read: alert, channels, actions.
       pushResponse([]);
-      // Transaction: insert returning
       mockReturning.mockResolvedValueOnce([created]);
-      // fetchAlertDetail after create: alert row
       pushResponse([created]);
-      // fetchAlertDetail: channels
       pushResponse([makeChannelRow()]);
-      // fetchAlertDetail: actions
       pushResponse([makeActionRow()]);
 
       const result = await AlertService.create({
@@ -376,21 +347,15 @@ describe('AlertService', () => {
     });
   });
 
-  // ===== update =====
-
   describe('update', () => {
     it('updates alert with correct revision', async () => {
       const existing = makeAlertRow();
       const updated = makeAlertRow({ name: 'Updated Alert', revision: 2 });
-      // Find existing
+      // Find, duplicate-name check (name changed), then the detail read: alert, channels, actions.
       pushResponse([existing]);
-      // Check duplicate name (name changed)
       pushResponse([]);
-      // fetchAlertDetail after update: alert row
       pushResponse([updated]);
-      // fetchAlertDetail: channels
       pushResponse([]);
-      // fetchAlertDetail: actions
       pushResponse([]);
 
       const result = await AlertService.update(ALERT_ID, {
@@ -432,9 +397,7 @@ describe('AlertService', () => {
 
     it('returns ALREADY_EXISTS when duplicate name on rename', async () => {
       const existing = makeAlertRow();
-      // Find existing
       pushResponse([existing]);
-      // Check duplicate name
       pushResponse([{ id: 'other-id' }]);
 
       const result = await AlertService.update(ALERT_ID, {
@@ -482,8 +445,6 @@ describe('AlertService', () => {
     });
   });
 
-  // ===== delete =====
-
   describe('delete', () => {
     it('deletes existing alert', async () => {
       pushResponse([{ id: ALERT_ID }]);
@@ -505,18 +466,13 @@ describe('AlertService', () => {
     });
   });
 
-  // ===== setEnabled =====
-
   describe('setEnabled', () => {
     it('enables alert', async () => {
       const updated = makeAlertRow({ enabled: true });
-      // Check exists
+      // Existence check, then the detail read: alert, channels, actions.
       pushResponse([{ id: ALERT_ID }]);
-      // fetchAlertDetail: alert row
       pushResponse([updated]);
-      // fetchAlertDetail: channels
       pushResponse([]);
-      // fetchAlertDetail: actions
       pushResponse([]);
 
       const result = await AlertService.setEnabled(ALERT_ID, true);
@@ -551,8 +507,6 @@ describe('AlertService', () => {
     });
   });
 
-  // ===== getByIds =====
-
   describe('getByIds', () => {
     it('returns empty array for empty input', async () => {
       const result = await AlertService.getByIds([]);
@@ -564,11 +518,8 @@ describe('AlertService', () => {
 
     it('returns full detail for multiple alerts in one batch', async () => {
       const ALERT_ID_2 = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380d44';
-      // Alerts rows
       pushResponse([makeAlertRow(), makeAlertRow({ id: ALERT_ID_2, name: 'Second Alert' })]);
-      // Channel rows (batch)
       pushResponse([makeChannelRow()]);
-      // Action rows (batch)
       pushResponse([makeActionRow(), makeActionRow({ id: 'action-2', alertId: ALERT_ID_2 })]);
 
       const result = await AlertService.getByIds([ALERT_ID, ALERT_ID_2]);
@@ -596,14 +547,11 @@ describe('AlertService', () => {
     it('groups channels and actions by alertId correctly', async () => {
       const ALERT_ID_2 = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380d44';
       const CHANNEL_ID_2 = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380e55';
-      // Alert rows
       pushResponse([makeAlertRow(), makeAlertRow({ id: ALERT_ID_2, name: 'Second Alert' })]);
-      // Channel rows — first alert has 2 channels, second has 0
       pushResponse([
         makeChannelRow(),
         makeChannelRow({ channelId: CHANNEL_ID_2 }),
       ]);
-      // Action rows — first alert has 0 actions, second has 1
       pushResponse([
         makeActionRow({ alertId: ALERT_ID_2, id: 'action-2' }),
       ]);

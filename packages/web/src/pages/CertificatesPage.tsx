@@ -1,8 +1,3 @@
-// ===========================================
-// Certificates Page
-// ===========================================
-// SSL/TLS certificate management: list, create/edit with PEM text area, expiry indicators.
-
 import { useState, useEffect, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -53,8 +48,6 @@ const CERT_TYPES = [
   CERTIFICATE_TYPE.KEYPAIR,
 ] as const;
 
-// ----- Page Component -----
-
 export function CertificatesPage(): ReactNode {
   const { data: certificates, isLoading, error, isFetching, refetch } = useCertificates();
   const createCertificate = useCreateCertificate();
@@ -74,7 +67,6 @@ export function CertificatesPage(): ReactNode {
 
   const { data: editingDetail, isLoading: isDetailLoading } = useCertificate(editingId ?? '');
 
-  // Sync PEM content when editing detail loads
   useEffect(() => {
     if (editingDetail) {
       setCertificatePem(editingDetail.certificatePem);
@@ -266,7 +258,6 @@ export function CertificatesPage(): ReactNode {
         </Table>
       </TableContainer>
 
-      {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth>
         <DialogTitle>{editingId ? 'Edit Certificate' : 'Add Certificate'}</DialogTitle>
         <DialogContent>
@@ -335,7 +326,6 @@ export function CertificatesPage(): ReactNode {
         </DialogActions>
       </Dialog>
 
-      {/* Delete Confirmation */}
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete Certificate"

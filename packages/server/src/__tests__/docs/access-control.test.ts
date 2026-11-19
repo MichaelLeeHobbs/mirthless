@@ -1,11 +1,6 @@
-// ===========================================
-// Docs guard: docs/user/access-control.md
-// ===========================================
-// Admins decide who gets which role from this page, so its role matrix must be
-// the built-in roles as migration 0018 writes them (db/seeds/roles.ts), cell for cell. That every permission guards some route is
-// checked in routes/__tests__/route-permissions.test.ts; how each PHI or
-// destructive endpoint answers each role is tested over HTTP in
-// routes/__tests__/role-access.test.ts.
+// Admins assign roles from this page, so its matrix must match the role seed cell for cell.
+// That every permission guards some route is checked in routes/__tests__/route-permissions.test.ts;
+// how each PHI or destructive endpoint answers each role, in routes/__tests__/role-access.test.ts.
 
 import { describe, it, expect } from 'vitest';
 import { PERMISSIONS, SCOPE_PROMISE } from '@galvanigraph/core-models';

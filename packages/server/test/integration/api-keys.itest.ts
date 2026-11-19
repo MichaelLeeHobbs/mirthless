@@ -1,9 +1,4 @@
-// ===========================================
-// API keys (real Postgres, #267 slice 12a)
-// ===========================================
-// A key is its own principal (D-313): issued within the issuer's grants, now
-// and until it ends, sent as a bearer token only, refused the same way for
-// every failure, and never listed, signed in or managed as a person.
+// A key is its own principal (D-313).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -33,7 +28,6 @@ describeIntegration('API keys (real Postgres)', () => {
     return made;
   }
 
-  /** A role of these permissions, held on every channel by a new user, until `until` when given. */
   async function holderOf(permissions: readonly string[], until?: Date): Promise<TestUser> {
     const name = `itest-keys-${randomUUID().slice(0, 8)}`;
     const role = await mods.pool.query<{ id: string }>('INSERT INTO roles (name) VALUES ($1) RETURNING id', [name]);
@@ -127,7 +121,6 @@ describeIntegration('API keys (real Postgres)', () => {
       ];
       for (const a of answers) expect(a.status).toBe(401);
       expect(new Set(answers.map((a) => a.body)).size).toBe(1);
-      // A person's token in the URL alongside a key is refused too.
       expect((await raw(`/channels/${LAB_CHANNEL}?k=${encodeURIComponent(issued.token)}`, { headers: { authorization: `Bearer ${admin.token}` } })).status).toBe(401);
     });
 
@@ -258,7 +251,6 @@ describeIntegration('API keys (real Postgres)', () => {
       const wide = await issue(admin, { name: 'Wide', permissions: ['messages:read'], groupIds: null, expiresAt: inDays(1), reason: 'Nightly extract' });
       expect(wide.status).toBe(201);
       expect(wide.data!.key.reason).toBe('Nightly extract');
-      // Scoped to groups, it needs no reason.
       expect((await issue(admin, { name: 'Scoped', permissions: ['messages:read'], groupIds: [lab], expiresAt: inDays(1) })).status).toBe(201);
     });
 

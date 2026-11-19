@@ -1,7 +1,3 @@
-// ===========================================
-// Notification Store Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useNotificationStore } from '../notification.store.js';
 

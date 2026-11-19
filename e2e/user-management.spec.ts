@@ -1,12 +1,4 @@
-// ===========================================
-// User Management E2E Tests
-// ===========================================
-// Creates a user from the Users page, changes its role, locks it out with
-// wrong passwords and unlocks it, then disables it.
-//
-// Users can't be deleted, only disabled, so each run creates a user with a
-// name of its own and disables it at the end. Cleanup disables any enabled
-// user an earlier or interrupted run left behind.
+// Users can't be deleted, only disabled, so each run creates a user with a name of its own.
 
 import { test, expect, request, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -38,7 +30,6 @@ async function testUser(): Promise<UserRow> {
   return user as UserRow;
 }
 
-/** Disable every enabled user this spec created, in this run or an interrupted one. */
 async function disableTestUsers(): Promise<void> {
   const users = await getData<UserRow[]>(api, '/users');
   for (const user of users) {
@@ -47,7 +38,7 @@ async function disableTestUsers(): Promise<void> {
   }
 }
 
-/** Try to log in as the test user and return the error code, or 'OK' when it succeeds. */
+/** The login's error code, or 'OK' when it succeeds. */
 async function loginAs(password: string): Promise<string> {
   const ctx = await request.newContext();
   try {
@@ -117,7 +108,6 @@ test.describe('User Management', () => {
   });
 
   test('unlock user', async ({ page }) => {
-    // Lock the account the way an attacker would: wrong passwords until the server locks it.
     for (let i = 1; i < MAX_FAILED_ATTEMPTS; i++) expect(await loginAs('wrong-password')).toBe('INVALID_CREDENTIALS');
     expect(await loginAs('wrong-password')).toBe('ACCOUNT_LOCKED');
     expect(await loginAs(TEST_USER.password)).toBe('ACCOUNT_LOCKED');

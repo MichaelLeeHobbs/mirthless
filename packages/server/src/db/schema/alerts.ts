@@ -1,7 +1,3 @@
-// ===========================================
-// Alerts Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, timestamp, boolean, integer, jsonb, primaryKey } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 

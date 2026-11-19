@@ -1,10 +1,3 @@
-// ===========================================
-// Script test panel
-// ===========================================
-// Under a script editor: the sample message on the left, the last run's result
-// on the right (outcome, output, logger lines, map changes, destinations, and
-// the calls a test run refused to make).
-
 import { type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';

@@ -1,8 +1,3 @@
-// ===========================================
-// Deployment Controller
-// ===========================================
-// HTTP adapter for channel deployment operations.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { recordReadOrRefuse } from '../lib/audited-read.js';

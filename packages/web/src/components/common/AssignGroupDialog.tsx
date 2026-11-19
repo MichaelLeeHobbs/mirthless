@@ -1,10 +1,4 @@
-// ===========================================
-// Assign Group Dialog
-// ===========================================
-// Lets the user change which group a channel belongs to. A channel has one
-// group in the UI (D-126); a channel the API put in several shows them all,
-// and saving keeps only the chosen one. The change is one server call, so a
-// failure leaves the channel's groups as they were (#223).
+// A channel has one group in the UI (D-126); one the API put in several shows them all, and saving keeps only the chosen one. One server call, so a failure leaves the groups as they were (#223).
 
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
@@ -45,7 +39,6 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
 
   const initialGroupId = currentGroupIds[0] ?? NONE_VALUE;
 
-  // Sync selection when data loads or channelId changes
   useEffect(() => {
     setSelectedGroupId(initialGroupId);
   }, [initialGroupId]);

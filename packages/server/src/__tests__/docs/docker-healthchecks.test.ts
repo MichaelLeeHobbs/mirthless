@@ -1,19 +1,12 @@
-// ===========================================
-// Repo guard: health checks in docker/docker-compose.prod.yml
-// ===========================================
-// A health check runs inside its container, where `localhost` can resolve to
-// ::1 before 127.0.0.1 (it does in the nginx alpine image). nginx's `listen 80;`
-// binds IPv4 only, so a check on http://localhost was refused on every run and
-// the web container stayed unhealthy while it served traffic (#306). Checks
-// name 127.0.0.1 instead. nginx does not also listen on [::] because that line
-// stops it from starting on a host with IPv6 turned off.
+// Inside a container `localhost` can resolve to ::1 first (it does in the nginx alpine image),
+// and nginx's `listen 80;` binds IPv4 only, so a check on localhost was refused every run (#306).
+// nginx does not also listen on [::]: that line stops it starting on a host with IPv6 turned off.
 
 import { describe, it, expect } from 'vitest';
 import { readRepoFile } from '../../../test/markdown.js';
 
 const COMPOSE = 'docker/docker-compose.prod.yml';
 
-/** The URLs that `test:` lines in the file fetch, comments skipped. */
 function healthCheckUrls(text: string): readonly string[] {
   const urls: string[] = [];
   for (const line of text.split('\n')) {

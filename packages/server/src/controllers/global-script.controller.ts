@@ -1,8 +1,3 @@
-// ===========================================
-// Global Script Controller
-// ===========================================
-// Handles HTTP requests for global scripts GET/PUT.
-
 import type { Request, Response } from 'express';
 import type { UpdateGlobalScriptsInput } from '@galvanigraph/core-models';
 import { GlobalScriptService } from '../services/global-script.service.js';

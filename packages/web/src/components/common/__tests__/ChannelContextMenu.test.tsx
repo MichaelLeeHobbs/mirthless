@@ -1,14 +1,8 @@
-// ===========================================
-// Channel Context Menu Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import type { ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
-
-// ----- Mocks -----
 
 const deployMutate = vi.fn();
 const toggleEnabledMutate = vi.fn();

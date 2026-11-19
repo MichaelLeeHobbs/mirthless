@@ -1,10 +1,4 @@
-// ===========================================
-// Collections Page
-// ===========================================
-// Manage collections: define name/indexed fields/TTL. The name opens the
-// records grid (CollectionRecordsPage).
-// Collections are the keyed record store channel scripts read/write via
-// getCollection(). See docs/design/10-collections.md.
+// Design: docs/design/10-collections.md.
 
 import { useState, type ReactNode } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router';

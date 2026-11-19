@@ -1,9 +1,3 @@
-// ===========================================
-// Item order actions
-// ===========================================
-// Move up, move down and remove for a filter rule or transformer step. Sits at
-// the end of the item's settings row rather than on a row of its own.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';

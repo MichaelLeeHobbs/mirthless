@@ -1,8 +1,4 @@
-// ===========================================
-// Auth Service — audit trail for rejected logins and logout
-// ===========================================
-// Every rejected login (unknown user, locked, disabled, wrong password) and
-// every logout must reach the audit log.
+// Every rejected login and every logout must reach the audit log.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

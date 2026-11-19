@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Scripts Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 
@@ -12,7 +8,7 @@ export const channelScripts = pgTable('channel_scripts', {
     .references(() => channels.id, { onDelete: 'cascade' }),
   scriptType: varchar('script_type', { length: 30 }).notNull(),
   script: text('script').notNull().default(''),
-  /** JAVASCRIPT or TYPESCRIPT. Rows from before languages were stored are JavaScript. */
+  /** JAVASCRIPT or TYPESCRIPT. */
   language: varchar('language', { length: 20 }).notNull().default('JAVASCRIPT'),
 }, (table) => [
   uniqueIndex('channel_scripts_channel_type').on(table.channelId, table.scriptType),

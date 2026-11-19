@@ -1,8 +1,3 @@
-// ===========================================
-// Event list and export query strings
-// ===========================================
-// Pins the exact strings both builders send, parameter order included.
-
 import { describe, it, expect } from 'vitest';
 import { buildEventQueryString } from '../use-events.js';
 import { buildExportUrl } from '../use-event-export.js';

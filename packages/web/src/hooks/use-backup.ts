@@ -1,25 +1,15 @@
-// ===========================================
-// Backup/Restore API Hooks
-// ===========================================
-// TanStack Query hooks for server backup and restore.
-
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import type { ServerRestoreResult } from '@galvanigraph/core-models';
-
-// ----- Types -----
 
 interface RestoreInput {
   readonly backup: unknown;
   readonly collisionMode: 'SKIP' | 'OVERWRITE';
 }
 
-// ----- Hooks -----
-
-/** Download server backup as JSON blob. */
 export function useBackup(): ReturnType<typeof useMutation<Blob, Error, string>> {
   return useMutation({
-    /** `reason`: why the backup is taken, recorded in the audit log and the file's exportInfo. */
+    /** The server records `reason` in the audit log and the file's exportInfo. */
     mutationFn: async (reason: string) => {
       const result = await api.get<unknown>(`/system/backup?reason=${encodeURIComponent(reason)}`);
       if (!result.success) throw new Error(result.error.message);
@@ -31,7 +21,6 @@ export function useBackup(): ReturnType<typeof useMutation<Blob, Error, string>>
   });
 }
 
-/** Restore server from backup payload. */
 export function useRestore(): ReturnType<typeof useMutation<ServerRestoreResult, Error, RestoreInput>> {
   return useMutation({
     mutationFn: async (input: RestoreInput) => {

@@ -1,11 +1,5 @@
-// ===========================================
-// Connection Test Service: Kafka and AMQP
-// ===========================================
-// The broker checks themselves (testKafkaConnection, testAmqpConnection) run
-// against real brokers in the connectors integration suite; here they are
-// replaced so the tester's own work is checked: schema validation, the SSRF
-// guard on every broker host, certificate resolution, and how a broker
-// failure is reported.
+// testKafkaConnection and testAmqpConnection run against real brokers in the
+// connectors integration suite, so they are replaced here.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

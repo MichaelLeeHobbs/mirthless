@@ -1,11 +1,3 @@
-// ===========================================
-// Connection Test Service
-// ===========================================
-// Stateless connector connectivity testers. Each connector type has a
-// dedicated tester that verifies the target is reachable. All testers
-// enforce a 10-second timeout via AbortController and measure latency.
-// Returns Result<ConnectionTestResult> — never throws.
-
 import * as net from 'node:net';
 import * as https from 'node:https';
 import * as dns from 'node:dns/promises';
@@ -48,32 +40,24 @@ import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from
 
 const nodeRequire = createRequire(import.meta.url);
 
-// ----- Constants -----
-
 const TEST_TIMEOUT_MS = 10_000;
-/** How long to wait for an SFTP session to close after a test before giving up on it. */
 const SFTP_CLOSE_TIMEOUT_MS = 2_000;
 
-// ----- Injectable Factories (for testing) -----
-
-/** What the database test needs from a connector pool: connect (create checks the connection) and close. */
+/** `create` checks the connection. */
 type TestPool = Pick<DatabasePool, 'create' | 'destroy'>;
 
-/** The database connectors' pool for a vendor, so the test speaks the same protocol as the connector. */
+/** The connectors' own pool, so the test speaks the same protocol as the connector. */
 type PoolFactory = (vendor: DatabaseVendor) => TestPool;
 
-/** nodemailer transport interface for verify. */
 interface SmtpVerifyTransport {
   verify(): Promise<boolean>;
   close(): void;
 }
 
-/** nodemailer transport factory. */
 type SmtpTransportFactory = (config: Record<string, unknown>) => SmtpVerifyTransport;
 
 const defaultPoolFactory: PoolFactory = createPool;
 
-/** Default nodemailer transport factory. */
 function defaultSmtpTransportFactory(config: Record<string, unknown>): SmtpVerifyTransport {
   const nodemailer = nodeRequire('nodemailer') as {
     createTransport: (opts: Record<string, unknown>) => SmtpVerifyTransport;
@@ -81,43 +65,37 @@ function defaultSmtpTransportFactory(config: Record<string, unknown>): SmtpVerif
   return nodemailer.createTransport(config);
 }
 
-/** Module-level factories. Overridable for tests. */
 let poolFactory: PoolFactory = defaultPoolFactory;
 let smtpTransportFactory: SmtpTransportFactory = defaultSmtpTransportFactory;
 let sftpClientFactory: SftpClientFactory = createSsh2SftpClient;
 
-/** Override pool factory (for testing). */
+/** Tests only. */
 export function setPoolFactory(factory: PoolFactory): void {
   poolFactory = factory;
 }
 
-/** Override SMTP transport factory (for testing). */
+/** Tests only. */
 export function setSmtpTransportFactory(factory: SmtpTransportFactory): void {
   smtpTransportFactory = factory;
 }
 
-/** Override the SFTP client factory (for testing). */
+/** Tests only. */
 export function setSftpClientFactory(factory: SftpClientFactory): void {
   sftpClientFactory = factory;
 }
 
-/** Reset factories to defaults (for testing). */
+/** Tests only. */
 export function resetFactories(): void {
   poolFactory = defaultPoolFactory;
   smtpTransportFactory = defaultSmtpTransportFactory;
   sftpClientFactory = createSsh2SftpClient;
 }
 
-// ----- SSRF Protection -----
-
 /**
- * SSRF guard: reject localhost names, reserved IP literals (loopback, link-local
- * cloud metadata, multicast...) and DNS names (or decimal/hex encodings) that
- * RESOLVE to one. Private networks are allowed: the endpoints an administrator
- * tests (MLLP, databases, SFTP) live there, and a deployed channel reaches them
- * anyway (D-262). The ranges are the engine's (`sandbox/ssrf.ts`).
- * Unresolvable hosts are allowed through; the connection attempt itself will fail
- * loudly, which is not an SSRF exposure.
+ * The ranges are the engine's (`sandbox/ssrf.ts`). Private networks are
+ * allowed: the endpoints an administrator tests live there, and a deployed
+ * channel reaches them anyway (D-262). An unresolvable host is let through: the
+ * connection attempt itself fails loudly, which is not an SSRF exposure.
  */
 async function assertHostAllowed(hostname: string): Promise<void> {
   // pg reads a host starting with "/" as a Unix socket directory: a local server
@@ -149,26 +127,19 @@ async function assertHostAllowed(hostname: string): Promise<void> {
   }
 }
 
-// ----- Types -----
-
 type Tester = (
   mode: string,
   properties: Readonly<Record<string, unknown>>,
 ) => Promise<ConnectionTestResult>;
 
-// ----- Helpers -----
-
-/** Create a successful test result. */
 function successResult(message: string, latencyMs: number): ConnectionTestResult {
   return { success: true, message, latencyMs: Math.round(latencyMs * 100) / 100 };
 }
 
-/** Create a failed test result. */
 function failureResult(message: string, latencyMs: number): ConnectionTestResult {
   return { success: false, message, latencyMs: Math.round(latencyMs * 100) / 100 };
 }
 
-/** Extract string property or throw with descriptive error. */
 function requireString(props: Readonly<Record<string, unknown>>, key: string): string {
   const val = props[key];
   if (typeof val !== 'string' || val.length === 0) {
@@ -177,7 +148,6 @@ function requireString(props: Readonly<Record<string, unknown>>, key: string): s
   return val;
 }
 
-/** Extract number property or throw with descriptive error. */
 function requireNumber(props: Readonly<Record<string, unknown>>, key: string): number {
   const val = props[key];
   if (typeof val !== 'number' || !Number.isFinite(val)) {
@@ -186,9 +156,6 @@ function requireNumber(props: Readonly<Record<string, unknown>>, key: string): n
   return val;
 }
 
-// ----- Individual Testers -----
-
-/** Test TCP connectivity to host:port (used for TCP_MLLP and DICOM). */
 async function testTcpConnect(host: string, port: number): Promise<ConnectionTestResult> {
   await assertHostAllowed(host);
   const start = performance.now();
@@ -214,7 +181,6 @@ async function testTcpConnect(host: string, port: number): Promise<ConnectionTes
   });
 }
 
-/** TCP/MLLP tester — verifies TCP connectivity. */
 const testTcpMllp: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
@@ -222,10 +188,8 @@ const testTcpMllp: Tester = async (_mode, props) => {
 };
 
 /**
- * HTTPS tester — resolves the selected certificates and performs a REAL TLS (or
- * mTLS) handshake with a HEAD request, so a passing test reflects the actual
- * ca/cert/key/rejectUnauthorized the connector will deploy with. Fails loud when
- * a referenced certificate cannot be resolved.
+ * A real TLS (or mTLS) handshake with the resolved certificates, so a passing
+ * test reflects the ca/cert/key/rejectUnauthorized the connector will deploy with.
  */
 async function testHttpsWithTls(
   url: string,
@@ -264,12 +228,10 @@ async function testHttpsWithTls(
 }
 
 /**
- * HTTPS SOURCE tester — an HTTPS listener has no outbound URL to connect to, so
- * "test connection" instead resolves the selected server certificate and runs a
- * REAL loopback TLS handshake using the resolved cert/key. This fails loud when
- * the certificate can't be resolved, lacks a private key, or the cert and key do
- * not form a valid pair (caught by Node's secure-context creation) — i.e. exactly
- * the failures that would otherwise only surface when the channel is deployed.
+ * An HTTPS listener has no outbound URL, so this runs a real loopback TLS
+ * handshake with the resolved server cert and key. It fails on what would
+ * otherwise surface only at deploy: an unresolvable certificate, no private
+ * key, or a cert and key that do not pair.
  */
 async function testHttpsSourceHandshake(
   props: Readonly<Record<string, unknown>>,
@@ -324,10 +286,7 @@ async function testHttpsSourceHandshake(
   });
 }
 
-/** HTTP tester — sends HEAD request to URL (plain fetch, or real TLS for HTTPS). */
 const testHttp: Tester = async (mode, props) => {
-  // HTTPS source listeners have no outbound URL — validate the server cert via a
-  // real loopback handshake instead of requiring a `url` they never carry.
   if (mode === 'SOURCE' && props['scheme'] === 'HTTPS') {
     return testHttpsSourceHandshake(props);
   }
@@ -362,9 +321,8 @@ const testHttp: Tester = async (mode, props) => {
 };
 
 /**
- * File tester — verifies path exists and is readable/writable. A path outside
- * FILE_CONNECTOR_ROOTS is refused before it is touched, so the button cannot
- * tell anyone what exists elsewhere on the server (D-315).
+ * A path outside FILE_CONNECTOR_ROOTS is refused before it is touched, so the
+ * button cannot tell anyone what exists elsewhere on the server (D-315).
  */
 const testFile: Tester = async (mode, props) => {
   const directory = requireString(props, 'directory');
@@ -385,7 +343,6 @@ const testFile: Tester = async (mode, props) => {
   }
 };
 
-/** Database tester — connects with the connector's own pool for the vendor (PostgreSQL by default). */
 const testDatabase: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
@@ -418,7 +375,6 @@ const testDatabase: Tester = async (_mode, props) => {
     : failureResult(`Database connection failed: ${created.error.message}`, latency);
 };
 
-/** SMTP tester — verifies transport connectivity. */
 const testSmtp: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
@@ -451,7 +407,6 @@ const testSmtp: Tester = async (_mode, props) => {
   }
 };
 
-/** FHIR tester — fetches /metadata endpoint. */
 const testFhir: Tester = async (_mode, props) => {
   const baseUrl = requireString(props, 'baseUrl');
   const parsed = new URL(baseUrl);
@@ -483,41 +438,32 @@ const testFhir: Tester = async (_mode, props) => {
   }
 };
 
-/** DICOM tester — verifies TCP connectivity to host:port. */
 const testDicom: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
   return testTcpConnect(host, port);
 };
 
-/** Channel tester — always succeeds (internal connector). */
 const testChannel: Tester = async () => {
   return successResult('Channel connector is internal — always available', 0);
 };
 
-/** JavaScript tester — always succeeds (script-based connector). */
 const testJavascript: Tester = async () => {
   return successResult('JavaScript connector is script-based — always available', 0);
 };
 
-/** Email (IMAP) tester — verifies TCP connectivity to IMAP host:port. */
 const testEmail: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
   return testTcpConnect(host, port);
 };
 
-/** An optional string property; undefined unless it is a non-empty string. */
 function optionalString(props: Readonly<Record<string, unknown>>, key: string): string | undefined {
   const val = props[key];
   return typeof val === 'string' && val.length > 0 ? val : undefined;
 }
 
-/**
- * SFTP connection options read as the registry's SFTP factories read them
- * (port 22 and host key checking on by default). Refuses settings the
- * connector could never connect with, before any network I/O.
- */
+/** Reads the options as the registry's SFTP factories read them. */
 function readSftpOptions(props: Readonly<Record<string, unknown>>): SftpConnectionOptions {
   const options: SftpConnectionOptions = {
     host: requireString(props, 'host'),
@@ -539,7 +485,7 @@ function readSftpOptions(props: Readonly<Record<string, unknown>>): SftpConnecti
   return options;
 }
 
-/** Close an SFTP session after a test. The result is already decided, so a failed or slow close does not change it. */
+/** The result is already decided, so a failed or slow close does not change it. */
 async function closeSftp(client: SftpClient): Promise<void> {
   try {
     await withTimeout(client.end(), SFTP_CLOSE_TIMEOUT_MS, 'SFTP close');
@@ -549,9 +495,8 @@ async function closeSftp(client: SftpClient): Promise<void> {
 }
 
 /**
- * Start an SFTP connect and return it with a close that also covers a connect
- * still pending when the test gives up. ssh2-sftp-client's end() does nothing
- * while connect is pending, so a session that opens late is closed once it settles.
+ * ssh2-sftp-client's end() does nothing while connect is pending, so `close`
+ * also closes a session that opens after the test gives up, once it settles.
  */
 function startSftpConnect(client: SftpClient): { readonly connecting: Promise<void>; close(): Promise<void> } {
   const connecting = client.connect();
@@ -569,11 +514,6 @@ function startSftpConnect(client: SftpClient): { readonly connecting: Promise<vo
   };
 }
 
-/**
- * The result of an SFTP session that logged in. A regular file where the
- * remote directory should be fails both directions. A missing path fails a
- * source; a destination creates its directory on first send.
- */
 function sftpPathResult(
   mode: string,
   kind: SftpPathKind,
@@ -589,11 +529,6 @@ function sftpPathResult(
   return failureResult(`SFTP connected to ${target} but remote path ${path} was not found`, latency);
 }
 
-/**
- * SFTP tester: connect and log in with the configured credentials and host
- * key, check the remote path, then close. The connect and the check together
- * are bounded by the test timeout.
- */
 const testSftp: Tester = async (mode, props) => {
   const options = readSftpOptions(props);
   const remoteDirectory = requireString(props, 'remoteDirectory');
@@ -618,7 +553,6 @@ const testSftp: Tester = async (mode, props) => {
   }
 };
 
-/** Parse props with a connector schema, failing as invalid input with the schema's reasons. */
 function parseProps<S extends z.ZodType>(schema: S, props: unknown): z.output<S> {
   const parsed = schema.safeParse(props);
   if (!parsed.success) {
@@ -627,7 +561,6 @@ function parseProps<S extends z.ZodType>(schema: S, props: unknown): z.output<S>
   return parsed.data;
 }
 
-/** Certificate ids swapped for PEM, as at deploy, then read the way the connector reads them. */
 async function queueTls(props: Readonly<Record<string, unknown>>): Promise<ReturnType<typeof readQueueTls>> {
   const resolved = await resolveQueueTls(props);
   if (!resolved.ok) {
@@ -636,7 +569,6 @@ async function queueTls(props: Readonly<Record<string, unknown>>): Promise<Retur
   return readQueueTls(resolved.value);
 }
 
-/** Run a broker check under the test timeout and report it as a result. */
 async function brokerCheck(label: string, check: () => Promise<string>): Promise<ConnectionTestResult> {
   const start = performance.now();
   try {
@@ -648,11 +580,7 @@ async function brokerCheck(label: string, check: () => Promise<string>): Promise
   }
 }
 
-/**
- * Kafka tester: connect to the bootstrap brokers with the configured TLS and
- * SASL and read cluster metadata. A source, or a destination whose topic does
- * not vary per message, also checks that the topic exists.
- */
+/** A topic that varies per message (`${...}`) is not checked. */
 const testKafka: Tester = async (mode, props) => {
   const config = parseProps(mode === 'SOURCE' ? kafkaSourcePropertiesSchema : kafkaDestinationPropertiesSchema, props);
   for (const broker of config.brokers.split(',')) {
@@ -663,10 +591,6 @@ const testKafka: Tester = async (mode, props) => {
   return brokerCheck('Kafka', () => testKafkaConnection({ ...config, tls }, topic));
 };
 
-/**
- * AMQP tester: connect and log in with the configured TLS and credentials, then
- * check that the source's queue, or the destination's exchange, exists.
- */
 const testAmqp: Tester = async (mode, props) => {
   const tls = await queueTls(props);
   if (mode === 'SOURCE') {
@@ -678,8 +602,6 @@ const testAmqp: Tester = async (mode, props) => {
   await assertHostAllowed(config.host);
   return brokerCheck('AMQP', () => testAmqpConnection({ ...config, tls }, { exchange: config.exchange }));
 };
-
-// ----- Tester Registry -----
 
 const TESTERS: Readonly<Record<string, Tester>> = {
   TCP_MLLP: testTcpMllp,
@@ -697,10 +619,7 @@ const TESTERS: Readonly<Record<string, Tester>> = {
   AMQP: testAmqp,
 };
 
-// ----- Public API -----
-
 export class ConnectionTestService {
-  /** Test connectivity for a given connector type, mode, and properties. */
   static async testConnection(
     connectorType: string,
     mode: string,
@@ -740,9 +659,7 @@ export class ConnectionTestService {
   }
 }
 
-// ----- Test Helpers -----
-
-/** Exported for testing only — not part of the public API. */
+/** Tests only. */
 export const _testing = {
   assertHostAllowed,
   TEST_TIMEOUT_MS,

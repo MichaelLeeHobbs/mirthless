@@ -1,10 +1,3 @@
-// ===========================================
-// Script reference button
-// ===========================================
-// A toolbar button that opens a searchable list of what the script can use
-// (message variables, sandbox functions, code templates, map shortcuts) and
-// inserts the chosen one at the cursor, with a placeholder per parameter.
-
 import { type ReactNode, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -30,7 +23,7 @@ interface ScriptReferenceButtonProps {
 
 interface SnippetController { insert(template: string): void }
 
-/** Insert an entry at the cursor as a snippet, so Tab moves through its parameters. */
+/** As a snippet, so Tab moves through its parameters. */
 function insertEntry(editor: monaco.editor.IStandaloneCodeEditor, entry: ReferenceEntry): void {
   editor.focus();
   const snippets = editor.getContribution('snippetController2') as SnippetController | null;

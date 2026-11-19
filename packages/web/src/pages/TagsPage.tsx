@@ -1,8 +1,3 @@
-// ===========================================
-// Tags Page
-// ===========================================
-// Tag management: list tags, create/edit with color picker.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';

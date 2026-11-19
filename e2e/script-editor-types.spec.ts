@@ -1,10 +1,4 @@
-// ===========================================
-// Script editor type check E2E (#206)
-// ===========================================
-// The editor checks a TypeScript script as the body of the function the engine
-// runs it in, so a type error inside a top-level `return` is reported, as the
-// deploy check reports it. Nothing is saved: the global scripts are
-// server-wide, and this spec only types into the editor (D-289).
+// Nothing is saved: the global scripts are server-wide (D-289).
 
 import { test, expect } from '@playwright/test';
 import { login } from './fixtures/auth.js';

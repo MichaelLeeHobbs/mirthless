@@ -1,11 +1,5 @@
-// ===========================================
-// Sandbox ambient types ↔ Monaco defs drift guard
-// ===========================================
-// The engine ships the ambient sandbox types (sandbox-globals.d.ts) for
-// authoring TS channel scripts; core-models builds the same surface as a string
-// (scripting/sandbox-declarations.ts) for the web editor and the deploy check.
-// This test fails if the two declare a different set of global names, so the
-// copies can't silently drift.
+// The "web SANDBOX_TYPE_DEFS" in the test name are core-models'
+// scripting/sandbox-declarations.ts.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -14,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 const dtsPath = fileURLToPath(new URL('../../sandbox-globals.d.ts', import.meta.url));
 const webPath = fileURLToPath(new URL('../../../core-models/src/scripting/sandbox-declarations.ts', import.meta.url));
 
-/** Extract the set of `declare var|function` global names from a source string. */
 function declaredGlobals(source: string): Set<string> {
   const names = new Set<string>();
   const re = /declare\s+(?:var|function)\s+(\$?\w+)/g;

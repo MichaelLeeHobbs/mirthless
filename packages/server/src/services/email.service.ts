@@ -1,16 +1,7 @@
-// ===========================================
-// Email Service
-// ===========================================
-// Sends emails via nodemailer using SMTP settings stored in the database.
-// Used by the AlertManager to dispatch EMAIL alert actions.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { createNodemailerTransport, type SmtpTransport as ConnectorSmtpTransport } from '@galvanigraph/connectors';
 import { SettingsService } from './settings.service.js';
 import logger from '../lib/logger.js';
-
-// ----- Types -----
 
 export interface SmtpConfig {
   readonly host: string;
@@ -21,19 +12,11 @@ export interface SmtpConfig {
   readonly authPass: string;
 }
 
-/** Nodemailer transport interface: the SMTP connector's `{ sendMail, close }`. */
 export type SmtpTransport = ConnectorSmtpTransport;
 
-/** Factory function to create an SMTP transport. */
 export type TransportFactory = (config: SmtpConfig) => SmtpTransport;
 
-// ----- Transport Factory -----
-
-/**
- * Default transport factory: the SMTP connector's nodemailer transport.
- * Server mail never asks for STARTTLS (`requireTLS: false`); the builder sends
- * auth only when a user is set.
- */
+/** The builder sends auth only when a user is set. */
 function defaultTransportFactory(config: SmtpConfig): SmtpTransport {
   return createNodemailerTransport({
     host: config.host,
@@ -44,22 +27,18 @@ function defaultTransportFactory(config: SmtpConfig): SmtpTransport {
   });
 }
 
-/** Module-level transport factory. Overridable for tests. */
 let transportFactory: TransportFactory = defaultTransportFactory;
 
-/** Override the transport factory (for testing). */
+/** Tests only. */
 export function setTransportFactory(factory: TransportFactory): void {
   transportFactory = factory;
 }
 
-/** Reset to default transport factory (for testing). */
+/** Tests only. */
 export function resetTransportFactory(): void {
   transportFactory = defaultTransportFactory;
 }
 
-// ----- Helpers -----
-
-/** Read a single setting key, returning empty string if not found. */
 async function readSettingValue(key: string): Promise<Result<string>> {
   const result = await SettingsService.getByKey(key);
   if (!result.ok) {
@@ -69,10 +48,7 @@ async function readSettingValue(key: string): Promise<Result<string>> {
   return { ok: true as const, value: result.value.value ?? '', error: null };
 }
 
-// ----- Service -----
-
 export class EmailService {
-  /** Read SMTP configuration from system settings. */
   static async getSmtpConfig(): Promise<Result<SmtpConfig>> {
     return tryCatch(async () => {
       const [host, port, secure, from, authUser, authPass] = await Promise.all([
@@ -84,7 +60,6 @@ export class EmailService {
         readSettingValue('smtp.auth_pass'),
       ]);
 
-      // All reads should succeed (readSettingValue handles NOT_FOUND)
       if (!host.ok) throw new Error(`Failed to read smtp.host: ${host.error.message}`);
       if (!port.ok) throw new Error(`Failed to read smtp.port: ${port.error.message}`);
       if (!secure.ok) throw new Error(`Failed to read smtp.secure: ${secure.error.message}`);
@@ -107,7 +82,6 @@ export class EmailService {
     });
   }
 
-  /** Send an email using SMTP settings from the database. */
   static async sendMail(
     to: readonly string[],
     subject: string,

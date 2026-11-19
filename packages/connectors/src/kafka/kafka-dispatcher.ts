@@ -1,10 +1,4 @@
-// ===========================================
-// Kafka Dispatcher (Destination Connector)
-// ===========================================
-// Publishes each message to a topic and reports SENT only after every in-sync
-// replica has it (acks = all). Topic, key and header values may use `${name}`,
-// filled per message (D-252). A topic naming a variable the message lacks is an
-// error rather than a publish to a topic called `${...}`.
+// Topic, key and header values may use `${name}`, filled per message (D-252).
 
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';

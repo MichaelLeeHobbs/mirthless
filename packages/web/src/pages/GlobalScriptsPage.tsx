@@ -1,9 +1,3 @@
-// ===========================================
-// Global Scripts Page
-// ===========================================
-// 4-tab Monaco editor page for global scripts (deploy, undeploy, preprocessor, postprocessor).
-// Modeled after ScriptsTab.tsx.
-
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
@@ -57,7 +51,6 @@ export function GlobalScriptsPage(): ReactNode {
   const [dirty, setDirty] = useState(false);
   const [blockerConfirmOpen, setBlockerConfirmOpen] = useState(false);
 
-  // Load data into form
   useEffect(() => {
     if (data) {
       setScripts({
@@ -76,7 +69,6 @@ export function GlobalScriptsPage(): ReactNode {
     }
   }, [data]);
 
-  // Dirty tracking — block navigation
   const blocker = useBlocker(dirty);
   useBeforeUnload(dirty);
 
@@ -148,7 +140,6 @@ export function GlobalScriptsPage(): ReactNode {
         <LoadingBlock label="Loading scripts" />
       ) : (
         <>
-          {/* Tabs */}
           <Tabs
             value={activeTab}
             onChange={(_e, v: number) => { setActiveTab(v); }}
@@ -159,7 +150,6 @@ export function GlobalScriptsPage(): ReactNode {
             ))}
           </Tabs>
 
-          {/* Editor */}
           <Box sx={{ flexGrow: 1, minHeight: 0, mt: 2 }}>
             {/* One editor per tab, so undo stays in the tab it was typed in (#228). */}
             <ScriptEditor
@@ -177,7 +167,6 @@ export function GlobalScriptsPage(): ReactNode {
         </>
       )}
 
-      {/* Navigation blocker dialog */}
       <ConfirmDialog
         open={blockerConfirmOpen}
         title="Unsaved Changes"

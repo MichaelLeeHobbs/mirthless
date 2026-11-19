@@ -1,9 +1,4 @@
-// ===========================================
-// Dashboard E2E Tests
-// ===========================================
-// The summary cards and status table are checked against a fixed channel list
-// served in place of the statistics and status APIs, because other specs add
-// and deploy channels in the shared database while these run.
+// Statistics and status are stubbed: other specs add and deploy channels in the shared database.
 
 import { test, expect, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -17,7 +12,6 @@ function stat(channelId: string, channelName: string, counts: { received: number
   };
 }
 
-/** Three channels: one running with an error and a queue, one stopped, one never deployed. */
 const STATISTICS = [
   stat('00000000-0000-4000-8000-0000000000a1', 'E2E Dash Alpha', { received: 10, errored: 1, queued: 2 }),
   stat('00000000-0000-4000-8000-0000000000a2', 'E2E Dash Bravo', { received: 5, errored: 0, queued: 0 }),
@@ -62,8 +56,7 @@ test.describe('Dashboard', () => {
     await serveFixedChannels(page);
     await page.goto('/');
 
-    // Each tile is its label over its number. Labels like "Stopped" also appear in the
-    // table, so look only inside the row of tiles (the parent of the Total Channels tile).
+    // Labels like "Stopped" also appear in the table, so look only inside the row of tiles.
     const cards = page.getByText('Total Channels', { exact: true }).locator('xpath=../..');
     const tile = (label: string): ReturnType<Page['locator']> =>
       cards.getByText(label, { exact: true }).locator('xpath=..');
@@ -84,7 +77,6 @@ test.describe('Dashboard', () => {
     await expect(row('E2E Dash Alpha').getByText('Started', { exact: true })).toBeVisible();
     await expect(row('E2E Dash Bravo').getByText('Stopped', { exact: true })).toBeVisible();
     await expect(row('E2E Dash Charlie').getByText('Undeployed', { exact: true })).toBeVisible();
-    // Sorted by name, one row per channel.
     await expect(page.getByRole('row', { name: /E2E Dash/ })).toHaveText([/E2E Dash Alpha/, /E2E Dash Bravo/, /E2E Dash Charlie/]);
   });
 });

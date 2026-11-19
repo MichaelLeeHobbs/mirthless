@@ -1,10 +1,3 @@
-// ===========================================
-// Connector TLS Resolver Tests
-// ===========================================
-// Verifies id->PEM resolution for HTTP source/destination connectors:
-// HTTP passthrough, HTTPS ca/client/server resolution, and fail-loud behavior
-// on missing ids or certs selected for a key-requiring role without a key.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockGetMaterialById = vi.fn();
@@ -14,8 +7,6 @@ vi.mock('../certificate.service.js', () => ({
 }));
 
 const { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls, privateKeyCertificateIds } = await import('../connector-tls-resolver.js');
-
-// ----- Helpers -----
 
 function okMaterial(certificatePem: string, privateKeyPem: string | null): unknown {
   return { ok: true, value: { certificatePem, privateKeyPem }, error: null };
@@ -32,8 +23,6 @@ const SERVER_ID = 'server-1';
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- Destination -----
 
 describe('resolveHttpDestinationTls', () => {
   it('passes props through unchanged for plain HTTP (no cert lookups)', async () => {
@@ -102,8 +91,6 @@ describe('resolveHttpDestinationTls', () => {
     expect(result.error.message).toContain('no private key');
   });
 });
-
-// ----- Source -----
 
 describe('resolveHttpSourceTls', () => {
   it('passes props through unchanged for plain HTTP', async () => {
@@ -175,8 +162,6 @@ describe('resolveHttpSourceTls', () => {
   });
 });
 
-// ----- Kafka / AMQP -----
-
 describe('resolveQueueTls', () => {
   it('passes props through unchanged when useTls is off, even with ids in the bag', async () => {
     const props = { host: 'rabbit', useTls: false, tls: { caCertId: CA_ID } };
@@ -209,8 +194,6 @@ describe('resolveQueueTls', () => {
   });
 });
 
-// ----- Stored tls bag shapes -----
-
 describe('reading the stored tls bag', () => {
   const unusable: ReadonlyArray<readonly [string, unknown]> = [
     ['absent', undefined],
@@ -223,8 +206,7 @@ describe('reading the stored tls bag', () => {
     ['a string', 'abc'],
     ['an array', []],
     ['a number', 1],
-    // Read as {} before D-277, so a channel saved through the API with tls: true deployed
-    // with an empty bag; it now fails the deploy (D-277 names true explicitly).
+    // D-277: tls: true once deployed as an empty bag; it now fails the deploy.
     ['the boolean true', true],
     ['the text "true"', 'true'],
   ];

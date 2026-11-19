@@ -1,10 +1,3 @@
-// ===========================================
-// Channel Deploy E2E Tests
-// ===========================================
-// Deploys, starts, stops and undeploys a channel of this spec's own from the
-// dashboard's bulk actions toolbar, and checks the state after each step in
-// both the row's status chip and the API.
-
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { API_BASE, adminApi, createMllpChannel, getData, removeChannel, removeChannelsNamed } from './fixtures/api.js';
@@ -13,7 +6,7 @@ import { DEPLOY_CHANNEL } from './fixtures/test-data.js';
 let api: APIRequestContext;
 let channelId = '';
 
-/** Show the dashboard as a flat table (the grouped view has no checkboxes) and select this spec's channel. */
+// Flat view: the grouped view has no checkboxes.
 async function selectChannel(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: 'flat view' }).click();
@@ -21,7 +14,6 @@ async function selectChannel(page: Page): Promise<void> {
   await expect(page.getByText('1 selected')).toBeVisible();
 }
 
-/** Click a bulk action and wait until the row's chip and the API both show the expected state. */
 async function runAction(page: Page, action: 'Deploy' | 'Start' | 'Stop' | 'Undeploy', state: string): Promise<void> {
   await selectChannel(page);
   const toolbar = page.getByText('1 selected').locator('..');
@@ -33,7 +25,6 @@ async function runAction(page: Page, action: 'Deploy' | 'Start' | 'Stop' | 'Unde
   await expect.poll(channelState).toBe(state);
 }
 
-/** The channel's state from the API. The status endpoint answers 404 for a channel that isn't deployed. */
 async function channelState(): Promise<string> {
   const res = await api.get(`${API_BASE}/channels/${channelId}/status`);
   if (res.status() === 404) return 'UNDEPLOYED';

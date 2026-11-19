@@ -1,10 +1,3 @@
-// ===========================================
-// Data Sources E2E Tests
-// ===========================================
-// Creates, edits and deletes a data source of this spec's own, and checks
-// that the password is write-only: never sent back by the API and never
-// pre-filled in the edit dialog.
-
 import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, getData } from './fixtures/api.js';
@@ -14,13 +7,11 @@ const INCOMPLETE_DS_NAME = `${TEST_DS_NAME} Incomplete`;
 
 let api: APIRequestContext;
 
-/** This spec's data sources as the API lists them. */
 async function testDataSources(): Promise<Array<Record<string, unknown> & { id: string; name: string }>> {
   const sources = await getData<Array<Record<string, unknown> & { id: string; name: string }>>(api, '/datasources');
   return sources.filter((d) => d.name.startsWith(TEST_DS_NAME));
 }
 
-/** The table row for a data source, matched on its exact name cell. */
 function sourceRow(page: Page, name: string): Locator {
   return page.getByRole('row').filter({ has: page.getByText(name, { exact: true }) });
 }
@@ -67,7 +58,6 @@ test.describe('Data Sources', () => {
     await dialog.getByLabel('Database').fill('galvanigraph');
     await dialog.getByLabel('User').fill('galvanigraph');
     await dialog.getByLabel('Password').fill('galvanigraph_dev');
-    // Read-only is the default.
     await expect(dialog.getByLabel('Read-only (recommended)')).toBeChecked();
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
@@ -88,7 +78,6 @@ test.describe('Data Sources', () => {
 
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: 'Edit Data Source' })).toBeVisible();
-    // The other fields load from the stored row; the password does not.
     await expect(dialog.getByLabel('Host')).toHaveValue('localhost');
     await expect(dialog.getByLabel('User')).toHaveValue('galvanigraph');
     await expect(dialog.getByLabel('Password (leave blank to keep)')).toHaveValue('');
@@ -108,7 +97,6 @@ test.describe('Data Sources', () => {
     await dialog.getByLabel('Host').fill('localhost');
     await dialog.getByLabel('Database').fill('galvanigraph');
     await dialog.getByLabel('User').fill('galvanigraph');
-    // Still disabled: a new data source needs a password.
     await expect(create).toBeDisabled();
     await dialog.getByLabel('Password').fill('galvanigraph_dev');
     await expect(create).toBeEnabled();

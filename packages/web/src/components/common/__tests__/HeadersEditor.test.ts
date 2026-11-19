@@ -1,7 +1,3 @@
-// ===========================================
-// coerceHeaders Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { coerceHeaders } from '../HeadersEditor.js';
 

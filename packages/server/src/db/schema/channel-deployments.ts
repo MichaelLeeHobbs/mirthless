@@ -2,7 +2,7 @@
 // Channel Deployments Table Schema
 // ===========================================
 // What each channel's last deploy deployed, so a restart brings back exactly
-// that and never the saved configuration nobody deployed (#225, D-327).
+// that and never the saved configuration nobody deployed (#225, D-328).
 // One row per channel, replaced at each deploy; CHANNEL_DEPLOYED events keep
 // the history of who deployed what and when.
 
@@ -33,7 +33,7 @@ export const channelDeployments = pgTable('channel_deployments', {
 /**
  * Channels that existed, enabled, when the upgrade adding deployment records
  * ran. The first start after it deploys each one's saved configuration and
- * records it, once (D-327). Rows are removed as each channel is adopted.
+ * records it, once (D-328). Rows are removed as each channel is adopted.
  */
 export const channelDeploymentAdoptions = pgTable('channel_deployment_adoptions', {
   channelId: uuid('channel_id').primaryKey().references(() => channels.id, { onDelete: 'cascade' }),

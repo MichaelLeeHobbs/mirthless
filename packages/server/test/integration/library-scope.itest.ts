@@ -1,11 +1,6 @@
-// ===========================================
-// Code template library links and scope (real Postgres, #266 slice 9c)
-// ===========================================
 // A library's templates are compiled into the channels it links to, so a
 // library or template write needs the permission on every linked channel,
-// before and after the change; "every channel" (null) and an empty list need
-// it on all channels. A scoped reader sees only the links in their scope and
-// a count of the rest.
+// before and after the change.
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -86,7 +81,6 @@ describeIntegration('code template library links and scope (real Postgres)', () 
     const defaulted = await library(writer);
     expect(defaulted.status).toBe(201);
     expect(defaulted.json.data?.channelIds).toEqual([LAB_CHANNEL]);
-    // An all-channel writer's library still defaults to every channel.
     expect((await library(admin)).json.data?.channelIds).toBeNull();
   });
 

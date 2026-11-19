@@ -1,14 +1,6 @@
-// ===========================================
-// Engine Integration Tests
-// ===========================================
-// Tests for AlertManager + JavaScript Connector wiring in EngineManager.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { bundleOf } from '../../../test/deployment-bundle.js';
 
-// ----- Mock Dependencies -----
-
-// Mock AlertManager
 const mockAlertManager = {
   loadAlerts: vi.fn(),
   handleEvent: vi.fn(),
@@ -18,7 +10,6 @@ const mockAlertManager = {
 
 const MockAlertManagerCtor = vi.fn().mockImplementation(function () { return mockAlertManager; });
 
-// Mock ChannelRuntime
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeStop = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
@@ -33,11 +24,9 @@ const mockChannelRuntime = {
 };
 const MockChannelRuntime = vi.fn().mockImplementation(function () { return mockChannelRuntime; });
 
-// Mock GlobalChannelMap
 const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn() };
 const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return mockGcm; });
 
-// Mock SandboxExecutor
 const mockSandboxExecute = vi.fn().mockResolvedValue({
   ok: true,
   value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
@@ -51,7 +40,6 @@ const MockVmSandboxExecutor = vi.fn().mockImplementation(function () {
   };
 });
 
-// Mock compileScript
 const mockCompileScript = vi.fn().mockResolvedValue({
   ok: true, value: { code: 'compiled-code' }, error: null,
 });
@@ -85,7 +73,6 @@ vi.mock('@galvanigraph/engine', () => ({
   }),
 }));
 
-// Mock JavaScript connectors
 const mockSetScriptRunner = vi.fn();
 const mockSetDestScriptRunner = vi.fn();
 
@@ -113,7 +100,6 @@ const MockJavaScriptDispatcher = vi.fn().mockImplementation(function () {
   };
 });
 
-// Track which connectors are returned by create* functions
 let _lastSourceConnector: unknown = null;
 let destConnectorsByCall: unknown[] = [];
 
@@ -156,7 +142,6 @@ vi.mock('@galvanigraph/connectors', () => ({
   JavaScriptDispatcher: MockJavaScriptDispatcher,
 }));
 
-// Mock MessageService
 vi.mock('../message.service.js', () => ({
   MessageService: {
     createMessage: vi.fn().mockResolvedValue({ ok: true, value: { messageId: 1, correlationId: '00000000-0000-0000-0000-000000000099' }, error: null }),
@@ -186,7 +171,6 @@ vi.mock('../config-map.service.js', () => ({
   ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
 }));
 
-// Mock AlertService
 const mockAlertServiceList = vi.fn();
 const mockAlertServiceGetById = vi.fn();
 const mockAlertServiceGetByIds = vi.fn();
@@ -214,8 +198,6 @@ vi.mock('../../config/index.js', () => ({
 
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
-
-// ----- Fixtures -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const ALERT_ID = '00000000-0000-0000-0000-aaaaaaaaaaaa';
@@ -276,8 +258,6 @@ function makeAlertDetail(id: string, channelIds: readonly string[]): Record<stri
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   _lastSourceConnector = null;
@@ -294,8 +274,6 @@ beforeEach(() => {
     ok: true, value: [], error: null,
   });
 });
-
-// ----- Tests -----
 
 describe('EngineManager', () => {
   describe('deploy with AlertManager', () => {
@@ -317,7 +295,7 @@ describe('EngineManager', () => {
         value: {
           data: [
             makeAlertSummary(ALERT_ID, true),
-            makeAlertSummary(ALERT_ID_2, false), // disabled, should be skipped
+            makeAlertSummary(ALERT_ID_2, false), // disabled
           ],
           pagination: { page: 1, pageSize: 1000, total: 2, totalPages: 1 },
         },
@@ -332,11 +310,9 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(makeChannel() as never));
 
-      // Should batch-fetch only the enabled alert IDs
       expect(mockAlertServiceGetByIds).toHaveBeenCalledOnce();
       expect(mockAlertServiceGetByIds).toHaveBeenCalledWith([ALERT_ID]);
 
-      // Should load 1 alert (enabled, empty channelIds = all channels)
       expect(mockAlertManager.loadAlerts).toHaveBeenCalledOnce();
       const loadedAlerts = mockAlertManager.loadAlerts.mock.calls[0]![0] as readonly unknown[];
       expect(loadedAlerts).toHaveLength(1);
@@ -356,7 +332,6 @@ describe('EngineManager', () => {
         },
         error: null,
       });
-      // First alert scoped to a different channel, second to all
       mockAlertServiceGetByIds.mockResolvedValue({
         ok: true,
         value: [
@@ -370,7 +345,7 @@ describe('EngineManager', () => {
       await engine.deploy(bundleOf(makeChannel() as never));
 
       const loadedAlerts = mockAlertManager.loadAlerts.mock.calls[0]![0] as readonly unknown[];
-      // Only ALERT_ID_2 (empty channelIds = all channels) should be included
+      // Empty channelIds means all channels.
       expect(loadedAlerts).toHaveLength(1);
       expect((loadedAlerts[0] as { id: string }).id).toBe(ALERT_ID_2);
     });
@@ -434,10 +409,8 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(makeChannel() as never));
 
-      // Verify AlertManager was created and is callable
       expect(MockAlertManagerCtor).toHaveBeenCalledOnce();
-      // The onError is wired inside PipelineConfig — we verify indirectly
-      // by checking AlertManager was created with logger deps
+      // onError is wired inside PipelineConfig, so this checks it only indirectly.
       const ctorArgs = MockAlertManagerCtor.mock.calls[0]![0] as Record<string, unknown>;
       expect(ctorArgs).toHaveProperty('logger');
     });
@@ -555,7 +528,6 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never));
 
-      // Each JS destination gets its own ScriptRunner
       expect(mockSetDestScriptRunner).toHaveBeenCalledTimes(2);
     });
 
@@ -588,14 +560,12 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never));
 
-      // compileScript called once at deploy, not per-message
       expect(mockCompileScript).toHaveBeenCalledWith('return "hello";', { sourcefile: 'Test Channel/js-source.js' });
       const compileCallCountAtDeploy = mockCompileScript.mock.calls.length;
 
       const scriptRunner = mockSetScriptRunner.mock.calls[0]![0] as (script: string) => Promise<{ ok: boolean; value: unknown }>;
       const result = await scriptRunner('return "hello";');
 
-      // No additional compile call — pre-compiled script is reused
       expect(mockCompileScript.mock.calls.length).toBe(compileCallCountAtDeploy);
       expect(mockSandboxExecute).toHaveBeenCalledOnce();
       expect(result.ok).toBe(true);
@@ -635,7 +605,6 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never));
 
-      // compileScript called once at deploy with the dest script
       expect(mockCompileScript).toHaveBeenCalledWith('return msg;', { sourcefile: 'Test Channel/js-dest-1.js' });
       const compileCallCountAtDeploy = mockCompileScript.mock.calls.length;
 
@@ -646,10 +615,8 @@ describe('EngineManager', () => {
       const connectorMessage = { channelId: CHANNEL_ID, messageId: 1, metaDataId: 1, content: 'test-content', dataType: 'HL7V2' };
       const result = await destRunner('return msg;', 'test-content', connectorMessage);
 
-      // No additional compile call — pre-compiled script is reused
       expect(mockCompileScript.mock.calls.length).toBe(compileCallCountAtDeploy);
       expect(mockSandboxExecute).toHaveBeenCalledOnce();
-      // The context has the content parsed for its data type as msg, and the raw text as rawData
       const sandboxCtx = mockSandboxExecute.mock.calls[0]![1] as Record<string, unknown>;
       expect(sandboxCtx).toHaveProperty('msg', { parsed: 'test-content', dataType: 'HL7V2' });
       expect(sandboxCtx).toHaveProperty('rawData', 'test-content');

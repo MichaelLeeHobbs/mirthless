@@ -1,10 +1,5 @@
-// ===========================================
-// Channel routes honour an assignment's group scope (real Postgres, #266 slice 8)
-// ===========================================
-// A user whose role is assigned on the Lab group only reaches Lab's channels.
-// Every route that names a channel answers another channel, or one that does
-// not exist, the same way: 404, so scope never shows which channels exist
-// outside it. An all-channel user reaches both.
+// An out-of-scope channel and a missing one answer the same 404, so scope never
+// shows which channels exist outside it.
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -81,7 +76,7 @@ describeIntegration('channel scope on channel routes (real Postgres)', () => {
     await mods.pool.end();
   });
 
-  /** One route per channel router, each needing a permission the deployer holds. */
+  /** One route per channel router; each must need only a permission the deployer holds. */
   const ROUTES: readonly (readonly [string, (id: string) => string])[] = [
     ['GET', (id) => `/channels/${id}`],
     ['GET', (id) => `/channels/${id}/messages`],
@@ -117,14 +112,12 @@ describeIntegration('channel scope on channel routes (real Postgres)', () => {
     }
   });
 
-  /** GET `path` as `token` and return the `data` of a success answer. */
   async function data<T>(token: string, path: string): Promise<T> {
     const res = await fetch(`${base}/api/v1${path}`, { headers: { authorization: `Bearer ${token}` } });
     expect(res.status, path).toBe(200);
     return ((await res.json()) as { data: T }).data;
   }
 
-  /** The test channels a list names, by the field it keys them on. */
   const ours = (ids: readonly (string | null | undefined)[]): string[] =>
     ids.filter((id): id is string => id === LAB_CHANNEL || id === RAD_CHANNEL).sort();
 

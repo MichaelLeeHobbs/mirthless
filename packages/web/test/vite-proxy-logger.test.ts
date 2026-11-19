@@ -3,7 +3,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createLogger, resolveConfig, type LogLevel, type Logger } from 'vite';
 import { quietWsProxyResets, quietWsProxyResetsPlugin } from '../vite-proxy-logger.js';
 
-/** A real Vite logger that writes to a fake console, wrapped by the filter. */
 function capture(): { readonly logger: Logger; readonly printed: () => readonly string[] } {
   const error = vi.fn<(line: string) => void>();
   const fakeConsole = { ...console, error } as Console;
@@ -80,7 +79,6 @@ describe('quietWsProxyResets', () => {
 describe('quietWsProxyResetsPlugin', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  /** Resolve a config the way `vite --logLevel <level>` does and return the logger Vite built. */
   async function resolvedLogger(logLevel: LogLevel): Promise<{ readonly logger: Logger; readonly printed: () => readonly string[] }> {
     const lines: string[] = [];
     const record = (line: unknown): void => { lines.push(String(line)); };

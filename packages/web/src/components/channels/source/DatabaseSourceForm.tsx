@@ -1,8 +1,3 @@
-// ===========================================
-// Database Source Connector Form
-// ===========================================
-// Configuration form for database reader source connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -34,7 +29,6 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Connection settings */}
       <Grid
         size={{
           xs: 12,
@@ -106,7 +100,6 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
         />
       </Grid>
 
-      {/* Right column — Query settings */}
       <Grid
         size={{
           xs: 12,

@@ -1,8 +1,3 @@
-// ===========================================
-// Events Table Schema
-// ===========================================
-// Audit log for HIPAA compliance and operational auditing.
-
 import { pgTable, uuid, varchar, text, timestamp, bigserial, jsonb, index } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 

@@ -1,17 +1,9 @@
-// ===========================================
-// Bridge Functions
-// ===========================================
-// Host-side functions exposed to sandbox scripts.
-// Returns plain objects with closures to avoid cross-realm
-// class instance issues with private fields.
+// Plain objects with closures, not class instances: private fields break across the vm realm.
 
 import { Hl7Message, createAck, type AckOptions } from '@galvanigraph/core-util';
 import { isHl7MessageProxy, createHl7Proxy } from '../pipeline/data-type-handler.js';
 import { isAllowedHost, isBlockedHostname } from './ssrf.js';
 
-// ----- Types -----
-
-/** Proxy object returned by parseHL7 — closures over host-side Hl7Message. */
 export interface Hl7MessageProxy {
   get(path: string): string | undefined;
   /** Everything at a path as encoded in the message: the whole field, repetition or component. */
@@ -29,7 +21,6 @@ export interface Hl7MessageProxy {
   getSegmentString(name: string, index?: number): string | undefined;
 }
 
-/** Options for httpFetch bridge function. */
 export interface HttpFetchOptions {
   readonly method?: string;
   readonly headers?: Readonly<Record<string, string>>;
@@ -37,7 +28,6 @@ export interface HttpFetchOptions {
   readonly timeout?: number;
 }
 
-/** Result from httpFetch bridge function. */
 export interface HttpFetchResult {
   readonly status: number;
   readonly statusText: string;
@@ -45,20 +35,16 @@ export interface HttpFetchResult {
   readonly body: string;
 }
 
-/** Result from routeMessage bridge function. */
 export interface RouteMessageResult {
   readonly success: boolean;
-  /** The id the target channel gave the message. */
   readonly messageId?: number;
-  /** True when the target channel's source filter rejected the message. */
   readonly filtered?: boolean;
   readonly response?: string;
 }
 
-/** A scalar value for a collection field / filter. */
 export type CollectionScalar = string | number | boolean;
 
-/** A record returned from a collection query/store (dates are ISO strings across the bridge). */
+/** Dates are ISO strings across the bridge. */
 export interface CollectionRecordData {
   readonly id: string;
   readonly fields: Readonly<Record<string, string>>;
@@ -67,13 +53,11 @@ export interface CollectionRecordData {
   readonly createdAt: string;
 }
 
-/** Options for getCollection(...).store(). */
 export interface CollectionStoreOptions {
   readonly expireAt?: string;
   readonly ttlSeconds?: number;
 }
 
-/** Options for getCollection(...).find(). */
 export interface CollectionFindOptions {
   readonly filter?: Readonly<Record<string, CollectionScalar | ReadonlyArray<CollectionScalar>>>;
   readonly latest?: boolean;
@@ -81,14 +65,13 @@ export interface CollectionFindOptions {
   readonly order?: 'asc' | 'desc';
 }
 
-/** Changes for getCollection(...).update(). Only the keys given change; expireAt null = never. */
+/** Only the keys given change; expireAt null = never. */
 export interface CollectionUpdateChanges {
   readonly fields?: Readonly<Record<string, CollectionScalar>>;
   readonly payload?: string;
   readonly expireAt?: string | null;
 }
 
-/** Host-side collection store/find/update/delete, backed by CollectionService. */
 export interface CollectionBridge {
   readonly store: (
     name: string,
@@ -101,13 +84,11 @@ export interface CollectionBridge {
     match: Readonly<Record<string, CollectionScalar>>,
     options: CollectionFindOptions,
   ) => Promise<readonly CollectionRecordData[]>;
-  /** Null when the record no longer exists. */
   readonly update: (name: string, id: string, changes: CollectionUpdateChanges) => Promise<CollectionRecordData | null>;
   /** False when the record no longer exists. */
   readonly delete: (name: string, id: string) => Promise<boolean>;
 }
 
-/** Host-side dependency callbacks for IO bridge functions. */
 export interface BridgeDependencies {
   readonly httpFetch?: (url: string, options: HttpFetchOptions) => Promise<HttpFetchResult>;
   /** Hosts scripts may reach although their address is private. */
@@ -118,7 +99,6 @@ export interface BridgeDependencies {
   readonly collections?: CollectionBridge;
 }
 
-/** Bridge functions available in the sandbox. */
 export interface BridgeFunctions {
   readonly parseHL7: (raw: string) => Hl7MessageProxy;
   readonly createACK: (originalRaw: string, ackCode: string, textMessage?: string) => string;
@@ -129,13 +109,10 @@ export interface BridgeFunctions {
   readonly collections?: CollectionBridge;
 }
 
-// ----- Implementation -----
-
-/** Create bridge functions for sandbox injection. */
 export function createBridgeFunctions(deps?: BridgeDependencies): BridgeFunctions {
   const bridges: BridgeFunctions = {
     parseHL7(raw: unknown): Hl7MessageProxy {
-      // If already an Hl7MessageProxy (auto-parsed by data-type-handler), return as-is
+      // msg may already be a proxy: data-type-handler auto-parses HL7.
       if (isHl7MessageProxy(raw)) return raw;
       if (typeof raw !== 'string') throw new Error('parseHL7 expects a string or HL7 message proxy');
       const msg = Hl7Message.parse(raw);

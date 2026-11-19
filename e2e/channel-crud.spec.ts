@@ -1,10 +1,3 @@
-// ===========================================
-// Channel CRUD E2E Tests (via the Dashboard)
-// ===========================================
-// The standalone Channels view was retired — all channel authoring now happens
-// from the Dashboard (header actions + right-click context menu). The context
-// menu tests use a channel and a group of this spec's own, made through the API.
-
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { API_BASE, adminApi, deleteOk, getData, postData, removeChannelsNamed } from './fixtures/api.js';
@@ -20,7 +13,6 @@ interface Preference { readonly key: string; readonly value: string | null }
 
 let api: APIRequestContext;
 let menuChannelId = '';
-/** The admin's column preference before this spec ran, put back in afterAll. */
 let savedColumns: string | null = null;
 
 async function createChannel(name: string): Promise<string> {
@@ -46,7 +38,7 @@ async function columnsPreference(): Promise<string | null> {
   return prefs.find((p) => p.key === COLUMNS_PREF)?.value ?? null;
 }
 
-/** A channel's row on the dashboard. Names are matched whole, so one name never matches another. */
+// Names are matched whole, so one name never matches another.
 function channelRow(page: Page, name: string): ReturnType<Page['locator']> {
   return page.getByRole('row').filter({ has: page.getByRole('button', { name, exact: true }) });
 }
@@ -54,7 +46,6 @@ function channelRow(page: Page, name: string): ReturnType<Page['locator']> {
 async function openChannelMenu(page: Page, name: string): Promise<void> {
   await page.goto('/');
   await channelRow(page, name).click({ button: 'right' });
-  // The menu's first item is the channel's name.
   await expect(page.getByRole('menuitem', { name, exact: true })).toBeVisible();
 }
 
@@ -104,7 +95,6 @@ test.describe('Channel CRUD (Dashboard)', () => {
     await dialog.getByLabel('Description').fill(CREATED_DESCRIPTION);
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // Lands in the channel editor, titled with the new channel's name.
     await expect(page).toHaveURL(/\/channels\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: CREATED_CHANNEL })).toBeVisible();
 
@@ -120,14 +110,12 @@ test.describe('Channel CRUD (Dashboard)', () => {
     const dialog = page.getByRole('dialog', { name: 'New Channel' });
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // The dialog stays open on the dashboard and flags the name.
     await expect(dialog.getByText('Name is required')).toBeVisible();
     await expect(page).toHaveURL(/\/$/);
   });
 
   test('channel name navigates to the message browser (not the editor)', async ({ page }) => {
     await page.goto('/');
-    // Channel names are clickable buttons; clicking one opens that channel's messages.
     await page.getByRole('button', { name: MENU_CHANNEL, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/channels/${menuChannelId}/messages$`));
   });
@@ -146,12 +134,10 @@ test.describe('Channel CRUD (Dashboard)', () => {
   });
 
   test('enable/disable from the context menu', async ({ page }) => {
-    // The channel was created disabled, so the menu offers Enable.
     await openChannelMenu(page, MENU_CHANNEL);
     await page.getByRole('menuitem', { name: 'Enable', exact: true }).click();
     await expect.poll(async () => (await getData<{ enabled: boolean }>(api, `/channels/${menuChannelId}`)).enabled).toBe(true);
 
-    // Now enabled, the menu offers Disable, which turns it back off.
     await openChannelMenu(page, MENU_CHANNEL);
     await page.getByRole('menuitem', { name: 'Disable', exact: true }).click();
     await expect.poll(async () => (await getData<{ enabled: boolean }>(api, `/channels/${menuChannelId}`)).enabled).toBe(false);
@@ -162,7 +148,6 @@ test.describe('Channel CRUD (Dashboard)', () => {
     await openChannelMenu(page, DELETE_CHANNEL);
     await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
 
-    // MUI confirm dialog (not a native dialog).
     const dialog = page.getByRole('dialog', { name: 'Delete Channel' });
     await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(dialog).toBeHidden();
@@ -186,10 +171,9 @@ test.describe('Channel CRUD (Dashboard)', () => {
 
   test('group header right-click opens the group menu (not the channel menu)', async ({ page }) => {
     await page.goto('/');
-    // Grouped view is the default; this spec's empty group has a header row of its own.
+    // Grouped view is the default.
     await page.getByText(`${GROUP} (0)`, { exact: true }).click({ button: 'right' });
 
-    // The menu is headed by the group's name and exposes bulk lifecycle actions; the channel menu never does.
     await expect(page.getByRole('menuitem', { name: GROUP, exact: true })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Deploy all', exact: true })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Rename', exact: true })).toBeVisible();
@@ -205,7 +189,6 @@ test.describe('Channel CRUD (Dashboard)', () => {
     // The open menu hides the page from the accessibility tree; close it first.
     await page.keyboard.press('Escape');
 
-    // Header now includes a Source column, and the choice is saved for the user.
     await expect(page.getByRole('columnheader', { name: 'Source' })).toBeVisible();
     await expect.poll(async () => JSON.parse(await columnsPreference() ?? '[]') as string[]).toContain('source');
   });

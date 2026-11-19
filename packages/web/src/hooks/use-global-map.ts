@@ -1,12 +1,5 @@
-// ===========================================
-// Global Map API Hooks
-// ===========================================
-// TanStack Query hooks for global map key-value store CRUD.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface GlobalMapEntry {
   readonly key: string;
@@ -14,14 +7,10 @@ export interface GlobalMapEntry {
   readonly updatedAt: string;
 }
 
-// ----- Query Keys -----
-
 const GMAP_KEYS = {
   all: ['global-map'] as const,
   list: () => [...GMAP_KEYS.all, 'list'] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useGlobalMap(): ReturnType<typeof useQuery<readonly GlobalMapEntry[]>> {
   return useQuery({

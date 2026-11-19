@@ -1,8 +1,3 @@
-// ===========================================
-// Code Template Controller
-// ===========================================
-// Handles HTTP requests for code template library + template CRUD.
-
 import type { Request, Response } from 'express';
 import type {
   CreateCodeTemplateLibraryInput,
@@ -17,8 +12,6 @@ import logger from '../lib/logger.js';
 import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class CodeTemplateController {
-  // ===== Libraries =====
-
   static async listLibraries(req: Request, res: Response): Promise<void> {
     const result = await CodeTemplateService.listLibraries(await channelScopeOf(req, 'code_templates:read'));
 
@@ -79,8 +72,6 @@ export class CodeTemplateController {
     logger.info({ libraryId: id }, 'Library deleted');
     res.status(204).send();
   }
-
-  // ===== Templates =====
 
   static async listTemplates(req: Request, res: Response): Promise<void> {
     const query = req.query as unknown as CodeTemplateListQuery;

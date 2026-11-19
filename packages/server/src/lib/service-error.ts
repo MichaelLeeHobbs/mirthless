@@ -1,15 +1,8 @@
-// ===========================================
-// Service Error
-// ===========================================
-// Typed error class for service-layer errors.
-// Replaces ad-hoc string matching in controllers with structured error codes.
-
 export const SERVICE_ERRORS = {
   NOT_FOUND: 'NOT_FOUND',
   ALREADY_EXISTS: 'ALREADY_EXISTS',
   /** No credential, or one the server does not accept. */
   UNAUTHORIZED: 'UNAUTHORIZED',
-  /** The caller must change their password before anything else. */
   PASSWORD_CHANGE_REQUIRED: 'PASSWORD_CHANGE_REQUIRED',
   FORBIDDEN: 'FORBIDDEN',
   SYSTEM_PROTECTED: 'SYSTEM_PROTECTED',
@@ -21,7 +14,7 @@ export const SERVICE_ERRORS = {
   CONFLICT: 'CONFLICT',
   NOT_SUPPORTED: 'NOT_SUPPORTED',
   CONFIG_ERROR: 'CONFIG_ERROR',
-  /** A dependency is busy or failed for now (the type checker); the same request can succeed later. */
+  /** A dependency is busy or failed for now; the same request can succeed later. */
   UNAVAILABLE: 'UNAVAILABLE',
   /** The audit log could not record a fail-closed read, so it was refused (D-312). */
   AUDIT_UNAVAILABLE: 'AUDIT_UNAVAILABLE',
@@ -41,11 +34,7 @@ export class ServiceError extends Error {
   }
 }
 
-/**
- * Type guard to check if an error is a ServiceError, optionally matching a specific code.
- * Uses duck typing instead of instanceof — stderr-lib's tryCatch reconstructs errors,
- * breaking the prototype chain.
- */
+/** Duck-typed, not instanceof: stderr-lib's tryCatch reconstructs errors, breaking the prototype chain. */
 export function isServiceError(error: unknown, code?: ServiceErrorCode): error is ServiceError {
   if (typeof error !== 'object' || error === null) return false;
   const candidate = error as Record<string, unknown>;

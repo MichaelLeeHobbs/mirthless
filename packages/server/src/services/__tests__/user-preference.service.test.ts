@@ -1,10 +1,4 @@
-// ===========================================
-// User Preference Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -72,8 +66,6 @@ vi.mock('drizzle-orm', () => ({
 
 const { UserPreferenceService } = await import('../user-preference.service.js');
 
-// ----- Fixtures -----
-
 const USER_ID = '00000000-0000-0000-0000-000000000001';
 
 function makeEntry(overrides?: Partial<Record<string, unknown>>): Record<string, unknown> {
@@ -84,8 +76,6 @@ function makeEntry(overrides?: Partial<Record<string, unknown>>): Record<string,
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();
@@ -102,7 +92,6 @@ describe('UserPreferenceService', () => {
         makeEntry({ key: 'locale' }),
         makeEntry({ key: 'theme' }),
       ];
-      // list uses .where().orderBy() chain
       pushResponse(
         Object.assign(Promise.resolve(entries), {
           orderBy: vi.fn().mockResolvedValue(entries),
@@ -219,7 +208,6 @@ describe('UserPreferenceService', () => {
       expect(result.value).toHaveLength(2);
       expect(result.value[0]!.key).toBe('theme');
       expect(result.value[1]!.key).toBe('locale');
-      // Verify single insert call (not N+1)
       expect(mockInsert).toHaveBeenCalledTimes(1);
     });
 

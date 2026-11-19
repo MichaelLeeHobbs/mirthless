@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Group Controller
-// ===========================================
-// Handles HTTP requests for channel group CRUD + member management.
-
 import type { Request, Response } from 'express';
 import type { CreateChannelGroupInput, UpdateChannelGroupInput, SetChannelGroupsInput } from '@galvanigraph/core-models';
 import { ChannelGroupService } from '../services/channel-group.service.js';
@@ -13,10 +8,7 @@ import { channelScopeOf, inScope } from '../lib/channel-scope.js';
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { deny, DENY_REASON } from '../middleware/permission.middleware.js';
 
-/**
- * Groups are now an access boundary (D-310, plan section 2): creating, renaming
- * or deleting one needs channels:write on every channel. Refuses otherwise.
- */
+/** Groups are an access boundary (D-310): creating, renaming or deleting one needs channels:write on every channel. */
 function writesEveryChannel(req: Request, res: Response): boolean {
   if (req.principal?.grants.get('channels:write') === ALL_CHANNELS) return true;
   deny(req, res, DENY_REASON.NO_PERMISSION);
@@ -121,7 +113,6 @@ export class ChannelGroupController {
     res.status(204).send();
   }
 
-  /** PUT /channels/:id/groups: replace the channel's group memberships in one step. */
   static async setChannelGroups(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const { groupIds } = req.body as SetChannelGroupsInput;

@@ -1,7 +1,3 @@
-// ===========================================
-// Authorization: catalog, folding grants, checking them
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { PERMISSIONS, type Permission } from '../../constants.js';
 import type { ChannelGroupId } from '../../brands.js';
@@ -99,7 +95,6 @@ describe('foldGrants', () => {
   });
 
   it('never widens one permission because another is held more widely', () => {
-    // "Viewer, all channels" plus "Analyst, Lab": reprocess stays on Lab.
     const grants = foldGrants([
       { permissions: ['messages:read'], scope: ALL_CHANNELS },
       { permissions: ['messages:read', 'messages:reprocess'], scope: [LAB] },

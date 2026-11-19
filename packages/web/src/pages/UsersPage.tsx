@@ -1,8 +1,3 @@
-// ===========================================
-// Users Page
-// ===========================================
-// User management: list, create, edit, toggle enabled, unlock.
-
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -43,7 +38,6 @@ import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import type { UserSummary } from '../api/client.js';
 
-/** The fields of an edited user that differ from the stored ones, as an update request. */
 function changedFields(user: UserSummary, data: UserFormData): Record<string, unknown> {
   const input: Record<string, unknown> = {};
   if (data.email !== user.email) input['email'] = data.email;
@@ -69,8 +63,7 @@ export function UsersPage(): ReactNode {
   const { has } = usePermissions();
   const canWrite = has(PERMISSION.USERS_WRITE);
   const canDelete = has(PERMISSION.USERS_DELETE);
-  // Reading the keys needs api_keys:read; choosing their fate needs api_keys:manage.
-  // Reading the keys a leaver issued needs api_keys:read; taking one over needs api_keys:manage too.
+  // Reading a leaver's keys needs api_keys:read; taking one over needs api_keys:manage too.
   const canReadKeys = has(PERMISSION.API_KEYS_READ);
   const canManageKeys = has(PERMISSION.API_KEYS_MANAGE) && canReadKeys;
   const { data: keys } = useApiKeys(canReadKeys);
@@ -97,11 +90,7 @@ export function UsersPage(): ReactNode {
     setDialogError(null);
   };
 
-  /**
-   * Save the edited details, then the new password, and close only when both
-   * worked. A refused password keeps the dialog open with the server's reason:
-   * an admin resetting a leaked password must know it did not change (#222).
-   */
+  /** Closes only when every step worked: an admin resetting a leaked password must know it did not change (#222). */
   const saveEdit = async (user: UserSummary, data: UserFormData): Promise<void> => {
     const input = changedFields(user, data);
     const hasUpdates = Object.keys(input).length > 0;
@@ -136,7 +125,6 @@ export function UsersPage(): ReactNode {
     if (editingUser) {
       void saveEdit(editingUser, data);
     } else {
-      // Create new user
       createUser.mutate({
         username: data.username,
         email: data.email,
@@ -151,7 +139,7 @@ export function UsersPage(): ReactNode {
     }
   };
 
-  /** Why the enabled switch is locked for this user, or '' when it can be used. Disabling needs users:delete. */
+  /** Disabling needs users:delete. */
   const toggleBlockedReason = (user: UserSummary): string => {
     if (user.enabled) return canDelete ? '' : 'Requires users:delete permission';
     return canWrite ? '' : 'Requires users:write permission';
@@ -159,7 +147,6 @@ export function UsersPage(): ReactNode {
 
   const handleToggleEnabled = (user: UserSummary): void => {
     if (user.enabled) {
-      // Disabling is destructive — confirm first.
       setDisableTarget(user);
     } else {
       updateUser.mutate({ id: user.id, input: { enabled: true } });
@@ -171,7 +158,7 @@ export function UsersPage(): ReactNode {
     deleteUser.mutate({ id: disableTarget.id });
     setDisableTarget(null);
   };
-  // The working keys the user being disabled issued: they stop with them (D-322), so the dialog says so first.
+  // A disabled user's keys stop with them (D-322), so the dialog says so first.
   const targetKeys = disableTarget && keys ? liveKeysIssuedBy(keys, disableTarget.id) : [];
   const offboarding = targetKeys.length > 0;
   const handleConfirmOffboard = (takeOwnership: readonly string[]): void => {
@@ -204,7 +191,6 @@ export function UsersPage(): ReactNode {
         }
       />
 
-      {/* Error */}
       {error && (
         <ErrorState title="Couldn't load users" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
       )}
@@ -286,7 +272,6 @@ export function UsersPage(): ReactNode {
         </Table>
       </TableContainer>
 
-      {/* Create/Edit Dialog */}
       <UserDialog
         open={dialogOpen}
         user={editingUser}

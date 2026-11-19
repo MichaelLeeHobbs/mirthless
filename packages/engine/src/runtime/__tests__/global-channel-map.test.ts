@@ -1,7 +1,3 @@
-// ===========================================
-// Global Channel Map Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GlobalChannelMap } from '../global-channel-map.js';
 

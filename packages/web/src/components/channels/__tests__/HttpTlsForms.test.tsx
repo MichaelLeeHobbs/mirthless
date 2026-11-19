@@ -1,11 +1,3 @@
-// ===========================================
-// HTTP Source/Destination TLS Form Tests
-// ===========================================
-// Verifies the HTTP/HTTPS Mode select toggles the certificate pickers and that
-// selecting certificates writes the id-based tls shape the server spine expects
-// (scheme + tls.{caCertId/clientCertId/serverCertId/rejectUnauthorized/
-// requireClientCert}). No raw PEM fields.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,7 +5,6 @@ import { ThemeProvider } from '@mui/material/styles';
 import { useState, type ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
 
-// Mock the certificate list hook the CertificateSelect depends on.
 const CERTS = [
   { id: 'ca-1', name: 'Internal CA', type: 'CA', notAfter: '2099-01-01T00:00:00.000Z', hasPrivateKey: false },
   { id: 'srv-1', name: 'Listener Cert', type: 'SERVER', notAfter: '2099-01-01T00:00:00.000Z', hasPrivateKey: true },
@@ -26,7 +17,7 @@ vi.mock('../../../hooks/use-certificates.js', () => ({
   }),
 }));
 
-// Mock TestConnectionButton — it pulls in socket/query wiring irrelevant here.
+// Pulls in socket and query wiring.
 vi.mock('../../common/TestConnectionButton.js', () => ({
   TestConnectionButton: () => null,
 }));
@@ -61,14 +52,12 @@ function tls(): Record<string, unknown> {
   return (lastProps['tls'] ?? {}) as Record<string, unknown>;
 }
 
-/** Open an MUI TextField-select and click the option with the given label. */
 function selectOption(triggerLabel: string, optionName: string): void {
   fireEvent.mouseDown(screen.getByLabelText(triggerLabel));
   const listbox = screen.getByRole('listbox');
   fireEvent.click(within(listbox).getByRole('option', { name: optionName }));
 }
 
-/** Open an MUI Autocomplete and click the option matching the given text. */
 function pickCert(pickerLabel: RegExp | string, optionText: RegExp): void {
   const input = screen.getByLabelText(pickerLabel);
   input.focus();
@@ -136,7 +125,6 @@ describe('HttpSourceForm — HTTPS mode', () => {
     expect(lastProps['scheme']).toBe('HTTPS');
     const serverPicker = screen.getByLabelText(/Server certificate/);
     expect(serverPicker).toBeTruthy();
-    // required + empty => aria-invalid on the input
     expect(serverPicker.getAttribute('aria-invalid')).toBe('true');
   });
 

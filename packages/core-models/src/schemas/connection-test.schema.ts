@@ -1,8 +1,3 @@
-// ===========================================
-// Connection Test Schemas
-// ===========================================
-// Zod validation schemas for connector connection testing.
-
 import { z } from 'zod/v4';
 import { CONNECTOR_TYPES } from '../constants.js';
 

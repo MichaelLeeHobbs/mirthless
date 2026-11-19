@@ -1,12 +1,6 @@
-// ===========================================
-// Connection Pool Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import pg from 'pg';
 import { ConnectionPool, type PoolConfig } from '../connection-pool.js';
-
-// ----- Mock pg -----
 
 const mockQuery = vi.fn();
 const mockConnect = vi.fn();
@@ -26,8 +20,6 @@ vi.mock('pg', () => {
   return { default: { Pool: MockPool }, Pool: MockPool };
 });
 
-// ----- Helpers -----
-
 function makePoolConfig(overrides?: Partial<PoolConfig>): PoolConfig {
   return {
     host: 'localhost',
@@ -42,13 +34,10 @@ function makePoolConfig(overrides?: Partial<PoolConfig>): PoolConfig {
   };
 }
 
-// ----- Lifecycle -----
-
 let pool: ConnectionPool | null = null;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: connect returns a client that can be released and queried
   mockConnect.mockResolvedValue({ release: mockRelease, query: mockClientQuery });
   mockClientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
   mockEnd.mockResolvedValue(undefined);
@@ -60,8 +49,6 @@ afterEach(async () => {
     pool = null;
   }
 });
-
-// ----- Tests -----
 
 describe('ConnectionPool', () => {
   describe('create', () => {

@@ -1,10 +1,4 @@
-// ===========================================
-// Log Stream Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 vi.mock('../../lib/socket.js', () => ({
   emitToRoom: vi.fn(),
@@ -12,8 +6,6 @@ vi.mock('../../lib/socket.js', () => ({
 
 const { LogStreamService } = await import('../log-stream.service.js');
 const { emitToRoom } = await import('../../lib/socket.js');
-
-// ----- Helpers -----
 
 function makeEntry(overrides?: Partial<Record<string, unknown>>): {
   readonly timestamp: string;
@@ -31,8 +23,6 @@ function makeEntry(overrides?: Partial<Record<string, unknown>>): {
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -88,8 +78,7 @@ describe('LogStreamService', () => {
 
       expect(result.entries).toHaveLength(3);
       expect(result.total).toBe(10);
-      // Newest first: msg-9, msg-8, msg-7, msg-6, msg-5...
-      // offset=2: msg-7, msg-6, msg-5
+      // Newest first, so offset 2 starts at msg-7.
       expect(result.entries[0]!.message).toBe('msg-7');
     });
 

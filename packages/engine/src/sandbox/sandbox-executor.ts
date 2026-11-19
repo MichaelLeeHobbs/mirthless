@@ -1,36 +1,7 @@
-// ===========================================
-// Sandbox Executor
-// ===========================================
-// Interface for safe JavaScript execution and a Node.js vm-based implementation.
-//
-// SECURITY MODEL (see ./README.md):
-// node:vm is NOT a hard security boundary, but the classic escape
-// (`someHostFn.constructor('return process')()`) only works when a user script
-// can reach a *host-realm* function or object. This executor therefore exposes
-// NOTHING from the host realm to user code:
-//   * All data (msg, tmp, maps, sourceMap, configMap) is injected by serializing
-//     it to JSON and re-parsing it INSIDE the vm context, so every object/array
-//     the script can touch has the sandbox realm's prototype chain.
-//   * All bridge functions (logger, parseHL7, createACK, $, $r, $g, $gc, IO
-//     bridges, destinationSet, HL7 message proxy) are re-implemented as
-//     sandbox-realm functions in a bootstrap script; they call a single host
-//     dispatch function that is captured in a closure and then deleted from the
-//     global scope, so it is never reachable as a property from user code.
-// Result: `logger.info.constructor`, `({}).constructor.constructor`,
-// `this.constructor.constructor`, `msg.get.constructor`, etc. all resolve to the
-// sandbox realm's Function, which — when invoked — runs in a context with no
-// `process`, `require`, `module`, or `globalThis`-host access.
-//
-// The boundary is closed in BOTH directions:
-//   * Script -> host: every bridge wrapper turns its arguments into primitives
-//     (String(), Number(), or a JSON string) INSIDE the sandbox, and the host
-//     dispatch refuses anything that is not a primitive. Host code therefore
-//     never calls a method on an object a script built, which would hand the
-//     script a host-realm argument (`value.replace(hostRegExp)`).
-//   * Host <- script: the return value, `msg` and the maps are serialised to one
-//     JSON string inside the sandbox, under the script timeout, and parsed on the
-//     host. The host never walks a sandbox object, so a `toJSON`, getter or
-//     `toString` a script wrote cannot run outside the time limit.
+// Security model (./README.md): no host-realm object or function ever reaches user code, and
+// host code never touches a sandbox object. Data enters as JSON parsed inside the context;
+// bridges are sandbox-realm wrappers around one host dispatch that takes and returns only
+// primitives; results leave as one JSON string made inside the sandbox, under the timeout.
 
 import * as vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
@@ -41,26 +12,19 @@ import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
 
-// ----- Types -----
-
-/** A compiled script ready for execution. */
 export interface CompiledScript {
   readonly code: string;
   readonly sourceMap?: string;
 }
 
-/** Options for script execution. */
 export interface ExecutionOptions {
-  /** Wall-clock timeout in milliseconds for both synchronous and async work. */
+  /** Wall-clock milliseconds, covering synchronous and async work. */
   readonly timeout: number;
-  /** Optional abort signal. A fresh signal is created from `timeout` if omitted. */
   readonly signal?: AbortSignal | undefined;
 }
 
-/** Result of executing a script in the sandbox. */
 export interface ExecutionResult {
   readonly returnValue: unknown;
-  /** The value of `msg` after script execution (used by transformers). */
   readonly msg: unknown;
   readonly mapUpdates: {
     readonly channelMap: Readonly<Record<string, unknown>>;
@@ -72,29 +36,20 @@ export interface ExecutionResult {
   readonly logs: readonly LogEntry[];
 }
 
-/** Default execution options (signal created fresh per execution). */
 export const DEFAULT_EXECUTION_OPTIONS: ExecutionOptions = {
   timeout: 30_000,
 } as const;
 
-// ----- Interface -----
-
-/** Sandbox executor interface. Implementations provide script isolation. */
 export interface SandboxExecutor {
-  /** Execute a compiled script with the given context. */
   execute(
     script: CompiledScript,
     context: SandboxContext,
     options: ExecutionOptions,
   ): Promise<Result<ExecutionResult>>;
 
-  /** Release all resources held by this executor. */
   dispose(): void;
 }
 
-// ----- Host bridge state -----
-
-/** Per-execution host-side state backing the sandbox's bridge functions. */
 interface HostBridgeState {
   readonly logs: LogEntry[];
   readonly bridges: BridgeFunctions;
@@ -102,27 +57,24 @@ interface HostBridgeState {
   readonly x12Handles: Map<number, X12MessageProxy>;
   readonly destSet: Record<string, unknown> | undefined;
   nextHandle: number;
-  /** Message of the error the script threw, reported from inside the sandbox. */
+  /** Set from inside the sandbox; the host never reads the value a script threw. */
   failure: string | undefined;
 }
 
-/** A bridge argument that must be a string. Sandbox wrappers already convert; this is the host's own check. */
+/** Sandbox wrappers already convert; this is the host's own check. */
 function str(value: unknown): string {
   if (typeof value !== 'string') throw new Error('Bridge argument must be a string');
   return value;
 }
 
-/** A bridge argument that is a string or absent. */
 function optStr(value: unknown): string | undefined {
   return value === undefined || value === null ? undefined : str(value);
 }
 
-/** Parse a JSON-encoded bridge argument into a host-realm value. */
 function fromJson(value: unknown): unknown {
   return JSON.parse(str(value)) as unknown;
 }
 
-/** Parse a JSON-encoded bridge argument that must be a plain object. */
 function jsonObject(value: unknown): Record<string, unknown> {
   const parsed = fromJson(value);
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -131,7 +83,6 @@ function jsonObject(value: unknown): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-/** Parse a JSON-encoded bridge argument that must be an array. */
 function jsonArray(value: unknown): readonly unknown[] {
   const parsed = fromJson(value);
   if (!Array.isArray(parsed)) throw new Error('Bridge argument must be an array');
@@ -155,7 +106,6 @@ function getHl7(state: HostBridgeState, id: unknown): Hl7MessageProxy {
   return proxy;
 }
 
-/** Dispatch HL7 message-proxy method calls to the host-side proxy. */
 function hl7Op(state: HostBridgeState, op: string, args: readonly unknown[]): unknown {
   const proxy = getHl7(state, args[0]);
   switch (op) {
@@ -181,7 +131,6 @@ function registerX12(state: HostBridgeState, proxy: X12MessageProxy): number {
   return id;
 }
 
-/** Dispatch X12 message-proxy method calls to the host-side proxy. */
 function x12Op(state: HostBridgeState, op: string, args: readonly unknown[]): unknown {
   const proxy = state.x12Handles.get(args[0] as number);
   if (!proxy) throw new Error('Invalid X12 handle');
@@ -195,7 +144,6 @@ function x12Op(state: HostBridgeState, op: string, args: readonly unknown[]): un
   }
 }
 
-/** How a message crosses into the sandbox: an HL7 or X12 handle, or plain data. */
 function messageKind(value: unknown): 'hl7' | 'x12' | 'data' {
   if (isHl7MessageProxy(value)) return 'hl7';
   return isX12MessageProxy(value) ? 'x12' : 'data';
@@ -206,7 +154,6 @@ function messageValue(state: HostBridgeState, value: unknown): unknown {
   return isX12MessageProxy(value) ? registerX12(state, value) : value;
 }
 
-/** Dispatch destinationSet method calls to the host-side proxy. Object/array results are JSON-encoded. */
 function dsOp(state: HostBridgeState, op: string, args: readonly unknown[]): unknown {
   const set = state.destSet;
   if (!set) return undefined;
@@ -223,7 +170,7 @@ function dsOp(state: HostBridgeState, op: string, args: readonly unknown[]): unk
   }
 }
 
-/** Run an async IO bridge and encode success/failure as a JSON string so no host object crosses the boundary. */
+/** JSON-encoded so no host object, not even an Error, crosses the boundary. */
 async function ioDispatch(fn: () => Promise<unknown>): Promise<string> {
   try {
     return JSON.stringify({ ok: true, v: await fn() });
@@ -233,13 +180,10 @@ async function ioDispatch(fn: () => Promise<unknown>): Promise<string> {
 }
 
 /**
- * Make a dispatch function that can never throw into the sandbox.
- *
- * An Error thrown by host code is a host-realm object: a script that catches it can
- * reach the host `Function` through `e.constructor.constructor` and from there
- * `process`. So a failure is recorded on the host and reported as `errToken`, a
- * random string only this execution knows. The sandbox wrapper sees the token, asks
- * for the message with `err.take`, and throws a sandbox-realm Error.
+ * Never throws into the sandbox: a script that catches a host Error reaches the host `Function`
+ * through `e.constructor.constructor`, and from there `process`. A failure is kept here and
+ * reported as `errToken`, a random string only this execution knows; the sandbox wrapper
+ * fetches the message with `err.take` and throws a sandbox-realm Error.
  */
 function makeNonThrowingDispatch(
   dispatch: (op: string, ...args: unknown[]) => unknown,
@@ -267,7 +211,6 @@ function makeNonThrowingDispatch(
   };
 }
 
-/** Build the single host dispatch function invoked by every sandbox bridge. */
 function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown[]) => unknown {
   const { bridges } = state;
   return (op: string, ...args: unknown[]): unknown => {
@@ -307,11 +250,7 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
   };
 }
 
-// ----- Payload -----
-
-/** Serializable payload injected into the sandbox and rebuilt in-realm by the bootstrap. */
 interface SandboxPayload {
-  /** Value the host dispatch returns in place of throwing (see makeNonThrowingDispatch). */
   readonly errToken: string;
   readonly rawData: string;
   readonly msgKind: 'hl7' | 'x12' | 'data';
@@ -366,8 +305,7 @@ function buildPayload(
   };
 }
 
-// ----- Bootstrap (runs INSIDE the vm context; every function it defines is sandbox-realm) -----
-
+// Runs inside the vm context, so every function it defines is sandbox-realm.
 const BOOTSTRAP_SRC = `'use strict';
 globalThis.__build = function (hostDispatch, payload) {
   // The host never throws across the boundary (a host Error would hand the script the
@@ -621,12 +559,9 @@ const INVOKE_SRC =
   '__build(__dispatch, JSON.parse(__payloadJson));' +
   'delete globalThis.__build; delete globalThis.__dispatch; delete globalThis.__payloadJson;';
 
-// ----- Helpers -----
-
-/** One value handed back by `__collect`: undefined, an HL7 or X12 handle, or JSON data. */
+/** `k`: undefined, an HL7 handle, an X12 handle, or JSON data. */
 interface Collected { readonly k: 'u' | 'h' | 'x' | 'j'; readonly v?: unknown }
 
-/** Everything `__collect` returns, already parsed into host-realm objects. */
 interface CollectedResult {
   readonly err?: string;
   readonly r: Collected;
@@ -634,7 +569,6 @@ interface CollectedResult {
   readonly maps: ExecutionResult['mapUpdates'];
 }
 
-/** Turn a collected value back into what host code expects (HL7 handle -> host proxy). */
 function restore(state: HostBridgeState, c: Collected): unknown {
   if (c.k === 'u') return undefined;
   if (c.k === 'h') return state.hl7Handles.get(c.v as number);
@@ -643,12 +577,10 @@ function restore(state: HostBridgeState, c: Collected): unknown {
 }
 
 /**
- * Convert something thrown out of `vm.runInContext` into a host Error.
- *
- * Script code runs inside sandbox-side try/catch blocks, so what reaches here was
- * made by V8 (a timeout, a syntax error) or by the bootstrap. It is still a
- * sandbox-realm object, so only its own `message` data property is read: no
- * getter, prototype lookup or `toString` a script could have replaced.
+ * Script code runs inside sandbox-side try/catch blocks, so what reaches here was made by V8
+ * (a timeout, a syntax error) or by the bootstrap. It is still a sandbox-realm object, so only
+ * its own `message` data property is read: no getter, prototype lookup or `toString` a script
+ * could have replaced.
  */
 function toHostError(e: unknown): Error {
   if (e instanceof Error) return e;
@@ -657,25 +589,22 @@ function toHostError(e: unknown): Error {
   return new Error(message ?? 'Script failed');
 }
 
-/** An own string data property of a sandbox-realm object, read without running any of its code. */
+/** Read without running any of the object's code. */
 function ownString(e: unknown, key: string): string | undefined {
   if (e === null || typeof e !== 'object' || types.isProxy(e)) return undefined;
   const value = Object.getOwnPropertyDescriptor(e, key)?.value as unknown;
   return typeof value === 'string' ? value : undefined;
 }
 
-/** A run's wall-clock time limit: when it ends, and how long it was. */
 interface TimeLimit {
   readonly deadline: number;
   readonly ms: number;
 }
 
-/** The error for a run stopped by its time limit. It names the whole limit. */
 function timedOut(limit: TimeLimit): Error {
   return new Error(`Script execution timed out after ${String(limit.ms)}ms`);
 }
 
-/** Resolve a promise, rejecting early with `aborted()` if the abort signal fires (async wall-clock timeout). */
 function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal, aborted: () => Error): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     if (signal.aborted) { reject(aborted()); return; }
@@ -689,16 +618,13 @@ function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal, aborted: () => E
 }
 
 /**
- * Drives one async script run. The vm context uses `microtaskMode: 'afterEvaluate'`,
- * so sandbox microtasks only run inside a timed `runInContext` call: the initial
- * evaluation, or a `__settle()` call made when IO bridges complete. Code after an
- * `await` is therefore bounded by the timeout and cannot block the host event loop,
- * and once the run is finished no further sandbox code is ever resumed.
+ * The context uses `microtaskMode: 'afterEvaluate'`, so sandbox microtasks run only inside a
+ * timed `runInContext` call (the first evaluation or a `__settle()`): code after an `await` is
+ * bounded by the timeout, and no sandbox code resumes once the run is finished.
  *
- * Every timed call starts and joins a watchdog thread, which on a busy machine
- * waits to be scheduled. So the IO results that are ready are settled together in
- * one call on the next turn of the event loop, not in one call each: a script
- * with hundreds of reads must not spend its time limit entering the sandbox (#188).
+ * Every timed call starts and joins a watchdog thread, which on a busy machine waits to be
+ * scheduled, so ready IO results are settled together on the next event-loop turn, not one
+ * call each: a script with hundreds of reads must not spend its limit entering the sandbox (#188).
  */
 class AsyncRun {
   private readonly ioResults: Array<[number, string]> = [];
@@ -709,17 +635,15 @@ class AsyncRun {
   private rejectDone!: (e: unknown) => void;
   readonly done = new Promise<void>((resolve, reject) => { this.resolveDone = resolve; this.rejectDone = reject; });
 
-  /** The script's time limit, from `start`. No IO can complete before the script has started. */
+  /** Set by `start`; no IO can complete before the script has started. */
   private limit: TimeLimit = { deadline: 0, ms: 0 };
 
   constructor(private readonly contextObj: vm.Context) {}
 
-  /** Start the script's time limit; IO results are settled within it. */
   start(limit: TimeLimit): void {
     this.limit = limit;
   }
 
-  /** Wrap the host dispatch so IO bridge promises become ticket ids settled in-context. */
   wrap(dispatch: (op: string, ...args: unknown[]) => unknown): (op: string, ...args: unknown[]) => unknown {
     return (op: string, ...args: unknown[]): unknown => {
       if (op === 'io.next') {
@@ -736,7 +660,6 @@ class AsyncRun {
     };
   }
 
-  /** Mark the run finished; later IO completions are discarded and never resume the script. */
   finish(error: unknown, ok: boolean): void {
     if (this.finished) return;
     this.finished = true;
@@ -762,16 +685,12 @@ class AsyncRun {
   }
 }
 
-/** True for the error node:vm throws when a call's own timeout stops it (made in the sandbox's realm). */
+/** node:vm makes its timeout error in the sandbox realm, so it is matched by its own `code`. */
 function isVmTimeout(e: unknown): boolean {
   return ownString(e, 'code') === 'ERR_SCRIPT_EXECUTION_TIMEOUT';
 }
 
-/**
- * Run code in the sandbox context with what is left of the run's time limit;
- * anything thrown becomes a host Error. A timeout names the whole limit, not the
- * few milliseconds this call had left.
- */
+/** A timeout names the whole limit, not the few milliseconds this call had left. */
 function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit): unknown {
   const left = limit.deadline - Date.now();
   if (left <= 0) throw timedOut(limit);
@@ -782,17 +701,14 @@ function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit): unkno
   }
 }
 
-/** A limit of `ms` that starts now. */
 function limitFromNow(ms: number): TimeLimit {
   return { deadline: Date.now() + ms, ms };
 }
 
 /**
- * Serialise the script's result inside the sandbox and parse it on the host.
- * Reading the result back is the engine's work, like building the globals, so it
- * has a limit of its own: a script that finished in time is never reported as
- * timed out because a busy host reached its result late (D-323). The limit still
- * stops a toJSON or getter in the result that loops.
+ * Has a limit of its own, so a script that finished in time is never reported as timed out
+ * because a busy host reached its result late (D-323). The limit still stops a looping toJSON
+ * or getter in the result.
  */
 function collect(contextObj: vm.Context, ms: number): CollectedResult {
   const out = runTimed('__collect()', contextObj, limitFromNow(ms));
@@ -802,16 +718,7 @@ function collect(contextObj: vm.Context, ms: number): CollectedResult {
   return parsed;
 }
 
-// ----- VM Implementation -----
-
-/**
- * Node.js vm-based sandbox executor.
- *
- * All host data and functions are re-materialized inside the vm context so user
- * scripts cannot reach the host realm (see the security model at the top of this
- * file and ./README.md). isolated-vm is not used (it did not build on
- * Windows/Node 24 in this project); this executor hardens node:vm instead.
- */
+/** Hardened node:vm, not isolated-vm (D-018). */
 export class VmSandboxExecutor implements SandboxExecutor {
   private readonly deps: BridgeDependencies | undefined;
 
@@ -849,9 +756,8 @@ export class VmSandboxExecutor implements SandboxExecutor {
       const run = new AsyncRun(contextObj);
       contextObj['__dispatch'] = makeNonThrowingDispatch(run.wrap(dispatch), errToken);
       contextObj['__payloadJson'] = JSON.stringify(payload);
-      // Building the sandbox's globals is the engine's work, not the script's: it
-      // has a limit of its own, and the script's limit starts when the script does,
-      // so one execute can take the setup time plus the limit (D-300).
+      // Building the globals has a limit of its own and the script's starts when the
+      // script does, so one execute can take the setup time plus the limit (D-300).
       const setup = limitFromNow(options.timeout);
       runTimed(BOOTSTRAP_SRC, contextObj, setup);
       runTimed(INVOKE_SRC, contextObj, setup);
@@ -871,7 +777,6 @@ export class VmSandboxExecutor implements SandboxExecutor {
         runTimed(wrappedCode, contextObj, limit);
         if (state.failure !== undefined) throw new Error(state.failure);
         if (hasAsyncBridges) {
-          // Wait for the script to settle, enforcing the wall-clock timeout via the signal.
           await awaitWithSignal(run.done, signal, () => (expiry.aborted ? timedOut(limit) : new Error('Script execution timed out')));
         }
       } finally {
@@ -888,7 +793,5 @@ export class VmSandboxExecutor implements SandboxExecutor {
     });
   }
 
-  dispose(): void {
-    // No resources to release for vm-based executor.
-  }
+  dispose(): void {}
 }

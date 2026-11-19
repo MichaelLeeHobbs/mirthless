@@ -1,10 +1,3 @@
-// ===========================================
-// My Access Dialog
-// ===========================================
-// What the signed-in user may do, and where (D-310, plan section 8): each held
-// permission with every channel or the groups it covers, and when the first
-// temporary access ends. Read from the session the sign-in and refresh carry.
-
 import type { ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';

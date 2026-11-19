@@ -1,15 +1,9 @@
-// ===========================================
-// Data Source Pool Manager
-// ===========================================
-// Keeps one pooled connection per data source (keyed by id), reused across
-// dbQuery calls. Read-only sources run inside a READ ONLY transaction so a write
-// fails at the database even if the DB role is over-privileged. Pools are
-// invalidated on config change / delete and destroyed on shutdown.
-// See docs/design/11-datasources.md.
+// Read-only sources run in a READ ONLY transaction, so a write fails at the database even
+// when the DB role could write. See docs/design/11-datasources.md.
 
 import { ConnectionPool, type PoolConfig } from '@galvanigraph/connectors';
 
-/** Resolved data source (decrypted) needed to open a pool and run a query. */
+/** `password` is decrypted. */
 export interface PooledDataSource {
   readonly id: string;
   readonly host: string;
@@ -67,7 +61,6 @@ export class DataSourcePoolManager {
     return pool;
   }
 
-  /** Run a parameterized query, enforcing read-only and the row cap. */
   async runQuery(s: PooledDataSource, sql: string, params: readonly unknown[]): Promise<readonly Record<string, unknown>[]> {
     const pool = await this.getPool(s);
     const rows = s.readOnly ? await this.runReadOnly(pool, sql, params) : await this.runReadWrite(pool, sql, params);
@@ -89,7 +82,7 @@ export class DataSourcePoolManager {
     return result.value.rows;
   }
 
-  /** Drop the pool for a data source (call on update/delete). */
+  /** Call on update/delete. */
   async invalidate(id: string): Promise<void> {
     const cached = this.pools.get(id);
     if (!cached) return;
@@ -97,7 +90,7 @@ export class DataSourcePoolManager {
     await cached.pool.destroy();
   }
 
-  /** Destroy every pool (call on server shutdown). */
+  /** Call on server shutdown. */
   async shutdown(): Promise<void> {
     const all = [...this.pools.values()];
     this.pools.clear();
@@ -105,5 +98,4 @@ export class DataSourcePoolManager {
   }
 }
 
-/** Process-wide singleton shared by DataSourceService and the dbQuery bridge. */
 export const dataSourcePoolManager = new DataSourcePoolManager();

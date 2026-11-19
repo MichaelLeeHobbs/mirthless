@@ -1,6 +1,3 @@
-// ===========================================
-// Every grant write is recorded once (real Postgres, #266 slice 11)
-// ===========================================
 // Who could access what, and when, is rebuilt from the audit log, so each
 // change to an assignment, a group membership or a role writes exactly one
 // audit row in the same transaction.
@@ -29,7 +26,6 @@ describeIntegration('every grant write is recorded once (real Postgres)', () => 
     return rows[0]!.n;
   }
 
-  /** Run `write` and return how many rows each grant action gained. */
   async function recorded(write: () => Promise<{ status: number }>): Promise<Record<string, number>> {
     const actions = ['ASSIGNMENTS_CHANGED', 'CHANNEL_GROUPS_CHANGED', 'ROLE_CREATED', 'ROLE_UPDATED', 'ROLE_DELETED'];
     const before = await Promise.all(actions.map(auditRows));
@@ -100,7 +96,6 @@ describeIntegration('every grant write is recorded once (real Postgres)', () => 
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [created]);
     await mods.pool.query('UPDATE channels SET deleted_at = now() WHERE id = $1', [created]);
 
-    // An import places each new channel, and a restore re-adds memberships: both recorded.
     const imported = randomUUID();
     expect(await recorded(() => call('POST', '/channels/import', {
       version: 1, exportedAt: new Date().toISOString(), collisionMode: 'SKIP', groupId: groups[0],

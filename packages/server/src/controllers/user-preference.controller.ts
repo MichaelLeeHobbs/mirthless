@@ -1,8 +1,3 @@
-// ===========================================
-// User Preference Controller
-// ===========================================
-// Handles HTTP requests for per-user preference CRUD.
-
 import type { Request, Response } from 'express';
 import type { UpsertPreferenceInput, BulkUpsertPreferencesInput } from '@galvanigraph/core-models';
 import { UserPreferenceService } from '../services/user-preference.service.js';
@@ -10,11 +5,9 @@ import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 /**
- * The authenticated user's id, or null after answering 500. Preferences belong
- * to a user, so a request without one must fail rather than read user ''. The
- * routes sit behind `authenticate`, so a missing user is a server bug: answer
- * 500, not 401, which the web client would read as an expired session (D-263)
- * and sign the user out.
+ * Null after answering. A missing user must fail rather than read user ''. The
+ * routes sit behind `authenticate`, so it is a server bug: 500, not 401, which
+ * the web client reads as an expired session (D-263) and signs the user out.
  */
 function requireUserId(req: Request, res: Response): string | null {
   const userId = req.user?.id;

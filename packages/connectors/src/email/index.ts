@@ -1,7 +1,3 @@
-// ===========================================
-// Email Connector Exports
-// ===========================================
-
 export {
   EmailReceiver,
   EMAIL_PROTOCOL,

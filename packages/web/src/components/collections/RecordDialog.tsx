@@ -1,9 +1,3 @@
-// ===========================================
-// Collection Record Dialog
-// ===========================================
-// Add, edit or (without collections:write) view one collection record: a
-// box per indexed field, the payload, and when it expires.
-
 import { useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
@@ -18,7 +12,7 @@ import type { CollectionRecord, CollectionSummary } from '../../hooks/use-collec
 import { filledFields, formatTtl, fromDateTimeLocal, toDateTimeLocal } from '../../lib/collections.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
-/** What the dialog hands back on save. `expireAt: null` means never (edit) or the collection default (add). */
+/** `expireAt: null`: never (edit) or the collection default (add). */
 export interface RecordDraft {
   readonly fields: Record<string, string>;
   readonly payload: string;
@@ -27,11 +21,10 @@ export interface RecordDraft {
 
 interface RecordDialogProps {
   readonly collection: CollectionSummary;
-  /** The record to edit or view; null to add a new one. */
+  /** null: add a new record. */
   readonly record: CollectionRecord | null;
   readonly readOnly: boolean;
   readonly isPending: boolean;
-  /** A server error from the last save, shown above the form. */
   readonly error: string | null;
   readonly onSave: (draft: RecordDraft) => void;
   readonly onClose: () => void;

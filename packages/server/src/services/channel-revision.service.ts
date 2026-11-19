@@ -1,16 +1,8 @@
-// ===========================================
-// Channel Revision Service
-// ===========================================
-// Stores and retrieves channel configuration snapshots.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, desc } from 'drizzle-orm';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { channelRevisions } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface RevisionSummary {
   readonly id: string;
@@ -25,10 +17,7 @@ export interface RevisionDetail extends RevisionSummary {
   readonly snapshot: Record<string, unknown>;
 }
 
-// ----- Service -----
-
 export class ChannelRevisionService {
-  /** Save a revision snapshot for a channel. */
   static async saveRevision(
     channelId: string,
     revision: number,
@@ -59,7 +48,6 @@ export class ChannelRevisionService {
     });
   }
 
-  /** List all revisions for a channel (newest first). */
   static async listRevisions(channelId: string): Promise<Result<readonly RevisionSummary[]>> {
     return tryCatch(async () => {
       const rows = await db
@@ -79,7 +67,6 @@ export class ChannelRevisionService {
     });
   }
 
-  /** Get a specific revision by channel ID and revision number. */
   static async getRevision(
     channelId: string,
     revision: number,

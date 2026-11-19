@@ -12,7 +12,6 @@ import { fakeEditor } from '../../components/editors/__tests__/fake-monaco.js';
 vi.mock('../../components/editors/monaco.js', async () => (await import('../../components/editors/__tests__/fake-monaco.js')).fakeMonacoModule());
 vi.mock('@monaco-editor/react', async () => (await import('../../components/editors/__tests__/fake-monaco.js')).fakeMonacoReact);
 
-// Whether the page last asked to block navigation (the "Unsaved Changes" prompt).
 const blocker = vi.hoisted(() => ({ armed: false }));
 vi.mock('react-router', () => ({
   useBlocker: (when: boolean) => { blocker.armed = when; return { state: 'unblocked', reset: vi.fn(), proceed: vi.fn() }; },

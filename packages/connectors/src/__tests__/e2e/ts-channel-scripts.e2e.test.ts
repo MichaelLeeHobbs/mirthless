@@ -1,11 +1,3 @@
-// ===========================================
-// TypeScript channel scripts — compiled + run end to end
-// ===========================================
-// Proves that channel scripts authored in real TypeScript (interfaces, generics,
-// typed helpers, `as const`) are transpiled by the production esbuild path and
-// run correctly through a live channel. The ambient types an author writes these
-// against ship in packages/engine/sandbox-globals.d.ts.
-
 import { describe, it, expect, afterEach } from 'vitest';
 import { clearChannelRegistry } from '../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
@@ -35,7 +27,6 @@ async function runScriptChannel(channelId: string, port: number, transformer: st
   });
   deployed.push(channel);
   await sendMllp(port, HL7);
-  // Poll for the async dispatch to land.
   for (let i = 0; i < 200 && sink.received.length === 0; i++) {
     await new Promise((r) => setTimeout(r, 10));
   }

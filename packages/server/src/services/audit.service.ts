@@ -1,10 +1,7 @@
-// ===========================================
-// Audit Service
-// ===========================================
 // The one writer and reader of audit_log, the protected audit record (D-312).
 // Three ways to write, by what a lost record would cost:
 // - recordInTx: in the caller's transaction, so a change and its record
-//   commit or roll back together (grant changes, later epics).
+//   commit or roll back together.
 // - recordOrRefuse: fail-closed. The caller refuses its request with 503
 //   AUDIT_UNAVAILABLE when the record cannot be written (PHI reads, purges).
 // - record: one row, the failure returned; emitAuditEvent in
@@ -19,10 +16,9 @@ import logger from '../lib/logger.js';
 import { ServiceError } from '../lib/service-error.js';
 import { auditLog } from '../db/schema/index.js';
 
-/** How long a fail-closed audit write may take before the request is refused. */
 export const AUDIT_WRITE_TIMEOUT_MS = 2000;
 
-/** One audit row. Never put message content, a token or a secret in `attributes`. */
+/** Never put message content, a token or a secret in `attributes`. */
 export interface AuditRecordInput {
   readonly action: string;
   readonly outcome: 'SUCCESS' | 'FAILURE';
@@ -48,13 +44,10 @@ export interface AuditListResult {
   readonly pagination: { readonly page: number; readonly pageSize: number; readonly total: number; readonly totalPages: number };
 }
 
-/** What can insert an audit row: the shared db or a transaction on it. */
 type AuditWriter = Pick<typeof db, 'insert'>;
 
-/** The transaction a recordInTx caller passes. */
 export type AuditTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Insert one row and return its id. */
 async function insertRow(writer: AuditWriter, input: AuditRecordInput): Promise<number> {
   const [row] = await writer.insert(auditLog).values({
     action: input.action,
@@ -80,11 +73,7 @@ function whereFor(query: AuditListQuery): ReturnType<typeof and> {
 }
 
 export class AuditService {
-  /**
-   * The message rows `userId` has read through fail-closed reads since
-   * `since`: the sum of the `rows` each record carries. Only an API key's
-   * reads carry it (lib/key-row-ceiling.ts, D-313).
-   */
+  /** Only an API key's reads carry `rows` (lib/key-row-ceiling.ts, D-313). */
   static async rowsReadSince(userId: string, since: Date): Promise<number> {
     // A key's read waits on this, so it gets the same short limit as an audit write.
     return db.transaction(async (tx) => {
@@ -96,20 +85,15 @@ export class AuditService {
     });
   }
 
-  /** Write one row on the shared connection. */
   static async record(input: AuditRecordInput): Promise<Result<void>> {
     return tryCatch(async () => { await insertRow(db, input); });
   }
 
-  /** Write one row in the caller's transaction. Throws with it, so the change rolls back. */
+  /** Throws, so the caller's change rolls back with it. */
   static async recordInTx(tx: AuditTransaction, input: AuditRecordInput): Promise<void> {
     await insertRow(tx, input);
   }
 
-  /**
-   * Write one row and return its id, or fail with AUDIT_UNAVAILABLE (503) so
-   * the caller refuses its request. The write may take AUDIT_WRITE_TIMEOUT_MS.
-   */
   static async recordOrRefuse(input: AuditRecordInput): Promise<Result<number>> {
     return tryCatch(async () => {
       // statement_timeout bounds the INSERT on the server; the race bounds the
@@ -140,7 +124,6 @@ export class AuditService {
     });
   }
 
-  /** List audit rows, newest first. */
   static async list(query: AuditListQuery): Promise<Result<AuditListResult>> {
     return tryCatch(async () => {
       const where = whereFor(query);
@@ -153,7 +136,6 @@ export class AuditService {
     });
   }
 
-  /** One audit row by id. */
   static async getById(id: number): Promise<Result<AuditEntry>> {
     return tryCatch(async () => {
       const [row] = await db.select().from(auditLog).where(eq(auditLog.id, id)).limit(1);

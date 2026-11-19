@@ -1,9 +1,5 @@
-// ===========================================
-// API Key Routes
-// ===========================================
-// Issue and manage API keys (D-313, RBAC plan section 7). Reading needs
-// api_keys:read; every change needs api_keys:manage, and issuing or enabling
-// a key also needs its grants within the caller's own (api-key.service.ts).
+// Issuing or enabling a key also needs its grants within the caller's own,
+// checked in api-key.service.ts (D-313).
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';

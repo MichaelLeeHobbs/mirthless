@@ -1,12 +1,3 @@
-// ===========================================
-// Scoped assignments (real Postgres, #266 slice 10a)
-// ===========================================
-// PUT /users/:id/assignments replaces what a user holds with roles over every
-// channel or over channel groups. The grant service refuses a scope the role
-// cannot have, a scope the actor does not hold the role on, the Default group,
-// the actor's own assignments and an expiry in the past; a role edit is judged
-// on the scopes the role is assigned over.
-
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -41,7 +32,7 @@ describeIntegration('scoped assignments (real Postgres)', () => {
     return rows[0]!.id;
   }
 
-  /** A role holding exactly `permissions`, made directly so the test does not depend on the role routes. */
+  /** Made directly so the test does not depend on the role routes. */
   async function customRole(permissions: readonly string[]): Promise<string> {
     const { rows } = await mods.pool.query<{ id: string }>('INSERT INTO roles (name) VALUES ($1) RETURNING id', [`itest-role-${randomUUID().slice(0, 8)}`]);
     const id = rows[0]!.id;
@@ -122,7 +113,6 @@ describeIntegration('scoped assignments (real Postgres)', () => {
   });
 
   it('judges the single-role path and the target rule on scope, not on a flat list of permissions', async () => {
-    // The manager can manage users, and holds Developer on Lab only.
     const manager = await user(null);
     await put(admin, manager, [
       { roleId: await customRole(['users:read', 'users:write']), groupIds: null },

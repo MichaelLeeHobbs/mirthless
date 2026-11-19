@@ -1,7 +1,3 @@
-// ===========================================
-// Messages Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, timestamp, boolean, bigint, bigserial, primaryKey, index } from 'drizzle-orm/pg-core';
 
 export const messages = pgTable('messages', {

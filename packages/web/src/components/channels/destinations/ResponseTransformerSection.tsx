@@ -1,11 +1,3 @@
-// ===========================================
-// Destination Response Transformer Section
-// ===========================================
-// Single-script editor (Monaco, JS/TS toggle) for a destination's response
-// transformer (CT_RESPONSE_TRANSFORMED). Runs against the response returned by
-// the destination after a successful send. Code-template context:
-// "Dest Response Transformer".
-
 import { type ReactNode } from 'react';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';

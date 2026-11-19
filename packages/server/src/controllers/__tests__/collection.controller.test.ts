@@ -1,9 +1,4 @@
-// ===========================================
-// Collection Controller Tests (record grid)
-// ===========================================
-// The record list/create/update/delete handlers map service Results onto the
-// API envelope and HTTP status. The SQL itself is covered by
-// collection.itest.ts against Postgres.
+// The SQL is tested against Postgres in collection.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';

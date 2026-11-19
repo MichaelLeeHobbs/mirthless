@@ -1,7 +1,3 @@
-// ===========================================
-// Fatal Error Handler Tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { Logger } from 'pino';

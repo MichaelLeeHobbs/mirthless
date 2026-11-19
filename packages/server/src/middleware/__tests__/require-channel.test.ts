@@ -1,11 +1,5 @@
-// ===========================================
-// Channel scope on channel routes (D-310)
-// ===========================================
-// scopeToChannel reads the groups of the channel a route names; the route's
-// requirePermission then checks the permission on that channel. The groups
-// come from lib/channel-scope.ts, the database boundary, faked here; that the
-// lookup reads real memberships, through the real routes, is proven against
-// Postgres in test/integration/channel-scope.itest.ts.
+// Channel scope (D-310). The lookup against real memberships is proven in
+// test/integration/channel-scope.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NextFunction, Request, Response, Router } from 'express';
@@ -42,7 +36,6 @@ function resStub(): Response & { statusCode?: number; body?: { error?: { code?: 
   return res;
 }
 
-/** Run scopeToChannel's lookup for `value`, as Express would before the route's guard. */
 async function lookUp(req: Request, value: unknown = CHANNEL): Promise<unknown> {
   let handler: ((req: Request, res: Response, next: NextFunction, value: unknown) => void) | undefined;
   scopeToChannel({ param: (_name: string, fn: typeof handler) => { handler = fn; } } as unknown as Router);

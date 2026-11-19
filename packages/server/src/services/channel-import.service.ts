@@ -1,9 +1,3 @@
-// ===========================================
-// Channel Import Service
-// ===========================================
-// Imports channels from a structured JSON export payload.
-// Supports collision handling: SKIP, OVERWRITE, CREATE_NEW.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
 import { eq, isNull, and, sql } from 'drizzle-orm';
@@ -39,11 +33,9 @@ import {
 import { isPlainObject } from '@galvanigraph/core-util';
 
 /**
- * Exports mask connector credentials as REDACTED. Importing that marker verbatim
- * would write the literal "__REDACTED__" over (or in place of) a real password.
- * Strip any redacted-valued keys so the secret is simply absent and must be
- * re-entered — the connector fails loud at deploy if a required credential is
- * missing, rather than silently authenticating with a bogus value.
+ * Exports mask credentials as REDACTED; importing the marker would write it over
+ * a real password. With the key dropped the secret is absent, so the connector
+ * fails loud at deploy instead of authenticating with a bogus value.
  */
 export function stripRedactedProperties(props: unknown): Record<string, unknown> {
   if (!isPlainObject(props)) return {};
@@ -82,10 +74,7 @@ export function stripRedactedProperties(props: unknown): Record<string, unknown>
  */
 export type ImportPlacement = { readonly groupId?: string } | 'restore';
 
-// ----- Service -----
-
 export class ChannelImportService {
-  /** Import channels with collision handling. */
   static async importChannels(
     entries: readonly ChannelExportEntry[],
     collisionMode: CollisionMode,
@@ -126,14 +115,11 @@ export class ChannelImportService {
   }
 }
 
-// ----- Helpers -----
-
 type ImportOutcome = 'created' | 'updated' | 'skipped' | string;
 
 /**
- * Why a channel's connectors can't run, or null. A source must be a type that
- * receives and each destination a type that sends (#109). Checked per channel so
- * one bad channel in a backup is reported while the others still import.
+ * Checked per channel (#109), so one bad channel in a backup is reported while
+ * the others still import.
  */
 export function connectorDirectionError(entry: ChannelExportEntry): string | null {
   if (!isSourceConnectorType(entry.sourceConnectorType)) {
@@ -146,7 +132,6 @@ export function connectorDirectionError(entry: ChannelExportEntry): string | nul
   return null;
 }
 
-/** Who imports, and where their channels go. */
 interface ImportRun {
   readonly context: AuditContext | undefined;
   readonly placement: ImportPlacement;
@@ -162,7 +147,6 @@ async function importSingleChannel(
   const directionError = connectorDirectionError(entry);
   if (directionError) return directionError;
   try {
-    // Check if channel with this ID already exists
     const [existing] = await db
       .select({ id: channels.id })
       .from(channels)
@@ -171,11 +155,9 @@ async function importSingleChannel(
     if (existing) {
       if (mode === 'SKIP') return 'skipped';
       if (mode === 'OVERWRITE') return await overwriteChannel(entry, run);
-      // CREATE_NEW: assign a new ID
       return await createChannel({ ...entry, id: randomUUID() }, run);
     }
 
-    // No collision — create directly
     return await createChannel(entry, run);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -190,7 +172,6 @@ async function createChannel(
   const now = new Date();
 
   await db.transaction(async (tx) => {
-    // Insert channel
     await tx.insert(channels).values({
       id: entry.id,
       name: entry.name,
@@ -233,10 +214,9 @@ async function createChannel(
 }
 
 /**
- * Whether the importer may replace `channelId`, judged in the overwrite's own
- * transaction after the channel row is locked FOR UPDATE: a membership change
- * locks the same row, so the channel cannot leave the importer's scope between
- * this check and the write. A restore may replace any channel.
+ * Judged after the channel row is locked FOR UPDATE: a membership change locks
+ * the same row, so the channel cannot leave the importer's scope between this
+ * check and the write.
  */
 async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Promise<boolean> {
   await tx.select({ id: channels.id }).from(channels).where(eq(channels.id, channelId)).for('update');
@@ -256,9 +236,8 @@ async function overwriteChannel(entry: ChannelExportEntry, run: ImportRun): Prom
     if (!(await mayOverwrite(tx, entry.id, run))) {
       return `Channel "${entry.name}": not imported; it would replace a channel you cannot change`;
     }
-    // Update channel core fields. Whether a channel is enabled is deploy
-    // control (#225), so an import keeps the stored flag; a restore sets it.
-    // The revision goes up, so an editor opened before the import gets a conflict.
+    // An import keeps the stored enabled flag, which is deploy control (#225);
+    // a restore sets it. The revision goes up so an editor opened before gets a conflict.
     await tx.update(channels).set({
       name: entry.name,
       description: entry.description,
@@ -281,7 +260,6 @@ async function overwriteChannel(entry: ChannelExportEntry, run: ImportRun): Prom
       updatedAt: now,
     }).where(eq(channels.id, entry.id));
 
-    // Delete existing relations
     await tx.delete(channelScripts).where(eq(channelScripts.channelId, entry.id));
     await tx.delete(channelConnectors).where(eq(channelConnectors.channelId, entry.id));
     await tx.delete(channelMetadataColumns).where(eq(channelMetadataColumns.channelId, entry.id));
@@ -299,10 +277,9 @@ interface ConnectorRef {
 }
 
 /**
- * The new connector row a filter or transformer belongs to: null for the
- * source, else the destination its metaDataId names. A reference by the
- * exporting server's row id alone cannot be resolved here, so it fails the
- * channel's import rather than attaching the script to the wrong connector.
+ * Null for the source. A reference by the exporting server's row id alone
+ * cannot be resolved here, so it fails the channel's import rather than
+ * attaching the script to the wrong connector.
  */
 export function resolveConnectorId(ref: ConnectorRef, destIdByMetaDataId: ReadonlyMap<number, string>, what: string): string | null {
   if (ref.metaDataId !== undefined && ref.metaDataId !== null) {
@@ -319,7 +296,6 @@ async function insertRelations(
   channelId: string,
   entry: ChannelExportEntry,
 ): Promise<void> {
-  // Scripts
   if (entry.scripts.length > 0) {
     await tx.insert(channelScripts).values(
       entry.scripts.map((s) => ({
@@ -331,7 +307,6 @@ async function insertRelations(
     );
   }
 
-  // Destinations
   const destIdByMetaDataId = new Map<number, string>();
   if (entry.destinations.length > 0) {
     const insertedDestinations = await tx.insert(channelConnectors).values(
@@ -357,7 +332,6 @@ async function insertRelations(
   const connectorFor = (ref: ConnectorRef, what: string): string | null =>
     resolveConnectorId(ref, destIdByMetaDataId, `${what} of "${entry.name}"`);
 
-  // Metadata columns
   if (entry.metadataColumns.length > 0) {
     await tx.insert(channelMetadataColumns).values(
       entry.metadataColumns.map((m) => ({
@@ -369,7 +343,6 @@ async function insertRelations(
     );
   }
 
-  // Filters
   for (const filter of entry.filters) {
     const [inserted] = await tx
       .insert(channelFilters)
@@ -395,7 +368,6 @@ async function insertRelations(
     }
   }
 
-  // Transformers
   for (const transformer of entry.transformers) {
     const [inserted] = await tx
       .insert(channelTransformers)

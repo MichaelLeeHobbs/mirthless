@@ -1,7 +1,3 @@
-// ===========================================
-// Extension Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod';
 import { setExtensionEnabledSchema } from '@galvanigraph/core-models';

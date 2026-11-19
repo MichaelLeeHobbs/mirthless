@@ -1,12 +1,3 @@
-// ===========================================
-// SFTP connector cascade — real SFTP server
-// ===========================================
-// The vision's "Channel SFTP listen + another channel with an SFTP destination":
-//   Channel A: TCP source → SFTP destination (uploads a file to the server).
-//   Channel B: SFTP source (polls the same dir) → transform → sink.
-// A message pushed into A is uploaded over SFTP, picked up by B, and delivered.
-// Runs only when SFTP_TEST_HOST is set (docker compose --profile test up sftp-test).
-
 import { it, expect, afterEach } from 'vitest';
 import SftpLibrary from 'ssh2-sftp-client';
 import {
@@ -22,7 +13,6 @@ import { describeSftp, requireSftp } from './gates.js';
 
 const TCP_PORT = 17741;
 
-/** The ssh2 SFTP session ssh2-sftp-client keeps once connected. */
 interface RawSession {
   readonly sftp: { symlink(targetPath: string, linkPath: string, cb: (err: Error | null | undefined) => void): void };
 }
@@ -47,7 +37,6 @@ describeSftp('SFTP connector cascade (real SFTP server)', () => {
 
     const sink = new CaptureDestination();
 
-    // Channel B: SFTP source polls the upload dir, deletes after processing.
     const channelB = await deployChannel({
       channelId: '00000000-0000-0000-0000-connsftp000b',
       dataType: 'RAW',
@@ -65,7 +54,6 @@ describeSftp('SFTP connector cascade (real SFTP server)', () => {
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
 
-    // Channel A: TCP source → SFTP destination uploads ${messageId}.hl7.
     const channelA = await deployChannel({
       channelId: '00000000-0000-0000-0000-connsftp000a',
       dataType: 'RAW',
@@ -85,7 +73,6 @@ describeSftp('SFTP connector cascade (real SFTP server)', () => {
 
     await sendMllp(TCP_PORT, 'MSH|^~\\&|SFTPTEST');
 
-    // Wait for the upload → poll → download → deliver round trip.
     for (let i = 0; i < 300 && sink.received.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 20));
     }

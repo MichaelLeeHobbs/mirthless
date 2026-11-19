@@ -1,7 +1,3 @@
-// ===========================================
-// Seed Options Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { demoDataEnabled } from '../seed-options.js';
 

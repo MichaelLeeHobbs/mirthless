@@ -1,8 +1,4 @@
-// ===========================================
-// Access Records
-// ===========================================
-// The protected audit log (D-312): sign-ins, refused requests and purges.
-// Shown on the Events page to holders of audit:read only.
+// The protected audit log (D-312). Render only for holders of audit:read.
 
 import { Fragment, useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
@@ -74,7 +70,6 @@ function EntryRow({ entry, open, onToggle }: { readonly entry: AuditEntry; reado
   );
 }
 
-/** The audit log table with its own filters and pagination. */
 export function AccessRecords(): ReactNode {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);

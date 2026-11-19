@@ -1,10 +1,5 @@
-// ===========================================
-// Session Lifetime Tests
-// ===========================================
 // JWT_REFRESH_EXPIRES_IN sets the refresh JWT's exp, the session row's expiry
-// and the refresh cookie's max age (issue #99). Only the database and the
-// resolver that reads the user are faked: the real jwt and cookie helpers run
-// against a 30-day setting.
+// and the refresh cookie's max age (#99).
 
 import { describe, it, expect, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
@@ -24,7 +19,6 @@ const sessionRow = { id: 'sess-1', userId: 'user-1', expiresAt: new Date(Date.no
 const selectResponses: unknown[][] = [];
 const mockDb = {
   select: vi.fn(() => ({ from: () => ({ where: () => Promise.resolve(selectResponses.shift() ?? []) }) })),
-  // The refresh consumes its session with DELETE ... RETURNING.
   delete: vi.fn(() => ({ where: () => ({ returning: vi.fn().mockResolvedValue([sessionRow]) }) })),
   insert: vi.fn(() => ({
     values: (values: Record<string, unknown>) => {

@@ -1,7 +1,3 @@
-// ===========================================
-// Quarantine Ledger Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import type { DispatchResult, RawMessage } from '../base.js';
@@ -11,7 +7,7 @@ import { makeMockLogger, type MockLogger } from '../__fixtures__/mock-logger.js'
 const LEDGER = '/in/.galvanigraph-quarantine.json';
 const LEGACY = '/in/.mirthless-quarantine.json';
 
-/** In-memory ledger storage; a path mapped to an Error fails that operation. */
+/** A path mapped to an Error fails its read. */
 class MemoryStorage implements LedgerStorage {
   readonly files = new Map<string, string | Error>();
   writeError: Error | null = null;
@@ -123,8 +119,6 @@ describe('QuarantineLedger.reportOnce', () => {
     expect(ledger.reportOnce('b.hl7:2')).toBe(true);
   });
 });
-
-// ----- dispatchQuarantined -----
 
 const RAW: RawMessage = { content: 'MSH|^~\\&|X', sourceMap: {} };
 

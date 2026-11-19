@@ -1,15 +1,8 @@
-// ===========================================
-// Kafka Client Adapter
-// ===========================================
-// The small part of @platformatic/kafka the Kafka connectors use, behind
-// interfaces a unit test can fake. Group membership, partition assignment and
-// offset storage stay with the broker and the client (D-261).
+// Group membership, partition assignment and offset storage stay with the broker and the client (D-261).
 
 import { Admin, Consumer, Producer, ProduceAcks, type SASLOptions } from '@platformatic/kafka';
 import type { ConnectionOptions as TlsConnectionOptions } from 'node:tls';
 import type { TlsClientOptions } from '../tls.js';
-
-// ----- Connection -----
 
 export const KAFKA_SASL_MECHANISM = {
   NONE: 'NONE',
@@ -19,29 +12,25 @@ export const KAFKA_SASL_MECHANISM = {
 } as const;
 export type KafkaSaslMechanism = typeof KAFKA_SASL_MECHANISM[keyof typeof KAFKA_SASL_MECHANISM];
 
-/** How to reach and authenticate to a Kafka cluster. */
 export interface KafkaConnectionConfig {
   /** `host:port` entries, comma separated. */
   readonly brokers: string;
   readonly clientId: string;
-  /** PEM TLS settings; undefined connects in plaintext. */
+  /** Undefined connects in plaintext. */
   readonly tls?: TlsClientOptions | undefined;
   readonly saslMechanism: KafkaSaslMechanism;
   readonly saslUsername: string;
   readonly saslPassword: string;
 }
 
-/** Bound on each broker request and on connecting. */
 const KAFKA_REQUEST_TIMEOUT_MS = 30_000;
 /** The client's default; it must stay above 1, or an idempotent producer retries without limit. */
 const KAFKA_SEND_RETRIES = 3;
 
-/** Split the broker list into `host:port` entries. */
 export function parseBrokers(brokers: string): string[] {
   return brokers.split(',').map((b) => b.trim()).filter((b) => b.length > 0);
 }
 
-/** Node TLS options for the client; certificate checks stay on unless switched off. */
 function toNodeTls(tls: TlsClientOptions): TlsConnectionOptions {
   return {
     rejectUnauthorized: tls.rejectUnauthorized !== false,
@@ -51,7 +40,6 @@ function toNodeTls(tls: TlsClientOptions): TlsConnectionOptions {
   };
 }
 
-/** Options every @platformatic/kafka client takes. */
 export function clientOptions(config: KafkaConnectionConfig): {
   clientId: string;
   bootstrapBrokers: string[];
@@ -70,9 +58,6 @@ export function clientOptions(config: KafkaConnectionConfig): {
   };
 }
 
-// ----- Consumer -----
-
-/** One record read from a topic. */
 export interface KafkaInboundRecord {
   readonly topic: string;
   readonly partition: number;
@@ -81,11 +66,11 @@ export interface KafkaInboundRecord {
   readonly key: Buffer | undefined;
   readonly value: Buffer | undefined;
   readonly headers: ReadonlyMap<Buffer, Buffer>;
-  /** Commit this record's offset (and every earlier one in its partition) for the group. */
+  /** Also commits every earlier offset in its partition. */
   commit(): Promise<void>;
 }
 
-/** An open subscription: records in offset order per partition, then close. */
+/** Records arrive in offset order per partition. */
 export interface KafkaSubscription extends AsyncIterable<KafkaInboundRecord> {
   close(force: boolean): Promise<void>;
 }
@@ -99,20 +84,16 @@ export interface KafkaSubscribeOptions extends KafkaConnectionConfig {
 
 export type KafkaSubscribe = (options: KafkaSubscribeOptions) => Promise<KafkaSubscription>;
 
-/**
- * Join the consumer group and read from its committed offsets. Offsets are
- * committed only by {@link KafkaInboundRecord.commit}, never automatically.
- */
+/** Never commits automatically: only {@link KafkaInboundRecord.commit} does. */
 export const subscribeKafka: KafkaSubscribe = async (options) => {
   const consumer = new Consumer({
     ...clientOptions(options),
     groupId: options.groupId,
     autocommit: false,
   });
-  // The consumer emits 'error' when it cannot rejoin the group after a failed
-  // heartbeat (a broker restart, a coordinator move), even while no record is
-  // being read. Unheard, that error would end the process. End the stream with
-  // it instead, so the iteration throws and the receiver rejoins.
+  // The consumer emits 'error' when it cannot rejoin the group after a failed heartbeat,
+  // even between records; unheard, it ends the process. Ending the stream with it makes
+  // the iteration throw and the receiver rejoin.
   let stream: Awaited<ReturnType<typeof consumer.consume>> | null = null;
   let consumerError: Error | null = null;
   consumer.on('error', (err: unknown) => {
@@ -157,8 +138,6 @@ export const subscribeKafka: KafkaSubscribe = async (options) => {
   }
 };
 
-// ----- Producer -----
-
 export interface KafkaOutboundRecord {
   readonly topic: string;
   readonly key: Buffer | undefined;
@@ -166,7 +145,6 @@ export interface KafkaOutboundRecord {
   readonly headers: Readonly<Record<string, Buffer>>;
 }
 
-/** Where the broker stored a record. */
 export interface KafkaWriteResult {
   readonly topic: string;
   readonly partition: number;
@@ -202,9 +180,8 @@ export function describeKafkaError(err: unknown): Error {
 }
 
 export const createKafkaProducer: KafkaProducerFactory = (config) => {
-  // Idempotent, so a request the client retries (its broker wrote it, but the
-  // answer was lost) is not written twice. The client would then retry without
-  // limit; keep its usual 3, so a send the dispatcher gave up on stops retrying.
+  // Idempotent, so a retried request whose answer was lost is not written twice. That
+  // alone retries without limit; the cap stops a send the dispatcher gave up on.
   const producer = new Producer({ ...clientOptions(config), acks: ProduceAcks.ALL, idempotent: true, retries: KAFKA_SEND_RETRIES });
   return {
     async send(record): Promise<KafkaWriteResult | undefined> {
@@ -233,12 +210,6 @@ export const createKafkaProducer: KafkaProducerFactory = (config) => {
   };
 };
 
-// ----- Connection test -----
-
-/**
- * Connect, authenticate and read cluster metadata; with a topic, also check
- * that the topic exists. Returns a one-line description of what was found.
- */
 export async function testKafkaConnection(config: KafkaConnectionConfig, topic?: string): Promise<string> {
   const admin = new Admin(clientOptions(config));
   try {

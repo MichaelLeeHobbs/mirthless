@@ -1,10 +1,3 @@
-// ===========================================
-// Dashboard Channel Column Cells
-// ===========================================
-// Renders the configurable (config + stat) columns for a channel row and for a
-// group-total row, shared by the flat and grouped dashboard tables so column
-// visibility behaves identically in both.
-
 import { type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import TableCell from '@mui/material/TableCell';
@@ -50,11 +43,6 @@ function relativeAge(date: Date): string {
   return date.toLocaleDateString();
 }
 
-/**
- * Compact relative-time label, e.g. "just now", "3m ago", "2h ago", "5d ago",
- * or a date past 30 days. A missing or unparseable time follows
- * `formatTimestampWith`'s rule.
- */
 export function formatUpdated(iso: string | null | undefined): string {
   return formatTimestampWith(iso, relativeAge);
 }
@@ -63,13 +51,11 @@ function visibleCols(visible: ReadonlySet<DashboardColumnId>): readonly typeof D
   return DASHBOARD_COLUMNS.filter((c) => visible.has(c.id));
 }
 
-/** Errored-as-a-percent-of-received, e.g. "2.5%". Guards divide-by-zero. */
 function errorRate(errored: number, received: number): string {
   if (received <= 0) return errored > 0 ? '100%' : '0%';
   return `${((errored / received) * 100).toFixed(1)}%`;
 }
 
-/** Body cells for a single channel row (config + stat columns). */
 export function ChannelBodyCells({ row, visible }: { row: ChannelCellRow; visible: ReadonlySet<DashboardColumnId> }): ReactNode {
   const navigate = useNavigate();
 
@@ -121,7 +107,6 @@ export function ChannelBodyCells({ row, visible }: { row: ChannelCellRow; visibl
   );
 }
 
-/** Aggregate cells for a group header row — numeric totals, blanks for config columns. */
 export function GroupTotalCells({ totals, visible }: { totals: GroupTotals; visible: ReadonlySet<DashboardColumnId> }): ReactNode {
   return (
     <>
@@ -142,7 +127,6 @@ export function GroupTotalCells({ totals, visible }: { totals: GroupTotals; visi
   );
 }
 
-/** Header count for how many configurable columns are visible (for colSpan math). */
 export function visibleColumnCount(visible: ReadonlySet<DashboardColumnId>): number {
   return visibleCols(visible).length;
 }

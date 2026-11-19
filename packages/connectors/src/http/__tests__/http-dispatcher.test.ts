@@ -1,15 +1,9 @@
-// ===========================================
-// HTTP Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { HttpDispatcher, type HttpDispatcherConfig } from '../http-dispatcher.js';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import type { ConnectorMessage } from '../../base.js';
-
-// ----- Helpers -----
 
 const DEST_PORT = 18662;
 const DEST_HTTPS_PORT = 18663;
@@ -76,10 +70,7 @@ function createMockServer(
   };
 }
 
-/**
- * A mock HTTPS server using the self-signed test cert (CN=localhost,
- * SAN 127.0.0.1). Always replies 200 "SECURE-OK".
- */
+/** Self-signed test cert: CN=localhost, SAN 127.0.0.1. */
 function createMockHttpsServer(port: number): { server: https.Server; close: () => Promise<void> } {
   const server = https.createServer(
     { cert: TEST_CERT_PEM, key: TEST_KEY_PEM },
@@ -98,8 +89,6 @@ function createMockHttpsServer(port: number): { server: https.Server; close: () 
     close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }),
   };
 }
-
-// ----- Lifecycle -----
 
 let dispatcher: HttpDispatcher | null = null;
 let mockServer: MockServer | null = null;
@@ -120,8 +109,6 @@ afterEach(async () => {
     mockHttpsServer = null;
   }
 });
-
-// ----- Tests -----
 
 describe('HttpDispatcher', () => {
   it('validates missing URL on deploy', async () => {
@@ -272,8 +259,6 @@ describe('HttpDispatcher', () => {
     expect(result.value.content).toBe('Response payload here');
   });
 
-  // ----- TLS / HTTPS -----
-
   const httpsUrl = `https://127.0.0.1:${String(DEST_HTTPS_PORT)}/receive`;
 
   async function startHttpsServer(): Promise<void> {
@@ -335,8 +320,7 @@ describe('HttpDispatcher', () => {
   it('surfaces a TLS verification failure over node:https as a failed Result', async () => {
     await startHttpsServer();
 
-    // Client cert activates the node:https path; with verification ON and the
-    // server's self-signed cert NOT in the trust store, verification must fail.
+    // The client cert takes the node:https path; the self-signed server cert is not trusted.
     dispatcher = new HttpDispatcher(makeConfig({
       url: httpsUrl,
       tls: { cert: TEST_CERT_PEM, key: TEST_KEY_PEM, rejectUnauthorized: true },
@@ -416,7 +400,6 @@ describe('HttpDispatcher per-message values, parameters and Basic auth', () => {
 describe('HttpDispatcher redirects', () => {
   const REDIRECT_PORT = 18664;
 
-  /** A server that redirects POST /receive to /login, where a login page answers 200. */
   function createRedirectingServer(port: number, status: number): MockServer {
     const requests: MockServer['requests'] = [];
     const server = http.createServer((req, res) => {

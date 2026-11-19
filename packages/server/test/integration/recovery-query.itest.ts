@@ -1,6 +1,3 @@
-// ===========================================
-// Recovery queries — real Postgres integration
-// ===========================================
 // Recovery must only see messages an earlier run left behind, and must be
 // able to page through them without reading one twice.
 

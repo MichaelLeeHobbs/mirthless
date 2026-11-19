@@ -1,8 +1,3 @@
-// ===========================================
-// Columns Button
-// ===========================================
-// Dashboard column-visibility control. Per-user, persisted via user preferences.
-
 import { useState, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';

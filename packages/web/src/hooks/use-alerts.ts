@@ -1,21 +1,12 @@
-// ===========================================
-// Alert API Hooks
-// ===========================================
-// TanStack Query hooks for alert CRUD operations.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateAlertInput, UpdateAlertInput } from '@galvanigraph/core-models';
 import { api, type AlertListResult, type AlertDetail } from '../api/client.js';
-
-// ----- Query Keys -----
 
 const ALERT_KEYS = {
   all: ['alerts'] as const,
   list: (page: number, pageSize: number) => [...ALERT_KEYS.all, 'list', { page, pageSize }] as const,
   detail: (id: string) => [...ALERT_KEYS.all, 'detail', id] as const,
 } as const;
-
-// ----- Query Hooks -----
 
 export function useAlerts(
   page: number = 1,
@@ -44,8 +35,6 @@ export function useAlert(
     enabled: id !== null,
   });
 }
-
-// ----- Mutation Hooks -----
 
 export function useCreateAlert(): ReturnType<typeof useMutation<AlertDetail, Error, CreateAlertInput>> {
   const queryClient = useQueryClient();

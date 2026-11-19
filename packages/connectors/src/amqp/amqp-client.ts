@@ -1,14 +1,7 @@
-// ===========================================
-// AMQP Client Adapter
-// ===========================================
-// The small part of amqplib the AMQP connectors use, behind interfaces a unit
-// test can fake. Queues, exchanges and bindings belong to the broker's
-// administrator: the connectors check that they exist and never declare them.
+// Queues, exchanges and bindings are the broker administrator's: check them, never declare them (D-266).
 
 import { connect, type ChannelModel, type ConfirmChannel, type ConsumeMessage, type Options, type SocketOptions } from 'amqplib';
 import type { TlsClientOptions } from '../tls.js';
-
-// ----- Connection -----
 
 export interface AmqpConnectionConfig {
   readonly host: string;
@@ -16,15 +9,13 @@ export interface AmqpConnectionConfig {
   readonly vhost: string;
   readonly username: string;
   readonly password: string;
-  /** PEM TLS settings; undefined connects in plaintext. */
+  /** Undefined connects in plaintext. */
   readonly tls?: TlsClientOptions | undefined;
 }
 
-/** Bound on connecting; also the heartbeat that detects a dead broker connection. */
 const CONNECT_TIMEOUT_MS = 30_000;
 const HEARTBEAT_SECONDS = 30;
 
-/** Connection URL parts (credentials stay out of any URL string). */
 export function connectOptions(config: AmqpConnectionConfig): Options.Connect {
   return {
     protocol: config.tls ? 'amqps' : 'amqp',
@@ -39,7 +30,6 @@ export function connectOptions(config: AmqpConnectionConfig): Options.Connect {
 /** Name the broker shows for these connections (RabbitMQ management UI, `rabbitmqctl list_connections`). */
 export const AMQP_CONNECTION_NAME = 'galvanigraph';
 
-/** Socket options: TLS checks stay on unless switched off. */
 export function socketOptions(config: AmqpConnectionConfig): SocketOptions {
   const tls = config.tls;
   return {
@@ -61,7 +51,6 @@ async function open(config: AmqpConnectionConfig): Promise<ChannelModel> {
   return connect(connectOptions(config), socketOptions(config));
 }
 
-/** Header values as JSON-safe values: byte strings as UTF-8 text, nested tables as JSON text. */
 export function headersToRecord(headers: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(headers ?? {})) {
@@ -74,9 +63,7 @@ export function headersToRecord(headers: Readonly<Record<string, unknown>> | und
   return result;
 }
 
-// ----- Consumer -----
-
-/** One message delivered from a queue; it stays unacknowledged until ack or nack. */
+/** Stays unacknowledged until ack or nack. */
 export interface AmqpDelivery {
   readonly content: Buffer;
   readonly exchange: string;
@@ -85,7 +72,7 @@ export interface AmqpDelivery {
   readonly headers: Readonly<Record<string, unknown>>;
   readonly messageId: string | undefined;
   readonly contentType: string | undefined;
-  /** Remove the message from the queue. Throws when the channel has closed. */
+  /** Throws when the channel has closed. */
   ack(): void;
   /** Return the message to the queue (requeue) or reject it to the dead-letter exchange, if any. */
   nack(requeue: boolean): void;
@@ -95,7 +82,7 @@ export interface AmqpConsumeOptions extends AmqpConnectionConfig {
   readonly queue: string;
 }
 
-/** An open consumer. `closed` settles when the connection or channel goes away. */
+/** `closed` settles when the connection or channel goes away. */
 export interface AmqpConsumer {
   readonly closed: Promise<Error>;
   close(): Promise<void>;
@@ -117,11 +104,7 @@ function toDelivery(channel: { ack(m: ConsumeMessage): void; nack(m: ConsumeMess
   };
 }
 
-/**
- * Consume an existing queue with manual acknowledgement, one unacknowledged
- * message at a time (prefetch 1), so a message returned to the queue is
- * delivered again before the ones behind it.
- */
+/** Prefetch 1, so a message returned to the queue is delivered again before the ones behind it. */
 export const consumeAmqp: AmqpConsume = async (options, onDelivery) => {
   const model = await open(options);
   let lastError: Error | undefined;
@@ -152,8 +135,6 @@ export const consumeAmqp: AmqpConsume = async (options, onDelivery) => {
   };
 };
 
-// ----- Publisher -----
-
 export interface AmqpOutbound {
   readonly exchange: string;
   readonly routingKey: string;
@@ -173,11 +154,7 @@ export interface AmqpPublisher {
 
 export type AmqpPublisherFactory = (config: AmqpConnectionConfig) => Promise<AmqpPublisher>;
 
-/**
- * Publish persistent messages on a confirm channel with `mandatory` set. A
- * message no queue is bound to receive is returned by the broker before it
- * confirms, and that publish fails instead of the message being dropped.
- */
+/** With `mandatory`, the broker returns a message no queue receives before it confirms; that publish fails instead of the message being dropped. */
 export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
   const model = await open(config);
   let connectionOpen = true;
@@ -229,12 +206,7 @@ export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
   };
 };
 
-// ----- Connection test -----
-
-/**
- * Connect, authenticate and check that the queue (source) or exchange
- * (destination; the default exchange always exists) is there.
- */
+/** The default exchange ('') always exists, so it is not checked. */
 export async function testAmqpConnection(config: AmqpConnectionConfig, target: { queue: string } | { exchange: string }): Promise<string> {
   const model = await open(config);
   // A failed check closes the channel with an 'error' event; unheard, it would crash the process.

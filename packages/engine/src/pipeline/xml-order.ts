@@ -1,16 +1,8 @@
-// ===========================================
-// Order-Preserving XML Serializer
-// ===========================================
-// Scripts edit XML as a plain object (`msg.patient.name = 'X'`). That object
-// cannot hold document order: repeated elements are grouped into one array and
-// the text around child elements is joined into one `#text`. Building XML
-// straight from it moves elements and text around.
-//
-// This serializer writes the edited object back in the ORIGINAL document's
-// order. It walks the original as an ordered tree and, for each node, emits
-// what the edited object now holds for it. Elements the script removed are
-// dropped, elements it added are appended to their parent, and comments,
-// CDATA sections and whitespace the script cannot see are kept where they were.
+// Scripts edit XML as a plain object, which cannot hold document order: repeated
+// elements are grouped into one array and the text around child elements is
+// joined into one `#text`. So the edited object is written back in the original
+// document's order: removed elements are dropped, added ones appended to their
+// parent, and comments, CDATA and whitespace the script cannot see stay put.
 
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import { isPlainObject } from '@galvanigraph/core-util';
@@ -56,19 +48,14 @@ const orderedBuilder = new XMLBuilder({
 /** A node of fast-xml-parser's ordered tree: one tag key holding its children, plus optional attributes. */
 type OrderedNode = Record<string, unknown>;
 
-/** One element's content still to be written. */
 interface Work {
-  /** What the edited object holds for this element. */
   readonly edited: unknown;
-  /** What the unedited object held for it, to tell whether its text changed. */
+  /** The unedited value, to tell whether the text changed. */
   readonly before: unknown;
-  /** The element's children in the original document. */
   readonly original: readonly OrderedNode[];
-  /** Where the merged children go. */
   readonly out: OrderedNode[];
 }
 
-/** The single tag name of an ordered node (`#text`, `#comment`, `#cdata` or an element name). */
 function tagOf(node: OrderedNode): string {
   for (const key of Object.keys(node)) {
     if (key !== ATTRS) return key;
@@ -76,7 +63,6 @@ function tagOf(node: OrderedNode): string {
   return TEXT;
 }
 
-/** Every value the object form holds under a tag: an array for repeated elements, one value otherwise. */
 function occurrences(parent: unknown, tag: string): readonly unknown[] {
   if (!isPlainObject(parent) || !Object.hasOwn(parent, tag)) return [];
   const value = parent[tag];
@@ -84,7 +70,6 @@ function occurrences(parent: unknown, tag: string): readonly unknown[] {
   return value === undefined ? [] : [value];
 }
 
-/** The text an element holds in the object form: the value itself for a leaf, `#text` otherwise. */
 function textOf(value: unknown): string {
   if (isPlainObject(value)) return value[TEXT] === undefined || value[TEXT] === null ? '' : String(value[TEXT]);
   if (value === undefined || value === null || Array.isArray(value)) return '';
@@ -107,7 +92,6 @@ function attributesOf(value: unknown): Record<string, string> | undefined {
   return any ? attrs : undefined;
 }
 
-/** Start an element node and queue its content. */
 function element(tag: string, edited: unknown, before: unknown, original: readonly OrderedNode[], stack: Work[]): OrderedNode {
   const children: OrderedNode[] = [];
   const node: OrderedNode = { [tag]: children };
@@ -117,7 +101,6 @@ function element(tag: string, edited: unknown, before: unknown, original: readon
   return node;
 }
 
-/** Write the original children of one element, in their order, with the edited values. */
 function mergeOriginal(work: Work, used: Map<string, number>, stack: Work[]): void {
   const textChanged = textOf(work.edited) !== textOf(work.before);
   let wroteText = !textChanged;
@@ -141,7 +124,6 @@ function mergeOriginal(work: Work, used: Map<string, number>, stack: Work[]): vo
   if (!wroteText && textOf(work.edited) !== '') work.out.unshift({ [TEXT]: textOf(work.edited) });
 }
 
-/** Append the elements the script added: anything the original walk did not account for. */
 function appendAdded(work: Work, used: Map<string, number>, stack: Work[]): void {
   if (!isPlainObject(work.edited)) return;
   for (const key of Object.keys(work.edited)) {
@@ -163,13 +145,7 @@ function parseOrdered(original: string | undefined): readonly OrderedNode[] {
   }
 }
 
-/**
- * Serialize the object form of an XML document.
- *
- * @param edited - The object a script returned (or the parsed message it edited).
- * @param before - The object form of `original` before the script ran.
- * @param original - The XML text the object was parsed from, when there is one.
- */
+/** `before` is the object form of `original` before the script ran. */
 export function buildXmlInOriginalOrder(edited: unknown, before: unknown, original: string | undefined): string {
   const root: OrderedNode[] = [];
   const stack: Work[] = [{ edited, before, original: parseOrdered(original), out: root }];

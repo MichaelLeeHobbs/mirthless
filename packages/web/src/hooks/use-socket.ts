@@ -1,8 +1,3 @@
-// ===========================================
-// Socket Connection & Event Hooks
-// ===========================================
-// React hooks for managing socket.io lifecycle and event subscriptions.
-
 import { useEffect, useRef, useState } from 'react';
 import { createThrottle } from '@galvanigraph/core-util';
 import { useAuthStore } from '../stores/auth.store.js';
@@ -11,21 +6,15 @@ import { queryClient } from '../providers/QueryProvider.js';
 import { refreshOrSignOut } from '../api/client.js';
 
 /**
- * Manages the socket.io connection lifecycle tied to authentication state.
- * Call once at the top level of the authenticated layout (AppLayout).
- *
- * - Connects when authenticated, disconnects on logout or unmount.
- * - Waits while a forced password change is pending: the server refuses the
- *   handshake until then, and that refusal must not log the user out.
- * - Invalidates all TanStack queries on reconnection (stale data refresh).
- * - Stops reconnection attempts on auth errors to prevent token-expired loops.
+ * Call once, in the authenticated layout. Waits out a forced password change:
+ * the server refuses the handshake until then, and that refusal must not sign
+ * the user out.
  */
 export function useSocketConnection(): void {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const accessToken = useAuthStore((state) => state.accessToken);
   const mustChangePassword = useAuthStore((state) => state.mustChangePassword);
 
-  // Track whether this is a reconnection (not the initial connect)
   const hasConnectedOnce = useRef(false);
   // The token the last socket-triggered refresh gave, so a refused one is not refreshed again.
   const refreshedFor = useRef<string | null>(null);
@@ -41,14 +30,14 @@ export function useSocketConnection(): void {
 
     const handleConnect = (): void => {
       if (hasConnectedOnce.current) {
-        // Reconnection — invalidate all queries to refresh potentially stale data
+        // Events may have been missed while disconnected.
         void queryClient.invalidateQueries();
       }
       hasConnectedOnce.current = true;
     };
 
     const handleConnectError = (err: Error): void => {
-      // If the server rejects authentication, stop retrying to prevent loops
+      // Stop retrying, or a refused token loops.
       const message = err.message.toLowerCase();
       if (message.includes('auth') || message.includes('unauthorized') || message.includes('jwt')) {
         socket.disconnect();
@@ -76,13 +65,7 @@ export function useSocketConnection(): void {
   }, [isAuthenticated, accessToken, mustChangePassword]);
 }
 
-/**
- * Subscribe to a socket.io event. Cleans up on unmount.
- * No-ops gracefully if the socket is not connected.
- *
- * @param event - The socket event name to listen for
- * @param handler - Callback invoked with the event payload
- */
+/** Does nothing if there is no socket when it mounts. */
 export function useSocketEvent<T = unknown>(event: string, handler: (data: T) => void): void {
   // Store handler in a ref to avoid re-subscribing on every render
   const handlerRef = useRef(handler);
@@ -114,12 +97,8 @@ export function useSocketEvent<T = unknown>(event: string, handler: (data: T) =>
 export const LIVE_REFRESH_INTERVAL_MS = 2_000;
 
 /**
- * Subscribe to a socket.io event whose handler refetches, running the handler at
- * most once per LIVE_REFRESH_INTERVAL_MS. The first event runs it at once; later
- * events in the window run it once when the window ends, so the last change is
- * always shown. The event payload is not passed on. A pending run is dropped on
- * unmount and when `scope` changes, so a run due for one channel does not fire
- * for the next one the page shows.
+ * The event payload is not passed on. A pending run is dropped when `scope`
+ * changes, so a run due for one channel does not fire for the next one shown.
  */
 export function useThrottledSocketEvent(event: string, handler: () => void, scope = ''): void {
   const handlerRef = useRef(handler);
@@ -130,20 +109,11 @@ export function useThrottledSocketEvent(event: string, handler: () => void, scop
   useSocketEvent(event, throttle.call);
 }
 
-/**
- * Join a socket.io room on mount, leave on unmount.
- * Automatically re-joins the room on reconnection.
- * Skips join/leave if the socket is not connected or any string arg is empty.
- *
- * @param joinEvent - The event to emit when joining the room
- * @param leaveEvent - The event to emit when leaving the room
- * @param args - Additional arguments to pass with the join/leave events
- */
+/** An empty string arg (a channel id not known yet) skips the join. */
 export function useSocketRoom(joinEvent: string, leaveEvent: string, ...args: readonly unknown[]): void {
   useEffect(() => {
     const s = getSocket();
     if (!s) return;
-    // Skip if any string argument is empty (e.g. missing channelId)
     if (args.some((a) => typeof a === 'string' && a.length === 0)) return;
     s.emit(joinEvent, ...args);
     const handleReconnect = (): void => { s.emit(joinEvent, ...args); };

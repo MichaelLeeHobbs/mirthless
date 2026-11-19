@@ -1,8 +1,3 @@
-// ===========================================
-// TCP/MLLP Test Helpers
-// ===========================================
-// Real TCP servers/clients for exercising the TCP/MLLP connectors end to end.
-
 import * as net from 'node:net';
 import {
   wrapMllp,
@@ -13,31 +8,21 @@ import {
   type DestinationConnectorRuntime,
 } from '../../../index.js';
 
-/**
- * A TCP/MLLP source on 127.0.0.1, built by the connector registry from stored
- * properties as a deploy builds it, so the schema's defaults (response mode,
- * charset, frame limit) apply (#242).
- */
+/** Built by the connector registry as a deploy builds it, so the schema's defaults apply (#242). */
 export function mllpSource(port: number, props: Readonly<Record<string, unknown>> = {}): SourceConnectorRuntime {
   return createSourceConnector('TCP_MLLP', { host: '127.0.0.1', port, ...props });
 }
 
-/** A TCP/MLLP destination to 127.0.0.1, built by the connector registry as a deploy builds it. */
 export function mllpDestination(port: number, props: Readonly<Record<string, unknown>> = {}): DestinationConnectorRuntime {
   return createDestinationConnector('TCP_MLLP', { host: '127.0.0.1', port, ...props });
 }
 
 export interface MllpCaptureServer {
-  /** Every framed message the server has received, in order. */
   readonly received: readonly string[];
   readonly port: number;
   close(): void;
 }
 
-/**
- * Start a TCP server that speaks MLLP: it records each framed message it
- * receives and replies with an ACK (customisable via `ackFor`).
- */
 export async function startMllpCaptureServer(
   port: number,
   ackFor?: (message: string) => string,
@@ -62,7 +47,6 @@ export async function startMllpCaptureServer(
   return { received, port, close: () => { server.close(); } };
 }
 
-/** Connect, send one MLLP-framed message, and resolve with the framed reply. */
 export async function sendMllp(port: number, message: string, timeoutMs = 10_000): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const client = net.createConnection({ host: '127.0.0.1', port }, () => {

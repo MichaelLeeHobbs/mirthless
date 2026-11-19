@@ -1,9 +1,3 @@
-// ===========================================
-// Resource Service
-// ===========================================
-// Business logic for resource CRUD.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
 import type { CreateResourceInput, UpdateResourceInput } from '@galvanigraph/core-models';
@@ -11,8 +5,6 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { resources } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface ResourceSummary {
   readonly id: string;
@@ -28,10 +20,7 @@ export interface ResourceDetail extends ResourceSummary {
   readonly content: string | null;
 }
 
-// ----- Service -----
-
 export class ResourceService {
-  /** List all resources (metadata only, no content). */
   static async list(): Promise<Result<readonly ResourceSummary[]>> {
     return tryCatch(async () => {
       const rows = await db
@@ -51,7 +40,6 @@ export class ResourceService {
     });
   }
 
-  /** Get a resource's content by name (for the getResource script bridge). Null if absent. */
   static async getByName(name: string): Promise<Result<string | null>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -62,7 +50,6 @@ export class ResourceService {
     });
   }
 
-  /** Get a single resource by ID (with content). */
   static async getById(id: string): Promise<Result<ResourceDetail>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -87,7 +74,6 @@ export class ResourceService {
     });
   }
 
-  /** Create a new resource. */
   static async create(
     input: CreateResourceInput,
     context?: AuditContext,
@@ -135,7 +121,6 @@ export class ResourceService {
     });
   }
 
-  /** Update a resource. */
   static async update(
     id: string,
     input: UpdateResourceInput,
@@ -199,7 +184,6 @@ export class ResourceService {
     });
   }
 
-  /** Delete a resource. */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db

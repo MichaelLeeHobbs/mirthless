@@ -1,7 +1,3 @@
-// ===========================================
-// HL7v2 Path Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { parsePath } from '../hl7-path.js';
 
@@ -82,6 +78,6 @@ describe('parsePath', () => {
     const p = parsePath('PID.3.1');
 
     expect(p.component).toBe(1);
-    expect(p.subComponent).toBe(1); // auto-resolved
+    expect(p.subComponent).toBe(1);
   });
 });

@@ -1,12 +1,3 @@
-// ===========================================
-// Settings Page
-// ===========================================
-// System settings on one page, in sections from lib/settings-catalog.ts: each
-// row says what the setting does, with its control beside it. Changes collect
-// in a bar at the bottom (Discard / Save, or Ctrl+S) that only shows while
-// something changed. Pruner settings save through the pruner schedule API so
-// the new schedule takes effect at once.
-
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, type ReactNode } from 'react';
 import { useBlocker } from 'react-router';
@@ -30,7 +21,7 @@ import type { SettingDetail } from '../api/client.js';
 import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 import { fieldFor, groupSettings, isSecret, settingTypeForSave, validateSetting, PRUNER_KEYS, REDACTED, type GroupedSection } from '../lib/settings-catalog.js';
 
-/** The value a setting's control starts from. A secret starts empty: its stored value never reaches the browser. */
+/** A secret starts empty: its stored value never reaches the browser. */
 function savedValue(s: SettingDetail): string {
   return isSecret(s.key, s.type) ? '' : (s.value ?? '');
 }
@@ -118,7 +109,6 @@ export function SettingsPage(): ReactNode {
   const { notify } = useNotification();
   const canWrite = has(PERMISSION.SETTINGS_WRITE);
 
-  // Only the values someone changed, by key.
   const [edits, setEdits] = useState<Readonly<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
 
@@ -172,7 +162,6 @@ export function SettingsPage(): ReactNode {
     }
   };
 
-  // Ctrl+S / ⌘S saves while there is something to save.
   useEffect(() => {
     if (!dirty || !canWrite) return undefined;
     const onKey = (e: KeyboardEvent): void => {

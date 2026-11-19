@@ -1,7 +1,3 @@
-// ===========================================
-// Mirth Connect XML Import Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -11,7 +7,6 @@ import { dirname } from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Mock database and dependencies (must be before imports)
 vi.mock('../../lib/db.js', () => ({
   db: {
     select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
@@ -65,19 +60,13 @@ import { validateConnectorProperties } from '../connector-validation.service.js'
 import { ChannelImportService } from '../channel-import.service.js';
 import { CodeTemplateService } from '../code-template.service.js';
 
-// ----- Helpers -----
-
 function loadFixture(name: string): string {
   return readFileSync(resolve(__dirname, 'fixtures', name), 'utf-8');
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- convertXml -----
 
 describe('MirthImportService.convertXml', () => {
   it('converts a basic Mirth channel XML', () => {
@@ -556,8 +545,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     const warning = result.value.warnings.find((w) => w.includes('Mirth-only constructs'));
     expect(warning).toContain('Channel "4x Listener"');
     expect(warning).toContain("E4X field access (msg['PID']...)");
-    // Mirth's E4X indexes count from 0 and GalvaniGraph paths from 1, so a straight port reads the wrong segment.
-    // Both sides name the same thing: field 5 of the second OBX (#198).
+    // Mirth's E4X indexes count from 0 and GalvaniGraph paths from 1 (#198).
     expect(warning).toContain("[n] counts from 1, so Mirth's msg['OBX'][1]['OBX.5'] is msg.get('OBX[2].5')");
     expect(warning).toContain('Java map methods (channelMap.put)');
     expect(warning).not.toContain("'message' variable");
@@ -1292,7 +1280,6 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         expect(validateConnectorProperties('DICOM', 'source', channel?.sourceConnectorProperties ?? {})).toMatchObject({ ok: false, error: { message: expect.stringContaining('tls') } });
         expect(validateConnectorProperties('DICOM', 'destination', channel?.destinations[0]?.properties ?? {})).toMatchObject({ ok: false, error: { message: expect.stringContaining('tls') } });
         expect(warningsWith(result, 'TLS').join(' ')).toContain('will not deploy');
-        // Without TLS both directions validate as imported.
         const plain = convertXml(dicom(listener('/d'), sender())).channels[0];
         expect(validateConnectorProperties('DICOM', 'source', plain?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
         expect(validateConnectorProperties('DICOM', 'destination', plain?.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
@@ -1563,7 +1550,6 @@ describe('MirthImportService.importFromXml', () => {
     const xml = loadFixture('mirth-channel-basic.xml');
     const result = await MirthImportService.importFromXml(xml, { collisionMode: 'RENAME', dryRun: false });
 
-    // Should succeed — the internal mapping to CREATE_NEW is transparent
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.importResult.created).toBe(1);

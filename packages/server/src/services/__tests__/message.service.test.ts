@@ -1,10 +1,4 @@
-// ===========================================
-// Message Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 const mockInsertReturning = vi.fn();
 const mockOnConflict = vi.fn();
@@ -70,7 +64,6 @@ vi.mock('drizzle-orm', () => ({
   ),
 }));
 
-/** Flatten a mocked drizzle sql node tree back to approximate SQL text for assertions. */
 function renderSql(node: unknown): string {
   if (node == null) return '';
   if (typeof node !== 'object') return String(node);
@@ -96,13 +89,9 @@ function renderSql(node: unknown): string {
 // Must import after mocks
 const { MessageService } = await import('../message.service.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const SERVER_ID = 'server-01';
 const MESSAGE_ID = 42;
-
-// ----- Setup -----
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -120,10 +109,7 @@ beforeEach(() => {
   mockDeleteWhere.mockResolvedValue(undefined);
 });
 
-// ----- Tests -----
-
 describe('MessageService', () => {
-  // ========== CREATE MESSAGE ==========
   describe('createMessage', () => {
     it('creates a message and returns the generated ID', async () => {
       mockInsertReturning.mockResolvedValue([{ messageId: 1 }]);
@@ -145,7 +131,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== CREATE CONNECTOR MESSAGE ==========
   describe('createConnectorMessage', () => {
     it('creates source connector message (metaDataId=0)', async () => {
       mockInsertValues.mockResolvedValue(undefined);
@@ -179,7 +164,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== UPDATE CONNECTOR MESSAGE STATUS ==========
   describe('updateConnectorMessageStatus', () => {
     it('updates status to TRANSFORMED', async () => {
       const result = await MessageService.updateConnectorMessageStatus(
@@ -223,7 +207,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== STORE CONTENT ==========
   describe('storeContent', () => {
     it('stores RAW content', async () => {
       const result = await MessageService.storeContent(
@@ -263,7 +246,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== MARK PROCESSED ==========
   describe('markProcessed', () => {
     it('marks message as processed', async () => {
       const result = await MessageService.markProcessed(CHANNEL_ID, MESSAGE_ID);
@@ -281,7 +263,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== ENQUEUE ==========
   describe('enqueue', () => {
     it('sets connector message status to QUEUED', async () => {
       const result = await MessageService.enqueue(CHANNEL_ID, MESSAGE_ID, 1);
@@ -299,7 +280,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== DEQUEUE ==========
   describe('dequeue', () => {
     it('returns queued messages using FOR UPDATE SKIP LOCKED', async () => {
       const queuedRow = {
@@ -341,7 +321,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== RELEASE ==========
   describe('release', () => {
     it('releases message with SENT status and sendDate', async () => {
       const result = await MessageService.release(CHANNEL_ID, MESSAGE_ID, 1, 'SENT');
@@ -368,7 +347,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== INCREMENT STATS ==========
   describe('incrementStats', () => {
     it('increments received counter via upsert', async () => {
       const result = await MessageService.incrementStats(
@@ -406,7 +384,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== GET STATS ==========
   describe('getStats', () => {
     it('returns statistics for channel', async () => {
       const statsRow = {
@@ -454,7 +431,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== GET UNPROCESSED MESSAGES ==========
   describe('getUnprocessedMessages', () => {
     it('returns error on DB failure', async () => {
       selectResponses.push(() => {
@@ -467,7 +443,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== GET QUEUED MESSAGES ==========
   describe('getQueuedMessages', () => {
     it('returns queued connector messages for a destination', async () => {
       const queuedRow = {
@@ -508,7 +483,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== DELETE CONTENT ==========
   describe('deleteContent', () => {
     it('deletes all content for a message', async () => {
       const result = await MessageService.deleteContent(CHANNEL_ID, MESSAGE_ID);
@@ -526,7 +500,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== DELETE ATTACHMENTS ==========
   describe('deleteAttachments', () => {
     it('deletes all attachments for a message', async () => {
       const result = await MessageService.deleteAttachments(CHANNEL_ID, MESSAGE_ID);
@@ -544,7 +517,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== INITIALIZE MESSAGE (storage-mode loss + currval bug) ==========
   describe('initializeMessage', () => {
     it('persists the message even when no content rows are provided (PRODUCTION/METADATA/DISABLED)', async () => {
       mockExecute.mockResolvedValue({ rows: [{ message_id: 7, correlation_id: 'corr-7' }] });
@@ -555,7 +527,6 @@ describe('MessageService', () => {
       if (!result.ok) return;
       expect(result.value.messageId).toBe(7);
       expect(mockExecute).toHaveBeenCalledOnce();
-      // No content CTE emitted when there are no content rows.
       const sqlText = renderSql(mockExecute.mock.calls[0]![0]);
       expect(sqlText).toContain('INSERT INTO messages');
       expect(sqlText).toContain('INSERT INTO connector_messages');
@@ -588,7 +559,7 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== DEQUEUE atomic claim (double-dispatch) ==========
+  // The atomic claim stops two consumers dispatching one message.
   describe('dequeue claim semantics', () => {
     it('atomically transitions claimed rows to PENDING via SKIP LOCKED', async () => {
       mockExecute.mockResolvedValue({ rows: [] });
@@ -604,7 +575,6 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== RESET PENDING (crash recovery) ==========
   describe('resetPending', () => {
     it('resets PENDING rows back to QUEUED', async () => {
       const result = await MessageService.resetPending(CHANNEL_ID, 1);
@@ -622,7 +592,7 @@ describe('MessageService', () => {
     });
   });
 
-  // ========== QUEUED requeue increments send_attempts (poison-message cap) ==========
+  // The increment caps a poison message's retries.
   describe('updateConnectorMessageStatus QUEUED increment', () => {
     it('increments send_attempts when transitioning back to QUEUED', async () => {
       const result = await MessageService.updateConnectorMessageStatus(CHANNEL_ID, MESSAGE_ID, 1, 'QUEUED');

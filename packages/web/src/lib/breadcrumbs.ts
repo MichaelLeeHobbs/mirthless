@@ -1,24 +1,14 @@
-// ===========================================
-// Breadcrumbs
-// ===========================================
-// Builds the header's breadcrumb trail from the URL, so pages don't each
-// hand-roll one. Every trail starts at the Dashboard; top-level pages take
-// their label from the sidebar, and the nested areas (a channel and its
-// messages, an alert, a collection's records) add the record's name.
-
 export interface Crumb {
   readonly label: string;
-  /** Where the crumb links to. The last crumb is the current page and has none. */
+  /** Absent on the last crumb, the current page. */
   readonly href?: string;
 }
 
-/** A page the sidebar knows: its label and path. */
 export interface CrumbPage {
   readonly label: string;
   readonly path: string;
 }
 
-/** The record a nested route is about, whose name the header has to look up. */
 export interface CrumbEntity {
   readonly kind: 'channel' | 'alert' | 'collection';
   readonly id: string;
@@ -30,7 +20,6 @@ function segmentsOf(pathname: string): readonly string[] {
   return pathname.split('/').filter((s) => s.length > 0);
 }
 
-/** The channel, alert or collection a URL points at, or null when it names no record. */
 export function crumbEntity(pathname: string): CrumbEntity | null {
   const [area, id, sub] = segmentsOf(pathname);
   if (id === undefined || id === 'new') return null;
@@ -67,12 +56,6 @@ function collectionTrail(rest: readonly string[], name: string | undefined): rea
   return [HOME, { label: 'Collections', href: '/collections' }, { label: name ?? 'Records' }];
 }
 
-/**
- * The breadcrumb trail for a URL.
- * @param pathname - The router's current path.
- * @param pages - The sidebar's pages, for top-level labels.
- * @param entityName - The name of the record from {@link crumbEntity}, once loaded.
- */
 export function breadcrumbsFor(
   pathname: string,
   pages: readonly CrumbPage[],

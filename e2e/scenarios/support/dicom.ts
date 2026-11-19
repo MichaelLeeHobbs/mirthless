@@ -1,9 +1,4 @@
-// ===========================================
-// Scenario suite: a DICOM modality (C-STORE SCU)
-// ===========================================
-// The partner that sends images to a DICOM Listener. dcmjs-dimse is a
-// dependency of the connectors package, not of the repository root, so it is
-// loaded from there.
+// dcmjs-dimse is a dependency of the connectors package, not of the repository root, so it is loaded from there.
 
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -21,10 +16,8 @@ interface Dimse {
 
 const dimse = createRequire(resolve('packages/connectors/package.json'))('dcmjs-dimse') as Dimse;
 
-/** A real DICOM object (a CT image) from the connector tests. */
 export const SAMPLE_DCM = resolve('packages/connectors/src/__tests__/e2e/fixtures/sample.dcm');
 
-/** Send one DICOM file with C-STORE to 127.0.0.1:port; rejects when the association is refused or the network fails. */
 export function cStore(port: number, file: string, callingAe: string, calledAe: string): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const client = new dimse.Client();

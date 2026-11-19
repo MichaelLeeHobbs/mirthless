@@ -1,7 +1,4 @@
-// ===========================================
-// Default System Settings
-// ===========================================
-// These are seeded on first run. Values can be changed via Admin UI.
+// Inserted only where the key is missing, so a changed default reaches no existing install.
 
 import type { NewSystemSetting } from '../schema/index.js';
 
@@ -27,7 +24,6 @@ export const defaultSettings: readonly NewSystemSetting[] = [
     category: 'features',
     description: 'Enable maintenance mode (blocks non-admin access)',
   },
-  // SMTP settings
   {
     key: 'smtp.host',
     value: '',
@@ -70,7 +66,6 @@ export const defaultSettings: readonly NewSystemSetting[] = [
     category: 'smtp',
     description: 'SMTP authentication password',
   },
-  // Data Pruner settings
   {
     key: 'pruner.enabled',
     value: 'false',

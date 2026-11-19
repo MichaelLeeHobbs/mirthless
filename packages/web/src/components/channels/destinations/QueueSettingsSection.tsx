@@ -1,8 +1,3 @@
-// ===========================================
-// Queue Settings Section
-// ===========================================
-// Queue mode, retry, and ordering settings for a destination.
-
 import { type ReactNode, type ChangeEvent } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';

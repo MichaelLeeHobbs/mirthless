@@ -1,12 +1,4 @@
-// ===========================================
-// Event Zod Schemas
-// ===========================================
-// Validation schemas for querying, creating, and purging audit events.
-
 import { z } from 'zod/v4';
-
-// ----- Const Objects -----
-// EVENT_LEVEL and EVENT_OUTCOME are defined in constants.ts
 
 export const EVENT_NAME = {
   // Sign-ins, sign-outs, refusals and purges go to audit_log: AUDIT_ACTION in audit.schema.ts.
@@ -50,9 +42,6 @@ export const EVENT_NAME = {
 
 export type EventName = (typeof EVENT_NAME)[keyof typeof EVENT_NAME];
 
-// ----- Query Schema -----
-
-/** GET /events query string filters. */
 export const eventListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(25),
@@ -67,16 +56,11 @@ export const eventListQuerySchema = z.object({
 
 export type EventListQuery = z.infer<typeof eventListQuerySchema>;
 
-// ----- Param Schema -----
-
-/** Events use bigserial integer IDs. */
 export const eventIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
 export type EventIdParam = z.infer<typeof eventIdParamSchema>;
-
-// ----- Create Event Input -----
 
 /** Internal use — not a public API endpoint. */
 export const createEventInputSchema = z.object({
@@ -92,9 +76,6 @@ export const createEventInputSchema = z.object({
 
 export type CreateEventInput = z.infer<typeof createEventInputSchema>;
 
-// ----- Purge Schema -----
-
-/** DELETE /events?olderThanDays=90 */
 export const purgeEventsSchema = z.object({
   olderThanDays: z.coerce.number().int().positive().min(1),
 });

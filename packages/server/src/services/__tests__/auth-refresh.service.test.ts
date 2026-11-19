@@ -1,9 +1,5 @@
-// ===========================================
-// Auth Service — refreshSession re-validation (finding 10)
-// ===========================================
-// The refresh consumes its session with one DELETE ... RETURNING, then checks
-// the user. The single-use guarantee under concurrency is proven against real
-// Postgres in test/integration/auth-concurrency.itest.ts.
+// The single-use guarantee under concurrency is proven against real Postgres
+// in test/integration/auth-concurrency.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -51,8 +47,8 @@ describe('AuthService.refreshSession', () => {
     const result = await AuthService.refreshSession('some-token');
 
     expect(result.ok).toBe(true);
-    expect(mockDeleteReturning).toHaveBeenCalled(); // old session consumed
-    expect(mockInsert).toHaveBeenCalled();          // new session created
+    expect(mockDeleteReturning).toHaveBeenCalled();
+    expect(mockInsert).toHaveBeenCalled();
   });
 
   it('rejects when the user is disabled, after consuming the session', async () => {

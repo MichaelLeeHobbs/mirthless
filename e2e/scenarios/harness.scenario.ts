@@ -1,8 +1,5 @@
-// Harness self-checks. Not scored (no S-number).
-// Each partner helper is checked against a real counterpart, and one channel is
-// built natively through this product's API (no Mirth import) and must pass.
-// If one of these fails, scenario failures may be harness faults, not product
-// gaps: fix the harness before reading the score.
+// Not scored (no S-number). If one of these fails, scenario failures may be harness
+// faults, not product gaps: fix the harness before reading the score.
 
 import { test, expect } from '@playwright/test';
 import nodemailer from 'nodemailer';

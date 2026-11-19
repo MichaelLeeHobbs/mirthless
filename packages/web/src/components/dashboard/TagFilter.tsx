@@ -1,8 +1,3 @@
-// ===========================================
-// Tag Filter Component
-// ===========================================
-// MUI Autocomplete with colored Chip rendering for dashboard tag filtering.
-
 import { type ReactNode } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField, { type TextFieldProps } from '@mui/material/TextField';

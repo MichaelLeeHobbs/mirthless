@@ -1,11 +1,5 @@
-// ===========================================
-// Scenario suite: Mirth Connect 4.5 export builder
-// ===========================================
-// Writes channel exports in the shape Mirth Connect 4.5 produces: the element
-// names, property classes and nesting match a real 4.5 server backup. The
-// scenarios feed these to the importer exactly as an operator would feed an
-// export from their own server, so the builder must not bend toward what the
-// importer happens to read. When in doubt, copy the structure of a real export.
+// Element names, property classes and nesting match a real Mirth Connect 4.5 server backup. The
+// builder must not bend toward what the importer happens to read: when in doubt, copy a real export.
 //
 // Scripts inside are written the way a Mirth (Rhino) channel writes them.
 
@@ -16,8 +10,6 @@ export function esc(s: string): string {
 }
 
 const RESOURCE_IDS = '<resourceIds class="linked-hash-map"><entry><string>Default Resource</string><string>[Default Resource]</string></entry></resourceIds>';
-
-// ----- Data types -----
 
 export type DataType = 'HL7V2' | 'JSON' | 'XML' | 'RAW' | 'DELIMITED' | 'EDI/X12' | 'DICOM';
 
@@ -53,8 +45,6 @@ function dataTypeProps(tag: string, type: DataType, delimited?: DelimitedOptions
     default: return '';
   }
 }
-
-// ----- Filter and transformer -----
 
 export interface Step { readonly name: string; readonly script: string }
 export interface Rule { readonly name: string; readonly script: string; readonly operator?: 'NONE' | 'AND' | 'OR' }
@@ -94,8 +84,6 @@ ${dataTypeProps('outboundProperties', t.outbound)}
 </${tag}>`;
 }
 
-// ----- Connector properties -----
-
 export interface Queue {
   readonly enabled: boolean;
   readonly retryCount?: number;
@@ -131,7 +119,6 @@ function frameMode(startHex: string, endHex: string): string {
   return `<transmissionModeProperties class="com.mirth.connect.model.transmission.framemode.FrameModeProperties"><pluginPointName>Basic</pluginPointName><startOfMessageBytes>${startHex}</startOfMessageBytes><endOfMessageBytes>${endHex}</endOfMessageBytes></transmissionModeProperties>`;
 }
 
-/** A connector: its transport name, properties XML and scripts. */
 export interface Connector {
   readonly name: string;
   readonly transportName: string;
@@ -232,13 +219,12 @@ export const fileReader = (o: FileReaderOptions): Pick<Connector, 'transportName
 
 const DICOM_TLS_OFF = '<keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>notls</tls><trustStore></trustStore><trustStorePW></trustStorePW>';
 
-/** A DICOM Listener (C-STORE SCP) storing received objects in `dest`, answering as `aeTitle`. */
 export const dicomListener = (port: number, dest: string, aeTitle: string): Pick<Connector, 'transportName' | 'properties'> => ({
   transportName: 'DICOM Listener',
   properties: `<properties class="com.mirth.connect.connectors.dimse.DICOMReceiverProperties" version="${V}"><pluginProperties/><listenerConnectorProperties version="${V}"><host>0.0.0.0</host><port>${String(port)}</port></listenerConnectorProperties>${sourceProps({ responseVariable: 'None' })}<applicationEntity>${esc(aeTitle)}</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity></localApplicationEntity><soCloseDelay>50</soCloseDelay><releaseTo>5</releaseTo><requestTo>5</requestTo><idleTo>60</idleTo><reaper>10</reaper><rspDelay>0</rspDelay><pdv1>false</pdv1><sndpdulen>16</sndpdulen><rcvpdulen>16</rcvpdulen><async>0</async><bigEndian>false</bigEndian><bufSize>1</bufSize><defts>false</defts><dest>${esc(dest)}</dest><nativeData>false</nativeData><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><tcpDelay>true</tcpDelay>${DICOM_TLS_OFF}</properties>`,
 });
 
-/** A DICOM Sender (C-STORE SCU) calling `calledAe` at host:port as `callingAe`, sending the message as Mirth's default template does. */
+/** `${DICOMMESSAGE}` is Mirth's default DICOM Sender template. */
 export const dicomSender = (host: string, port: string, calledAe: string, callingAe: string, q?: Queue): Pick<Connector, 'transportName' | 'properties'> => ({
   transportName: 'DICOM Sender',
   properties: `<properties class="com.mirth.connect.connectors.dimse.DICOMDispatcherProperties" version="${V}"><pluginProperties/>${destProps(q)}<host>${esc(host)}</host><port>${esc(port)}</port><applicationEntity>${esc(calledAe)}</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity>${esc(callingAe)}</localApplicationEntity><template>\${DICOMMESSAGE}</template><acceptTo>5000</acceptTo><async>0</async><bufSize>1</bufSize><connectTo>0</connectTo><priority>med</priority><passcode></passcode><pdv1>false</pdv1><rcvpdulen>16</rcvpdulen><reaper>10</reaper><releaseTo>5</releaseTo><rspTo>60</rspTo><shutdownDelay>1000</shutdownDelay><sndpdulen>16</sndpdulen><soCloseDelay>50</soCloseDelay><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><stgcmt>false</stgcmt><tcpDelay>true</tcpDelay><ts1>false</ts1><uidnegrsp>false</uidnegrsp><username></username>${DICOM_TLS_OFF}</properties>`,
@@ -274,8 +260,6 @@ export const smtpSender = (o: SmtpOptions, q?: Queue): Pick<Connector, 'transpor
   transportName: 'SMTP Sender',
   properties: `<properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="${V}"><pluginProperties/>${destProps(q)}<smtpHost>${esc(o.host)}</smtpHost><smtpPort>${esc(o.port)}</smtpPort><overrideLocalBinding>false</overrideLocalBinding><localAddress>0.0.0.0</localAddress><localPort>0</localPort><timeout>5000</timeout><encryption>none</encryption><authentication>false</authentication><username></username><password></password><to>${esc(o.to)}</to><from>${esc(o.from)}</from><cc></cc><bcc></bcc><replyTo></replyTo><headers class="linked-hash-map"/><headersVariable></headersVariable><isUseHeadersVariable>false</isUseHeadersVariable><subject>${esc(o.subject)}</subject><charsetEncoding>UTF-8</charsetEncoding><html>false</html><body>${esc(o.body)}</body><attachments/><attachmentsVariable></attachmentsVariable><isUseAttachmentsVariable>false</isUseAttachmentsVariable></properties>`,
 });
-
-// ----- Channel -----
 
 export interface MetaDataColumn { readonly name: string; readonly type: 'STRING' | 'NUMBER' | 'BOOLEAN' | 'TIMESTAMP'; readonly mappingName: string }
 
@@ -320,7 +304,6 @@ ${response}
 </${tag}>`;
 }
 
-/** One channel element, as it appears inside an export or a server backup. */
 export function channelXml(spec: ChannelSpec): string {
   const inbound = spec.source.inbound ?? 'HL7V2';
   const columns = spec.metaDataColumns ?? [];
@@ -356,7 +339,7 @@ ${RESOURCE_IDS}
 </channel>`;
 }
 
-/** A single-channel export file (Mirth: Channels > Export Channel). */
+/** Mirth: Channels > Export Channel. */
 export function channelExport(spec: ChannelSpec): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n${channelXml(spec)}`;
 }
@@ -378,7 +361,7 @@ function libraryXml(lib: CodeTemplateLibrary): string {
 </codeTemplateLibrary>`;
 }
 
-/** A full server backup (Mirth: Settings > Backup Config), the usual way to move a whole server. */
+/** Mirth: Settings > Backup Config. */
 export function serverBackup(channels: readonly ChannelSpec[], libraries: readonly CodeTemplateLibrary[] = []): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <serverConfiguration version="${V}">

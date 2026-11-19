@@ -1,6 +1,3 @@
-// ===========================================
-// Content removal after queued delivery — real Postgres integration
-// ===========================================
 // "Remove content on completion" must also apply to a message whose last
 // destination was delivered from the queue, and must never remove content
 // while another destination is unfinished or failed.
@@ -22,7 +19,6 @@ describeIntegration('Content removal after queued delivery (real Postgres)', () 
     await mods?.pool.end();
   });
 
-  /** A message with a source row, the given destination statuses, and one stored content row. */
   async function seed(sourceStatus: string, destinations: readonly string[]): Promise<{ channelId: string; messageId: number }> {
     const channelId = randomUUID();
     const { messageId } = unwrap(await mods.MessageService.createMessage(channelId, 'itest'));

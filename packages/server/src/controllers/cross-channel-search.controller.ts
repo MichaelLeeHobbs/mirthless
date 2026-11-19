@@ -1,7 +1,3 @@
-// ===========================================
-// Cross-Channel Search Controller
-// ===========================================
-
 import type { Request, Response } from 'express';
 import { CrossChannelSearchService, type SearchFilters } from '../services/cross-channel-search.service.js';
 import { AUDIT_ACTION } from '@galvanigraph/core-models';

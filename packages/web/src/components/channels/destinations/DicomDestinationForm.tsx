@@ -1,8 +1,3 @@
-// ===========================================
-// DICOM Destination Connector Form
-// ===========================================
-// Configuration form for DICOM C-STORE SCU destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -28,7 +23,6 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Remote SCP */}
       <Grid
         size={{
           xs: 12,
@@ -84,7 +78,6 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
         />
       </Grid>
 
-      {/* Right column — Sending */}
       <Grid
         size={{
           xs: 12,

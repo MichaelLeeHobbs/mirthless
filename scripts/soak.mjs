@@ -1,26 +1,7 @@
 #!/usr/bin/env node
-// ===========================================
-// Soak Test Driver
-// ===========================================
-// Runs steady HL7v2 traffic through a REAL running server for a long time and
-// checks that every message arrives downstream exactly once.
-//
-// What it sets up (through the API):
-//   MLLP sender --> [Soak channel: TCP/MLLP source -> JS transformer
-//                    -> TCP/MLLP destination] --> MLLP sink (in this process)
-//
-// Every minute it prints one JSON line with throughput, ACK latency
-// percentiles, ACK codes, sink counts, the server's stored message total and,
-// when --server-pid is given, the server's resident memory. At the end it
-// drains, compares what was ACKed with what the sink received, and exits 1 if
-// any message was lost, duplicated, untransformed or not stored.
-//
-// Usage (server already running, admin password already changed):
-//   node scripts/soak.mjs [--minutes M] [--rate R] [--connections C]
-//                         [--api URL] [--server-pid PID] [--keep]
-// Credentials come from SOAK_USERNAME / SOAK_PASSWORD (default admin/Admin123!).
-// It logs in once, so start the server with JWT_ACCESS_EXPIRES_IN longer than
-// the run (e.g. 12h) or the per-minute stored-message count starts failing.
+// How to run and read it: docs/ops/soak-test.md.
+// The per-minute samples reuse the first login, so start the server with
+// JWT_ACCESS_EXPIRES_IN longer than the run (e.g. 12h) or the stored-message count starts failing.
 
 import * as net from 'node:net';
 import { readFileSync } from 'node:fs';
@@ -49,13 +30,10 @@ function parseArgs(argv) {
   return args;
 }
 
-// ----- MLLP framing -----
-
 function frame(text) {
   return Buffer.concat([Buffer.from([VT]), Buffer.from(text), Buffer.from([FS, CR])]);
 }
 
-/** Splits a byte stream into MLLP payloads; returns [payloads, leftover]. */
 function unframe(buffer) {
   const payloads = [];
   let rest = buffer;
@@ -82,8 +60,6 @@ function field(message, segment, index) {
   const line = message.split('\r').find((s) => s.startsWith(`${segment}|`));
   return line?.split('|')[index] ?? '';
 }
-
-// ----- API -----
 
 async function api(args, token, method, path, body) {
   const res = await fetch(`${args.api}${path}`, {
@@ -142,8 +118,6 @@ async function removeChannel(args, token, id) {
   await api(args, token, 'DELETE', `/channels/${id}`);
 }
 
-// ----- Sink -----
-
 function startSink(stats) {
   const server = net.createServer((socket) => {
     let pending = Buffer.alloc(0);
@@ -163,9 +137,6 @@ function startSink(stats) {
   return new Promise((resolve) => server.listen(SINK_PORT, '127.0.0.1', () => resolve(server)));
 }
 
-// ----- Sender -----
-
-/** One persistent MLLP connection that sends a message and awaits its ACK. */
 function openSender() {
   const socket = net.createConnection({ host: '127.0.0.1', port: SOURCE_PORT });
   let pending = Buffer.alloc(0);
@@ -218,8 +189,6 @@ async function senderLoop(args, stats, deadline, slot) {
   conn.close();
 }
 
-// ----- Sampling -----
-
 function percentile(sorted, p) {
   return sorted.length === 0 ? null : Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] * 10) / 10;
 }
@@ -255,8 +224,6 @@ async function sample(args, ctx, startedAt) {
   };
   process.stdout.write(`${JSON.stringify(line)}\n`);
 }
-
-// ----- Verdict -----
 
 async function verdict(args, ctx) {
   const { stats } = ctx;

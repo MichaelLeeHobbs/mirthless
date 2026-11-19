@@ -1,10 +1,4 @@
-// ===========================================
-// Channel Tag Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
-
-// ----- Tag CRUD -----
 
 export const createTagSchema = z.object({
   name: z.string().min(1).max(100),
@@ -20,15 +14,11 @@ export const updateTagSchema = z.object({
 
 export type UpdateTagInput = z.infer<typeof updateTagSchema>;
 
-// ----- Assignment -----
-
 export const assignTagSchema = z.object({
   channelId: z.string().uuid(),
 });
 
 export type AssignTagInput = z.infer<typeof assignTagSchema>;
-
-// ----- Params -----
 
 export const tagUuidParamSchema = z.object({
   id: z.string().uuid(),

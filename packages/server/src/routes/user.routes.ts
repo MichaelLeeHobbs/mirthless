@@ -1,7 +1,3 @@
-// ===========================================
-// User Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import {
   createUserSchema,
@@ -18,9 +14,8 @@ import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
 
-// Self-service password change — every authenticated user must be able to change
-// their OWN password without the users:write permission. Registered BEFORE the
-// greedy `/:id/password` route so `me` is not treated as an id.
+// No permission: every user may change their own password. Registered before
+// `/:id/password` so `me` is not treated as an id.
 router.post(
   '/me/password',
   validate({ body: changeOwnPasswordSchema }),

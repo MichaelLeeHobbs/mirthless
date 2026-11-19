@@ -1,11 +1,6 @@
-// ===========================================
-// Channel Import Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChannelExportEntry } from '@galvanigraph/core-models';
 
-// Mock database and dependencies
 vi.mock('../../lib/db.js', () => ({
   db: {
     select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
@@ -83,8 +78,6 @@ describe('stripRedactedProperties', () => {
   });
 });
 
-// ----- Helpers -----
-
 function makeEntry(overrides?: Partial<ChannelExportEntry>): ChannelExportEntry {
   return {
     id: 'ch-import-001',
@@ -115,13 +108,9 @@ function makeEntry(overrides?: Partial<ChannelExportEntry>): ChannelExportEntry 
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- importChannels -----
 
 describe('ChannelImportService.importChannels', () => {
   it('creates channels when no collision', async () => {
@@ -212,8 +201,7 @@ describe('ChannelImportService.importChannels', () => {
     expect(result.value.errors).toEqual([
       'Error importing "No Partitions": its message partitions could not be created, so it was not imported: permission denied for table messages',
     ]);
-    // Each channel's partitions are made on its own transaction, and the failed
-    // one's transaction threw, which rolls its channel row back.
+    // Each channel's partitions are made in its own transaction; the rejected one rolled its channel row back.
     const calls = vi.mocked(PartitionManagerService.createPartitions).mock.calls;
     expect(calls.map((c) => c[0])).toEqual(['ch-1', 'ch-2']);
     for (const call of calls) expect(call[1]).toEqual(expect.objectContaining({ insert: expect.any(Function) }));
@@ -221,7 +209,7 @@ describe('ChannelImportService.importChannels', () => {
   });
 });
 
-// ----- Connector direction (#109) -----
+// #109
 
 describe('ChannelImportService connector direction', () => {
   const destination = (name: string, connectorType: string): ChannelExportEntry['destinations'][number] =>

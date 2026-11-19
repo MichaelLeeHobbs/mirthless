@@ -1,27 +1,16 @@
-// ===========================================
-// User Preferences API Hooks
-// ===========================================
-// TanStack Query hooks for user preference CRUD.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface UserPreferenceEntry {
   readonly key: string;
   readonly value: string | null;
 }
 
-// ----- Query Keys -----
-
 const PREF_KEYS = {
   all: ['preferences'] as const,
   list: () => [...PREF_KEYS.all, 'list'] as const,
   detail: (key: string) => [...PREF_KEYS.all, 'detail', key] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function usePreferences(): ReturnType<typeof useQuery<readonly UserPreferenceEntry[]>> {
   return useQuery({
