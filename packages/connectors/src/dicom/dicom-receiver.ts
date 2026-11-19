@@ -37,8 +37,6 @@ export interface DicomReceiverConfig {
   readonly port: number;
   readonly storageDir: string;
   readonly aeTitle: string;
-  readonly minPoolSize: number;
-  readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
   readonly dispatchMode: DicomDispatchMode;
   readonly postAction: DicomPostAction;
@@ -87,8 +85,6 @@ export type ReceiverFactory = (options: {
   readonly port: number;
   readonly storageDir: string;
   readonly aeTitle: string;
-  readonly minPoolSize: number;
-  readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
   /** Checked before each file is written, as well as at deploy. */
   readonly roots: FileRoots;
@@ -138,12 +134,6 @@ export class DicomReceiver implements SourceConnectorRuntime {
       if (this.config.aeTitle.length > 16) {
         throw new Error('AE Title must be 16 characters or fewer');
       }
-      if (this.config.minPoolSize < 1) {
-        throw new Error('Min pool size must be at least 1');
-      }
-      if (this.config.maxPoolSize < this.config.minPoolSize) {
-        throw new Error('Max pool size must be >= min pool size');
-      }
       if (this.config.postAction === DICOM_POST_ACTION.MOVE && !this.config.moveToDirectory) {
         throw new Error('Move-to directory is required when postAction is MOVE');
       }
@@ -164,8 +154,6 @@ export class DicomReceiver implements SourceConnectorRuntime {
         port: this.config.port,
         storageDir: this.config.storageDir,
         aeTitle: this.config.aeTitle,
-        minPoolSize: this.config.minPoolSize,
-        maxPoolSize: this.config.maxPoolSize,
         connectionTimeoutMs: this.config.connectionTimeoutMs,
         roots: this.config.roots,
       });

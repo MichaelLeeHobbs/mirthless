@@ -16,8 +16,6 @@ export interface DicomDispatcherConfig {
   readonly port: number;
   readonly calledAETitle: string;
   readonly callingAETitle: string;
-  readonly mode: 'single' | 'multiple';
-  readonly maxAssociations: number;
   readonly maxRetries: number;
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
@@ -50,8 +48,6 @@ export type SenderFactory = (options: {
   readonly port: number;
   readonly calledAETitle: string;
   readonly callingAETitle: string;
-  readonly mode: 'single' | 'multiple';
-  readonly maxAssociations: number;
   readonly maxRetries: number;
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
@@ -94,8 +90,6 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
         port: this.config.port,
         calledAETitle: this.config.calledAETitle,
         callingAETitle: this.config.callingAETitle,
-        mode: this.config.mode,
-        maxAssociations: this.config.maxAssociations,
         maxRetries: this.config.maxRetries,
         retryDelayMs: this.config.retryDelayMs,
         timeoutMs: this.config.timeoutMs,

@@ -58,7 +58,7 @@ The [connector reference](connector-reference.md) lists every connector and its 
 | HTTP Sender Digest authentication | No | Build the `Authorization` header in a JavaScript writer. | ROADMAP 5 | | HTTP Sender (Digest) | |
 | HTTP Sender OAuth2 with token refresh | No | Fetch the token in a script and set the header. | ROADMAP V11 | | | |
 | Shared OAuth2 credential vault | No | none known | ROADMAP B10 | | | |
-| DICOM and Email settings that take effect | No | none known; DICOM `maxAssociations` and the Email pool and attachment settings are accepted and ignored. | [#154](https://github.com/MichaelLeeHobbs/mirthless/issues/154) | | | |
+| DICOM and Email settings that take effect | No | none known; the Email pool and attachment settings are accepted and ignored. The DICOM settings that had no effect are gone. | [#154](https://github.com/MichaelLeeHobbs/mirthless/issues/154) | | | |
 
 ## Access control
 

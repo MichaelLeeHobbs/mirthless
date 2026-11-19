@@ -402,8 +402,6 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 | `port` | Yes | Port to listen on. |
 | `storageDir` | Yes | Directory received files are written to: an absolute path under `FILE_CONNECTOR_ROOTS`. |
 | `aeTitle` | No | This listener's AE title, at most 16 characters, `GALVANIGRAPH` by default. Not checked against incoming associations. |
-| `minPoolSize` | No | Checked at deploy (at least 1) but not used by the current listener. |
-| `maxPoolSize` | No | Checked at deploy (not below `minPoolSize`) but not used by the current listener. |
 | `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds, 10000 by default. |
 | `dispatchMode` | No | `PER_FILE` (default) or `PER_ASSOCIATION`. |
 | `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, so the action waits until every destination has delivered the message, a queued destination included: a DICOM Sender retrying from its queue still finds the file (D-323). If a destination fails, or its queue gives up, the file stays where it is for manual recovery. A later reprocess of the message has no file to read after `DELETE`; use `MOVE` or `NONE` if anything reads the file afterwards. |
@@ -417,8 +415,6 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 | `port` | Yes | Remote SCP port. |
 | `calledAETitle` | No | The remote AE title, at most 16 characters, `PACS` by default. |
 | `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIGRAPH` by default. |
-| `mode` | No | `single` or `multiple`. Read but not used by the current sender. |
-| `maxAssociations` | No | Read but not used by the current sender. |
 | `maxRetries` | No | Retries of a failed send. |
 | `retryDelayMs` | No | Milliseconds between retries. |
 | `timeoutMs` | No | Milliseconds before the send fails. |
@@ -427,7 +423,7 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 
 - No TLS in either direction, and no AE title filtering on the listener.
 - Files only under `FILE_CONNECTOR_ROOTS`; with it unset, DICOM connectors refuse to deploy.
-- `mode` and `maxAssociations` on the destination, and `minPoolSize` and `maxPoolSize` on the source, have no effect.
+- No limit on concurrent associations in either direction. The destination opens one association per message. `minPoolSize` and `maxPoolSize` (source) and `mode` and `maxAssociations` (destination), which earlier versions saved and never used, are dropped when a channel is validated (#154).
 
 ## EMAIL
 

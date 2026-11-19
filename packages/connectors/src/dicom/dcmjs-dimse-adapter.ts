@@ -244,8 +244,6 @@ export function createDimseReceiver(options: {
   readonly port: number;
   readonly storageDir: string;
   readonly aeTitle: string;
-  readonly minPoolSize: number;
-  readonly maxPoolSize: number;
   readonly connectionTimeoutMs: number;
   readonly roots: FileRoots;
 }): Result<DcmtkReceiver> {
@@ -320,8 +318,6 @@ export function createDimseSender(options: {
   readonly port: number;
   readonly calledAETitle: string;
   readonly callingAETitle: string;
-  readonly mode: 'single' | 'multiple';
-  readonly maxAssociations: number;
   readonly maxRetries: number;
   readonly retryDelayMs: number;
   readonly timeoutMs: number;

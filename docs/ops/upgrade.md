@@ -382,6 +382,10 @@ FROM channels WHERE source_connector_type = 'DICOM';
 
 A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (digits and dots, at most 64 characters), answering the sender with a C-STORE failure instead of storing it.
 
+## DICOM settings that did nothing are gone (#154)
+
+The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
+
 ## Standard upgrade (Docker)
 
 ```bash

@@ -29,11 +29,11 @@ describe('registry DICOM factories', () => {
   // DICOM_*_DEFAULTS since 4349bf4 (2026-03-02), the storage directory filled.
   it('build from the properties the editor saves', () => {
     expect(() => createSourceConnector('DICOM', {
-      port: 4242, storageDir: '/in', aeTitle: 'GALVANIGRAPH', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
+      port: 4242, storageDir: '/in', aeTitle: 'GALVANIGRAPH', connectionTimeoutMs: 10000,
       dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
     })).not.toThrow();
     expect(() => createDestinationConnector('DICOM', {
-      host: 'localhost', port: 104, calledAETitle: 'PACS', callingAETitle: 'GALVANIGRAPH', mode: 'multiple', maxAssociations: 4,
+      host: 'localhost', port: 104, calledAETitle: 'PACS', callingAETitle: 'GALVANIGRAPH',
       maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
     })).not.toThrow();
   });

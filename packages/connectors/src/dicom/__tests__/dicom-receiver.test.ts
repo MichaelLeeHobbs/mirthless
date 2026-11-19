@@ -24,8 +24,6 @@ function makeConfig(overrides?: Partial<DicomReceiverConfig>): DicomReceiverConf
     port: 4242,
     storageDir: '/data/dicom',
     aeTitle: 'GALVANIGRAPH',
-    minPoolSize: 2,
-    maxPoolSize: 10,
     connectionTimeoutMs: 10_000,
     dispatchMode: 'PER_FILE',
     postAction: 'DELETE',
@@ -144,18 +142,6 @@ describe('DicomReceiver.onDeploy', () => {
 
   it('fails when aeTitle exceeds 16 characters', async () => {
     const receiver = new DicomReceiver(makeConfig({ aeTitle: 'A'.repeat(17) }));
-    const result = await receiver.onDeploy();
-    expect(result.ok).toBe(false);
-  });
-
-  it('fails when minPoolSize is less than 1', async () => {
-    const receiver = new DicomReceiver(makeConfig({ minPoolSize: 0 }));
-    const result = await receiver.onDeploy();
-    expect(result.ok).toBe(false);
-  });
-
-  it('fails when maxPoolSize is less than minPoolSize', async () => {
-    const receiver = new DicomReceiver(makeConfig({ minPoolSize: 5, maxPoolSize: 3 }));
     const result = await receiver.onDeploy();
     expect(result.ok).toBe(false);
   });

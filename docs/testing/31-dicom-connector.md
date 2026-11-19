@@ -13,8 +13,8 @@
 | 2 | Port field accepts valid values | Enter 11112 in Port | Value updates to 11112 | |
 | 3 | AE Title max 16 characters | Type more than 16 characters | Input limited to 16 characters | |
 | 4 | Storage directory field editable | Enter /data/dicom/received | Value updates correctly | |
-| 5 | Min pool size field | Enter 4 | Value updates to 4 | |
-| 6 | Max pool size field | Enter 20 | Value updates to 20 | |
+| 5 | Processing column has no pool settings | Look at the Processing column | Connection Timeout, Dispatch Mode and Post Action only (#154) | |
+| 6 | Storage directory helper names the roots | Look under Storage Directory | Says the path must be under FILE_CONNECTOR_ROOTS | |
 | 7 | Connection timeout field | Enter 15000 | Value updates to 15000 | |
 | 8 | Dispatch mode selector | Select Per Association | Value changes to PER_ASSOCIATION | |
 | 9 | Post action selector shows 3 options | Click post action dropdown | Delete, Move, None visible | |
@@ -27,14 +27,14 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 14 | Destination form renders with defaults | Add DICOM destination | Host=localhost, Port=104, CalledAE=PACS, CallingAE=GALVANIGRAPH, mode=multiple | |
+| 14 | Destination form renders with defaults | Add DICOM destination | Host=localhost, Port=104, CalledAE=PACS, CallingAE=GALVANIGRAPH | |
 | 15 | Host field editable | Enter 192.168.1.100 | Value updates | |
 | 16 | Port field accepts valid values | Enter 4242 | Value updates to 4242 | |
 | 17 | Called AE Title max 16 characters | Type more than 16 chars | Input limited to 16 | |
 | 18 | Calling AE Title max 16 characters | Type more than 16 chars | Input limited to 16 | |
-| 19 | Mode selector shows 2 options | Click mode dropdown | Single and Multiple visible | |
-| 20 | Max Associations appears in multiple mode | Select Multiple | Max Associations field visible | |
-| 21 | Max Associations hidden in single mode | Select Single | Max Associations field hidden | |
+| 19 | Sending column has no mode or association settings | Look at the Sending column | Timeout, Max Retries and Retry Delay only (#154) | |
+| 20 | A destination saved with mode and maxAssociations still deploys | Import a channel whose DICOM destination has `mode` and `maxAssociations`, deploy | Deploy succeeds | |
+| 21 | A source saved with minPoolSize and maxPoolSize still deploys | Import a channel whose DICOM source has `minPoolSize: 5, maxPoolSize: 4`, deploy | Deploy succeeds | |
 | 22 | Timeout field editable | Enter 60000 | Value updates to 60000 | |
 | 23 | Max retries field editable | Enter 5 | Value updates to 5 | |
 | 24 | Retry delay field editable | Enter 2000 | Value updates to 2000 | |
@@ -62,7 +62,7 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 34 | Deploy succeeds with valid DICOM source | Set port=4242, storageDir=/data/dicom, deploy | Deploy succeeds | |
+| 34 | Deploy succeeds with valid DICOM source | Set port=4242, storageDir to a folder under FILE_CONNECTOR_ROOTS, deploy | Deploy succeeds | |
 | 35 | Deploy fails with missing port | Remove port from DICOM source properties, deploy | Validation error mentioning port | |
 | 36 | Deploy fails with missing storageDir | Set empty storageDir, deploy | Validation error mentioning storageDir | |
 | 37 | Deploy succeeds with valid DICOM destination | Set host=localhost, port=104, deploy | Deploy succeeds | |
@@ -84,3 +84,11 @@
 | 43 | Switch source from DICOM to HTTP | Create channel with DICOM source, switch to HTTP | HTTP defaults populate, DICOM fields gone | |
 | 44 | Switch destination from FHIR to DICOM | FHIR destination, switch to DICOM | DICOM defaults populate, FHIR fields gone | |
 | 45 | Switch destination from DICOM to TCP/MLLP | DICOM destination, switch to TCP/MLLP | TCP defaults populate, DICOM fields gone | |
+
+## File Roots (#313)
+
+| # | Scenario | Steps | Expected | Pass? |
+|---|---|---|---|---|
+| 46 | Storage directory outside the roots refused | Set storageDir to a folder outside FILE_CONNECTOR_ROOTS, deploy | Deploy fails naming FILE_CONNECTOR_ROOTS | |
+| 47 | Move-to directory outside the roots refused | postAction=MOVE, moveToDirectory outside FILE_CONNECTOR_ROOTS, deploy | Deploy fails naming FILE_CONNECTOR_ROOTS | |
+| 48 | Sender refuses a file outside the roots | DICOM destination, send a message whose content is a .dcm path outside FILE_CONNECTOR_ROOTS | Destination ERROR naming FILE_CONNECTOR_ROOTS, nothing sent | |

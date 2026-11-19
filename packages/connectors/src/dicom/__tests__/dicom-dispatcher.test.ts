@@ -22,8 +22,6 @@ function makeConfig(overrides?: Partial<DicomDispatcherConfig>): DicomDispatcher
     port: 104,
     calledAETitle: 'PACS',
     callingAETitle: 'GALVANIGRAPH',
-    mode: 'multiple',
-    maxAssociations: 4,
     maxRetries: 3,
     retryDelayMs: 1_000,
     timeoutMs: 30_000,
