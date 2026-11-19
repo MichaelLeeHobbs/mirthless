@@ -1,8 +1,3 @@
-// ===========================================
-// Channels Section
-// ===========================================
-// Channel multi-select for alert scope.
-
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';

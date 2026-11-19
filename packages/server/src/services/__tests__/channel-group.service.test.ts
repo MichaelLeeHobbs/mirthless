@@ -1,10 +1,4 @@
-// ===========================================
-// Channel Group Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -45,12 +39,10 @@ const mockSelectFrom = vi.fn().mockImplementation(() => {
   const fn = selectResponses[selectCallIndex];
   if (fn) {
     const result = fn();
-    // Check if this is a joinable response (has innerJoin)
     if (result && typeof result === 'object' && 'innerJoin' in result) {
       selectCallIndex++;
       return result;
     }
-    // Thenable response: returned directly from from() for queries without .where()
     if (result && typeof result === 'object' && 'then' in result) {
       selectCallIndex++;
       return result;
@@ -145,8 +137,6 @@ vi.mock('../grant.service.js', () => ({ GrantService: { groupsGivingAccess, appl
 
 const { ChannelGroupService } = await import('../channel-group.service.js');
 
-// ----- Fixtures -----
-
 const NOW = new Date('2026-03-02T12:00:00Z');
 const GROUP_ID = '00000000-0000-0000-0000-000000000001';
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000010';
@@ -162,8 +152,6 @@ function makeGroupRow(overrides?: Partial<Record<string, unknown>>): Record<stri
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();
@@ -348,8 +336,6 @@ describe('ChannelGroupService', () => {
     });
 
     it('returns CONFLICT when a concurrent update changed the revision first', async () => {
-      // The read sees revision 1, but by the UPDATE another writer has bumped it,
-      // so the revision-guarded UPDATE matches no row.
       pushResponse([makeGroupRow()]);
       mockUpdateReturning.mockResolvedValueOnce([]);
 
@@ -395,8 +381,6 @@ describe('ChannelGroupService', () => {
     });
   });
 
-  // setChannelGroups writes through GrantService.applyChannelGroups (the grant
-  // rule and its audit row, D-310); its transaction, its rollback and the rule
-  // are proven against Postgres in test/integration/channel-group.itest.ts and
-  // group-grants.itest.ts.
+  // setChannelGroups goes through GrantService.applyChannelGroups (D-310); covered
+  // against Postgres in channel-group.itest.ts and group-grants.itest.ts.
 });

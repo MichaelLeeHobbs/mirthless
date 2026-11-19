@@ -1,8 +1,4 @@
-// S03: transformer reads and edits HL7 fields and deletes a segment.
-// Production pattern: Gov "Message Router". It reads a custom ZBD envelope
-// segment, stores values in the channel map, edits a field and deletes the
-// segment before sending on with ${message.encodedData}. The script is the
-// production one rewritten for GalvaniGraph's msg.get/set/delete (D-244).
+// Production pattern: Gov "Message Router", its script rewritten for msg.get/set/delete (D-244).
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, tcpSender } from './support/mirth-xml.js';

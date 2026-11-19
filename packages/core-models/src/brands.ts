@@ -1,21 +1,11 @@
-// ===========================================
-// Branded Types
-// ===========================================
-// Type-safe ID wrappers that prevent accidental mixing of different ID types.
-// Based on design doc 01-core-models.md.
-
 import { z } from 'zod/v4';
 
 declare const __brand: unique symbol;
 type Brand<T, TBrand extends string> = T & { readonly [__brand]: TBrand };
 
-/** Branded string type for domain IDs */
 export type BrandedString<TBrand extends string> = Brand<string, TBrand>;
 
-/** Branded number type for domain values */
 export type BrandedNumber<TBrand extends string> = Brand<number, TBrand>;
-
-// --- Domain ID Types ---
 
 export type ChannelId = BrandedString<'ChannelId'>;
 export type ConnectorId = BrandedString<'ConnectorId'>;
@@ -32,26 +22,18 @@ export type DataSourceId = BrandedString<'DataSourceId'>;
 /** An API key's id: the middle of gf_<keyId>_<secret> (D-313). */
 export type ApiKeyId = BrandedString<'ApiKeyId'>;
 
-// --- Branded Number Types ---
-
 /** 0 = source connector, 1+ = destination connectors */
 export type MetaDataId = BrandedNumber<'MetaDataId'>;
 
-/** Monotonically increasing version counter */
 export type Revision = BrandedNumber<'Revision'>;
 
-// --- UUID Regex ---
-
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// --- Factory function type ---
 
 interface BrandFactory<T> {
   (value: string): T;
   schema: z.ZodType<T>;
 }
 
-/** Creates a branded string factory with UUID validation */
 function makeStringFactory<TBrand extends string>(
   _name: TBrand
 ): BrandFactory<BrandedString<TBrand>> {
@@ -68,8 +50,6 @@ function makeStringFactory<TBrand extends string>(
   return factory;
 }
 
-// --- Factory Instances ---
-
 export const createChannelId = makeStringFactory('ChannelId');
 export const createConnectorId = makeStringFactory('ConnectorId');
 export const createMessageId = makeStringFactory('MessageId');
@@ -84,7 +64,6 @@ export const createCollectionId = makeStringFactory('CollectionId');
 export const createDataSourceId = makeStringFactory('DataSourceId');
 export const createApiKeyId = makeStringFactory('ApiKeyId');
 
-/** Creates a MetaDataId (0 = source, 1+ = destination) */
 export function createMetaDataId(value: number): MetaDataId {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error('Invalid MetaDataId: must be a non-negative integer');
@@ -92,15 +71,12 @@ export function createMetaDataId(value: number): MetaDataId {
   return value as MetaDataId;
 }
 
-/** Creates a Revision (non-negative integer) */
 export function createRevision(value: number): Revision {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error('Invalid Revision: must be a non-negative integer');
   }
   return value as Revision;
 }
-
-// --- Zod Schemas for branded types ---
 
 export const channelIdSchema = createChannelId.schema;
 export const connectorIdSchema = createConnectorId.schema;

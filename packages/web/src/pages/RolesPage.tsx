@@ -1,11 +1,3 @@
-// ===========================================
-// Roles Page
-// ===========================================
-// The roles an admin assigns (D-310): each with how many users hold it and
-// what its permissions amount to. Built-in roles can be edited and cloned;
-// the admin role is locked. A role still assigned cannot be deleted, and the
-// refusal names who holds it to someone who may read users.
-
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import Alert from '@mui/material/Alert';
@@ -40,10 +32,8 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import type { RoleSummary } from '../api/client.js';
 
-/** Columns a phone has no room for: the role's kind and holders, and its description under the name. */
 const WIDE_ONLY = { display: { xs: 'none', md: 'table-cell' } } as const;
 
-/** "3 users", "1 user", "Nobody". */
 function holdersLabel(n: number): string {
   if (n === 0) return 'Nobody';
   return `${String(n)} ${n === 1 ? 'user' : 'users'}`;

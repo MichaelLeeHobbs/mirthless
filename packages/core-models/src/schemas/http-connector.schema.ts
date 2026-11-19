@@ -1,10 +1,5 @@
-// ===========================================
-// HTTP Connector Property Schemas
-// ===========================================
-// Properties of the HTTP source and destination, as a channel stores them.
-// The server validates them at deploy and the connector registry parses them,
-// so defaults live here only. A key not listed here fails validation, except
-// the keys this app's own editor used to save, which are dropped or mapped.
+// Defaults live here only (D-274). An unlisted key fails the deploy, except the
+// keys this app's own editor used to save, which are dropped or mapped.
 //
 // `tls` holds certificate-store IDs. At deploy the server swaps them for PEM
 // (packages/server/src/services/connector-tls-resolver.ts), so the registry
@@ -21,7 +16,6 @@ import {
 } from './connector-property-fields.js';
 import { clientTlsRefSchema } from './queue-connector.schema.js';
 
-/** The methods both HTTP connectors accept, read case-insensitively. */
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
@@ -29,13 +23,9 @@ export type HttpMethod = (typeof HTTP_METHODS)[number];
 export const HTTP_SCHEMES = ['HTTP', 'HTTPS'] as const;
 export type HttpScheme = (typeof HTTP_SCHEMES)[number];
 
-/** Largest request body the source accepts by default; a larger one gets 413. */
+/** A larger request body gets 413. */
 export const DEFAULT_MAX_BODY_BYTES = 50 * 1024 * 1024;
 
-/**
- * Header text as a name-to-value map: one `Name: value` per line, both
- * trimmed; a line with no name before its colon is skipped.
- */
 export function parseHeaderLines(text: string): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const line of text.split(/\r?\n/)) {
@@ -51,16 +41,13 @@ const method = z.preprocess(
   z.enum(HTTP_METHODS),
 ).default('POST');
 
-/** A status the source may answer with; Node refuses to write one outside 100-999. */
+/** Node refuses to write a status outside 100-999. */
 const statusCode = wholeNumberSchema(100, 599);
 
-/** Name-to-text pairs whose values may use `${name}`. */
+/** Values may use `${name}`. */
 const textMap = z.record(z.string(), z.string());
 
-/**
- * Request headers as a name-to-value map. Old HTTP and FHIR forms saved them
- * as `Name: value` lines, read here the way the editor shows them.
- */
+/** Old HTTP and FHIR forms saved headers as `Name: value` lines, read the way the editor shows them. */
 export const headerMapSchema = z.preprocess((value) => (typeof value === 'string' ? parseHeaderLines(value) : value), textMap);
 
 /** The source's keys; the docs guard compares them with the connector reference. */
@@ -76,7 +63,7 @@ export const httpSourceObjectSchema = z.strictObject({
   responseStatusCode: statusCode.default(200),
   errorStatusCode: statusCode.default(500),
   maxBodyBytes: wholeNumberSchema(1).default(DEFAULT_MAX_BODY_BYTES),
-  /** Inbound guard. Every credential is required: a missing one would let a request with an empty one in (#207). */
+  /** Every credential is required: a missing one would let a request with an empty one in (#207). */
   auth: z.discriminatedUnion('type', [
     z.strictObject({ type: z.literal('BASIC'), username: z.string().min(1), password: z.string().min(1) }),
     z.strictObject({ type: z.literal('TOKEN'), token: z.string().min(1) }),
@@ -95,12 +82,11 @@ export const httpSourceObjectSchema = z.strictObject({
 export const httpDestinationObjectSchema = z.strictObject({
   url: z.string().trim().min(1),
   method,
-  /** Text from the 2026-03 to 2026-07 editor is read as `Name: value` lines, as the editor shows it. */
   headers: headerMapSchema.default({}),
   parameters: textMap.optional(),
   basicAuth: z.strictObject({ username: z.string(), password: z.string() }).optional(),
   contentType: z.string().default('text/plain'),
-  /** Milliseconds to wait for the response; 0 would abort every send at once. */
+  /** Milliseconds; 0 would abort every send at once. */
   responseTimeout: wholeNumberSchema(1).default(30_000),
   scheme: z.enum(HTTP_SCHEMES).optional(),
   /** Certificate-store IDs: a CA to trust and a client certificate for mutual TLS. */
@@ -117,7 +103,7 @@ const DESTINATION_LEGACY_KEYS: ReadonlySet<string> = new Set(['charset']);
 /** Inline-PEM fields of `tls` the destination editor saved on 2026-07-14 (85a4575 to 6437e13), empty unless pasted into. */
 const LEGACY_PEM_KEYS = ['ca', 'cert', 'key'] as const;
 
-/** Destination props without the legacy key, and `tls` without empty inline-PEM fields; a filled one still fails. */
+/** A filled inline-PEM field is kept, so it still fails. */
 function dropDestinationLegacy(value: unknown): unknown {
   const props = withoutKeys(value, DESTINATION_LEGACY_KEYS);
   if (typeof props !== 'object' || props === null || !('tls' in props)) return props;

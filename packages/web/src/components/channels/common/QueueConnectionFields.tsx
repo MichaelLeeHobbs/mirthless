@@ -1,9 +1,3 @@
-// ===========================================
-// Kafka and AMQP Connection Fields
-// ===========================================
-// Broker address, credentials and TLS, shared by the Kafka and AMQP source and
-// destination forms.
-
 import type { ReactNode } from 'react';
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
 import TextField from '@mui/material/TextField';
@@ -34,7 +28,6 @@ const QUEUE_CHARSETS = [
   { value: 'base64', label: 'Binary (keep bytes as base64)' },
 ] as const satisfies ReadonlyArray<{ value: QueueCharset; label: string }>;
 
-/** How a Kafka or AMQP source decodes a payload's bytes into message text. */
 export function QueueCharsetField({ properties, onChange }: FieldsProps): ReactNode {
   const { handleText } = propertyUpdaters(properties, onChange);
   return (
@@ -52,7 +45,6 @@ export function QueueCharsetField({ properties, onChange }: FieldsProps): ReactN
   );
 }
 
-/** How many failures in a row to store one message a Kafka or AMQP source allows before it stops the channel. */
 export function QueueStoreAttemptsField({ properties, onChange }: FieldsProps): ReactNode {
   const { handleNumber } = propertyUpdaters(properties, onChange);
   return (
@@ -69,7 +61,6 @@ export function QueueStoreAttemptsField({ properties, onChange }: FieldsProps): 
   );
 }
 
-/** Bootstrap brokers, client id and SASL login. */
 export function KafkaConnectionFields({ properties, onChange }: FieldsProps): ReactNode {
   const { handleText } = propertyUpdaters(properties, onChange);
   const sasl = getStr(properties, 'saslMechanism', 'NONE');
@@ -126,7 +117,6 @@ export function KafkaConnectionFields({ properties, onChange }: FieldsProps): Re
   );
 }
 
-/** Broker host, port, virtual host and login. */
 export function AmqpConnectionFields({ properties, onChange }: FieldsProps): ReactNode {
   const { handleText, handleNumber } = propertyUpdaters(properties, onChange);
   return (
@@ -177,7 +167,6 @@ export function AmqpConnectionFields({ properties, onChange }: FieldsProps): Rea
   );
 }
 
-/** TLS on/off, with the CA and client certificate chosen from the certificate store. */
 export function QueueTlsFields({ properties, onChange }: FieldsProps): ReactNode {
   const { updateTls, handleBool } = propertyUpdaters(properties, onChange);
   const useTls = getBool(properties, 'useTls', false);

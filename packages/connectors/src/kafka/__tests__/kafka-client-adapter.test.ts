@@ -1,9 +1,4 @@
-// ===========================================
-// Kafka Client Adapter Tests (mocked @platformatic/kafka)
-// ===========================================
-// The adapter's contract with the client library: what it asks the library
-// for (manual commits, acks=all, Buffer header names) and how it maps the
-// answers. connector-queue.itest.ts runs the same code against a real broker.
+// connector-queue.itest.ts runs the same code against a real broker.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Readable } from 'node:stream';
@@ -116,8 +111,7 @@ describe('subscribeKafka', () => {
     expect(lib.consumerClosed).toEqual([true]);
   });
 
-  // The client emits 'error' when a rejoin after a failed heartbeat fails, with
-  // or without a record in flight. Unheard, it became an uncaught exception.
+  // Unheard, the client's 'error' on a failed rejoin is an uncaught exception.
   it('ends an idle subscription with the error when the consumer cannot rejoin its group', async () => {
     const idle = new Readable({ read(): void { /* no records */ } });
     lib.stream = Object.assign(idle, { close: async () => undefined });

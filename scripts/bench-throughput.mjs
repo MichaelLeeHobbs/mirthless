@@ -1,44 +1,18 @@
 #!/usr/bin/env node
-// ===========================================
-// End-to-End Channel Throughput Benchmark
-// ===========================================
-// Drives real HL7v2 messages through the REAL engine pipeline
-// (@galvanigraph/engine MessageProcessor + VmSandboxExecutor) to measure sustained
-// throughput (messages/sec) and per-message latency percentiles.
-//
-// Two storage modes:
-//   (default)  in-memory MessageStore — measures the pipeline + sandbox cost
-//              alone (parse -> filter -> route -> persist-calls), no DB/network.
-//              Runs anywhere; reproducible baseline for the engine hot path.
-//   --db       real Postgres MessageStore via @galvanigraph/server's MessageService
-//              (reads DATABASE_URL from your .env). Measures true end-to-end
-//              persistence cost against the dev database. Requires the server
-//              package to be built (`pnpm --filter @galvanigraph/server build`).
-//
-// Usage:
-//   node scripts/bench-throughput.mjs [--messages N] [--concurrency C]
-//                                     [--warmup W] [--no-sandbox] [--db]
-//
-// Examples:
-//   node scripts/bench-throughput.mjs                       # 5000 msgs, in-memory
-//   node scripts/bench-throughput.mjs --db --messages 2000  # against dev Postgres
-//
-// Requires packages to be built first: `pnpm build` (or at least
-// `pnpm --filter @galvanigraph/engine build`).
+// The default in-memory MessageStore measures the pipeline and sandbox alone.
+// --db uses the server's Postgres MessageService (DATABASE_URL from .env) and
+// needs `pnpm --filter @galvanigraph/server build`.
 
 import { performance } from 'node:perf_hooks';
 import { randomUUID } from 'node:crypto';
-// Import from the built dist directly so the script works when run from the repo
-// root (the workspace package name isn't resolvable from root node_modules).
-// Requires: pnpm --filter @galvanigraph/engine build (or pnpm build).
+// From the built dist: the workspace package name isn't resolvable from the root
+// node_modules. Needs `pnpm --filter @galvanigraph/engine build`.
 import {
   MessageProcessor,
   VmSandboxExecutor,
   compileScript,
   DEFAULT_EXECUTION_OPTIONS,
 } from '../packages/engine/dist/index.js';
-
-// ----- CLI args -----
 
 function parseArgs(argv) {
   const args = { messages: 5000, concurrency: 16, warmup: 250, sandbox: true, db: false };
@@ -59,8 +33,6 @@ function parseArgs(argv) {
   return args;
 }
 
-// ----- Sample message (well-formed HL7v2 ADT^A01) -----
-
 const SAMPLE_HL7 = [
   'MSH|^~\\&|BENCH|BENCHFAC|RCV|RCVFAC|20260712000000||ADT^A01|MSG00001|P|2.5',
   'EVN|A01|20260712000000',
@@ -68,12 +40,8 @@ const SAMPLE_HL7 = [
   'PV1|1|I|WARD^101^1|||||||MED',
 ].join('\r');
 
-// ----- Result helpers -----
-
 const OK_VOID = { ok: true, value: undefined, error: null };
 const ok = (value) => ({ ok: true, value, error: null });
-
-// ----- Stores -----
 
 function createInMemoryStore() {
   let nextId = 0;
@@ -97,8 +65,6 @@ function createInMemoryStore() {
 }
 
 async function createDbStore() {
-  // Import the built server MessageService and adapt it to the MessageStore
-  // interface (a thin delegation — the same mapping the server uses internally).
   const url = new URL('../packages/server/dist/services/message.service.js', import.meta.url);
   const { MessageService: MS } = await import(url.href);
   return {
@@ -119,15 +85,11 @@ async function createDbStore() {
   };
 }
 
-// ----- Percentiles -----
-
 function percentile(sortedAsc, p) {
   if (sortedAsc.length === 0) return 0;
   const rank = Math.ceil((p / 100) * sortedAsc.length) - 1;
   return sortedAsc[Math.min(Math.max(rank, 0), sortedAsc.length - 1)];
 }
-
-// ----- Runner -----
 
 async function run() {
   const args = parseArgs(process.argv.slice(2));
@@ -166,10 +128,9 @@ async function run() {
       `concurrency=${args.concurrency} warmup=${args.warmup} messages=${args.messages}\n`,
   );
 
-  // Warmup (not measured) — lets V8 + the VM sandbox reach steady state.
+  // Not measured: lets V8 and the VM sandbox reach steady state.
   await runPool(args.warmup, args.concurrency, processOne);
 
-  // Measured run.
   const latencies = new Array(args.messages);
   let errors = 0;
   let cursor = 0;

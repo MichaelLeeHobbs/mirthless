@@ -1,9 +1,3 @@
-// ===========================================
-// Settings Service
-// ===========================================
-// Business logic for system settings CRUD.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq } from 'drizzle-orm';
 import type { UpsertSettingInput } from '@galvanigraph/core-models';
@@ -12,8 +6,6 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { redactSettingValue } from '../lib/secret-redaction.js';
 import { db } from '../lib/db.js';
 import { systemSettings } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface SettingDetail {
   readonly id: string;
@@ -25,8 +17,6 @@ export interface SettingDetail {
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
-
-// ----- Helpers -----
 
 function toDetail(row: typeof systemSettings.$inferSelect): SettingDetail {
   return {
@@ -41,16 +31,13 @@ function toDetail(row: typeof systemSettings.$inferSelect): SettingDetail {
   };
 }
 
-/** Read-path DTO with secret values masked (never leak secrets to settings:read). */
+/** Secrets masked: settings:read must never see them. */
 function toReadDetail(row: typeof systemSettings.$inferSelect): SettingDetail {
   const detail = toDetail(row);
   return { ...detail, value: redactSettingValue(detail.key, detail.type, detail.value) };
 }
 
-// ----- Service -----
-
 export class SettingsService {
-  /** List all settings, optionally filtered by category. */
   static async list(query?: { readonly category?: string }): Promise<Result<readonly SettingDetail[]>> {
     return tryCatch(async () => {
       const q = db.select().from(systemSettings);
@@ -63,7 +50,6 @@ export class SettingsService {
     });
   }
 
-  /** Get a single setting by its unique key. */
   static async getByKey(key: string): Promise<Result<SettingDetail>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -79,7 +65,6 @@ export class SettingsService {
     });
   }
 
-  /** Create or update a setting by key. Uses Drizzle onConflictDoUpdate. */
   static async upsert(input: UpsertSettingInput, context?: AuditContext): Promise<Result<SettingDetail>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -116,7 +101,6 @@ export class SettingsService {
     });
   }
 
-  /** Bulk create/update multiple settings in a transaction. */
   static async bulkUpsert(inputs: readonly UpsertSettingInput[], context?: AuditContext): Promise<Result<readonly SettingDetail[]>> {
     return tryCatch(async () => {
       const results: SettingDetail[] = [];
@@ -159,7 +143,6 @@ export class SettingsService {
     });
   }
 
-  /** Delete a setting by key. */
   static async delete(key: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db

@@ -1,11 +1,4 @@
-// ===========================================
-// Engine Storage Policy Tests
-// ===========================================
-// Tests for shouldStoreContent() and the per-channel message store adapter.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 vi.mock('@galvanigraph/engine', () => ({
   ChannelRuntime: vi.fn(),
@@ -77,13 +70,9 @@ vi.mock('drizzle-orm', () => ({
 // Must import after mocks
 const { shouldStoreContent, storageModeSupportsQueue } = await import('../../engine.js');
 
-// ----- Helpers -----
-
 function ok<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
 }
-
-// ----- Setup -----
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -92,8 +81,6 @@ beforeEach(() => {
   mockDeleteContent.mockResolvedValue(ok(undefined));
   mockDeleteAttachments.mockResolvedValue(ok(undefined));
 });
-
-// ----- shouldStoreContent tests -----
 
 describe('shouldStoreContent', () => {
   it('DEVELOPMENT stores all content types', () => {

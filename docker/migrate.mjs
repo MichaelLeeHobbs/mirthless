@@ -1,24 +1,7 @@
-// ===========================================
-// Standalone Migration Runner (production image)
-// ===========================================
-// Applies Drizzle migrations using drizzle-orm's built-in migrator.
-// This avoids shipping drizzle-kit (a devDependency) in the runtime image —
-// drizzle-orm and pg are both production dependencies of @galvanigraph/server.
-//
-// Two database roles (D-307): MIGRATION_DATABASE_URL is the role that owns the
-// tables, and runs the migrations. DATABASE_URL is the server's own role, which
-// owns no application tables. After migrating, the owner creates the server's role if it is
-// missing, sets its password from DATABASE_URL and grants it what the server
-// needs (packages/server/src/db/runtime-role.ts). Then the server's connection is
-// checked: it must not be a superuser or have the owner's rights.
-//
-// Runs at container start via docker/server-entrypoint.sh. Fail-loud: a
-// non-zero exit stops the container before the server boots against an
-// un-migrated schema or as the wrong role.
-//
-// Placed at /app/packages/server/migrate.mjs so Node resolves drizzle-orm
-// and pg from packages/server/node_modules. Migrations are copied to the
-// sibling ./migrations directory (including meta/_journal.json).
+// drizzle-orm's migrator, not drizzle-kit, so the runtime image needs no devDependencies (D-155).
+// Migrations run as the table owner (MIGRATION_DATABASE_URL); the server runs as its own role (D-307).
+// Every failure exits non-zero so the container stops before the server boots un-migrated or as the wrong role.
+// The image copies this file to packages/server/ so drizzle-orm and pg resolve from its node_modules.
 
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -42,8 +25,7 @@ if (!migrationUrl) {
 }
 
 const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url));
-// Mirrors buildDbSslConfig() in packages/server/src/lib/db.ts: verify the server
-// certificate by default; opt out only with DATABASE_SSL_REJECT_UNAUTHORIZED=false.
+// Keep in step with buildDbSslConfig() in packages/server/src/lib/db.ts.
 const useSsl = process.env.DATABASE_SSL === 'true';
 const ssl = useSsl
   ? {
@@ -52,7 +34,6 @@ const ssl = useSsl
     }
   : false;
 
-/** Open a client on `connectionString`, run `work` with it, and close it. */
 async function withClient(connectionString, work) {
   const client = new pg.Client({ connectionString, ssl });
   await client.connect();
@@ -63,7 +44,6 @@ async function withClient(connectionString, work) {
   }
 }
 
-/** Exit with `label` and the error's message when a Result failed. */
 function failOn(label, result) {
   if (result.ok) return;
   console.error(`[migrate] ${label}: ${result.error.message}`);

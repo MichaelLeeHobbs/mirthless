@@ -1,7 +1,3 @@
-// ===========================================
-// Kafka Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import { KafkaDispatcher, type KafkaDispatcherConfig } from '../kafka-dispatcher.js';

@@ -1,8 +1,4 @@
-// ===========================================
-// MySQL Pool Tests
-// ===========================================
-// mysql2 is the network boundary, so it is faked here. S15 in the migration
-// scenario suite runs the Database Writer against a real MySQL.
+// S15 in the migration scenario suite runs the Database Writer against a real MySQL.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -41,7 +37,6 @@ async function created(): Promise<InstanceType<typeof MysqlPool>> {
   return p;
 }
 
-/** The SQL text of each query() call on the connection, in order. */
 function statements(): string[] {
   return connection.query.mock.calls.map((call) => (call[0] as { sql: string }).sql);
 }

@@ -1,9 +1,5 @@
-// ===========================================
-// Permission Middleware
-// ===========================================
-// The route guards, and deny(): the one way a guard refuses a request. deny()
-// answers through errorResponse and records the refusal as an ACCESS_DENIED
-// event, once a minute per caller, route and reason (#158).
+// deny() is the one way a guard refuses a request: it answers and records an
+// ACCESS_DENIED event, once a minute per caller, route and reason (#158).
 
 import type { NextFunction, Request, Response, Router } from 'express';
 import { ALL_CHANNELS, AUDIT_ACTION, can, holdsPermission, type ChannelGroupId, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
@@ -14,7 +10,7 @@ import { errorResponse, mapErrorToStatus } from '../lib/controller-helpers.js';
 import { emitAuditEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
 
-/** Why a request was refused. Recorded in each ACCESS_DENIED event. */
+/** Stored in ACCESS_DENIED events. */
 export const DENY_REASON = {
   NO_CREDENTIALS: 'no_credentials',
   BAD_TOKEN: 'bad_token',
@@ -23,12 +19,12 @@ export const DENY_REASON = {
   ACCOUNT_DISABLED: 'account_disabled',
   PASSWORD_CHANGE_REQUIRED: 'password_change_required',
   NO_PERMISSION: 'no_permission',
-  /** The permission is held, but not on this channel's groups. Answered as not found (D-310). */
+  /** Held, but not on this channel's groups. Answered as not found (D-310). */
   OUT_OF_SCOPE: 'out_of_scope',
 } as const;
 export type DenyReason = (typeof DENY_REASON)[keyof typeof DENY_REASON];
 
-/** The answer for each reason. The 401 messages tell the walk tests which guard answered. */
+/** The 401 messages tell the walk tests which guard answered. */
 const REFUSALS: Readonly<Record<DenyReason, readonly [ServiceErrorCode, string]>> = {
   no_credentials: ['UNAUTHORIZED', 'Unauthorized'],
   bad_token: ['UNAUTHORIZED', 'Invalid or expired token'],
@@ -42,17 +38,13 @@ const REFUSALS: Readonly<Record<DenyReason, readonly [ServiceErrorCode, string]>
   out_of_scope: ['NOT_FOUND', 'Channel not found'],
 };
 
-// ----- Coalescing -----
-// One record per caller, route and reason a minute. The keys are bounded by the
-// users, the route templates and the reasons, never by the URL a caller sends:
-// every anonymous refusal before routing shares one key per reason. A sweep
-// each minute writes the refusals a closed window held back, so a burst that
-// stops is still counted, and forgets the window.
+// Window keys are bounded by users, route templates and reasons, never by the
+// URL a caller sends. The sweep writes what a closed window held back, so a
+// burst that stops is still counted.
 
 const WINDOW_MS = 60_000;
 const MAX_WINDOWS = 10_000;
 
-/** What a refusal record says, apart from its request id and repeat count. */
 interface Refusal {
   readonly userId: string | null;
   readonly ipAddress: string | null;
@@ -79,7 +71,7 @@ function writeRefusal(refusal: Refusal, requestId: string | null, repeatsSinceLa
   });
 }
 
-/** Write what each closed window held back (all of them with `all`), then forget it. */
+/** `all` also flushes windows still open. */
 function sweep(now: number, all = false): void {
   for (const [key, w] of windows) {
     if (!all && now - w.start < WINDOW_MS) continue;
@@ -112,9 +104,9 @@ function openWindow(key: string, refusal: Refusal, now: number): boolean {
 }
 
 /**
- * The route template (`/api/v1/channels/:id`), or null before routing. Never
- * the URL. Express matches mount paths in any case and keeps the caller's, so
- * the mount path is lower-cased: every mount in routes/index.ts is lower case.
+ * Never the URL. Express matches mount paths in any case and keeps the
+ * caller's, so the mount path is lower-cased: every mount in routes/index.ts is
+ * lower case.
  */
 function routeTemplate(req: Request): string | null {
   const path: unknown = (req.route as { path?: unknown } | undefined)?.path;
@@ -132,10 +124,8 @@ function recordRefusal(req: Request, reason: DenyReason, status: number, userId:
 }
 
 /**
- * Refuse the request: answer with the reason's status and error body, then
- * record the refusal. Recording never changes the answer, and a failure to
- * record is logged, not thrown. `userId` names a caller authenticate has
- * identified but not yet signed in; it defaults to the signed-in user.
+ * Recording never changes the answer; a failure to record is logged, not
+ * thrown. Pass `userId` for a caller authenticate identified but has not signed in.
  */
 export function deny(req: Request, res: Response, reason: DenyReason, userId: string | undefined = req.user?.id): void {
   const [code, message] = REFUSALS[reason];
@@ -149,22 +139,15 @@ export function deny(req: Request, res: Response, reason: DenyReason, userId: st
   }
 }
 
-// ----- Guards -----
-
 const guardPermissions = new WeakMap<object, readonly Permission[]>();
 
-/** The permissions a guard from this file checks, or undefined for any other handler. The route walks read it. */
 export function permissionsOfGuard(handler: unknown): readonly Permission[] | undefined {
   return typeof handler === 'function' ? guardPermissions.get(handler) : undefined;
 }
 
 type Guard = (req: Request, res: Response, next: NextFunction) => void;
 
-/**
- * Whether the scoped part of a check passes: when the route names a channel
- * (scopeToChannel read its groups into req.channelScope), the caller must hold
- * the permission on that channel, not merely somewhere.
- */
+/** On a route that names a channel, the permission must be held on that channel, not merely somewhere. */
 type OnChannel = (grants: FoldedGrants, groupIds: readonly ChannelGroupId[]) => boolean;
 
 function guard(permissions: readonly Permission[], passes: (held: readonly string[]) => boolean, onChannel: OnChannel): Guard {
@@ -188,11 +171,7 @@ function guard(permissions: readonly Permission[], passes: (held: readonly strin
   return check;
 }
 
-/**
- * Require user to have at least one of the specified permissions; on a route
- * that names a channel, on that channel.
- * Typed by the core-models list, so an unknown permission is a compile error.
- */
+/** Passes on any one of `permissions`; on a route that names a channel, held on that channel. */
 export function requirePermission(...permissions: readonly Permission[]): Guard {
   return guard(
     permissions,
@@ -201,10 +180,7 @@ export function requirePermission(...permissions: readonly Permission[]): Guard 
   );
 }
 
-/**
- * Require user to have all of the specified permissions; on a route that
- * names a channel, all of them on that channel.
- */
+/** Needs every one of `permissions`; on a route that names a channel, held on that channel. */
 export function requireAllPermissions(...permissions: readonly Permission[]): Guard {
   return guard(
     permissions,
@@ -214,13 +190,9 @@ export function requireAllPermissions(...permissions: readonly Permission[]): Gu
 }
 
 /**
- * Scope every route of `router` that has `param` to the channel it names
- * (D-310, plan section 4). Before the route's guard runs, the channel's groups
- * are read from the database into req.channelScope, so requirePermission
- * checks the permission on that channel; a caller holding it only on other
- * groups gets the answer a missing channel gets. The channel comes from the
- * path, never the body. A caller whose every grant covers all channels needs no
- * lookup. A lookup that fails answers 500: no answer about the channel without
+ * Reads the groups of the channel `param` names into req.channelScope before
+ * the route's guard runs (D-310). The channel comes from the path, never the
+ * body. A lookup that fails answers 500: no answer about the channel without
  * its groups.
  */
 export function scopeToChannel(router: Router, param = 'id'): void {

@@ -1,9 +1,4 @@
-// ===========================================
-// API keys: narrowing, Replace and offboarding (real Postgres, #267 slice 12c)
-// ===========================================
-// A key follows its issuer (D-313): narrowing the issuer disables the key in
-// the same transaction; a leaver's keys are disabled, or disabled with them unless taken over for
-// someone to replace; Replace gives a new secret and a new issuer.
+// A key follows its issuer (D-313).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -244,7 +239,7 @@ describeIntegration('API keys: narrowing, Replace and offboarding (real Postgres
       const key = await issue(first, ['channels:read', 'channels:deploy']);
       const next = await apiCall<IssuedApiKey>(base, second.token, 'POST', `/api-keys/${key.key.id}/replace`, { mode: 'leak' });
       expect(next.json.data!.key.issuedBy.id).toBe(second.id);
-      // Each holder has a role of their own: narrowing the first issuer's no longer reaches the key.
+      // Each holder has a role of their own, so this narrows only the first issuer.
       expect((await apiCall(base, admin.token, 'PUT', `/roles/${roleId}`, { permissions: ['api_keys:manage'] })).status).toBe(200);
       expect((await view(key.key.id)).status).toBe('active');
       expect(await works(next.json.data!.token)).toBe(200);

@@ -1,7 +1,3 @@
-// ===========================================
-// UI Store Tests (theme persistence)
-// ===========================================
-
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 type UiStoreModule = typeof import('../ui.store.js');

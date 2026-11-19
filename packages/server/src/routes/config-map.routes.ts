@@ -1,7 +1,3 @@
-// ===========================================
-// Configuration Map Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import {
   configMapParamSchema,

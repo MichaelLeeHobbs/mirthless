@@ -1,9 +1,3 @@
-// ===========================================
-// HL7v2 ACK/NAK Generation
-// ===========================================
-// Generates acknowledgement messages from
-// an original HL7v2 message.
-
 import { Hl7Message } from './hl7-message.js';
 import { formatTimestamp } from './hl7-timestamp.js';
 import { encodingCharsString, escapeValue, type Hl7Encoding } from './hl7-encoding.js';
@@ -18,25 +12,17 @@ export interface AckOptions {
 let controlIdSequence = 0;
 
 /**
- * A new control id for a message GalvaniGraph sends, such as an ACK's MSH-10:
- * `GF`, the millisecond clock (13 digits) and a 5-digit sequence, 20 characters
- * in all, the most MSH-10 holds. The sequence keeps ids made in the same
- * millisecond apart.
+ * 20 characters (`GF`, a 13-digit millisecond clock, a 5-digit sequence), the
+ * most MSH-10 holds. The sequence keeps ids made in the same millisecond apart.
  */
 export function newControlId(): string {
   controlIdSequence = (controlIdSequence + 1) % 100_000;
   return `GF${String(Date.now())}${String(controlIdSequence).padStart(5, '0')}`;
 }
 
-/**
- * Create an ACK/NAK response for the given original message.
- * Swaps sender/receiver, gives the ACK its own control id in MSH-10 and echoes
- * the original's in MSA-2.
- */
 export function createAck(original: Hl7Message, options: AckOptions): string {
   const enc = original.encoding;
 
-  // Get original header fields
   const sendApp = original.getRaw('MSH.3') ?? '';
   const sendFac = original.getRaw('MSH.4') ?? '';
   const recvApp = original.getRaw('MSH.5') ?? '';
@@ -48,7 +34,6 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
 
   const timestamp = formatTimestamp(new Date(), { utcOffset: true });
 
-  // Build MSH segment (swap sender/receiver)
   const msh = [
     'MSH',
     // The sender's encoding characters as it sent them (3, 4 or 5), so it reads the ACK with its own rules.
@@ -65,7 +50,6 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
     version,
   ].join(enc.fieldSep);
 
-  // Build MSA segment
   const msaParts = [
     'MSA',
     options.ackCode,
@@ -87,11 +71,9 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
 }
 
 /**
- * The ERR segment for an already-escaped table 0357 code, laid out for the
- * sender's version. Before v2.5 the code goes in ERR-1 (ELD.4), the only field
- * those versions have. From v2.5, which keeps ERR-1 only for backward
- * compatibility, it goes in ERR-3 (CWE) with severity `E` in ERR-4. A missing or
- * unreadable version gets the current layout.
+ * `code` is already escaped. Before v2.5 it goes in ERR-1 (ELD.4), the only
+ * field those versions have; from v2.5, which keeps ERR-1 only for backward
+ * compatibility, in ERR-3 (CWE) with severity `E` in ERR-4.
  */
 function errSegment(code: string, version: string, enc: Hl7Encoding): string {
   const parts = /^(\d+)\.(\d+)/.exec(version);

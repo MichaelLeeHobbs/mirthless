@@ -1,9 +1,3 @@
-// ===========================================
-// Script Validation Routes
-// ===========================================
-// POST /validate — check JavaScript/TypeScript syntax
-// POST /test-run — run a script against a sample message, with no side effects
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { scriptTestRunSchema } from '@galvanigraph/core-models';
@@ -26,9 +20,8 @@ router.post(
   ScriptValidationController.validate,
 );
 
-// Runs user code on the server on demand. Writing channel scripts is enough
-// (developers too, Michael's call, D-286): the run is in a worker with resource
-// limits, one at a time, rate-limited, audited, and its bridges are dry.
+// Runs user code on the server, yet channels:write is enough (D-286): the run is
+// in a resource-limited worker, one at a time, rate-limited, audited, with dry bridges.
 router.post(
   '/test-run',
   requirePermission('channels:write'),

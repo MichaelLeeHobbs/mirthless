@@ -1,8 +1,4 @@
-// ===========================================
-// Scenario suite: API client
-// ===========================================
-// Thin wrapper over the real REST API. Every call fails the scenario loudly on a
-// non-2xx, with the response body, so a failing scenario says why.
+// Every call fails the scenario on a non-2xx with the response body, so a failing scenario says why.
 
 import { expect, request, type APIRequestContext } from '@playwright/test';
 
@@ -38,7 +34,6 @@ export interface ImportResult {
   readonly importResult: { readonly created: number; readonly updated: number; readonly skipped: number; readonly errors: readonly unknown[] };
 }
 
-/** An authenticated client for one scenario. */
 export class Api {
   private constructor(readonly ctx: APIRequestContext) {}
 
@@ -48,9 +43,8 @@ export class Api {
     expect(res.ok(), `admin login failed: ${String(res.status())}`).toBeTruthy();
     const { accessToken } = (await res.json() as Envelope<{ accessToken: string }>).data;
     await loginCtx.dispose();
-    // The client lives for a whole scenario and sits idle while it waits on messages.
-    // Playwright reuses a kept-alive socket the server may be closing as the request
-    // goes out, which fails with ECONNRESET (#126, #203), so each request gets its own.
+    // The client idles while it waits on messages, and a reused keep-alive socket the server is
+    // closing fails with ECONNRESET (#126, #203), so each request gets its own.
     const ctx = await request.newContext({
       extraHTTPHeaders: { Authorization: `Bearer ${accessToken}`, Connection: 'close' },
     });
@@ -59,7 +53,7 @@ export class Api {
 
   private readonly touched = new Set<string>();
 
-  /** Undeploy every channel this client deployed, freeing its ports, then close. */
+  /** Undeploys every channel this client deployed, freeing its ports. */
   async dispose(): Promise<void> {
     for (const id of this.touched) await this.undeploy(id);
     await this.ctx.dispose();
@@ -83,17 +77,12 @@ export class Api {
     return (await res.json() as Envelope<T>).data;
   }
 
-  /**
-   * Import a Mirth Connect export (one channel, a channel list or a full server
-   * backup) the way an operator would, overwriting an earlier run's copy.
-   */
   async importMirth(xml: string): Promise<ImportResult> {
     const result = await this.post<ImportResult>('/channels/import/mirth', { xml, collisionMode: 'OVERWRITE', dryRun: false });
     expect(result.importResult.errors, `import errors: ${JSON.stringify(result.importResult.errors)}`).toHaveLength(0);
     return result;
   }
 
-  /** The id of the channel with this name. */
   async channelId(name: string): Promise<string> {
     const list = await this.get<{ data: Array<{ id: string; name: string }> }>('/channels?pageSize=100');
     const found = list.data.find((c) => c.name === name);
@@ -101,7 +90,6 @@ export class Api {
     return found!.id;
   }
 
-  /** Deploy and start a channel, waiting until it reports STARTED. */
   async deployAndStart(channelId: string): Promise<void> {
     this.touched.add(channelId);
     await this.post(`/channels/${channelId}/deploy`);
@@ -111,7 +99,6 @@ export class Api {
       .toBe('STARTED');
   }
 
-  /** Import, then deploy and start every named channel in the given order. */
   async importAndDeploy(xml: string, names: readonly string[]): Promise<Record<string, string>> {
     await this.importMirth(xml);
     const ids: Record<string, string> = {};
@@ -124,7 +111,7 @@ export class Api {
     return ids;
   }
 
-  /** Stop and undeploy, ignoring a channel that is not deployed. */
+  // Unchecked: stop and undeploy fail on a channel that is not deployed.
   async undeploy(channelId: string): Promise<void> {
     await this.ctx.post(`${API_BASE}/channels/${channelId}/stop`);
     await this.ctx.post(`${API_BASE}/channels/${channelId}/undeploy`);

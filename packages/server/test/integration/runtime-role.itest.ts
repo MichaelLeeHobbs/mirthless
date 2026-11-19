@@ -1,15 +1,6 @@
-// ===========================================
-// Runtime database role — real Postgres integration
-// ===========================================
-// The production server connects as a role that owns no application tables (#232, D-307).
-// This suite builds that setup in a throwaway database: it applies the real
-// migrations as the owner (DATABASE_URL's user), provisions a runtime role with
-// the same code the server image's entrypoint runs, then connects as that role
-// and shows it can do the server's work (including creating a channel's message
-// partitions and running the seed) but cannot change, empty or drop a table.
-//
-// Needs a DATABASE_URL user that may CREATE DATABASE and CREATE ROLE (the CI and
-// docker dev Postgres superuser can). The database and role are dropped after.
+// The production server connects as a role that owns no application tables
+// (#232, D-307). Needs a DATABASE_URL user that may CREATE DATABASE and CREATE
+// ROLE (the CI and docker dev Postgres superuser can).
 
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -43,7 +34,6 @@ function urlFor(database: string, user?: string, password?: string): string {
   return url.toString();
 }
 
-/** Run a statement as `client` and return the Postgres error code it fails with. */
 async function failureCode(client: pg.Client, text: string): Promise<string | undefined> {
   try {
     await client.query(text);
@@ -54,9 +44,8 @@ async function failureCode(client: pg.Client, text: string): Promise<string | un
 }
 
 /**
- * Start pg-boss on `connectionString`, run `work`, stop it; fail on any pg-boss
- * error event. `createSchema: false` is how lib/queue.ts starts it now; the
- * server before the split started it with pg-boss's default, true.
+ * `createSchema: false` is how lib/queue.ts starts pg-boss; before the split the
+ * server used pg-boss's default, true.
  */
 async function withBoss(
   connectionString: string,
@@ -99,7 +88,6 @@ describeIntegration('Runtime database role (real Postgres)', () => {
   let owner: pg.Client;
   let runtime: pg.Client;
 
-  /** Create `database`, apply the migrations as the owner, and return an owner client on it. */
   async function migratedDatabase(database: string): Promise<pg.Client> {
     await admin.query(`CREATE DATABASE "${database}"`);
     const ownerPool = new pg.Pool({ connectionString: urlFor(database) });
@@ -132,10 +120,9 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     await runtime.connect();
   }, 120_000);
 
-  // Every pg-boss instance and pool this file opens is stopped where it is used, and
-  // WITH (FORCE) ends any session left over, so nothing here waits on a client. Dropping
-  // two migrated databases is server work that a loaded machine slows down, so the
-  // teardown gets the setup's budget, not the 30 s default (#294).
+  // WITH (FORCE) ends any session left over. Dropping two migrated databases is
+  // server work a loaded machine slows down, so the teardown gets the setup's
+  // budget, not the 30 s default (#294).
   afterAll(async () => {
     await runtime?.end();
     await owner?.end();
@@ -149,7 +136,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     }
   }, 120_000);
 
-  /** Insert a channel row as `client` and return its id; the partition function wants one. */
+  /** The partition function refuses a channel id with no row. */
   async function newChannel(client: pg.Client): Promise<string> {
     const id = randomUUID();
     await client.query(
@@ -160,7 +147,6 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     return id;
   }
 
-  /** Make the runtime role a member of `role` (as `grant` says), run `check`, and take the membership back. */
   async function asMemberOf(role: string, grant: string, check: () => Promise<void>): Promise<void> {
     await admin.query(`GRANT "${role}" TO "${ROLE}" ${grant}`);
     try {
@@ -223,7 +209,6 @@ describeIntegration('Runtime database role (real Postgres)', () => {
         expect((await provisionRuntimeRole(owner, { user: ROLE, password: ROLE_PASSWORD })).ok, role).toBe(false);
       });
     }
-    // With the memberships gone, both pass again.
     expect((await checkRuntimeRole(runtime)).ok).toBe(true);
   });
 
@@ -290,7 +275,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(left.rows.map((r) => r.name)).toEqual([recent]);
   });
 
-  /** This month's audit partition, as the migration names it (UTC). */
+  /** Named as the migration names it, in UTC. */
   function auditPartition(monthsFromNow = 0): string {
     const now = new Date();
     const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthsFromNow, 1));
@@ -428,7 +413,6 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(foreign.rows.map((r) => r.name)).toEqual([]);
 
     await withBoss(urlFor(DB_NAME, ROLE, ROLE_PASSWORD), async (boss) => {
-      // The job the owner queued before the split is still there.
       const [old] = await boss.fetch(OLD_QUEUE);
       expect(old?.data).toEqual({ from: 'owner' });
       await boss.complete(OLD_QUEUE, old?.id ?? '');
@@ -451,7 +435,6 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(Number(counts.rows[0]?.users)).toBeGreaterThan(0);
     expect(Number(counts.rows[0]?.messages)).toBeGreaterThan(0);
 
-    // The first admin holds the admin role the migration created (D-310).
     const admin = await owner.query<{ name: string }>(
       `SELECT r.name FROM users u JOIN assignments a ON a.user_id = u.id JOIN roles r ON r.id = a.role_id
        WHERE u.username = 'admin' AND r.admin`,

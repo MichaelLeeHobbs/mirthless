@@ -1,11 +1,3 @@
-// ===========================================
-// SystemInfoPage Tests
-// ===========================================
-// Tabs live in the path, so each one is a bookmark and one click from the
-// palette. Overview leads with a status strip that names what is wrong, and
-// "Copy diagnostics" puts a plain-text summary on the clipboard. Data hooks
-// are mocked at the API boundary.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';

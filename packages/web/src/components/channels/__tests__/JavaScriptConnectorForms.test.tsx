@@ -1,8 +1,5 @@
-// #200: the JavaScript source's polling script and the JavaScript destination's
-// script are edited in the shared script editor, and their language is stored
-// in the connector's properties as scriptLanguage (missing means JavaScript).
-// Monaco itself is stubbed (test/setup.ts), so these cover the editor chrome
-// and what the forms write.
+// Monaco is stubbed (test/setup.ts), so these cover the editor chrome and what
+// the forms write (#200).
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';

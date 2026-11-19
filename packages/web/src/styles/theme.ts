@@ -1,17 +1,8 @@
-// ===========================================
-// Theme
-// ===========================================
-// Builds the dark and light MUI themes from the design tokens. Both modes are
-// treated as first-class and equally polished — many hospital IT shops run
-// light. The component overrides here are what make every page consistent
-// without per-page styling: hairline-bordered surfaces, tabular numerals in
-// tables, crisp status-aware chips, and a visible focus ring on everything
-// interactive.
+// Both modes are first-class: many hospital IT shops run light.
 
 import { createTheme, alpha, type Theme, type ThemeOptions, type PaletteMode } from '@mui/material/styles';
 import { colorsForMode, RADIUS, FONT_FAMILY_SANS, FONT_FAMILY_MONO, type StatusPalette } from './tokens.js';
 
-// --- Module augmentation: status is a first-class part of the palette ---
 declare module '@mui/material/styles' {
   interface Palette {
     readonly status: StatusPalette;
@@ -56,7 +47,6 @@ function buildTheme(mode: PaletteMode): Theme {
     },
     typography: {
       fontFamily: FONT_FAMILY_SANS,
-      // A deliberate, compact scale tuned for a dense operational console.
       h1: { fontSize: '2rem', fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.02em' },
       h2: { fontSize: '1.625rem', fontWeight: 700, lineHeight: 1.25, letterSpacing: '-0.015em' },
       h3: { fontSize: '1.375rem', fontWeight: 700, lineHeight: 1.3, letterSpacing: '-0.01em' },
@@ -91,13 +81,11 @@ function buildTheme(mode: PaletteMode): Theme {
             WebkitFontSmoothing: 'antialiased',
             MozOsxFontSmoothing: 'grayscale',
           },
-          // A single, consistent focus ring on every keyboard-focused control.
           '*:focus-visible': {
             outline: `2px solid ${c.primary.main}`,
             outlineOffset: '2px',
             borderRadius: `${RADIUS.sm}px`,
           },
-          // Subtle, unobtrusive scrollbars that match the surface.
           '*::-webkit-scrollbar': { width: 10, height: 10 },
           '*::-webkit-scrollbar-thumb': {
             backgroundColor: alpha(c.text.secondary, 0.3),
@@ -106,7 +94,6 @@ function buildTheme(mode: PaletteMode): Theme {
           },
           '*::-webkit-scrollbar-thumb:hover': { backgroundColor: alpha(c.text.secondary, 0.5) },
           '*::-webkit-scrollbar-corner': { backgroundColor: 'transparent' },
-          // Respect users who prefer reduced motion.
           '@media (prefers-reduced-motion: reduce)': {
             '*, *::before, *::after': {
               animationDuration: '0.01ms !important',
@@ -125,7 +112,7 @@ function buildTheme(mode: PaletteMode): Theme {
             border: `1px solid ${c.divider}`,
             borderRadius: RADIUS.lg,
           },
-          // Menus/popovers get a touch of lift so they read as floating.
+          // MUI menus and popovers use elevation 8.
           elevation8: {
             border: `1px solid ${c.divider}`,
             boxShadow: isDark
@@ -278,8 +265,6 @@ function buildTheme(mode: PaletteMode): Theme {
   return createTheme(options);
 }
 
-/** Dark theme — the default for control-room / monitoring contexts. */
 export const darkTheme = buildTheme('dark');
 
-/** Light theme — fully polished for daytime hospital IT use. */
 export const lightTheme = buildTheme('light');

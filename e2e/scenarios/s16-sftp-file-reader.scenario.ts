@@ -1,4 +1,3 @@
-// S16: a File Reader with the SFTP scheme picks up files from a partner server.
 // Gap doc 12 rank 2: Mirth exports remote file channels as a File Reader with
 // scheme SFTP (or FTP/SMB/S3). Needs the SFTP container:
 // docker compose -f docker/docker-compose.yml --profile test up -d sftp-test

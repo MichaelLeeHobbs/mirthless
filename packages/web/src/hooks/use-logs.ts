@@ -1,15 +1,8 @@
-// ===========================================
-// Server Logs API Hooks
-// ===========================================
-// TanStack Query hook for historical logs and Socket.IO hook for streaming.
-
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 import { useSocketRoom, useSocketEvent } from './use-socket.js';
-
-// ----- Types -----
 
 export interface LogEntry {
   readonly timestamp: string;
@@ -24,16 +17,11 @@ interface LogQueryResult {
   readonly total: number;
 }
 
-// ----- Query Keys -----
-
 const LOG_KEYS = {
   all: ['logs'] as const,
   entries: (params: Record<string, unknown>) => [...LOG_KEYS.all, 'entries', params] as const,
 } as const;
 
-// ----- Hooks -----
-
-/** Fetch historical log entries from the server. */
 export function useHistoricalLogs(params: { level?: number; search?: string; limit?: number }): ReturnType<typeof useQuery<LogQueryResult>> {
   return useQuery({
     queryKey: LOG_KEYS.entries(params),
@@ -52,7 +40,6 @@ export function useHistoricalLogs(params: { level?: number; search?: string; lim
   });
 }
 
-/** Subscribe to real-time log streaming via Socket.IO. */
 export function useLogStream(maxEntries: number = 10_000): {
   readonly entries: readonly LogEntry[];
   readonly paused: boolean;
@@ -63,13 +50,10 @@ export function useLogStream(maxEntries: number = 10_000): {
   const [paused, setPaused] = useState(false);
   const bufferRef = useRef<LogEntry[]>([]);
 
-  // Join logs room
   useSocketRoom('join:logs', 'leave:logs');
 
-  // Handle incoming log entries
   const handleLog = useCallback((entry: LogEntry) => {
     if (paused) {
-      // Buffer entries while paused
       bufferRef.current.push(entry);
       return;
     }
@@ -85,7 +69,6 @@ export function useLogStream(maxEntries: number = 10_000): {
 
   useSocketEvent<LogEntry>(SOCKET_EVENT.SERVER_LOG, handleLog);
 
-  // Flush buffer when unpaused
   useEffect(() => {
     if (!paused && bufferRef.current.length > 0) {
       const buffered = bufferRef.current;

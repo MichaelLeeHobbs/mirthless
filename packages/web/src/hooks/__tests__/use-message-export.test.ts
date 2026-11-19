@@ -1,7 +1,3 @@
-// ===========================================
-// buildExportQuery Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { buildExportQuery } from '../use-message-export.js';
 

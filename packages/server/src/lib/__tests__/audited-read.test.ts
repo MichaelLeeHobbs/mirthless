@@ -1,18 +1,14 @@
-// ===========================================
-// Audited Read Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 
 const recordOrRefuse = vi.fn();
-// The rows a key has read today, as the audit log holds them: the ceiling starts from here (default 5000).
+// Seeds a key's count for today; the ceiling is 5000.
 const rowsReadSince = vi.fn(async (userId: string) => {
   if (userId === 'key-unreadable') throw new Error('audit_log unreadable');
   return userId === 'key-near' ? 4998 : 0;
 });
 vi.mock('../../services/audit.service.js', () => ({ AuditService: { recordOrRefuse, rowsReadSince } }));
-// The 80% warning (#301) is an events row: whether one was written today, and the write.
+// The 80% warning (#301) is an events row: the read-back and the write.
 const createEvent = vi.fn().mockResolvedValue({ ok: true, value: {} });
 const hasEventSince = vi.fn().mockResolvedValue({ ok: true, value: false });
 vi.mock('../../services/event.service.js', () => ({ EventService: { create: createEvent, hasEventSince } }));
@@ -76,7 +72,6 @@ describe('recordReadOrRefuse', () => {
 
     expect(recordOrRefuse).toHaveBeenCalledOnce();
     expect(recordOrRefuse.mock.calls[0]?.[0]).toMatchObject({ attributes: { messageId: 7, messageIds: [7] } });
-    // Another caller reading the same message is recorded.
     await recordReadOrRefuse(req('u-e'), makeRes(), read);
     expect(recordOrRefuse).toHaveBeenCalledTimes(2);
   });
@@ -98,7 +93,6 @@ describe('recordReadOrRefuse', () => {
 
     const recorded = recordOrRefuse.mock.calls.map((c) => (c[0] as { attributes: { messageIds: number[] } }).attributes.messageIds);
     expect(recorded[0]).toEqual(page);
-    // The new id is recorded at once, on the very next read.
     expect(recorded[1]).toEqual([200]);
   });
 });

@@ -1,9 +1,3 @@
-// ===========================================
-// Dashboard Column Visibility (per-user)
-// ===========================================
-// Persists which dashboard columns a user has visible, via the user-preferences
-// API. Keeps a local optimistic copy so toggling is instant.
-
 import { useCallback, useMemo, useState } from 'react';
 import { usePreferences, useUpsertPreference } from './use-preferences.js';
 import {

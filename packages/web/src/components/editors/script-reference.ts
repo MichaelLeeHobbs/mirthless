@@ -1,29 +1,20 @@
-// ===========================================
-// Script reference
-// ===========================================
-// The globals and code templates a script can use, read from the same
-// declarations the type checker uses, so the reference cannot drift from what
-// completion offers or what the engine provides.
+// Read from the declarations the type checker uses, so the reference cannot drift from completion or the engine.
 
 import { scriptDeclarations, templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvanigraph/core-models';
 
 export type ReferenceGroup = 'Message' | 'Maps' | 'Functions' | 'Code templates';
 
-/** One thing a script can use. */
 export interface ReferenceEntry {
   readonly name: string;
   readonly group: ReferenceGroup;
-  /** Each overload's signature, e.g. `parseHL7(raw: string): Hl7MessageProxy`. */
   readonly signatures: readonly string[];
-  /** The first paragraph of its documentation. */
   readonly doc: string;
-  /** Monaco snippet text: a call with a placeholder for each parameter, or the name. */
+  /** Monaco snippet syntax. */
   readonly snippet: string;
 }
 
 const MESSAGE_VARS = new Set(['msg', 'tmp', 'rawData', 'destinationSet', 'logger']);
 
-/** The first paragraph of a JSDoc body, without `*` gutters or @tags. */
 function docSummary(raw: string | undefined): string {
   if (!raw) return '';
   const lines = raw.split('\n').map((l) => l.replace(/^\s*\*\s?/, '').trim());
@@ -35,7 +26,6 @@ function docSummary(raw: string | undefined): string {
   return out.join(' ');
 }
 
-/** `(raw: string, ackCode?: string)` → `${1:raw}, ${2:ackCode}`. */
 function paramPlaceholders(params: string): string {
   const names = params
     .split(',')
@@ -55,7 +45,6 @@ const DOC = String.raw`(?:\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*)?`;
 const DECLARATION = new RegExp(`${DOC}declare\\s+(function|var)\\s+([\\w$]+)([^;]*);`, 'g');
 const TEMPLATE_FUNCTION = new RegExp(`${DOC}function\\s+([\\w$]+)\\s*\\(([^)]*)\\)`, 'g');
 
-/** Sandbox globals and code templates for a script surface, sorted by group then name. */
 export function scriptReference(surface: ScriptSurface, templates: readonly TemplateSource[]): ReferenceEntry[] {
   const byName = new Map<string, { group: ReferenceGroup; signatures: string[]; doc: string; snippet: string }>();
   for (const m of scriptDeclarations(surface).matchAll(DECLARATION)) {

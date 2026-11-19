@@ -1,9 +1,4 @@
-// ===========================================
-// SFTP Destination Connector Form
-// ===========================================
-// Configuration form for SFTP writer destination connectors. Mirrors the File
-// destination form but writes over SFTP. Property keys must match exactly what
-// the SFTP destination connector reads (see connector-defaults.ts).
+// Property keys must match exactly what the SFTP destination connector reads (see connector-defaults.ts).
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
@@ -32,7 +27,6 @@ export function SftpDestinationForm({ properties, onChange }: DestConnectorFormP
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Connection + credentials */}
       <Grid
         size={{
           xs: 12,
@@ -111,7 +105,6 @@ export function SftpDestinationForm({ properties, onChange }: DestConnectorFormP
         />
       </Grid>
 
-      {/* Right column — Output settings */}
       <Grid
         size={{
           xs: 12,

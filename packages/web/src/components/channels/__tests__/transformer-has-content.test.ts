@@ -1,8 +1,5 @@
-// ===========================================
-// transformerHasContent Tests
-// ===========================================
-// The editor omits empty transformers on save. A zero-step HL7V2→HL7V2
-// transformer that still carries properties or templates must be kept.
+// The editor drops a transformer without content on save, so one carrying
+// only properties or templates must count as content.
 
 import { describe, it, expect } from 'vitest';
 import { createDefaultTransformer, createDefaultTransformerStep, transformerHasContent } from '../source/types.js';

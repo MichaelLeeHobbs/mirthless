@@ -1,10 +1,4 @@
-// ===========================================
-// System Info Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mocks -----
 
 const mockExecute = vi.fn();
 const mockGetEngineStats = vi.fn();
@@ -20,8 +14,6 @@ vi.mock('../health.service.js', () => ({
 }));
 
 const { SystemInfoService, probeDatabase } = await import('../system-info.service.js');
-
-// ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();

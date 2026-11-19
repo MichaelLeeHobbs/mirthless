@@ -1,16 +1,9 @@
-// ===========================================
-// Scenario suite: the systems on the other end
-// ===========================================
-// Real sockets standing in for the partner systems a channel talks to: an HL7
-// sender, an MLLP receiver that ACKs (or refuses, or is down), and an HTTP API.
-
 import * as net from 'node:net';
 import * as http from 'node:http';
 
 const VT = '\x0b';
 const FS_CR = '\x1c\r';
 
-/** Send one framed message and resolve with the reply between the frame bytes. */
 export function sendFramed(port: number, message: string, start = VT, end = FS_CR, timeoutMs = 10_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const client = net.createConnection({ host: '127.0.0.1', port }, () => { client.write(start + message + end); });
@@ -31,10 +24,8 @@ export function sendFramed(port: number, message: string, start = VT, end = FS_C
   });
 }
 
-/** Send an MLLP message and return the ACK. */
 export const sendMllp = (port: number, message: string): Promise<string> => sendFramed(port, message);
 
-/** Build an HL7 ACK for a received message. */
 export function ackFor(message: string, code: 'AA' | 'AE' | 'AR', text = ''): string {
   const msh = message.split('\r')[0] ?? '';
   const f = msh.split('|');
@@ -42,7 +33,6 @@ export function ackFor(message: string, code: 'AA' | 'AE' | 'AR', text = ''): st
   return [`MSH|^~\\&|${f[4] ?? ''}|${f[5] ?? ''}|${f[2] ?? ''}|${f[3] ?? ''}|20260101000000||ACK|ACK${control}|P|${f[11] ?? '2.5'}`, `MSA|${code}|${control}|${text}`].join('\r');
 }
 
-/** An MLLP partner that records what it receives and replies with an ACK. */
 export class MllpSink {
   readonly received: string[] = [];
   ackCode: 'AA' | 'AE' | 'AR' = 'AA';
@@ -95,7 +85,6 @@ export interface RecordedRequest {
   readonly body: string;
 }
 
-/** An HTTP partner API. `status` sets what it answers; it records every request. */
 export class HttpSink {
   readonly requests: RecordedRequest[] = [];
   status = 200;

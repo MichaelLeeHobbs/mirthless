@@ -1,19 +1,10 @@
-// ===========================================
-// Integration Test Harness (real Postgres)
-// ===========================================
-// Shared gate + lazy module loader for the *.itest.ts suites.
-//
-// Gating: integration tests only run when DATABASE_URL points at a database
-// whose name ends in `_test`. This protects developer/prod databases from the
-// destructive inserts/deletes these suites perform, and lets the suites skip
-// gracefully when no test DB is configured (e.g. a plain `pnpm test:integration`
-// on a machine without Postgres). CI sets DATABASE_URL to the `galvanigraph_test`
-// service DB, so the suites run there.
+// The suites run only when DATABASE_URL names a database ending in `_test`, so
+// their destructive inserts and deletes never touch a developer or production
+// database; without one they skip.
 
 import { randomUUID } from 'node:crypto';
 import { describe } from 'vitest';
 
-/** True when DATABASE_URL targets a `*_test` database. */
 function isTestDatabaseConfigured(): boolean {
   const url = process.env.DATABASE_URL;
   if (!url) return false;
@@ -27,7 +18,6 @@ function isTestDatabaseConfigured(): boolean {
 
 export const shouldRunIntegration = isTestDatabaseConfigured();
 
-/** `describe` when a test DB is configured, otherwise `describe.skip`. */
 export const describeIntegration = shouldRunIntegration ? describe : describe.skip;
 
 if (!shouldRunIntegration) {
@@ -38,9 +28,8 @@ if (!shouldRunIntegration) {
 }
 
 /**
- * Lazily import the server modules under test plus Drizzle helpers. Deferred so
- * that when the suites are skipped, config validation (which reads env and can
- * process.exit on a missing DATABASE_URL) never runs.
+ * Deferred so that skipped suites never run config validation, which can
+ * process.exit on a missing DATABASE_URL.
  */
 export async function loadServerModules() {
   const [dbMod, schemaMod, drizzleMod, messageMod, queueMod, channelMod, partitionMod, prunerMod, collectionMod, dataSourceMod, poolMgrMod] =
@@ -81,9 +70,8 @@ export async function loadServerModules() {
 export type ServerModules = Awaited<ReturnType<typeof loadServerModules>>;
 
 /**
- * Insert a bare channel row with this id. `create_channel_partitions` refuses an
- * id with no channel, so a suite that makes partitions directly needs one.
- * Remove it with `deleteTestChannel`.
+ * `create_channel_partitions` refuses an id with no channel row, so a suite
+ * that makes partitions directly needs one. Remove it with `deleteTestChannel`.
  */
 export async function insertTestChannel(mods: ServerModules, id: string): Promise<void> {
   await mods.db.execute(mods.sql`
@@ -91,13 +79,12 @@ export async function insertTestChannel(mods: ServerModules, id: string): Promis
     VALUES (${id}, ${`itest-${id}`}, 'RAW', 'RAW', 'CHANNEL', '{}'::jsonb)`);
 }
 
-/** Who a suite acts as: services that create channels place them in the actor's scope (D-310). */
+/** Services that create channels place them in the actor's scope (D-310). */
 export interface TestActor {
   readonly userId: string;
   readonly ipAddress: null;
 }
 
-/** A new user holding the admin role on every channel, to act as. */
 export async function adminActor(pool: ServerModules['pool']): Promise<TestActor> {
   const name = `itest-admin-${randomUUID().slice(0, 8)}`;
   const { rows } = await pool.query<{ id: string }>(
@@ -108,17 +95,15 @@ export async function adminActor(pool: ServerModules['pool']): Promise<TestActor
   return { userId, ipAddress: null };
 }
 
-/** A signed-in test user: their id and an access token for the API. */
 export interface TestUser {
   readonly id: string;
   readonly token: string;
 }
 
 /**
- * A new user holding `role` on every channel (`groupIds` null) or on each of
- * `groupIds` (one assignment per group), or nothing (`role` null), with a
- * live session and token.
- * The caller deletes the user (assignments and sessions cascade).
+ * Holds `role` on every channel (`groupIds` null) or on each of `groupIds`
+ * (one assignment per group), or nothing (`role` null). The caller deletes the
+ * user (assignments and sessions cascade).
  */
 export async function userWithRole(pool: ServerModules['pool'], role: string | null, groupIds: readonly string[] | null): Promise<TestUser> {
   const { signAccessToken } = await import('../../src/lib/jwt.js');
@@ -140,19 +125,17 @@ export async function userWithRole(pool: ServerModules['pool'], role: string | n
   return { id, token: signAccessToken({ userId: id, sessionId: session.rows[0]!.id }) };
 }
 
-/** A new channel group; the caller deletes it. */
+/** The caller deletes it. */
 export async function insertTestGroup(pool: ServerModules['pool']): Promise<string> {
   const { rows } = await pool.query<{ id: string }>('INSERT INTO channel_groups (name) VALUES ($1) RETURNING id', [`itest-group-${randomUUID().slice(0, 8)}`]);
   return rows[0]!.id;
 }
 
-/** An API answer: its status and parsed JSON body (empty for 204). */
 export interface ApiAnswer<T> {
   readonly status: number;
   readonly json: { readonly data?: T; readonly error?: { readonly code?: string; readonly message?: string; readonly details?: { readonly missing?: string[] } } };
 }
 
-/** Call `/api/v1<path>` on a test server at `base` as the holder of `token`. */
 export async function apiCall<T = unknown>(base: string, token: string, method: string, path: string, body?: unknown): Promise<ApiAnswer<T>> {
   const res = await fetch(`${base}/api/v1${path}`, {
     method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -161,17 +144,14 @@ export async function apiCall<T = unknown>(base: string, token: string, method: 
   return { status: res.status, json: res.status === 204 ? {} : await res.json() as ApiAnswer<T>['json'] };
 }
 
-/** Delete a channel row made by `insertTestChannel`. */
 export async function deleteTestChannel(mods: ServerModules, id: string): Promise<void> {
   await mods.db.execute(mods.sql`DELETE FROM channels WHERE id = ${id}`);
 }
 
-/** Minimal structural view of a stderr-lib Result for unwrapping in tests. */
 type ResultLike<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly message: string } };
 
-/** Unwrap a Result<T>, failing the test loudly if it is an error. */
 export function unwrap<T>(result: ResultLike<T>): T {
   if (!result.ok) {
     throw new Error(`Expected Ok Result, got error: ${result.error.message}`);

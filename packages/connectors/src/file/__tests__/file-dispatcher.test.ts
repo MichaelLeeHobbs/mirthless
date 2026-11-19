@@ -1,13 +1,7 @@
-// ===========================================
-// File Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FileDispatcher, resolveOutputFilename, type FileDispatcherConfig } from '../file-dispatcher.js';
 import type { ConnectorMessage } from '../../base.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
-
-// ----- Mock node:fs/promises -----
 
 vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(),
@@ -26,8 +20,6 @@ const mockAppendFile = vi.mocked(fs.appendFile);
 const mockRename = vi.mocked(fs.rename);
 const mockMkdir = vi.mocked(fs.mkdir);
 const mockRealpath = vi.mocked(fs.realpath);
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<FileDispatcherConfig>): FileDispatcherConfig {
   return {
@@ -53,8 +45,6 @@ function makeMessage(overrides?: Partial<ConnectorMessage>): ConnectorMessage {
   };
 }
 
-// ----- Lifecycle -----
-
 let dispatcher: FileDispatcher | null = null;
 
 beforeEach(() => {
@@ -74,8 +64,6 @@ afterEach(async () => {
     dispatcher = null;
   }
 });
-
-// ----- resolveOutputFilename Tests -----
 
 describe('resolveOutputFilename', () => {
   it('substitutes messageId', () => {
@@ -124,8 +112,6 @@ describe('resolveOutputFilename', () => {
   });
 });
 
-// ----- FileDispatcher Tests -----
-
 describe('FileDispatcher', () => {
   describe('onDeploy', () => {
     it('validates directory is required', async () => {
@@ -141,8 +127,6 @@ describe('FileDispatcher', () => {
     });
 
     it('refuses a pattern with a placeholder it cannot fill, naming it', async () => {
-      // ${originalFilename} used to become the literal "message", so every
-      // file written through such a pattern replaced the one before it.
       dispatcher = new FileDispatcher(makeConfig({ outputPattern: '${originalFilename}.hl7' }));
       const result = await dispatcher.onDeploy();
       expect(result.ok).toBe(false);
@@ -209,8 +193,7 @@ describe('FileDispatcher', () => {
       expect(mockMkdir).toHaveBeenCalledWith(path.resolve('/data/outbound'), { recursive: true });
     });
 
-    // GHSA-r434-hwqg-cvcw: a File destination could write anywhere the server
-    // process can, including over its own code.
+    // GHSA-r434-hwqg-cvcw: a File destination could overwrite the server's own code.
     it('refuses to deploy a directory outside FILE_CONNECTOR_ROOTS', async () => {
       dispatcher = new FileDispatcher(makeConfig({ directory: '/app/packages/server/dist' }));
       const result = await dispatcher.onDeploy();
@@ -269,11 +252,9 @@ describe('FileDispatcher', () => {
       expect(result.ok).toBe(true);
       expect(mockWriteFile).toHaveBeenCalledTimes(1);
 
-      // Should write to .tmp first
       const writePath = mockWriteFile.mock.calls[0]![0] as string;
       expect(writePath).toMatch(/\.tmp$/);
 
-      // Then rename
       expect(mockRename).toHaveBeenCalledTimes(1);
       const renameSrc = mockRename.mock.calls[0]![0] as string;
       const renameDst = mockRename.mock.calls[0]![1] as string;

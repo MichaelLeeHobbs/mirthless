@@ -1,8 +1,3 @@
-// ===========================================
-// API Documentation Routes
-// ===========================================
-// Serves Swagger UI and the OpenAPI spec JSON.
-
 import { Router, type IRouter } from 'express';
 import { createRequire } from 'module';
 import { generateOpenAPISpec } from '../lib/openapi.js';

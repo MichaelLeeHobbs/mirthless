@@ -1,24 +1,16 @@
 import { defineConfig } from 'vitest/config';
 
-// ===========================================
-// Integration (real Postgres) Vitest Config
-// ===========================================
-// Runs ONLY the *.itest.ts suites under test/integration against a real
-// Postgres database. Kept separate from the default vitest.config.ts so that:
-//   - `pnpm test` never touches a real DB (those suites use .itest.ts, which
-//     the default `*.test.ts` include glob does not match), and
-//   - test/setup.ts is NOT loaded here — that file overrides DATABASE_URL with
-//     mock-DB credentials, which would defeat the point. Integration suites read
-//     the real DATABASE_URL straight from the environment and self-skip unless
-//     it points at a `*_test` database (see test/integration/_setup.ts).
+// Apart from vitest.config.ts: its `*.test.ts` glob keeps these `.itest.ts`
+// suites out of `pnpm test`, and its test/setup.ts would point DATABASE_URL at
+// mock credentials. Suites self-skip unless DATABASE_URL names a `*_test`
+// database (test/integration/_setup.ts).
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
     include: ['test/integration/**/*.itest.ts'],
     passWithNoTests: true,
-    // Suites share one database; run files sequentially to avoid connection
-    // storms. Row-level isolation is guaranteed by per-test random channel IDs.
+    // Suites share one database; sequential files avoid connection storms.
     fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 30_000,

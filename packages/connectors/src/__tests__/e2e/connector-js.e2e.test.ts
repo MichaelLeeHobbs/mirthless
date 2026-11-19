@@ -1,12 +1,4 @@
-// ===========================================
-// JavaScript connector E2E — source + destination
-// ===========================================
-// The JS connectors run user scripts via a ScriptRunner the engine injects.
-// These tests wire a real sandbox-backed runner (exactly as the production
-// engine does) and drive messages through:
-//   - JS source: a polling script generates a message → delivered to a sink.
-//   - JS destination: a script transforms the message → its return value is the
-//     dispatch response.
+// The engine injects the ScriptRunner, so these tests wire a real sandbox-backed one as it does.
 
 import { describe, it, expect, afterEach } from 'vitest';
 import {
@@ -40,8 +32,7 @@ describe('JavaScript source connector (a polling script generates messages)', ()
     const compiled = await compile("return 'HEARTBEAT|' + msg;");
     const source = new JavaScriptReceiver({ script: 'ignored', pollingIntervalMs: 100 });
 
-    // Inject the sandbox runner (as the engine does). Generate exactly one
-    // message so the polling source is deterministic.
+    // Exactly one message, so the polling source is deterministic.
     let calls = 0;
     source.setScriptRunner(async (): Promise<Result<unknown>> => {
       calls += 1;

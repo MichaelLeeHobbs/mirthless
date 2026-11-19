@@ -1,10 +1,4 @@
-// ===========================================
-// Health Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// ----- Hoisted Mocks -----
 
 const { mockExecute, mockGetAll } = vi.hoisted(() => ({
   mockExecute: vi.fn(),
@@ -21,14 +15,10 @@ vi.mock('../../engine.js', () => ({
   })),
 }));
 
-// ----- Import after mocks -----
-
 import { checkDatabase, getEngineStats, getMemoryStats, getHealthStatus, getReadiness, healthHttpStatus } from '../health.service.js';
 import { startupStatus, STARTUP_STEP, type StartupFailure } from '../../lib/startup-steps.js';
 
 const QUEUE_FAILURE: StartupFailure = { step: STARTUP_STEP.QUEUE, errMsg: 'permission denied for database', failedAt: '2026-11-16T00:00:00.000Z' };
-
-// ----- Tests -----
 
 describe('Health Service', () => {
   beforeEach(() => {
@@ -39,8 +29,6 @@ describe('Health Service', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
-  // ----- checkDatabase -----
 
   describe('checkDatabase', () => {
     it('returns true when query succeeds', async () => {
@@ -62,8 +50,6 @@ describe('Health Service', () => {
       expect(result).toBe(false);
     });
   });
-
-  // ----- getEngineStats -----
 
   describe('getEngineStats', () => {
     it('returns zeroes when no channels are deployed', () => {
@@ -122,8 +108,6 @@ describe('Health Service', () => {
     });
   });
 
-  // ----- getMemoryStats -----
-
   describe('getMemoryStats', () => {
     it('includes rss, heapUsed, heapTotal, and external', () => {
       const memory = getMemoryStats();
@@ -145,8 +129,6 @@ describe('Health Service', () => {
       expect(memory.external).toBeGreaterThanOrEqual(0);
     });
   });
-
-  // ----- getHealthStatus -----
 
   describe('getHealthStatus', () => {
     it('returns ok status when database is connected', async () => {
@@ -194,7 +176,6 @@ describe('Health Service', () => {
 
       const health = await getHealthStatus();
       expect(health.timestamp).toBeDefined();
-      // ISO 8601 format check
       expect(new Date(health.timestamp).toISOString()).toBe(health.timestamp);
     });
 
@@ -226,8 +207,6 @@ describe('Health Service', () => {
     });
   });
 
-  // ----- healthHttpStatus -----
-
   describe('healthHttpStatus', () => {
     it('answers 200 for a startup-step failure, so a load balancer keeps the instance (D-308)', async () => {
       mockExecute.mockResolvedValue([{ '?column?': 1 }]);
@@ -251,8 +230,6 @@ describe('Health Service', () => {
       expect(healthHttpStatus(await getHealthStatus())).toBe(200);
     });
   });
-
-  // ----- getReadiness -----
 
   describe('getReadiness', () => {
     it('is ready (200) when the database is reachable and every startup step succeeded', async () => {

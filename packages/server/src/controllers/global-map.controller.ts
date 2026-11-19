@@ -1,8 +1,3 @@
-// ===========================================
-// Global Map Controller
-// ===========================================
-// Handles HTTP requests for global map key-value store CRUD.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type UpsertGlobalMapEntryInput } from '@galvanigraph/core-models';
 import { GlobalMapService } from '../services/global-map.service.js';

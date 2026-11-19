@@ -1,8 +1,3 @@
-// ===========================================
-// Response Settings Section
-// ===========================================
-// Response mode configuration for the source connector.
-
 import { type ReactNode } from 'react';
 import { Controller, type Control, type FieldErrors } from 'react-hook-form';
 import TextField from '@mui/material/TextField';
@@ -11,9 +6,8 @@ import Typography from '@mui/material/Typography';
 import type { ChannelFormData } from '../../../pages/ChannelEditorPage.js';
 
 /**
- * What the sender is told. The engine reports an error before routing in every
- * mode; the modes differ in whether a failed destination also counts. The last
- * three are stored for compatibility and are answered like "After destinations".
+ * The engine reports an error before routing in every mode. The last three are
+ * stored for compatibility and are answered like "After destinations".
  */
 const RESPONSE_MODES: ReadonlyArray<{ readonly value: string; readonly label: string }> = [
   { value: 'AUTO_AFTER_DESTINATIONS', label: 'After destinations' },

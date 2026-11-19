@@ -1,14 +1,6 @@
-// ===========================================
-// Script body type check
-// ===========================================
-// The engine runs every script as the body of an async function, and the
-// deploy check type-checks it that way (wrapScriptBody). Checked on its own, a
-// script's top-level `return` is an error TypeScript reports without checking
-// the returned expression, so a type error there passed the editor (#206). A
-// Monaco model cannot carry a hidden wrapper, so the editor's type errors come
-// from a hidden model that holds the wrapped script, checked by the same
-// TypeScript worker, and are set on the visible model under their own owner.
-// The visible model keeps Monaco's syntax checking (monaco.ts).
+// #206: checked on its own, a script's top-level `return` is an error TypeScript reports without checking the returned
+// expression. A Monaco model cannot carry a hidden wrapper, so type errors come from a hidden model holding the script
+// as the engine runs it (wrapScriptBody), checked by the same worker and set on the visible model under their own owner.
 
 import { useEffect } from 'react';
 import { scriptBodyPosition, wrapScriptBody } from '@galvanigraph/core-models';
@@ -19,13 +11,11 @@ type CodeEditor = monaco.editor.IStandaloneCodeEditor;
 type Diagnostic = monaco.typescript.Diagnostic;
 type MessageChain = Exclude<Diagnostic['messageText'], string>;
 
-/** The owner of the type-error markers this check sets. */
 export const SCRIPT_BODY_MARKER_OWNER = 'script-body';
 
-/** Wait after the last keystroke before checking again, as Monaco's own checks do. */
+/** As Monaco's own checks wait after the last keystroke. */
 const CHECK_DELAY_MS = 500;
 
-/** A TypeScript message and the messages chained under it, one per line, each level indented. */
 export function flattenMessage(text: Diagnostic['messageText']): string {
   if (typeof text === 'string') return text;
   const lines: string[] = [];
@@ -46,11 +36,7 @@ const SEVERITY: Readonly<Record<Diagnostic['category'], monaco.MarkerSeverity>> 
   3: monaco.MarkerSeverity.Info,
 };
 
-/**
- * Markers for the script from the diagnostics of its wrapped text, on the
- * script's own lines. `positionAt` turns an offset in the wrapped text into
- * its 1-based line and column.
- */
+/** `positionAt` maps an offset in the wrapped text to its 1-based line and column. */
 export function scriptBodyMarkers(
   code: string,
   diagnostics: readonly Diagnostic[],
@@ -77,20 +63,15 @@ export function scriptBodyMarkers(
 let hiddenModels = 0;
 
 /**
- * A model for the wrapped copy of a script. Plain text, so Monaco's own
- * TypeScript checks leave it alone; the worker still reads it as TypeScript by
- * its .ts name. Every hidden model declares the same wrapper function, and
- * what the script declares is local to it. They do not clash only because
- * SCRIPT_COMPILER_OPTIONS sets `moduleDetection` to Force, which makes each
- * file a module: without it the wrapper's name is global and two hidden models
- * report "Duplicate function implementation" (2393).
+ * Plain text, so Monaco's own checks leave it alone; the worker reads it as TypeScript by its .ts name. Hidden models
+ * declare the same wrapper and do not clash only because SCRIPT_COMPILER_OPTIONS sets `moduleDetection` to Force:
+ * without it the wrapper's name is global and they report "Duplicate function implementation" (2393).
  */
 function createBodyModel(): monaco.editor.ITextModel {
   hiddenModels += 1;
   return monaco.editor.createModel('', 'plaintext', monaco.Uri.parse(`file:///script-body/${String(hiddenModels)}.ts`));
 }
 
-/** Check the script in `model` through `body`, its hidden wrapped copy; resolves to its markers. */
 async function checkBody(model: monaco.editor.ITextModel, body: monaco.editor.ITextModel): Promise<monaco.editor.IMarkerData[]> {
   const code = model.getValue();
   body.setValue(wrapScriptBody(code));
@@ -99,7 +80,7 @@ async function checkBody(model: monaco.editor.ITextModel, body: monaco.editor.IT
   return scriptBodyMarkers(code, diagnostics, (offset) => body.getPositionAt(offset));
 }
 
-/** The marker for a check that failed: deploy still checks, so say the editor could not. */
+/** Deploy still checks, so say the editor could not. */
 function checkFailed(err: unknown): monaco.editor.IMarkerData[] {
   return [{
     severity: monaco.MarkerSeverity.Warning,
@@ -108,11 +89,7 @@ function checkFailed(err: unknown): monaco.editor.IMarkerData[] {
   }];
 }
 
-/**
- * Type-check the editor's script as the body of the function the engine runs
- * it in, while `active` (a TypeScript script whose surface is the one applied,
- * see surface-state.ts). Inactive, the editor shows no type errors.
- */
+/** `active`: a TypeScript script whose surface is the one applied (surface-state.ts). Inactive, no type errors show. */
 export function useScriptBodyTypeMarkers(editor: CodeEditor | null, active: boolean): void {
   useEffect(() => {
     const model = editor?.getModel();
@@ -143,7 +120,6 @@ export function useScriptBodyTypeMarkers(editor: CodeEditor | null, active: bool
     // reach the worker first and check against the old ones.
     later();
     const content = model.onDidChangeContent(later);
-    // Another surface's declarations, or new templates: check again.
     const libs = monaco.typescript.typescriptDefaults.onDidExtraLibsChange(later);
     return () => {
       clearTimeout(timer);

@@ -1,9 +1,3 @@
-// ===========================================
-// Certificate Service
-// ===========================================
-// Business logic for SSL/TLS certificate CRUD.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { X509Certificate } from 'node:crypto';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc, lte, ilike, and, sql, type SQL } from 'drizzle-orm';
@@ -13,8 +7,6 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { containsPattern } from '../lib/like.js';
 import { certificates } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface CertificateSummary {
   readonly id: string;
@@ -29,10 +21,8 @@ export interface CertificateSummary {
   readonly createdAt: Date;
   readonly updatedAt: Date;
   /**
-   * Whether a private key is stored server-side. Computed in SQL as a boolean so
-   * the key material itself is NEVER selected or returned — a `settings:read`
-   * caller must not be able to exfiltrate private keys. The raw key stays in the
-   * DB for server-side use (e.g. TLS resolution at channel deploy time).
+   * Computed in SQL so the key itself is never selected: a `settings:read`
+   * caller must not be able to exfiltrate private keys.
    */
   readonly hasPrivateKey: boolean;
 }
@@ -42,15 +32,12 @@ export interface CertificateDetail extends CertificateSummary {
 }
 
 /**
- * SQL boolean projecting whether a private key exists, WITHOUT selecting the key
- * bytes. Reused by every list-shaped query so key material never leaves the DB.
- * Built lazily (not at module load) so the `sql` tag runs only at query time.
+ * Every list-shaped query uses this, so key material never leaves the DB.
+ * Built per call, not at module load, so the `sql` tag runs only at query time.
  */
 function hasPrivateKeyExpr(): SQL.Aliased<boolean> {
   return sql<boolean>`(${certificates.privateKeyPem} IS NOT NULL AND length(${certificates.privateKeyPem}) > 0)`.as('hasPrivateKey');
 }
-
-// ----- Helpers -----
 
 interface ParsedCertInfo {
   readonly fingerprint: string;
@@ -60,7 +47,6 @@ interface ParsedCertInfo {
   readonly notAfter: Date;
 }
 
-/** Parse a PEM-encoded certificate and extract metadata. */
 function parsePem(pem: string): ParsedCertInfo {
   const cert = new X509Certificate(pem);
   const rawFingerprint = cert.fingerprint256;
@@ -97,10 +83,7 @@ function toDetail(row: typeof certificates.$inferSelect): CertificateDetail {
   };
 }
 
-// ----- Service -----
-
 export class CertificateService {
-  /** List certificates (metadata only, no PEM content). */
   static async list(query?: CertificateListQuery): Promise<Result<readonly CertificateSummary[]>> {
     return tryCatch(async () => {
       const conditions: SQL[] = [];
@@ -144,7 +127,6 @@ export class CertificateService {
     });
   }
 
-  /** Get a single certificate by ID (with PEM content). */
   static async getById(id: string): Promise<Result<CertificateDetail>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -160,7 +142,6 @@ export class CertificateService {
     });
   }
 
-  /** Create a new certificate. */
   static async create(
     input: CreateCertificateInput,
     context?: AuditContext,
@@ -209,7 +190,6 @@ export class CertificateService {
     });
   }
 
-  /** Update a certificate. */
   static async update(
     id: string,
     input: UpdateCertificateInput,
@@ -277,7 +257,6 @@ export class CertificateService {
     });
   }
 
-  /** Delete a certificate. */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -302,7 +281,6 @@ export class CertificateService {
     });
   }
 
-  /** Get certificates expiring within the given number of days. */
   static async getExpiring(days: number): Promise<Result<readonly CertificateSummary[]>> {
     return tryCatch(async () => {
       const threshold = new Date();
@@ -332,10 +310,8 @@ export class CertificateService {
   }
 
   /**
-   * SERVER-INTERNAL: fetch a certificate's PEM material INCLUDING its private key.
-   * Used only by deploy-time / connection-test TLS resolution — this is the one
-   * path that returns key bytes, so it MUST NEVER be wired to an HTTP controller
-   * or route. Returns NOT_FOUND when the id does not exist.
+   * Server-internal, for deploy-time and connection-test TLS resolution: the
+   * one path that returns private key bytes, so it must never be wired to a route.
    */
   static async getMaterialById(
     id: string,

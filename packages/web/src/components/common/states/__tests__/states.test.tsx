@@ -1,7 +1,3 @@
-// ===========================================
-// Shared State Component Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';

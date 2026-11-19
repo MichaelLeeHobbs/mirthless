@@ -1,10 +1,4 @@
-// ===========================================
-// HTTP Source Connector Form
-// ===========================================
-// Configuration form for HTTP listener source connectors.
-// Property keys mirror packages/connectors/src/registry.ts (HttpReceiver):
-// host, port, path, method, responseStatusCode, responseContentType,
-// errorStatusCode, maxBodyBytes.
+// Property keys mirror what packages/connectors/src/registry.ts reads for the HttpReceiver.
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
@@ -24,7 +18,6 @@ import { HTTP_METHODS, HTTP_SCHEMES as SCHEMES } from '@galvanigraph/core-models
 export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
 
-  // Populate defaults on mount if properties are empty
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
@@ -42,7 +35,6 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Listener settings */}
       <Grid
         size={{
           xs: 12,
@@ -101,7 +93,6 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
         </TextField>
       </Grid>
 
-      {/* Right column — Response settings */}
       <Grid
         size={{
           xs: 12,
@@ -159,7 +150,6 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
         />
       </Grid>
 
-      {/* Transport mode — HTTP or HTTPS (server cert selected from the cert store) */}
       <Grid size={12}>
         <Divider sx={{ mb: 2 }} />
         <Typography

@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { stderr } from '@galvanigraph/core-util';
 import type { ConnectorMessage } from '../../base.js';
@@ -27,8 +23,6 @@ describe('resolveTarget', () => {
 import { registerChannel, clearChannelRegistry } from '../channel-registry.js';
 import type { RawMessage } from '../../base.js';
 
-// ----- Helpers -----
-
 function makeConfig(overrides?: Partial<ChannelDispatcherConfig>): ChannelDispatcherConfig {
   return {
     targetChannelId: 'target-ch-001',
@@ -53,8 +47,6 @@ function makeSignal(aborted = false): AbortSignal {
   return new AbortController().signal;
 }
 
-// ----- Lifecycle -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   clearChannelRegistry();
@@ -63,8 +55,6 @@ beforeEach(() => {
 afterEach(() => {
   clearChannelRegistry();
 });
-
-// ----- onDeploy -----
 
 describe('ChannelDispatcher.onDeploy', () => {
   it('succeeds with valid config', async () => {
@@ -79,8 +69,6 @@ describe('ChannelDispatcher.onDeploy', () => {
     expect(result.ok).toBe(false);
   });
 });
-
-// ----- Lifecycle -----
 
 describe('ChannelDispatcher lifecycle', () => {
   it('starts successfully', async () => {
@@ -109,8 +97,6 @@ describe('ChannelDispatcher lifecycle', () => {
     expect(result.ok).toBe(true);
   });
 });
-
-// ----- send -----
 
 describe('ChannelDispatcher.send', () => {
   it('dispatches message to target channel', async () => {
@@ -157,8 +143,6 @@ describe('ChannelDispatcher.send', () => {
   });
 
   it('breaks a channel routing loop instead of recursing forever', async () => {
-    // The target channel re-dispatches back to itself, forming A -> A -> A ...
-    // The hop-depth guard must terminate it and surface a routing-loop error.
     let calls = 0;
     registerChannel('target-ch-001', async () => {
       calls++;
@@ -180,7 +164,6 @@ describe('ChannelDispatcher.send', () => {
       expect(result.value.status).toBe('ERROR');
       expect(result.value.errorMessage).toContain('routing loop');
     }
-    // Bounded, not infinite.
     expect(calls).toBeLessThanOrEqual(11);
   });
 

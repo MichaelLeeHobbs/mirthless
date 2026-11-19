@@ -1,11 +1,5 @@
-// ===========================================
-// HL7v2 Message Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { Hl7Message } from '../hl7-message.js';
-
-// ----- Sample Messages -----
 
 const ADT_A01 = [
   'MSH|^~\\&|SENDER|SFAC|RECV|RFAC|20260101120000||ADT^A01|MSG001|P|2.5.1',
@@ -22,8 +16,6 @@ const MULTI_OBX = [
   'OBX|2|NM|RBC||4.5|10*6/uL',
   'OBX|3|NM|HGB||14.2|g/dL',
 ].join('\r');
-
-// ----- Tests -----
 
 describe('Hl7Message.parse', () => {
   it('parses a simple ADT^A01 message', () => {
@@ -90,7 +82,6 @@ describe('get', () => {
   it('gets a component value', () => {
     const msg = Hl7Message.parse(ADT_A01);
 
-    // PID.5 = Doe^John^Q → PID.5.1 = Doe, PID.5.2 = John
     expect(msg.get('PID.5.1')).toBe('Doe');
     expect(msg.get('PID.5.2')).toBe('John');
     expect(msg.get('PID.5.3')).toBe('Q');
@@ -99,7 +90,6 @@ describe('get', () => {
   it('gets a subcomponent value', () => {
     const msg = Hl7Message.parse(ADT_A01);
 
-    // PID.3 = 12345^^^MRN → PID.3.4 = MRN
     expect(msg.get('PID.3.1.1')).toBe('12345');
     expect(msg.get('PID.3.4.1')).toBe('MRN');
   });
@@ -135,7 +125,6 @@ describe('get', () => {
   it('gets value from field with empty components', () => {
     const msg = Hl7Message.parse(ADT_A01);
 
-    // PID.3 = 12345^^^MRN → PID.3.2 and PID.3.3 are empty
     expect(msg.get('PID.3.2')).toBe('');
     expect(msg.get('PID.3.3')).toBe('');
   });
@@ -147,7 +136,7 @@ describe('set', () => {
     msg.set('PID.5.1', 'Smith');
 
     expect(msg.get('PID.5.1')).toBe('Smith');
-    expect(msg.get('PID.5.2')).toBe('John'); // Other components unchanged
+    expect(msg.get('PID.5.2')).toBe('John');
   });
 
   it('sets a new value on an existing segment', () => {
@@ -262,7 +251,6 @@ describe('toString', () => {
     const withTrailing = ADT_A01 + '\r';
     const msg = Hl7Message.parse(withTrailing);
 
-    // Should parse without the trailing empty segment
     expect(msg.getSegmentCount('PV1')).toBe(1);
   });
 });

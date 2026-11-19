@@ -1,11 +1,6 @@
-// ===========================================
-// Item card
-// ===========================================
-// A filter rule or transformer step. Closed, its header is a button showing the
-// title and a summary. Open, the item's settings (name, type, enabled, order)
-// take that same header row, so an open card spends one row on them instead of
-// a title row plus a settings row. The body stays mounted while closed, as an
-// accordion's would.
+// Open, the item's settings take the header row, so the card spends one row on
+// them instead of a title row plus a settings row. The body stays mounted while
+// closed, as an accordion's would.
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
@@ -19,7 +14,6 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 interface ItemCardProps {
   readonly title: string;
-  /** Shown beside the title while closed, e.g. "Script · TypeScript". */
   readonly summary: ReactNode;
   /** The header row while open. */
   readonly settings: ReactNode;

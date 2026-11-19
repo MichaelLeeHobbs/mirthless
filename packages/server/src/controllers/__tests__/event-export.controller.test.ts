@@ -1,8 +1,4 @@
-// ===========================================
-// Event Export Controller Tests
-// ===========================================
-// Every export is recorded with its reason before the file goes out, and the
-// file carries a header naming that record (D-312).
+// Every export is recorded before the file goes out (D-312).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';

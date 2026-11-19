@@ -1,14 +1,4 @@
-// ===========================================
-// Global Script Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
-// The GlobalScriptService uses two select patterns:
-//   1. db.select().from(table) — returns all rows (getAll, final fetch in update)
-//   2. db.select().from(table).where() — check if row exists (update upsert logic)
-// We track call order with an index counter.
 
 let fromCallIndex = 0;
 let fromResponses: unknown[] = [];
@@ -22,17 +12,12 @@ function pushFromResponse(value: unknown): void {
   fromResponses.push(value);
 }
 
-// The .where() call resolves with the current fromResponse
 const mockSelectWhere = vi.fn().mockImplementation(() => {
   const val = fromResponses[fromCallIndex];
   fromCallIndex++;
   return Promise.resolve(val ?? []);
 });
 
-// .from() returns an object that can be:
-//   - awaited (resolves to rows) — when there's no .where() chain
-//   - chained with .where() — when filtering
-// We handle both via a thenable that also has .where()
 const mockSelectFrom = vi.fn().mockImplementation(() => {
   return {
     where: mockSelectWhere,
@@ -84,8 +69,6 @@ vi.setConfig({ testTimeout: 60_000 });
 const { GlobalScriptService } = await import('../global-script.service.js');
 const { isServiceError } = await import('../../lib/service-error.js');
 
-// ----- Fixtures -----
-
 function makeScriptRows(): Array<{ scriptType: string; script: string; updatedAt: Date }> {
   const now = new Date('2026-02-28T12:00:00Z');
   return [
@@ -96,8 +79,6 @@ function makeScriptRows(): Array<{ scriptType: string; script: string; updatedAt
   ];
 }
 
-// ----- Tests -----
-
 beforeEach(() => {
   resetMockState();
   vi.clearAllMocks();
@@ -106,7 +87,6 @@ beforeEach(() => {
 describe('GlobalScriptService', () => {
   describe('getAll', () => {
     it('returns all 4 scripts when stored', async () => {
-      // getAll: db.select().from(globalScripts) — no .where()
       pushFromResponse(makeScriptRows());
 
       const result = await GlobalScriptService.getAll();
@@ -172,11 +152,8 @@ describe('GlobalScriptService', () => {
 
   describe('update', () => {
     it('updates existing script row', async () => {
-      // The current scripts, read to see whether the save touches a TypeScript one
       pushFromResponse(makeScriptRows());
-      // For deploy field: select().from().where() — existing found
       pushFromResponse([{ scriptType: 'DEPLOY' }]);
-      // Final fetch: select().from() — no .where()
       pushFromResponse([
         { scriptType: 'DEPLOY', script: 'new deploy', updatedAt: new Date() },
       ]);
@@ -200,11 +177,8 @@ describe('GlobalScriptService', () => {
     });
 
     it('inserts when script row does not exist', async () => {
-      // The current scripts: none yet
       pushFromResponse([]);
-      // For preprocessor field: select().from().where() — not found
       pushFromResponse([]);
-      // Final fetch
       pushFromResponse([
         { scriptType: 'PREPROCESSOR', script: '// new pre', updatedAt: new Date() },
       ]);
@@ -216,9 +190,7 @@ describe('GlobalScriptService', () => {
       expect(mockInsert).toHaveBeenCalled();
     });
 
-    // #228: a never-saved script reads as TypeScript and the save type-checked
-    // it as TypeScript, but the insert stored JavaScript when the request left
-    // the language out.
+    // #228: the insert stored JavaScript for a never-saved script type-checked as TypeScript.
     it('stores a never-saved script sent without a language as TypeScript, the language it was checked in', async () => {
       pushFromResponse([]);
       pushFromResponse([]);
@@ -241,7 +213,6 @@ describe('GlobalScriptService', () => {
     });
 
     it('skips undefined fields', async () => {
-      // No fields → goes straight to final fetch
       pushFromResponse([]);
 
       const result = await GlobalScriptService.update({});
@@ -252,14 +223,11 @@ describe('GlobalScriptService', () => {
     });
 
     it('handles all 4 fields', async () => {
-      // The current scripts
       pushFromResponse(makeScriptRows());
-      // 4 existence checks (each uses select().from().where())
       pushFromResponse([{ scriptType: 'DEPLOY' }]);
       pushFromResponse([{ scriptType: 'UNDEPLOY' }]);
       pushFromResponse([{ scriptType: 'PREPROCESSOR' }]);
       pushFromResponse([{ scriptType: 'POSTPROCESSOR' }]);
-      // Final fetch
       pushFromResponse(makeScriptRows());
 
       const result = await GlobalScriptService.update({

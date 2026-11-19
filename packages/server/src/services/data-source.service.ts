@@ -1,10 +1,3 @@
-// ===========================================
-// Data Source Service
-// ===========================================
-// CRUD for database connection profiles + the query path behind the dbQuery
-// script bridge. Passwords are encrypted at rest and never returned. All methods
-// return Result<T>. See docs/design/11-datasources.md.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
 import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvanigraph/core-models';
@@ -15,7 +8,7 @@ import { dataSources } from '../db/schema/index.js';
 import { encryptContent, decryptContent, isContentEncryptionConfigured } from '../lib/content-crypto.js';
 import { dataSourcePoolManager, type PooledDataSource } from './data-source-pool-manager.js';
 
-// ----- Response Types (never include the password) -----
+// Response types never include the password.
 
 export interface DataSourceSummary {
   readonly id: string;
@@ -35,7 +28,6 @@ export interface DataSourceSummary {
   readonly updatedAt: Date;
 }
 
-/** Connection fields for a test (unsaved form values). */
 export interface TestConnectionInput {
   readonly host: string;
   readonly port: number;
@@ -44,8 +36,6 @@ export interface TestConnectionInput {
   readonly password: string;
   readonly tls: boolean;
 }
-
-// ----- Helpers -----
 
 function toSummary(row: typeof dataSources.$inferSelect): DataSourceSummary {
   return {
@@ -67,7 +57,7 @@ function toSummary(row: typeof dataSources.$inferSelect): DataSourceSummary {
   };
 }
 
-/** Encrypt a credential, refusing to store plaintext when no key is configured (fail loud). */
+/** With no key configured, refuse rather than store plaintext. */
 function encryptPassword(password: string): string {
   if (!isContentEncryptionConfigured()) {
     throw new ServiceError('CONFIG_ERROR', 'CONTENT_ENCRYPTION_KEY must be configured to store data source credentials');
@@ -76,8 +66,6 @@ function encryptPassword(password: string): string {
   if (!enc.ok) throw new ServiceError('CONFIG_ERROR', `Failed to encrypt data source password: ${enc.error.message}`);
   return enc.value;
 }
-
-// ----- Service -----
 
 export class DataSourceService {
   static async list(): Promise<Result<readonly DataSourceSummary[]>> {
@@ -151,7 +139,6 @@ export class DataSourceService {
       if (input.maxRows !== undefined) updates['maxRows'] = input.maxRows;
 
       const [row] = await db.update(dataSources).set(updates).where(eq(dataSources.id, id)).returning();
-      // Config may have changed — drop the cached pool so the next query rebuilds it.
       await dataSourcePoolManager.invalidate(id);
       emitSuccessEvent('DATASOURCE_UPDATED', context, { action: 'update', dataSourceId: id });
       return toSummary(row!);
@@ -168,7 +155,6 @@ export class DataSourceService {
     });
   }
 
-  /** Run a parameterized query against a data source (by name). Called by the dbQuery bridge. */
   static async runQuery(name: string, sql: string, params: readonly unknown[]): Promise<Result<readonly Record<string, unknown>[]>> {
     return tryCatch(async () => {
       const [row] = await db.select().from(dataSources).where(eq(dataSources.name, name));
@@ -192,7 +178,6 @@ export class DataSourceService {
     });
   }
 
-  /** Test connectivity for unsaved form values (throwaway pool, no caching). */
   static async testConnection(input: TestConnectionInput): Promise<Result<void>> {
     const { ConnectionPool } = await import('@galvanigraph/connectors');
     return tryCatch(async () => {

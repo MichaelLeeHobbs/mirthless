@@ -13,9 +13,8 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute.js';
 import { RequirePermission } from './components/layout/RequirePermission.js';
 import { PERMISSION } from './lib/permissions.js';
 
-// Route-level code splitting: each page ships in its own chunk so the initial
-// bundle stays small and heavy editors (Monaco) load only when their route is
-// visited. Pages use named exports, so map each to a default for React.lazy.
+// A chunk per page keeps Monaco out of the initial bundle. Pages use named
+// exports, so map each to a default for React.lazy.
 function page<T extends Record<string, ComponentType>>(
   loader: () => Promise<T>,
   name: keyof T,
@@ -53,7 +52,6 @@ const ExtensionsPage = page(() => import('./pages/ExtensionsPage.js'), 'Extensio
 const TrafficPage = page(() => import('./pages/TrafficPage.js'), 'TrafficPage');
 const CertificatesPage = page(() => import('./pages/CertificatesPage.js'), 'CertificatesPage');
 
-/** Wrap a lazily-loaded page in Suspense with a consistent loading fallback. */
 function lazyRoute(element: ReactNode): ReactNode {
   return <Suspense fallback={<RouteFallback />}>{element}</Suspense>;
 }
@@ -70,8 +68,7 @@ const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: lazyRoute(<DashboardPage />) },
-          // The channel list lives on the Dashboard now; keep the path as a
-          // redirect so old bookmarks/links don't 404.
+          // Kept as a redirect so old bookmarks don't 404.
           { path: 'channels', element: <Navigate to="/" replace /> },
           { path: 'channels/new', element: lazyRoute(<ChannelEditorPage />) },
           { path: 'channels/:id', element: lazyRoute(<ChannelEditorPage />) },

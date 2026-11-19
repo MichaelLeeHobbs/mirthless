@@ -1,7 +1,5 @@
-// #228: the destination settings panel was keyed by the selected position, so
-// removing the selected destination reused its editors for the next one, and
-// with equal scripts Ctrl+Z wrote the removed destination's edits into it.
-// Monaco is faked (fake-monaco.tsx) so the editors can be typed in and undone.
+// #228: a settings panel keyed by position reused a removed destination's
+// editors, and with equal scripts Ctrl+Z wrote its edits into the next one.
 
 import { useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';

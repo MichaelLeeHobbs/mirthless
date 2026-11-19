@@ -1,11 +1,5 @@
-// ===========================================
-// TCP/MLLP Connector Property Schemas
-// ===========================================
-// Properties of the TCP/MLLP source and destination, as a channel stores
-// them. The server validates them at deploy and the connector registry parses
-// them, so defaults live here only. A key not listed here fails validation,
-// except the keys this app's own editor used to save (LEGACY_KEYS), which
-// are dropped.
+// Defaults live here only (D-274). An unlisted key fails the deploy, except
+// LEGACY_KEYS, which are dropped.
 //
 // TLS is inline PEM in a `tls` object: TCP/MLLP has no certificate-store
 // lookup yet. Here `tls` is only typed; the connectors package decides
@@ -26,11 +20,7 @@ import {
 export const TCP_MLLP_RESPONSE_MODES = ['AUTO_ACK', 'PASSTHROUGH'] as const;
 export type TcpMllpResponseMode = (typeof TCP_MLLP_RESPONSE_MODES)[number];
 
-/**
- * Largest message a TCP/MLLP connection may buffer. Unauthenticated network
- * input must be bounded against memory exhaustion; 50 MiB exceeds any
- * realistic HL7v2 message.
- */
+/** Unauthenticated network input must be bounded against memory exhaustion; 50 MiB exceeds any realistic HL7v2 message. */
 export const DEFAULT_MAX_FRAME_BYTES = 50 * 1024 * 1024;
 
 /**
@@ -40,12 +30,11 @@ export const DEFAULT_MAX_FRAME_BYTES = 50 * 1024 * 1024;
  */
 const LEGACY_KEYS: ReadonlySet<string> = new Set(['receiveTimeout', 'bufferSize', 'keepConnectionOpen', 'transmissionMode', 'sendTimeout']);
 
-/** Props without the legacy keys. */
 function dropLegacyKeys(value: unknown): unknown {
   return withoutKeys(value, LEGACY_KEYS);
 }
 
-/** Optional PEM text; null is unset, as the connector reads it. */
+/** null is unset, as the connector reads it. */
 const pem = z.string().nullable().optional();
 
 /**
@@ -78,7 +67,6 @@ export const tcpMllpDestinationObjectSchema = z.strictObject({
   maxConnections: wholeNumberSchema(1).default(5),
   /** Milliseconds to wait for the response. */
   responseTimeout: wholeNumberSchema(1).default(30_000),
-  /** Milliseconds to wait for a pooled connection. */
   acquireTimeoutMs: wholeNumberSchema(1).default(30_000),
   charset,
   ...framing,

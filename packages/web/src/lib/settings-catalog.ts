@@ -1,15 +1,8 @@
-// ===========================================
-// Settings Catalog
-// ===========================================
-// What the Settings page shows: sections, each with the settings it holds, a
-// plain-words label and what each setting does. The page is built from this
-// list, so giving a new setting a home is one entry here. A setting the server
-// returns that isn't listed still shows, under "Other", so nothing is hidden.
+// The Settings page is built from this list: a new setting needs one entry here.
 
 import { SETTING_TYPE, type SettingType } from '@galvanigraph/core-models';
 import { humanize } from './format.js';
 
-/** Extra checks beyond the setting's type. */
 export type SettingCheck = 'port' | 'email' | 'cron' | 'retentionYears';
 
 /** The least audit retention, in years (D-312). The database function enforces it too. */
@@ -18,7 +11,6 @@ export const MIN_AUDIT_RETENTION_YEARS = 6;
 export interface SettingField {
   readonly key: string;
   readonly label: string;
-  /** What the setting does, in plain words. */
   readonly help: string;
   readonly check?: SettingCheck;
   readonly placeholder?: string;
@@ -27,7 +19,6 @@ export interface SettingField {
 export interface SettingSection {
   readonly id: string;
   readonly label: string;
-  /** One line under the section title. */
   readonly intro: string;
   readonly fields: readonly SettingField[];
 }
@@ -102,7 +93,7 @@ export const SETTING_SECTIONS: readonly SettingSection[] = [
   },
 ];
 
-/** The settings the pruner scheduler reads; saving them must also reschedule it. */
+/** Saving these must also reschedule the pruner. */
 export const PRUNER_KEYS = { enabled: 'pruner.enabled', cron: 'pruner.cron_expression' } as const;
 
 /** The value the server sends in place of a stored secret. */
@@ -112,7 +103,6 @@ const FIELD_BY_KEY: ReadonlyMap<string, SettingField> = new Map(
   SETTING_SECTIONS.flatMap((s) => s.fields.map((f) => [f.key, f] as const)),
 );
 
-/** The catalog entry for a key, or a generated one for a key the catalog doesn't list. */
 export function fieldFor(key: string): SettingField {
   const known = FIELD_BY_KEY.get(key);
   if (known) return known;
@@ -120,17 +110,14 @@ export function fieldFor(key: string): SettingField {
   return { key, label: humanize(name), help: '' };
 }
 
-/** The server's rule for a secret setting, whose value never comes back from GET. */
 export { isSecretSetting as isSecret } from '@galvanigraph/core-util';
 
 const SAVE_TYPES: ReadonlySet<string> = new Set(Object.values(SETTING_TYPE));
 
 /**
- * The type to send when saving a setting. A row's stored type can be any short
- * string (an older database or a restore may hold `secret` or `Password`), but
- * the save API takes only its five lowercase names, and one unknown type fails
- * the whole bulk save. Case is dropped, and `secret` becomes `password`, the one
- * secret type the API knows; the server treats both as secret.
+ * A stored type can be any short string (an older database or a restore may hold
+ * `secret` or `Password`), but one type the save API does not know fails the
+ * whole bulk save. The server treats `secret` and `password` both as secret.
  */
 export function settingTypeForSave(type: string): SettingType {
   const lower = type.toLowerCase();
@@ -145,10 +132,6 @@ export interface GroupedSection<T extends Keyed> {
   readonly settings: readonly T[];
 }
 
-/**
- * Put the server's settings into the catalog's sections, in catalog order.
- * Sections with nothing in them are left out; unlisted settings go to "Other".
- */
 export function groupSettings<T extends Keyed>(settings: readonly T[]): readonly GroupedSection<T>[] {
   const byKey = new Map(settings.map((s) => [s.key, s]));
   const groups: GroupedSection<T>[] = [];
@@ -192,7 +175,6 @@ function checkJson(value: string): string | null {
   }
 }
 
-/** Why a value can't be saved, or null when it can. Empty text is allowed except where a value is required. */
 export function validateSetting(type: string, value: string, check?: SettingCheck): string | null {
   if (type === 'number') return checkNumber(value, check);
   if (type === 'json') return checkJson(value);

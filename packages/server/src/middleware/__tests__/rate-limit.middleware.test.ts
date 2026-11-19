@@ -1,9 +1,3 @@
-// ===========================================
-// Auth Rate Limiter Behaviour Tests
-// ===========================================
-// Production limits, exercised over real HTTP: failed logins are capped,
-// successful logins and token refreshes from one shared IP are not.
-
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
@@ -17,7 +11,6 @@ let base = '';
 
 beforeAll(async () => {
   const app = express();
-  // The status the handler returns is chosen by the test via ?status=.
   const handler = (req: express.Request, res: express.Response): void => {
     res.status(Number(req.query['status'] ?? 200)).json({});
   };

@@ -1,8 +1,4 @@
-// ===========================================
-// Message Controller Tests: PHI reads are recorded before they are sent
-// ===========================================
-// recordReadOrRefuse has its own tests (lib/__tests__/audited-read.test.ts);
-// here: what each read records, and that nothing is sent when it refuses.
+// recordReadOrRefuse has its own tests (lib/__tests__/audited-read.test.ts).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';

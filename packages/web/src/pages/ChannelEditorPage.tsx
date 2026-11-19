@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Editor Page
-// ===========================================
-// Container for editing/creating channels with tabbed interface.
-
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type SyntheticEvent } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router';
@@ -47,8 +42,6 @@ import { PageHeader } from '../components/common/PageHeader.js';
 import { ChannelHealth } from '../components/channels/ChannelHealth.js';
 import Chip from '@mui/material/Chip';
 
-// ----- Form Data Type -----
-
 export interface ChannelFormData {
   name: string;
   description: string;
@@ -84,7 +77,6 @@ const DEFAULT_SCRIPTS: ScriptsFormValues = {
 type ApiFilterRule = ChannelDetail['filters'][number]['rules'][number];
 type ApiTransformerStep = ChannelDetail['transformers'][number]['steps'][number];
 
-/** A saved filter rule as form state. */
 function ruleFromApi(r: ApiFilterRule): FilterRuleFormValues {
   return {
     enabled: r.enabled,
@@ -99,7 +91,6 @@ function ruleFromApi(r: ApiFilterRule): FilterRuleFormValues {
   };
 }
 
-/** A saved transformer step as form state. */
 function stepFromApi(s: ApiTransformerStep): TransformerStepFormValues {
   return {
     enabled: s.enabled,
@@ -126,8 +117,6 @@ const DEFAULT_ADVANCED: AdvancedFormValues = {
   metadataColumns: [],
 };
 
-// ----- Tab Panel -----
-
 interface TabPanelProps {
   readonly children: ReactNode;
   readonly index: number;
@@ -139,13 +128,11 @@ function TabPanel({ children, value, index }: TabPanelProps): ReactNode {
   return <Box>{children}</Box>;
 }
 
-// ----- Page Component -----
-
 export function ChannelEditorPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isEditMode = id !== undefined;
-  // The group a new channel joins, asked only of a writer scoped to several groups (D-310).
+  // Asked only of a writer scoped to several groups (D-310).
   const [newGroupId, setNewGroupId] = useState('');
   const needsGroup = useNewChannelGroups() !== null;
 
@@ -154,18 +141,14 @@ export function ChannelEditorPage(): ReactNode {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Extra form state (not managed by react-hook-form)
   const [destinations, setDestinations] = useState<readonly DestinationFormValues[]>([]);
   const [scripts, setScripts] = useState(DEFAULT_SCRIPTS);
   const [advanced, setAdvanced] = useState<AdvancedFormValues>(DEFAULT_ADVANCED);
   const [sourceFilter, setSourceFilter] = useState<FilterFormValues>(createDefaultFilter());
   const [sourceTransformer, setSourceTransformer] = useState<TransformerFormValues>(createDefaultTransformer());
-  // destFilters/destTransformers are now embedded in DestinationFormValues
 
-  // Track manual dirty state for non-RHF fields
   const [extraDirty, setExtraDirty] = useState(false);
 
-  // API hooks
   const { data: channel, isLoading, isError, error: loadError } = useChannel(isEditMode ? id : null);
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
@@ -175,7 +158,6 @@ export function ChannelEditorPage(): ReactNode {
   // Who can access a channel lists people and their roles: users:read (D-310).
   const canSeeAccess = hasPermission(PERMISSION.USERS_READ);
 
-  // Form
   const {
     control,
     handleSubmit,
@@ -199,12 +181,10 @@ export function ChannelEditorPage(): ReactNode {
   );
   const sourceConnectorProperties = watch('sourceConnectorProperties');
 
-  // Track previous connector type to detect user-initiated changes
   const prevConnectorTypeRef = useRef(sourceConnectorType);
-  // Guard: skip type-change reset when form is being populated from server data
+  // Set while loading from the server, so the type-change effect keeps the loaded properties.
   const isResettingRef = useRef(false);
 
-  // Load channel data into form when available
   useEffect(() => {
     if (channel && isEditMode) {
       isResettingRef.current = true;
@@ -221,7 +201,6 @@ export function ChannelEditorPage(): ReactNode {
       });
       prevConnectorTypeRef.current = channel.sourceConnectorType;
 
-      // Load destinations (with embedded filter/transformer)
       setDestinations(channel.destinations.map((d) => {
         const dFilter = channel.filters.find((f) => f.connectorId === d.id);
         const dTransformer = channel.transformers.find((t) => t.connectorId === d.id);
@@ -258,7 +237,6 @@ export function ChannelEditorPage(): ReactNode {
         };
       }));
 
-      // Load scripts with their stored languages.
       const scriptMap: ScriptsFormValues = { ...DEFAULT_SCRIPTS, languages: { ...DEFAULT_SCRIPTS.languages } };
       for (const s of channel.scripts) {
         const key = s.scriptType.toLowerCase() as keyof ScriptsFormValues['languages'];
@@ -269,7 +247,6 @@ export function ChannelEditorPage(): ReactNode {
       }
       setScripts(scriptMap);
 
-      // Load advanced settings
       setAdvanced({
         messageStorageMode: channel.messageStorageMode,
         encryptData: channel.encryptData,
@@ -286,7 +263,6 @@ export function ChannelEditorPage(): ReactNode {
         })),
       });
 
-      // Load source filter (connectorId === null)
       const srcFilter = channel.filters.find((f) => f.connectorId === null);
       if (srcFilter) {
         setSourceFilter({
@@ -296,7 +272,6 @@ export function ChannelEditorPage(): ReactNode {
         setSourceFilter(createDefaultFilter());
       }
 
-      // Load source transformer (connectorId === null)
       const srcTransformer = channel.transformers.find((t) => t.connectorId === null);
       if (srcTransformer) {
         setSourceTransformer({
@@ -316,7 +291,6 @@ export function ChannelEditorPage(): ReactNode {
     }
   }, [channel, isEditMode, reset]);
 
-  // Reset connector properties when connector type changes (user action only)
   useEffect(() => {
     if (isResettingRef.current) {
       isResettingRef.current = false;
@@ -328,11 +302,9 @@ export function ChannelEditorPage(): ReactNode {
     }
   }, [sourceConnectorType, setValue]);
 
-  // Navigation guard for unsaved changes
   const blocker = useBlocker(isDirty && !isSaving);
   useBeforeUnload(isDirty && !isSaving);
 
-  // Clear success message after 3 seconds
   useEffect(() => {
     if (!saveSuccess) return;
     const timer = setTimeout(() => { setSaveSuccess(false); }, 3000);
@@ -383,8 +355,6 @@ export function ChannelEditorPage(): ReactNode {
     rotateQueue: boolean;
     queueThreadCount: number;
     waitForPrevious: boolean;
-    // Per-destination response transformer (CT_RESPONSE_TRANSFORMED). Sent as a
-    // single script; null when empty. Round-trips via the destination object.
     responseTransformer: string | null;
     responseTransformerLanguage: ScriptLanguageCode;
   }> => {
@@ -469,7 +439,6 @@ export function ChannelEditorPage(): ReactNode {
   const buildFiltersPayload = (): unknown[] => {
     const result: unknown[] = [];
 
-    // Source filter
     if (sourceFilter.rules.length > 0) {
       result.push({
         connectorId: null,
@@ -478,7 +447,6 @@ export function ChannelEditorPage(): ReactNode {
       });
     }
 
-    // Destination filters
     for (let i = 0; i < destinations.length; i++) {
       const dest = destinations[i]!;
       if (dest.filter.rules.length > 0) {
@@ -496,7 +464,6 @@ export function ChannelEditorPage(): ReactNode {
   const buildTransformersPayload = (): unknown[] => {
     const result: unknown[] = [];
 
-    // Source transformer
     if (transformerHasContent(sourceTransformer)) {
       result.push({
         connectorId: null,
@@ -511,7 +478,6 @@ export function ChannelEditorPage(): ReactNode {
       });
     }
 
-    // Destination transformers
     for (let i = 0; i < destinations.length; i++) {
       const dest = destinations[i]!;
       const t = dest.transformer;
@@ -607,7 +573,6 @@ export function ChannelEditorPage(): ReactNode {
     }
   };
 
-  // Loading state for edit mode
   if (isEditMode && isLoading) {
     return (
       <Box>
@@ -617,7 +582,6 @@ export function ChannelEditorPage(): ReactNode {
     );
   }
 
-  // Error loading channel
   if (isEditMode && isError) {
     return (
       <Box>
@@ -673,7 +637,6 @@ export function ChannelEditorPage(): ReactNode {
         }
       />
 
-      {/* Status messages */}
       {saveError ? (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => { setSaveError(null); }}>
           {saveError}
@@ -685,7 +648,6 @@ export function ChannelEditorPage(): ReactNode {
         </Alert>
       ) : null}
 
-      {/* Tabs */}
       <Tabs value={activeTab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Settings" />
         <Tab label="Source" />
@@ -694,7 +656,6 @@ export function ChannelEditorPage(): ReactNode {
         {isEditMode && canSeeAccess ? <Tab label="Access" /> : null}
       </Tabs>
 
-      {/* Tab content. Script editors type msg from the channel's inbound data type. */}
       <ScriptDataTypeContext.Provider value={inboundDataType}>
       <ScriptTestSampleContext.Provider value={testSample}>
       <Paper sx={{ p: { xs: 1.5, sm: 3 } }}>
@@ -741,7 +702,6 @@ export function ChannelEditorPage(): ReactNode {
       </ScriptTestSampleContext.Provider>
       </ScriptDataTypeContext.Provider>
 
-      {/* Unsaved changes dialog */}
       <Dialog open={blocker.state === 'blocked'}>
         <DialogTitle>Unsaved Changes</DialogTitle>
         <DialogContent>
@@ -755,7 +715,6 @@ export function ChannelEditorPage(): ReactNode {
         </DialogActions>
       </Dialog>
 
-      {/* Revision History */}
       {isEditMode && id ? (
         <RevisionHistoryDialog
           channelId={id}

@@ -1,8 +1,3 @@
-// ===========================================
-// DICOM Source Connector Form
-// ===========================================
-// Configuration form for DICOM C-STORE SCP source connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -34,7 +29,6 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — DICOM Listener */}
       <Grid
         size={{
           xs: 12,
@@ -80,7 +74,6 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
         />
       </Grid>
 
-      {/* Right column — Processing */}
       <Grid
         size={{
           xs: 12,

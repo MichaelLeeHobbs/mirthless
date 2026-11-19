@@ -1,7 +1,4 @@
-// #228: the template editor shows one template after another in the same code
-// editor. With equal code (two new, empty templates) the editor kept the first
-// template's undo history, and Ctrl+Z wrote it into the second. Monaco is
-// faked (fake-monaco.tsx) so the editor can be typed in and undone.
+// #228: with equal code (two new, empty templates) the editor kept the first template's undo history, and Ctrl+Z wrote it into the second.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';

@@ -1,7 +1,3 @@
-// ===========================================
-// SFTP Connector Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   sftpSourcePropertiesSchema,
@@ -31,7 +27,7 @@ describe('sftpSourcePropertiesSchema', () => {
     expect(sftpSourcePropertiesSchema.parse(imported)).toMatchObject({ port: 2222, charset: 'utf-8', minFileAgeMs: 1000 });
   });
 
-  // Saved before #244 (no ignoreDot): reads as Mirth's default, skipping dotfiles. The editor now saves it.
+  // Saved before #244 (no ignoreDot): reads as Mirth's default, skipping dotfiles.
   it('fills ignoreDot true when absent, and keeps false', () => {
     expect(sftpSourcePropertiesSchema.parse(SOURCE_SAVED).ignoreDot).toBe(true);
     expect(sftpSourcePropertiesSchema.parse({ ...SOURCE_SAVED, ignoreDot: false }).ignoreDot).toBe(false);

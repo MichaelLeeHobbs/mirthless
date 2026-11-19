@@ -1,4 +1,3 @@
-// S12: an SMTP Sender mails a notice whose subject comes from the channel map.
 // Production pattern: Gov "SendMail" (SMTP Sender, subject ${subject}).
 // Needs GreenMail: docker compose -f docker/docker-compose.yml --profile test up -d mail-test
 

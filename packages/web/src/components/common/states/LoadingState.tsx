@@ -1,10 +1,4 @@
-// ===========================================
-// Loading States
-// ===========================================
-// Skeletons over spinners: a skeleton preserves layout and reads as "content is
-// arriving" rather than "the app is stuck". `TableSkeleton` fills a table body
-// with shimmer rows that match the real column count; `LoadingBlock` is a
-// centered fallback for whole-page / route-level suspense.
+// Prefer a skeleton, which keeps the layout; LoadingBlock is for whole-page or route-level suspense.
 
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
@@ -18,7 +12,6 @@ interface TableSkeletonProps {
   readonly columns: number;
 }
 
-/** Shimmer rows sized to the real table, for use inside a <TableBody>. */
 export function TableSkeleton({ rows = 6, columns }: TableSkeletonProps): ReactNode {
   return (
     <>
@@ -37,11 +30,10 @@ export function TableSkeleton({ rows = 6, columns }: TableSkeletonProps): ReactN
 
 interface LoadingBlockProps {
   readonly label?: string;
-  /** Vertical padding multiple (theme spacing). */
+  /** Theme spacing units. */
   readonly py?: number;
 }
 
-/** A centered spinner block for suspense / whole-section loading. */
 export function LoadingBlock({ label, py = 8 }: LoadingBlockProps): ReactNode {
   return (
     <Box

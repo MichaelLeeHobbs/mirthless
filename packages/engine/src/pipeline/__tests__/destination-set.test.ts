@@ -1,19 +1,11 @@
-// ===========================================
-// Destination Set Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DestinationSet, createDestinationSetProxy } from '../destination-set.js';
-
-// ----- Test Data -----
 
 const DESTINATIONS = [
   { name: 'Lab', metaDataId: 1 },
   { name: 'Pharmacy', metaDataId: 2 },
   { name: 'Billing', metaDataId: 3 },
 ] as const;
-
-// ----- Tests -----
 
 describe('DestinationSet', () => {
   let ds: DestinationSet;

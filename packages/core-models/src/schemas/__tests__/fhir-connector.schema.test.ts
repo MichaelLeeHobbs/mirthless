@@ -1,7 +1,3 @@
-// ===========================================
-// FHIR Connector Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { fhirDestinationPropertiesSchema } from '../fhir-connector.schema.js';
 

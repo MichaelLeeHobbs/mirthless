@@ -1,12 +1,6 @@
-// ===========================================
-// Partition Manager Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-
-// ----- Mock DB -----
 
 const mockExecute = vi.fn();
 
@@ -31,8 +25,6 @@ vi.mock('../../lib/logger.js', () => ({
 // Must import after mocks
 const { PartitionManagerService } = await import('../partition-manager.service.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 const SANITIZED_ID = 'a0eebc99_9c0b_4ef8_bb6d_6bb9bd380a11';
 
@@ -44,8 +36,6 @@ const PARTITIONED_TABLES = [
   'message_attachments',
   'message_custom_metadata',
 ] as const;
-
-// ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,7 +71,6 @@ describe('PartitionManagerService.ensureAuditPartitions', () => {
 });
 
 describe('PartitionManagerService', () => {
-  // ========== CREATE PARTITIONS ==========
   describe('createPartitions', () => {
     it('creates them through the owner function, passing the channel id as a parameter', async () => {
       const result = await PartitionManagerService.createPartitions(CHANNEL_ID);
@@ -114,7 +103,6 @@ describe('PartitionManagerService', () => {
     });
   });
 
-  // ========== DROP PARTITIONS ==========
   describe('dropPartitions', () => {
     it('generates DROP TABLE IF EXISTS CASCADE for each partitioned table', async () => {
       const result = await PartitionManagerService.dropPartitions(CHANNEL_ID);
@@ -152,7 +140,6 @@ describe('PartitionManagerService', () => {
     });
   });
 
-  // ========== PARTITION EXISTS ==========
   describe('partitionExists', () => {
     it('returns true when partition exists', async () => {
       mockExecute.mockResolvedValueOnce({

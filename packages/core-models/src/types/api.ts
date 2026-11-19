@@ -1,15 +1,8 @@
-// ===========================================
-// API Response Types
-// ===========================================
-// Shared types for API request/response format.
-
-/** Standard success response */
 export interface ApiSuccessResponse<T> {
   readonly success: true;
   readonly data: T;
 }
 
-/** Standard error response */
 export interface ApiErrorResponse {
   readonly success: false;
   readonly error: {
@@ -19,7 +12,6 @@ export interface ApiErrorResponse {
   };
 }
 
-/** Paginated response wrapper */
 export interface PaginatedResponse<T> {
   readonly success: true;
   readonly data: ReadonlyArray<T>;

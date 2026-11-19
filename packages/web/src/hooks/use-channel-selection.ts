@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Selection Hook
-// ===========================================
-// Manages checkbox selection state for bulk operations.
-
 import { useState, useCallback, useMemo } from 'react';
 
 interface UseChannelSelectionReturn {

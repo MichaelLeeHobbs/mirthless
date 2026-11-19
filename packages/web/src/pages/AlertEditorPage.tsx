@@ -1,8 +1,3 @@
-// ===========================================
-// Alert Editor Page
-// ===========================================
-// Create/edit alert configuration with trigger, channels, actions, and templates.
-
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router';
@@ -32,8 +27,6 @@ import { ActionsSection, type ActionFormValues } from '../components/alerts/Acti
 import { TemplatesSection, type TemplateFormValues } from '../components/alerts/TemplatesSection.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 
-// ----- Form Data -----
-
 interface AlertFormData {
   name: string;
   description: string;
@@ -60,8 +53,6 @@ const DEFAULT_TEMPLATES: TemplateFormValues = {
   maxAlerts: null,
 };
 
-// ----- Page Component -----
-
 export function AlertEditorPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -71,20 +62,17 @@ export function AlertEditorPage(): ReactNode {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const formInitializedRef = useRef(false);
 
-  // Extra form state (not managed by react-hook-form)
   const [trigger, setTrigger] = useState<TriggerFormValues>(DEFAULT_TRIGGER);
   const [channelIds, setChannelIds] = useState<readonly string[]>([]);
   const [actions, setActions] = useState<readonly ActionFormValues[]>([]);
   const [templates, setTemplates] = useState<TemplateFormValues>(DEFAULT_TEMPLATES);
   const [extraDirty, setExtraDirty] = useState(false);
 
-  // API hooks
   const { data: alert, isLoading, isError, error: loadError } = useAlert(isEditMode ? id : null);
   const createAlert = useCreateAlert();
   const updateAlert = useUpdateAlert();
   const isSaving = createAlert.isPending || updateAlert.isPending;
 
-  // Form
   const {
     control,
     handleSubmit,
@@ -96,12 +84,11 @@ export function AlertEditorPage(): ReactNode {
   const isDirty = formDirty || extraDirty;
   const nameValue = watch('name');
 
-  // Reset initialization guard when navigating to a different alert
   useEffect(() => {
     formInitializedRef.current = false;
   }, [id]);
 
-  // Load alert data into form (only on initial load, not on refetch)
+  // Only on first load: a refetch must not overwrite unsaved edits.
   useEffect(() => {
     if (alert && isEditMode && !formInitializedRef.current) {
       formInitializedRef.current = true;
@@ -140,11 +127,9 @@ export function AlertEditorPage(): ReactNode {
     }
   }, [alert, isEditMode, reset]);
 
-  // Navigation guard
   const blocker = useBlocker(isDirty && !isSaving);
   useBeforeUnload(isDirty && !isSaving);
 
-  // Clear success after 3s
   useEffect(() => {
     if (!saveSuccess) return;
     const timer = setTimeout(() => { setSaveSuccess(false); }, 3000);
@@ -233,7 +218,6 @@ export function AlertEditorPage(): ReactNode {
     }
   };
 
-  // Loading state for edit mode
   if (isEditMode && isLoading) {
     return (
       <Box>
@@ -243,7 +227,6 @@ export function AlertEditorPage(): ReactNode {
     );
   }
 
-  // Error loading alert
   if (isEditMode && isError) {
     return (
       <Box>
@@ -276,7 +259,6 @@ export function AlertEditorPage(): ReactNode {
         }
       />
 
-      {/* Status messages */}
       {saveError ? (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => { setSaveError(null); }}>
           {saveError}
@@ -288,9 +270,7 @@ export function AlertEditorPage(): ReactNode {
         </Alert>
       ) : null}
 
-      {/* Form */}
       <Paper sx={{ p: 3 }}>
-        {/* Basic Info */}
         <Typography variant="h6" gutterBottom>General</Typography>
         <Controller
           name="name"
@@ -348,7 +328,6 @@ export function AlertEditorPage(): ReactNode {
         <TemplatesSection values={templates} onChange={handleTemplatesChange} />
       </Paper>
 
-      {/* Unsaved changes dialog */}
       <Dialog open={blocker.state === 'blocked'}>
         <DialogTitle>Unsaved Changes</DialogTitle>
         <DialogContent>

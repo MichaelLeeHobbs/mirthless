@@ -1,9 +1,5 @@
-// ===========================================
-// Best-effort audited reads (D-312)
-// ===========================================
-// The maps, collection records, the server log, unmasked channel secrets and
-// Events searches are recorded in the background: the read is always sent.
-// recordReadBestEffort has its own tests; here: which reads call it, with what.
+// D-312: these reads are recorded in the background and always sent.
+// recordReadBestEffort has its own tests.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';

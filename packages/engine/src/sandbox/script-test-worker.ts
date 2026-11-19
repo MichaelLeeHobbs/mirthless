@@ -1,9 +1,4 @@
-// ===========================================
-// Script test worker
-// ===========================================
-// Worker-thread entry for runScriptTestIsolated. Runs one test run and posts
-// the result back. Reads (getResource, collection find) are not available in
-// the worker, so each one is asked of the main thread, which owns the database.
+// Reads are asked of the main thread, which owns the database.
 
 import { parentPort, workerData } from 'node:worker_threads';
 import { runScriptTest, type ScriptTestInput, type ScriptTestReaders } from './script-test-run.js';

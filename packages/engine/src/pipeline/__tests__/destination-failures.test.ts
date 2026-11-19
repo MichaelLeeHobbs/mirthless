@@ -1,9 +1,3 @@
-// ===========================================
-// Destination failure records and variables
-// ===========================================
-// A failed send keeps its reason (whether the destination ends ERROR or waits
-// in the queue), and a queued destination keeps the variables it will send with.
-
 import { describe, it, expect, vi } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { MessageProcessor } from '../message-processor.js';

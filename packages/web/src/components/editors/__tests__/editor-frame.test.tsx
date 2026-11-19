@@ -1,5 +1,4 @@
-// The editor chrome every host shares. Monaco itself is stubbed (test/setup.ts),
-// so these tests cover the toolbar, status line and full-screen behaviour.
+// Monaco is stubbed (test/setup.ts), so these cover the chrome around it.
 
 import { useEffect, useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -15,7 +14,6 @@ import { problemKind, settledProblems, suggestRoom, type Problem } from '../edit
 
 afterEach(() => { cleanup(); });
 
-/** Matches the one element whose whole text is `text`, even when it spans nested elements. */
 function fullText(text: string): (content: string, el: Element | null) => boolean {
   return (_content, el) => el?.textContent === text && [...el.children].every((c) => c.textContent !== text);
 }

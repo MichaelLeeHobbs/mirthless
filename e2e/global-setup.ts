@@ -1,19 +1,10 @@
-// ===========================================
-// Playwright Global Setup
-// ===========================================
-// db:seed creates the admin with mustChangePassword=true, and the server
-// rejects every other API call until that password is changed. Complete the
-// forced change once (re-setting the same password) so the specs can use the
-// seeded credentials. Runs after the webServers are up.
+// db:seed creates the admin with mustChangePassword=true and the server refuses every other call
+// until it changes, so complete the change once, re-setting the same password.
 //
-// The change goes through the real login page and forced dialog, so this also
-// checks that a first login can get past it. A user who lands back on the login
-// page instead fails the run.
+// Through the real login page, so a first login is checked to get past the forced dialog.
 //
-// Only in CI, where Playwright always starts its own servers against a
-// throwaway database. Locally it may reuse a developer's running server, and
-// clearing the flag there would leave a real admin on the public default
-// password, so a local run fails loudly instead.
+// CI only: locally Playwright may reuse a developer's server, and clearing the flag there
+// would leave a real admin on the public default password.
 
 import { chromium, expect, request, type FullConfig } from '@playwright/test';
 import { ADMIN_USER } from './fixtures/test-data.js';

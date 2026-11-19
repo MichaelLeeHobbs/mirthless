@@ -1,23 +1,14 @@
-// ===========================================
-// Audit Dedupe
-// ===========================================
-// Keeps the same caller's repeated reads of the same thing from writing an
-// audit row each time (D-312, D-317): a 15-minute LRU of up to 100,000 keys.
-// A key is the caller, route, channel and either the message id or the
-// list's filters with its page, held as a SHA-256 so a long search term does
-// not grow it. A repeated list writes again at once when it lists a message id
-// not recorded yet, naming only those ids, so no listed message goes
-// unrecorded. It runs after the guard, never caches a response, and is never
-// used for exports, attachment downloads or backups.
+// Skips repeat audit rows for a caller's repeated reads (D-312, D-317). Keys are
+// hashed so a long search term does not grow them. Run it after the guard; never
+// use it for exports, attachment downloads or backups.
 
 import { createHash } from 'node:crypto';
 
-/** How long a recorded read is not recorded again. */
 export const AUDIT_DEDUPE_TTL_MS = 15 * 60_000;
 const MAX_KEYS = 100_000;
-/** The most ids held across every key: about 100 MB at the longest id. */
+/** About 100 MB at the longest id. */
 const MAX_TOTAL_IDS = 1_000_000;
-/** How often remember() also drops expired keys. */
+/** Counted in remember() calls. */
 const SWEEP_EVERY = 1_000;
 
 type Id = string | number;
@@ -46,33 +37,27 @@ export class AuditDedupe {
     this.maxTotalIds = limits.maxTotalIds ?? MAX_TOTAL_IDS;
   }
 
-  /** How many keys are held. */
   get size(): number {
     return this.entries.size;
   }
 
-  /** The length of one held key. */
   get keyBytes(): number {
     return this.entries.keys().next().value?.length ?? 0;
   }
 
-  /**
-   * The ids to record for this read, or null when nothing needs recording. A
-   * key not seen in 15 minutes records every id (an empty list records once);
-   * a repeat records only ids not recorded under it yet.
-   */
+  /** Null means skip; an empty array still means record once. */
   idsToRecord(key: string, ids: readonly Id[], now: number): readonly Id[] | null {
     const k = digest(key);
     const entry = this.entries.get(k);
     if (!entry || now - entry.firstAt >= AUDIT_DEDUPE_TTL_MS) return ids;
-    // Least recently used goes first: move the key to the end.
+    // Re-insert to mark the key most recently used; eviction walks from the front.
     this.entries.delete(k);
     this.entries.set(k, entry);
     const fresh = ids.filter((id) => !entry.ids.has(id));
     return fresh.length > 0 ? fresh : null;
   }
 
-  /** Note that `ids` were recorded under `key` at `now`. Pass only ids that were written. */
+  /** Pass only ids that were written. */
   remember(key: string, ids: readonly Id[], now: number): void {
     const k = digest(key);
     const entry = this.entries.get(k);
@@ -102,7 +87,6 @@ export class AuditDedupe {
     for (const [k, e] of this.entries) if (now - e.firstAt >= AUDIT_DEDUPE_TTL_MS) this.drop(k);
   }
 
-  /** Drop least recently used keys, never `keep`, until both caps hold. */
   private evict(keep: string): void {
     for (const k of this.entries.keys()) {
       if (this.entries.size <= this.maxKeys && this.totalIds <= this.maxTotalIds) return;

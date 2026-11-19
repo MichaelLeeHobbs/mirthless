@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-// PostToolUse hook. After an edit to a file whose facts other files restate,
-// remind the agent what else must change before the work is finished. One
-// entry per kind of file; the first match wins.
-
 import { readFileSync } from 'node:fs';
 
-/** Which edited file triggers which reminder. */
 const REMINDERS = [
   {
     match: (file) => file.includes('packages/server/src/db/schema/'),

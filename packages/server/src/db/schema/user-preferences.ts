@@ -1,7 +1,3 @@
-// ===========================================
-// User Preferences Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, primaryKey } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 

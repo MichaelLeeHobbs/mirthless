@@ -1,8 +1,3 @@
-// ===========================================
-// Keyboard Shortcut Help Dialog
-// ===========================================
-// Shows available keyboard shortcuts.
-
 import type { ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';

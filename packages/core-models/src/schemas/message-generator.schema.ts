@@ -1,7 +1,3 @@
-// ===========================================
-// Message Generator Schemas
-// ===========================================
-
 import { z } from 'zod';
 
 export const generateMessagesInputSchema = z.object({

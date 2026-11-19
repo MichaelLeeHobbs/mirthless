@@ -1,11 +1,3 @@
-// ===========================================
-// Certificates E2E Tests
-// ===========================================
-// Covers the SSL/TLS certificate store: navigate, list, create (import a
-// PEM), and delete. The server parses the PEM with node:crypto's
-// X509Certificate on create, so the fixture below is a real self-signed
-// certificate (CN=mirthless-e2e-test, valid until 2036).
-
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, getData } from './fixtures/api.js';
@@ -14,8 +6,7 @@ const TEST_CERT_NAME = 'E2E Test Certificate';
 const TEST_CERT_DESCRIPTION = 'Created by E2E test';
 const INVALID_CERT_NAME = `${TEST_CERT_NAME} Invalid`;
 
-// A real self-signed X.509 certificate (RSA 2048, CN=mirthless-e2e-test),
-// valid 2026..2036. Must be parseable by node:crypto or create() rejects it.
+// Real self-signed certificate, valid until 2036: the server parses it with node:crypto on create.
 const TEST_CERT_PEM = `-----BEGIN CERTIFICATE-----
 MIIDSTCCAjGgAwIBAgIUBQSTR7arp5BacRIUeuV8ieliAPUwDQYJKoZIhvcNAQEL
 BQAwNDEbMBkGA1UEAwwSbWlydGhsZXNzLWUyZS10ZXN0MRUwEwYDVQQKDAxNaXJ0
@@ -41,13 +32,12 @@ interface CertificateSummary { readonly id: string; readonly name: string; reado
 
 let api: APIRequestContext;
 
-/** This spec's certificates as the API lists them (the list endpoint returns a bare array). */
+// The list endpoint returns a bare array, not a page.
 async function testCertificates(): Promise<CertificateSummary[]> {
   const certs = await getData<CertificateSummary[]>(api, '/certificates');
   return certs.filter((c) => c.name.startsWith(TEST_CERT_NAME));
 }
 
-/** The table row for a certificate, matched on its exact name cell. */
 function certRow(page: Page, name: string): ReturnType<Page['getByRole']> {
   return page.getByRole('row').filter({ has: page.getByText(name, { exact: true }) });
 }
@@ -121,7 +111,6 @@ test.describe('Certificates', () => {
     await dialog.getByLabel('Certificate PEM').fill('not a valid pem');
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // The dialog surfaces the parse error and stays open.
     await expect(dialog.getByRole('alert').filter({ hasText: /invalid|parse/i })).toBeVisible({ timeout: 10_000 });
     await expect(dialog).toBeVisible();
 

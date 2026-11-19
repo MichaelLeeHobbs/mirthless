@@ -1,11 +1,5 @@
-// ===========================================
-// Message Export Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MessageExportData } from '../message-export.service.js';
-
-// ----- Mocks -----
 
 const mockExecute = vi.fn();
 const mockDb = { execute: mockExecute };
@@ -13,7 +7,6 @@ const mockDb = { execute: mockExecute };
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
 
 vi.mock('../../lib/content-crypto.js', () => ({
-  // Pass-through decryption: returns the stored value unchanged.
   decryptIfEncrypted: (v: string | null) => ({ ok: true, value: v, error: null }),
 }));
 
@@ -26,8 +19,6 @@ vi.mock('drizzle-orm', () => ({
 
 const { MessageExportService } = await import('../message-export.service.js');
 
-// ----- Fixtures -----
-
 function baseQuery(overrides?: Record<string, unknown>): never {
   return { format: 'csv', limit: 10_000, includeContent: false, ...overrides } as never;
 }
@@ -39,17 +30,15 @@ beforeEach(() => {
   mockExecute.mockResolvedValue({ rows: [] });
 });
 
-// ----- collect -----
-
 describe('MessageExportService.collect', () => {
   it('flattens per-connector status and reports not-truncated', async () => {
     mockExecute
-      .mockResolvedValueOnce({ rows: [{ count: '2' }] }) // count
-      .mockResolvedValueOnce({ rows: [ // data
+      .mockResolvedValueOnce({ rows: [{ count: '2' }] })
+      .mockResolvedValueOnce({ rows: [
         { id: 1, correlation_id: 'corr-1', received_at: '2026-01-01T00:00:00.000Z', processed: true },
         { id: 2, correlation_id: 'corr-2', received_at: '2026-01-02T00:00:00.000Z', processed: false },
       ] })
-      .mockResolvedValueOnce({ rows: [ // statuses
+      .mockResolvedValueOnce({ rows: [
         { message_id: 1, meta_data_id: 0, connector_name: 'Source', status: 'RECEIVED' },
         { message_id: 1, meta_data_id: 1, connector_name: 'Dest', status: 'SENT' },
         { message_id: 2, meta_data_id: 1, connector_name: 'Dest', status: 'ERROR' },
@@ -117,8 +106,6 @@ describe('MessageExportService.collect', () => {
   });
 });
 
-// ----- toCsv -----
-
 function data(rows: MessageExportData['rows']): MessageExportData {
   return { rows, total: rows.length, truncated: false };
 }
@@ -137,8 +124,6 @@ describe('MessageExportService.toCsv', () => {
     const csv = MessageExportService.toCsv(data([
       { messageId: 1, correlationId: 'c1', receivedAt: '2026-01-01T00:00:00.000Z', processed: true, statuses: '=cmd|1' },
     ]), false);
-    // A field starting with = is neutralized to '=cmd|1 (leading quote), then
-    // wrapped in quotes only if it contains CSV-special chars.
     expect(csv).toContain("'=cmd|1");
   });
 
@@ -169,8 +154,6 @@ describe('MessageExportService.toCsv', () => {
     expect(csv).toBe('messageId,correlationId,receivedAt,processed,statuses\r\n');
   });
 });
-
-// ----- toJson -----
 
 describe('MessageExportService.toJson', () => {
   it('serializes rows as a JSON array with metadata fields', () => {

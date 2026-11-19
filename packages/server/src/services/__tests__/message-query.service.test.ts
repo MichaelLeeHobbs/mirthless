@@ -1,10 +1,4 @@
-// ===========================================
-// Message Query Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -68,8 +62,6 @@ vi.mock('drizzle-orm', () => ({
 const { MessageQueryService } = await import('../message-query.service.js');
 const { eq: mockEq } = await import('drizzle-orm');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const MESSAGE_ID = 42;
 const NOW = new Date('2026-02-28T12:00:00Z');
@@ -94,8 +86,6 @@ function makeConnectorRow(overrides?: Partial<Record<string, unknown>>): Record<
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
@@ -104,17 +94,13 @@ beforeEach(() => {
   mockDeleteMessagesByIds.mockResolvedValue(undefined);
 });
 
-// ----- Tests -----
-
 describe('MessageQueryService', () => {
-  // ========== SEARCH MESSAGES ==========
   describe('searchMessages', () => {
     it('returns paginated results with default filters', async () => {
       mockExecute
-        .mockResolvedValueOnce({ rows: [{ count: '3' }] }) // count query
-        .mockResolvedValueOnce({ rows: [makeMessageRow({ id: 1 }), makeMessageRow({ id: 2 })] }); // message rows
+        .mockResolvedValueOnce({ rows: [{ count: '3' }] })
+        .mockResolvedValueOnce({ rows: [makeMessageRow({ id: 1 }), makeMessageRow({ id: 2 })] });
 
-      // Connector messages for returned message IDs
       pushSelectResponse([
         makeConnectorRow({ messageId: 1 }),
         makeConnectorRow({ messageId: 2 }),
@@ -192,7 +178,6 @@ describe('MessageQueryService', () => {
       if (!result.ok) return;
       expect(result.value.items).toHaveLength(1);
       expect(result.value.items[0]!.messageId).toBe(42);
-      // The messageId condition was added via eq(messages.id, 42).
       expect(vi.mocked(mockEq)).toHaveBeenCalledWith(expect.anything(), 42);
     });
 
@@ -314,10 +299,8 @@ describe('MessageQueryService', () => {
     });
   });
 
-  // ========== GET MESSAGE DETAIL ==========
   describe('getMessageDetail', () => {
     it('returns message with all content grouped by connector', async () => {
-      // 1: message row, 2: connector rows, 3: content rows
       pushSelectResponse([{
         id: MESSAGE_ID,
         channelId: CHANNEL_ID,
@@ -371,7 +354,7 @@ describe('MessageQueryService', () => {
       pushSelectResponse([
         { metaDataId: 0, connectorName: 'Source', status: 'RECEIVED', sendAttempts: 0 },
       ]);
-      pushSelectResponse([]); // no content
+      pushSelectResponse([]);
 
       const result = await MessageQueryService.getMessageDetail(CHANNEL_ID, MESSAGE_ID);
 
@@ -391,7 +374,6 @@ describe('MessageQueryService', () => {
     });
   });
 
-  // ========== DELETE MESSAGE ==========
   describe('deleteMessage', () => {
     it('deletes message and all related data atomically (incl. attachments + metadata)', async () => {
       pushSelectResponse([{ id: MESSAGE_ID }]);
@@ -399,8 +381,7 @@ describe('MessageQueryService', () => {
       const result = await MessageQueryService.deleteMessage(CHANNEL_ID, MESSAGE_ID);
 
       expect(result.ok).toBe(true);
-      // Routes through the transactional helper that also removes attachments and
-      // custom metadata — not three loose, non-transactional db.delete() calls.
+      // The helper deletes in one transaction, attachments and custom metadata included.
       expect(mockDeleteMessagesByIds).toHaveBeenCalledWith(CHANNEL_ID, [MESSAGE_ID]);
     });
 
@@ -424,7 +405,6 @@ describe('MessageQueryService', () => {
     });
   });
 
-  // ========== GET MESSAGE COUNTS ==========
   describe('getMessageCounts', () => {
     it('returns counts for channel', async () => {
       mockExecute.mockResolvedValue({

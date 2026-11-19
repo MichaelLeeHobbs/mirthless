@@ -1,10 +1,5 @@
-// ===========================================
-// System Info Page
-// ===========================================
-// One page for running the server, split into tabs whose state lives in the
-// path (/system, /system/logs, /system/pruner, /system/backup) so each is
-// bookmarkable, back-button correct and one click away. Only the active tab is
-// mounted, so leaving Overview stops its poll and leaving Logs closes the stream.
+// Only the active tab is mounted, so leaving Overview stops its poll and leaving
+// Logs closes the stream.
 
 import type { ReactNode } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
@@ -25,7 +20,6 @@ import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import { diagnosticsText } from '../lib/system-health.js';
 
 interface SystemTab {
-  /** Path segment after /system; empty for the default tab. */
   readonly slug: string;
   readonly label: string;
   readonly description: string;
@@ -76,7 +70,6 @@ export function SystemInfoPage(): ReactNode {
   const onOverview = active?.slug === '';
   const query = useSystemInfo(onOverview);
 
-  // An unknown tab (a typo, an old bookmark) lands on Overview rather than a blank page.
   if (!active) return <Navigate to="/system" replace />;
 
   return (

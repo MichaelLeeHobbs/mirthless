@@ -1,7 +1,4 @@
-// ===========================================
-// Script test run hook
-// ===========================================
-// POST /scripts/test-run: run a script against a sample message, no side effects.
+// The server runs the script against a sample message with no side effects.
 
 import { useMutation } from '@tanstack/react-query';
 import type { ScriptTestResult, ScriptTestRunInput } from '@galvanigraph/core-models';

@@ -1,7 +1,3 @@
-// ===========================================
-// Message Action Hook Tests (bulk reprocess + resend)
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

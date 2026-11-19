@@ -1,8 +1,3 @@
-// ===========================================
-// Email Source Connector Form
-// ===========================================
-// Configuration form for Email (IMAP/POP3) source connectors.
-
 import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -40,7 +35,6 @@ export function EmailSourceForm({ properties, onChange }: SourceConnectorFormPro
 
   return (
     <Grid container spacing={3}>
-      {/* Left column -- Connection */}
       <Grid
         size={{
           xs: 12,
@@ -119,7 +113,6 @@ export function EmailSourceForm({ properties, onChange }: SourceConnectorFormPro
         </TextField>
       </Grid>
 
-      {/* Right column -- Polling & Processing */}
       <Grid
         size={{
           xs: 12,

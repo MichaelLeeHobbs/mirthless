@@ -1,23 +1,16 @@
-// ===========================================
-// Channel access
-// ===========================================
-// Words and CSV for "who can access this channel" (D-310, plan section 8).
-
 import { PERMISSION_CATALOG, type AccessPath, type ChannelAccessView, type Permission } from '@galvanigraph/core-models';
 import { escapeCsvField } from '@galvanigraph/core-util';
 
-/** A permission's label, or its name when this build does not know it. */
+/** Falls back to the name for a permission this build does not know. */
 export function permissionLabel(p: string): string {
   return Object.hasOwn(PERMISSION_CATALOG, p) ? PERMISSION_CATALOG[p as Permission].label : p;
 }
 
-/** One way in, as words: "Lab analyst · Lab, Radiology · until <time>". */
 export function describePath(path: AccessPath, groupName: (id: string) => string, time: (iso: string) => string): string {
   const scope = path.groupIds === null ? 'All channels' : path.groupIds.map(groupName).join(', ');
   return [path.role, scope, ...(path.expiresAt ? [`until ${time(path.expiresAt)}`] : [])].join(' · ');
 }
 
-/** The view as CSV: one row per person and way in, then the people who reach every channel another way. */
 export function accessCsv(view: ChannelAccessView, groupName: (id: string) => string, now: string): string {
   // Every row carries the time it describes, so a row copied out of the file still says when.
   const at = view.asOf ?? now;

@@ -1,12 +1,5 @@
-// ===========================================
-// Statistics API Hooks
-// ===========================================
-// TanStack Query hooks for channel statistics (dashboard).
-
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Response Types -----
 
 export interface ChannelStatisticsSummary {
   readonly channelId: string;
@@ -24,16 +17,12 @@ export interface ChannelStatisticsSummary {
   readonly queued: number;
 }
 
-// ----- Query Keys -----
-
 export const STATS_KEYS = {
   all: ['statistics'] as const,
   allChannels: () => [...STATS_KEYS.all, 'all-channels'] as const,
 } as const;
 
-// ----- Queries -----
-
-/** Fetch statistics summary for all channels (dashboard). WebSocket-driven with 60s fallback poll. */
+/** WebSocket events refresh it; the 60 s poll is the fallback. */
 export function useAllChannelStatistics(): ReturnType<typeof useQuery<readonly ChannelStatisticsSummary[]>> {
   return useQuery({
     queryKey: STATS_KEYS.allChannels(),

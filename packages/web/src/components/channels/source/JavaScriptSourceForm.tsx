@@ -1,8 +1,3 @@
-// ===========================================
-// JavaScript Source Connector Form
-// ===========================================
-// Configuration form for JavaScript source connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';

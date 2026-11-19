@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Export Button
-// ===========================================
-// Button that triggers a channel export download.
-
 import { useState, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -10,7 +5,7 @@ import { downloadChannelExport } from '../../lib/channel-export.js';
 import { useNotification } from '../../stores/notification.store.js';
 
 interface ExportButtonProps {
-  /** If provided, export single channel; otherwise export all. */
+  /** Omitted: export every channel. */
   readonly channelId?: string;
 }
 

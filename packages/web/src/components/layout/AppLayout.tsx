@@ -89,7 +89,6 @@ export function AppLayout(): ReactNode {
   };
 
   const handleNavClick = (): void => {
-    // Close drawer on mobile after nav click
     if (isMobile) {
       setMobileOpen(false);
     }
@@ -196,7 +195,6 @@ export function AppLayout(): ReactNode {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      {/* App Bar */}
       <AppBar
         position="fixed"
         sx={{
@@ -312,7 +310,6 @@ export function AppLayout(): ReactNode {
         </Toolbar>
       </AppBar>
 
-      {/* Sidebar Navigation */}
       <Drawer
         variant={drawerVariant}
         open={isMobile ? mobileOpen : true}
@@ -335,7 +332,6 @@ export function AppLayout(): ReactNode {
         {drawerContent}
       </Drawer>
 
-      {/* Main Content */}
       <Box
         component="main"
         sx={{

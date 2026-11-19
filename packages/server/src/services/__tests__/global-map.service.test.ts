@@ -1,10 +1,4 @@
-// ===========================================
-// Global Map Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -80,8 +74,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 
 const { GlobalMapService } = await import('../global-map.service.js');
 
-// ----- Fixtures -----
-
 const NOW = new Date('2026-03-02T12:00:00Z');
 
 function makeEntry(overrides?: Partial<Record<string, unknown>>): Record<string, unknown> {
@@ -94,12 +86,9 @@ function makeEntry(overrides?: Partial<Record<string, unknown>>): Record<string,
   };
 }
 
-// ----- Tests -----
-
 beforeEach(() => {
   resetSelectState();
   vi.clearAllMocks();
-  // Reset delete mock to return chainable object
   mockDelete.mockImplementation(() => ({
     where: mockDeleteWhere,
   }));
@@ -214,7 +203,6 @@ describe('GlobalMapService', () => {
 
   describe('clear', () => {
     it('succeeds with entries', async () => {
-      // clear calls db.delete(table) with no where
       mockDelete.mockResolvedValueOnce(undefined);
 
       const result = await GlobalMapService.clear();

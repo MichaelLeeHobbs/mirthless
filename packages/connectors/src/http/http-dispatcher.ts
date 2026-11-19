@@ -1,12 +1,5 @@
-// ===========================================
-// HTTP Dispatcher (Destination Connector)
-// ===========================================
-// Sends messages to a remote HTTP endpoint. Plain HTTP (and HTTPS with no
-// custom TLS material) goes through global fetch. HTTPS with custom TLS
-// options (a trusted CA, a client certificate for mTLS, or a relaxed
-// rejectUnauthorized) goes through node:https.request, which accepts ca/cert/
-// key/rejectUnauthorized directly — global fetch cannot apply per-request TLS
-// options without an undici Agent, and undici is not a dependency here.
+// Global fetch cannot apply per-request TLS options without an undici Agent (not a
+// dependency), so HTTPS with custom TLS material goes through node:https.
 
 import * as https from 'node:https';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
@@ -14,49 +7,30 @@ import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage,
 import { redirectMessage } from '../redirect.js';
 import type { TlsClientOptions } from '../tls.js';
 
-// ----- Config -----
-
 export interface HttpDispatcherConfig {
   readonly url: string;
   readonly method: string;
   readonly headers: Readonly<Record<string, string>>;
   readonly contentType: string;
   readonly responseTimeout: number;
-  /** Query parameters added to the URL. Values, the URL and header values may hold `${name}` message variables. */
+  /** Values, the URL and header values may hold `${name}` message variables. */
   readonly parameters?: Readonly<Record<string, string>> | undefined;
-  /** HTTP Basic credentials, sent in the Authorization header. */
   readonly basicAuth?: { readonly username: string; readonly password: string } | undefined;
-  /**
-   * Explicit transport scheme. When 'HTTPS' the node:https path is authoritative
-   * (rather than inferring purely from the URL), so a configured HTTPS
-   * destination always applies its TLS options. Absent → legacy URL inference.
-   */
+  /** 'HTTPS' always takes the node:https path so the TLS options apply; absent, the URL decides. */
   readonly scheme?: string | undefined;
-  /**
-   * Optional client-side TLS material for HTTPS destinations: a custom/internal
-   * CA to trust, a client certificate + key for mutual TLS, and verification
-   * control. Applied only for https:// URLs. Verification defaults to ON.
-   */
+  /** Applied only to HTTPS. Verification defaults to on. */
   readonly tls?: TlsClientOptions | undefined;
 }
 
-/** The URL and headers one message is sent with. */
 interface OutboundRequest {
   readonly url: URL;
   readonly headers: Record<string, string>;
 }
 
-/**
- * True when the TLS config carries material that global fetch cannot honor:
- * a custom CA, a client cert/key (mTLS), or an explicit rejectUnauthorized:false.
- * Empty/absent values fall back to fetch so existing behavior is unchanged.
- */
 function hasActiveTlsOptions(tls: TlsClientOptions | undefined): boolean {
   if (!tls) return false;
   return Boolean(tls.ca) || Boolean(tls.cert) || Boolean(tls.key) || tls.rejectUnauthorized === false;
 }
-
-// ----- Dispatcher -----
 
 export class HttpDispatcher implements DestinationConnectorRuntime {
   private readonly config: HttpDispatcherConfig;
@@ -90,11 +64,7 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /**
-   * This message's URL (with its query parameters) and headers, `${name}`
-   * references filled from the message's variables. The credentials are added
-   * here and never logged.
-   */
+  /** Holds the credentials: never log it. */
   private requestFor(message: ConnectorMessage): OutboundRequest {
     const url = new URL(fillVariables(this.config.url, message));
     for (const [name, value] of Object.entries(this.config.parameters ?? {})) {
@@ -119,17 +89,11 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
       const timeoutSignal = AbortSignal.timeout(this.config.responseTimeout);
       const combinedSignal = AbortSignal.any([signal, timeoutSignal]);
 
-      // fetch() throws a TypeError if a body is supplied with GET/HEAD, so only
-      // attach the body for methods that accept one.
+      // fetch() throws a TypeError for a body with GET/HEAD.
       const methodUpper = this.config.method.toUpperCase();
       const bodyAllowed = methodUpper !== 'GET' && methodUpper !== 'HEAD';
 
-      // HTTPS with custom TLS material can't go through fetch (needs an undici
-      // Agent we don't depend on) — use node:https so ca/cert/key/reject apply.
-      // scheme==='HTTPS' is authoritative: a configured HTTPS destination always
-      // takes the node:https path so its TLS options are honored, even when the
-      // material alone (e.g. a public-CA server with default verification) would
-      // otherwise have fallen back to fetch. Absent scheme → legacy URL inference.
+      // With no scheme, an https URL takes node:https only when it has custom TLS material.
       const request = this.requestFor(message);
       const schemeHttps = this.config.scheme === 'HTTPS';
       const isHttps = schemeHttps || request.url.protocol === 'https:';
@@ -142,9 +106,8 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
         headers: request.headers,
         ...(bodyAllowed ? { body: message.content } : {}),
         signal: combinedSignal,
-        // Never follow a redirect. fetch would re-send a POST as a GET without
-        // the body, and the page it lands on (often a login form) answers 200,
-        // so a message that went nowhere would be recorded as SENT.
+        // Never follow a redirect: fetch re-sends a POST as a body-less GET, the landing
+        // page (often a login form) answers 200, and a message that went nowhere reads as SENT.
         redirect: 'manual',
       });
 
@@ -168,11 +131,7 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /**
-   * Send over node:https, applying client TLS options. Mirrors the fetch path's
-   * behavior: same headers, body only when allowed, abort via signal, and the
-   * same {status, content, errorMessage} result shape (2xx => SENT).
-   */
+  /** Must match the fetch path: same headers, body rule, abort and result shape. */
   private sendViaHttps(
     message: ConnectorMessage,
     request: OutboundRequest,

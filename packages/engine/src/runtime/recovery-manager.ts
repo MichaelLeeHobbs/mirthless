@@ -1,37 +1,24 @@
-// ===========================================
-// Recovery Manager
-// ===========================================
-// Recovers unprocessed messages after a channel restart.
-// Queries messages where processed=false and routes them based on
-// connector status and metaDataId.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 
-// ----- Types -----
-
-/** A minimal unprocessed message record. */
 export interface UnprocessedMessage {
   readonly messageId: number;
   readonly channelId: string;
 }
 
-/** A minimal connector message record for recovery decisions. */
 export interface ConnectorMessageRecord {
   readonly messageId: number;
   readonly metaDataId: number;
   readonly status: string;
 }
 
-/** Store interface needed by the recovery manager. */
 export interface RecoveryStore {
   /**
-   * One page of unprocessed messages with an id above `afterMessageId`, in id
-   * order. The store must only return messages that were already there when
-   * the channel was deployed, never ones the running channel is still working on.
+   * Unprocessed messages with an id above `afterMessageId`, in id order. Only
+   * messages that were already there when the channel was deployed, never ones
+   * the running channel is still working on.
    */
   getUnprocessedMessages(channelId: string, afterMessageId: number, limit: number): Promise<Result<readonly UnprocessedMessage[]>>;
   getConnectorMessages(channelId: string, messageId: number): Promise<Result<readonly ConnectorMessageRecord[]>>;
-  /** Mark a message processed once nothing in it is left to recover. */
   markProcessed(channelId: string, messageId: number): Promise<Result<void>>;
   /**
    * Give the source connector its final status, as the pipeline would have at
@@ -40,25 +27,18 @@ export interface RecoveryStore {
   finishSource(channelId: string, messageId: number, status: 'SENT' | 'ERROR'): Promise<Result<void>>;
 }
 
-/** Callback to reprocess a message from source. */
 export type ReprocessSourceFn = (channelId: string, messageId: number) => Promise<Result<void>>;
 
-/** Callback to re-dispatch a destination message. */
 export type RedispatchDestinationFn = (channelId: string, messageId: number, metaDataId: number) => Promise<Result<void>>;
 
-/** Recovery result summary. */
 export interface RecoveryResult {
   readonly recovered: number;
   readonly errors: number;
   readonly skipped: number;
 }
 
-/** Messages read per query. */
 const PAGE_SIZE = 200;
-/** Messages recovered at the same time. */
 const CONCURRENCY = 5;
-
-// ----- Manager -----
 
 export class RecoveryManager {
   private readonly store: RecoveryStore;
@@ -75,11 +55,7 @@ export class RecoveryManager {
     this.redispatchDestination = redispatchDestination;
   }
 
-  /**
-   * Recover all unprocessed messages for a channel, a page at a time and a
-   * few messages at once, so a large backlog cannot exhaust memory or the
-   * database pool.
-   */
+  /** A page at a time and a few messages at once, so a large backlog cannot exhaust memory or the database pool. */
   async recover(channelId: string): Promise<Result<RecoveryResult>> {
     return tryCatch(async () => {
       const total = { recovered: 0, errors: 0, skipped: 0 };
@@ -110,8 +86,6 @@ export class RecoveryManager {
   }
 
   /**
-   * Recover a single message.
-   *
    * - Source RECEIVED or TRANSFORMED with no destination rows: the crash hit
    *   before routing, so the message is reprocessed from its raw content
    *   (reprocessSource marks the original processed on success).
@@ -154,10 +128,10 @@ export class RecoveryManager {
   }
 
   /**
-   * Close a message with nothing left to recover. A source that had routed the
-   * message (TRANSFORMED) never reached its final status because the server
-   * stopped first; give it one now, from the destinations as they stand after
-   * recovery, so the message does not sit in the browser looking unfinished.
+   * A source that had routed the message (TRANSFORMED) never reached its final
+   * status because the server stopped first; give it one now, from the
+   * destinations as they stand after recovery, so the message does not sit in
+   * the browser looking unfinished.
    */
   private async closeMessage(
     channelId: string,
@@ -182,7 +156,6 @@ export class RecoveryManager {
     conn: ConnectorMessageRecord,
     hasDestinations: boolean,
   ): Promise<'reprocessed' | 'recovered' | 'error' | 'queued' | 'skipped'> {
-    // QUEUED messages are handled by QueueConsumer
     if (conn.status === 'QUEUED') return 'queued';
 
     if (conn.metaDataId === 0) {
@@ -197,7 +170,6 @@ export class RecoveryManager {
       return rdResult.ok ? 'recovered' : 'error';
     }
 
-    // SENT, FILTERED, ERROR, ... — final
     return 'skipped';
   }
 }

@@ -1,9 +1,3 @@
-// ===========================================
-// Channel Group Service
-// ===========================================
-// Business logic for channel group CRUD + member management.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, count, asc, inArray, isNull } from 'drizzle-orm';
 import { DEFAULT_GROUP_NAME, type CreateChannelGroupInput, type UpdateChannelGroupInput } from '@galvanigraph/core-models';
@@ -12,8 +6,6 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { channelGroups, channelGroupMembers, channels } from '../db/schema/index.js';
 import { GrantService } from './grant.service.js';
-
-// ----- Response Types -----
 
 export interface ChannelGroupSummary {
   readonly id: string;
@@ -31,7 +23,6 @@ export interface ChannelGroupDetail extends ChannelGroupSummary {
   readonly channels: ReadonlyArray<{ readonly id: string; readonly name: string }>;
 }
 
-/** The groups a channel belongs to after a set. */
 export interface ChannelGroupSet {
   readonly channelId: string;
   readonly groupIds: readonly string[];
@@ -40,9 +31,8 @@ export interface ChannelGroupSet {
 type GroupTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
- * Lock a channel that is not soft-deleted for the rest of the transaction, so
- * two sets on one channel run one after the other, or fail with NOT_FOUND.
- * FOR NO KEY UPDATE leaves inserts into tables that reference the channel free.
+ * Two sets on one channel run one after the other. FOR NO KEY UPDATE leaves
+ * inserts into tables that reference the channel free.
  */
 async function lockLiveChannel(tx: GroupTx, channelId: string): Promise<void> {
   const [channel] = await tx
@@ -56,11 +46,9 @@ async function lockLiveChannel(tx: GroupTx, channelId: string): Promise<void> {
 }
 
 /**
- * Fail with NOT_FOUND naming each id in `groupIds` that is not a group. The
- * found rows are locked FOR KEY SHARE until the transaction ends, so a group
- * deleted at the same time is either gone here (a clean NOT_FOUND) or waits
- * for this transaction, never failing the INSERT after the old memberships
- * were removed.
+ * FOR KEY SHARE, so a group deleted at the same time is either gone here (a
+ * clean NOT_FOUND) or waits for this transaction, never failing the INSERT
+ * after the old memberships were removed.
  */
 async function assertGroupsExist(tx: GroupTx, groupIds: readonly string[]): Promise<void> {
   if (groupIds.length === 0) return;
@@ -76,10 +64,7 @@ async function assertGroupsExist(tx: GroupTx, groupIds: readonly string[]): Prom
   }
 }
 
-// ----- Service -----
-
 export class ChannelGroupService {
-  /** List all groups with member counts. */
   static async listGroups(): Promise<Result<readonly ChannelGroupSummary[]>> {
     return tryCatch(async () => {
       const groups = await db
@@ -112,7 +97,6 @@ export class ChannelGroupService {
     });
   }
 
-  /** List all group-channel memberships. */
   static async listMemberships(): Promise<Result<ReadonlyArray<{ readonly channelGroupId: string; readonly channelId: string }>>> {
     return tryCatch(async () => {
       const rows = await db
@@ -126,7 +110,6 @@ export class ChannelGroupService {
     });
   }
 
-  /** Get a single group by ID with its member channels. */
   static async getById(id: string): Promise<Result<ChannelGroupDetail>> {
     return tryCatch(async () => {
       const [group] = await db
@@ -161,7 +144,6 @@ export class ChannelGroupService {
     });
   }
 
-  /** Create a new group. */
   static async create(
     input: CreateChannelGroupInput,
     context?: AuditContext,
@@ -204,7 +186,6 @@ export class ChannelGroupService {
     });
   }
 
-  /** Update a group (optimistic locking). */
   static async update(
     id: string,
     input: UpdateChannelGroupInput,
@@ -285,7 +266,6 @@ export class ChannelGroupService {
     });
   }
 
-  /** Delete a group (cascades members). The "Default" group cannot be deleted. */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -328,12 +308,7 @@ export class ChannelGroupService {
     });
   }
 
-  /**
-   * Replace every group membership a channel has with `groupIds`, in one
-   * transaction: a failure part way leaves the old memberships in place. An
-   * empty list takes the channel out of every group. A deleted channel is
-   * NOT_FOUND, as it is everywhere else.
-   */
+  /** Replaces every membership: an empty list takes the channel out of every group. */
   static async setChannelGroups(
     channelId: string,
     groupIds: readonly string[],
@@ -344,7 +319,6 @@ export class ChannelGroupService {
       const previous = await db.transaction(async (tx) => {
         await lockLiveChannel(tx, channelId);
         await assertGroupsExist(tx, wanted);
-        // The grant rule and the write, with its audit row (grant.service).
         return GrantService.applyChannelGroups(tx, channelId, wanted, { userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null });
       });
 

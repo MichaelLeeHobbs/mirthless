@@ -1,8 +1,4 @@
-// ===========================================
-// Collection Controller
-// ===========================================
-// Handles HTTP requests for collection CRUD + record browsing.
-// Record store/find is done in-process by the script bridge, not over HTTP.
+// Scripts store and find records in-process through the script bridge, not over HTTP.
 
 import type { Request, Response } from 'express';
 import type {

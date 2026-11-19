@@ -1,16 +1,8 @@
-// ===========================================
-// Health Service
-// ===========================================
-// Provides health check logic for liveness, readiness,
-// and full health status endpoints.
-
 import { sql } from 'drizzle-orm';
 import { tryCatch } from 'stderr-lib';
 import { db } from '../lib/db.js';
 import { getEngine } from '../engine.js';
 import { startupStatus, type StartupFailure, type StartupStepName } from '../lib/startup-steps.js';
-
-// ----- Types -----
 
 export interface HealthStatus {
   readonly status: 'ok' | 'degraded';
@@ -32,7 +24,6 @@ export interface HealthStatus {
   readonly startup: { readonly failed: readonly StartupFailure[] };
 }
 
-/** What `/health/ready` answers: the HTTP status and the public body. */
 export interface Readiness {
   readonly httpStatus: 200 | 503;
   readonly body: {
@@ -49,9 +40,6 @@ export interface EngineStats {
   readonly paused: number;
 }
 
-// ----- Functions -----
-
-/** Check database connectivity via SELECT 1. */
 export async function checkDatabase(): Promise<boolean> {
   const result = await tryCatch(async () => {
     await db.execute(sql`SELECT 1`);
@@ -59,7 +47,6 @@ export async function checkDatabase(): Promise<boolean> {
   return result.ok;
 }
 
-/** Get engine deployment stats. */
 export function getEngineStats(): EngineStats {
   const engine = getEngine();
   const runtimes = engine.getAll();
@@ -75,7 +62,6 @@ export function getEngineStats(): EngineStats {
   return { deployed: runtimes.size, started, stopped, paused };
 }
 
-/** Get memory usage stats. */
 export function getMemoryStats(): HealthStatus['memory'] {
   const mem = process.memoryUsage();
   return {
@@ -86,7 +72,6 @@ export function getMemoryStats(): HealthStatus['memory'] {
   };
 }
 
-/** Full health status check. Degraded when the database is down or a startup step failed. */
 export async function getHealthStatus(): Promise<HealthStatus> {
   const dbOk = await checkDatabase();
   const engineStats = getEngineStats();
@@ -104,21 +89,16 @@ export async function getHealthStatus(): Promise<HealthStatus> {
 }
 
 /**
- * The HTTP status for `/health` and `/health/full`: 503 only while the
- * database is unreachable. A failed startup step makes the status `degraded`
- * but answers 200, so a load balancer on `/health` keeps the instance and its
- * UI in rotation (D-308).
+ * For `/health` and `/health/full`. A failed startup step answers 200 `degraded`, so a load
+ * balancer keeps the instance and its UI in rotation (D-308).
  */
 export function healthHttpStatus(health: HealthStatus): 200 | 503 {
   return health.database.connected ? 200 : 503;
 }
 
 /**
- * Readiness for `/health/ready`: 503 while the database is unreachable.
- * A failed startup step makes it 200 `degraded`, naming the step (D-308):
- * the server can still serve the UI an operator needs to fix it, so it must
- * not be pulled out of a load balancer. The public body carries step names
- * only, never the error text.
+ * A failed startup step answers 200 `degraded` (D-308): the server can still serve the UI an
+ * operator needs to fix it. The public body carries step names only, never the error text.
  */
 export async function getReadiness(): Promise<Readiness> {
   const dbOk = await checkDatabase();

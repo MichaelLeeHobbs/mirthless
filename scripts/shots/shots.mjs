@@ -1,19 +1,6 @@
 #!/usr/bin/env node
-// ===========================================
-// pnpm shots — screenshot the web UI against a fake API
-// ===========================================
-// Renders key pages signed in, in light, dark and a 390x844 phone viewport,
-// with every /api/v1 call answered from ./fixture.mjs. No server or database
-// is needed, only the web dev server (`pnpm dev:web`). Look at every image:
-// this replaces clicking through each page by hand after a UI change.
-//
-//   pnpm shots                         all pages, all three variants
-//   pnpm shots --only dashboard,alerts some pages
-//   pnpm shots --variants dark         one variant (light | dark | phone)
-//   pnpm shots --base http://localhost:5173 --out shots
-//
-// Prints each file it wrote, plus any page exceptions or console errors, and
-// exits 1 if any page threw, so a broken render is not mistaken for a picture.
+// Screenshots the web UI against the fake API in ./fixture.mjs; needs only `pnpm dev:web`.
+// Exits 1 if any page threw, so a broken render is not mistaken for a picture.
 
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -26,14 +13,7 @@ import { route } from './fixture.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-/**
- * Pages to shoot: name → route, or { url, keys, type } to press keys and type
- * after load (for dialogs like the command palette), { url, click } to click the
- * element showing some text (for a record editor), { url, scrollTo } to bring the
- * element showing some text to the top (for a section below the fold), or { url, fill } to fill
- * fields by their label (for a form's edited state). Add one when a page joins
- * the visual language catalog.
- */
+// Add a page when it joins the visual language catalog; shoot() reads each target's fields.
 const PAGES = {
   login: '/login',
   dashboard: '/',
@@ -123,7 +103,6 @@ const { values: opts } = parseArgs({
   },
 });
 
-/** Every permission string the UI knows, so the fake user sees every page. */
 function allPermissions() {
   return Object.values(PERMISSIONS);
 }
@@ -146,7 +125,6 @@ async function launch() {
 
 async function shoot(browser, name, target, variantName) {
   const { url, keys, type, click, fill, scrollTo, user } = typeof target === 'string' ? { url: target } : target;
-  // `user` replaces fields of the signed-in user, for a page that depends on who is looking.
   const auth = user ? { ...AUTH, user: { ...AUTH.user, ...user } } : AUTH;
   const v = VARIANTS[variantName];
   const context = await browser.newContext({
@@ -178,8 +156,6 @@ async function shoot(browser, name, target, variantName) {
   await page.waitForTimeout(800);
   if (keys) await page.keyboard.press(keys);
   if (type) await page.keyboard.type(type);
-  // `click` is one label or several, clicked in order (a tab, then a section in it).
-  // A label no visible text carries is looked up as an accessible name (an icon button).
   for (const label of [click ?? []].flat()) {
     const byText = page.getByText(label, { exact: true });
     await ((await byText.count()) > 0 ? byText : page.getByLabel(label, { exact: true })).first().click();

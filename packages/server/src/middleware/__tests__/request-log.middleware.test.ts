@@ -1,8 +1,5 @@
-// ===========================================
-// Request Log Middleware Tests
-// ===========================================
-// Exercised over real HTTP with a real pino logger, so the assertion is on the
-// JSON line pino-http actually writes (#229: search terms are usually MRNs).
+// A real pino logger, so the assertions read the JSON line pino-http actually
+// writes (#229).
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';

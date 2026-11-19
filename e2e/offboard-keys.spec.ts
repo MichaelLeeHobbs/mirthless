@@ -1,10 +1,3 @@
-// ===========================================
-// A leaver's API keys E2E Tests (#302, D-322)
-// ===========================================
-// An admin disables a user who issued two API keys. The dialog says both will
-// stop; the admin takes one over, gets its new token once, and the other stops
-// with the user. The old secret of the key taken over stops at once.
-//
 // Users can't be deleted, so each run uses names of its own (D-289).
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
@@ -15,7 +8,7 @@ const RUN_ID = Date.now().toString(36);
 const LEAVER = `e2e-leaver-${RUN_ID}`;
 const PASSWORD = 'LeaverKeys123!';
 
-/** The status of GET /channels with `token`, from a client that holds no cookies. */
+// A fresh context, so no session cookie authenticates the call instead of the token.
 async function callWith(token: string): Promise<number> {
   const client: APIRequestContext = await request.newContext({ extraHTTPHeaders: { Connection: 'close' } });
   try {
@@ -25,7 +18,6 @@ async function callWith(token: string): Promise<number> {
   }
 }
 
-/** A key issued by the leaver, signed in as them. */
 async function issueAs(accessToken: string, name: string): Promise<string> {
   const client = await request.newContext({ extraHTTPHeaders: { Connection: 'close' } });
   try {

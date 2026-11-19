@@ -1,9 +1,4 @@
-// ===========================================
-// Global Map E2E Tests
-// ===========================================
-// Adds, lists and deletes an entry from the Global Map page, then clears the
-// map. This is the only spec that reads the global map, so clearing it doesn't
-// break another spec running in parallel (D-289).
+// Only this spec reads the global map, so clearing it is safe with specs running in parallel (D-289).
 
 import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -15,7 +10,6 @@ const CLEAR_KEYS = ['e2e_clear_key_1', 'e2e_clear_key_2'] as const;
 
 let api: APIRequestContext;
 
-/** The table row whose Key cell is exactly this key. */
 function entryRow(page: Page, key: string): Locator {
   return page.getByRole('row').filter({ has: page.getByRole('cell', { name: key, exact: true }) });
 }

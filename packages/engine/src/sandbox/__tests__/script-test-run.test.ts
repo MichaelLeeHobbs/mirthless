@@ -1,6 +1,3 @@
-// A test run must behave like the pipeline (same compile, same filter rule,
-// same transformer output) and must never send, write or route anything.
-
 import { describe, it, expect, vi } from 'vitest';
 import {
   runScriptTest, MAX_TEST_LOG_LINES, MAX_TEST_OUTPUT_CHARS, type ScriptTestInput, type ScriptTestResult,
@@ -71,7 +68,7 @@ describe('runScriptTest', () => {
       ["await getCollection('orders').store({ k: 'v' }, 'x');", 'collection "orders" store'],
       ["await getCollection('orders').update('id-1', { k: 'v' });", 'collection "orders" update'],
       ["await getCollection('orders').delete('id-1');", 'collection "orders" delete'],
-      // Reads are refused too when the caller gives no reader, rather than reaching a store.
+      // Reads are refused too when the caller gives no reader.
       ["await getResource('codes');", 'getResource "codes"'],
       ["await getCollection('orders').find({ k: 'v' });", 'collection "orders" find'],
     ] as const) {

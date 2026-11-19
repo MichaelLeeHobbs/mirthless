@@ -1,11 +1,7 @@
-// ===========================================
-// Connector direction validation (#109)
-// ===========================================
-// A channel's source must be a type that can receive, and each destination a
-// type that can send. SMTP and FHIR only send; EMAIL only receives. Saving one in
-// the wrong direction used to pass validation and fail at deploy. (Import checks
-// direction per channel in the server's ChannelImportService instead, so one bad
-// channel doesn't refuse a whole backup.)
+// #109: a channel's source must be a type that can receive, and each destination
+// a type that can send. SMTP and FHIR only send; EMAIL only receives. Import
+// checks direction per channel in the server's ChannelImportService instead, so
+// one bad channel doesn't refuse a whole backup.
 
 import { describe, it, expect } from 'vitest';
 import { createChannelSchema, updateChannelSchema, destinationInputSchema } from '../channel.schema.js';

@@ -1,11 +1,3 @@
-// ===========================================
-// Job Queue (pgboss)
-// ===========================================
-// PostgreSQL-backed job queue using pgboss.
-// Migration 0016 creates the 'pgboss' schema and pg-boss creates its tables in
-// it. In the Docker stack the server's database role owns that schema (D-307):
-// pg-boss creates, migrates and maintains its tables while the server runs.
-
 import { PgBoss } from 'pg-boss';
 import { tryCatch } from 'stderr-lib';
 import { config } from '../config/index.js';
@@ -14,14 +6,13 @@ import { buildDbSslConfig } from './db.js';
 import logger from './logger.js';
 
 let boss: PgBoss | null = null;
-/** An instance whose start() has not settled, so shutdown can stop a start that hangs. */
+/** Held so shutdown can stop a start() that hangs. */
 let starting: PgBoss | null = null;
 
 export function getBoss(): PgBoss | null {
   return boss;
 }
 
-/** Stop an instance that is not (or not yet) the running queue; a failure is logged, not thrown. */
 async function stopQuietly(instance: PgBoss): Promise<void> {
   const stopped = await tryCatch(() => instance.stop({ graceful: false, timeout: 10_000 }));
   if (!stopped.ok) {
@@ -29,11 +20,6 @@ async function stopQuietly(instance: PgBoss): Promise<void> {
   }
 }
 
-/**
- * Start pg-boss. `getBoss()` returns it only once it has started, never a
- * half-started one. A start that fails is stopped, so it leaves no pool or
- * timers behind; a start still running at shutdown is stopped by `stopQueue`.
- */
 export async function startQueue(): Promise<PgBoss> {
   const ssl = buildDbSslConfig();
   const instance = new PgBoss({

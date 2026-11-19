@@ -1,11 +1,5 @@
-// ===========================================
-// Alert Evaluator Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { evaluateAlerts, type ChannelErrorEvent, type LoadedAlert } from '../alert-evaluator.js';
-
-// ----- Helpers -----
 
 function makeEvent(overrides?: Partial<ChannelErrorEvent>): ChannelErrorEvent {
   return {
@@ -36,8 +30,6 @@ function makeAlert(overrides?: Partial<LoadedAlert>): LoadedAlert {
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 describe('evaluateAlerts', () => {
   it('matches alert with ANY error type', () => {

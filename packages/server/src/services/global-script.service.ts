@@ -1,9 +1,3 @@
-// ===========================================
-// Global Script Service
-// ===========================================
-// Business logic for global scripts (deploy, undeploy, preprocessor, postprocessor).
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { assertScriptCompiles } from './script-validation.service.js';
 import { assertGlobalScriptsTypeCheck } from './script-type-gate.service.js';
 import { CodeTemplateService } from './code-template.service.js';
@@ -15,8 +9,6 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { globalScripts } from '../db/schema/index.js';
 
-// ----- Response Types -----
-
 type GlobalScriptKey = 'deploy' | 'undeploy' | 'preprocessor' | 'postprocessor';
 
 export interface GlobalScriptsData {
@@ -24,7 +16,6 @@ export interface GlobalScriptsData {
   readonly undeploy: string;
   readonly preprocessor: string;
   readonly postprocessor: string;
-  /** The language each script is written in. */
   readonly languages: Readonly<Record<GlobalScriptKey, ScriptLanguageCode>>;
 }
 
@@ -36,16 +27,12 @@ const ENTRIES: ReadonlyArray<{ readonly key: string; readonly field: GlobalScrip
 ];
 
 /**
- * The language of a script never saved (no row): TypeScript, as the editor
- * starts every new script. A save that leaves the language out keeps it, so the
- * first save stores it too, the language the script was type-checked in (#228).
+ * A script with no row, as the editor starts every new script. A first save that leaves
+ * the language out stores this, the language the script was type-checked in (#228).
  */
 const NEVER_SAVED_LANGUAGE: ScriptLanguageCode = 'TYPESCRIPT';
 
-/**
- * Read every global script, with empty strings for missing rows. A saved
- * script keeps its language even when empty (#183).
- */
+/** A saved script keeps its language even when empty (#183). */
 async function readAll(): Promise<GlobalScriptsData> {
   const rows = await db.select().from(globalScripts);
   const byType = new Map(rows.map((r) => [r.scriptType, r]));
@@ -68,10 +55,7 @@ async function readAll(): Promise<GlobalScriptsData> {
   };
 }
 
-/**
- * Type-check the scripts this save changes, as they will be after it (a
- * language switch alone counts). Nothing to do when none of them is TypeScript.
- */
+/** Checks the scripts as they will be after the save; a language switch alone counts as a change. */
 async function assertTouchedScriptsTypeCheck(input: UpdateGlobalScriptsInput): Promise<void> {
   const touched = ENTRIES.map((e) => e.field).filter((f) => input[f] !== undefined || input.languages?.[f] !== undefined);
   if (touched.length === 0) return;
@@ -95,19 +79,14 @@ async function assertTouchedScriptsTypeCheck(input: UpdateGlobalScriptsInput): P
   await assertGlobalScriptsTypeCheck(next, touched, templates.value);
 }
 
-// ----- Service -----
-
 export class GlobalScriptService {
-  /** Get all 4 global scripts. Returns empty strings for missing rows. */
   static async getAll(): Promise<Result<GlobalScriptsData>> {
     return tryCatch(readAll);
   }
 
   /**
-   * Update global scripts (upserts only provided fields). A script that does
-   * not compile is refused, and so is a TypeScript script with type errors:
-   * global scripts run for every channel, so they are not left to fail each
-   * channel's deploy (D-285).
+   * Refuses a script that does not compile or has type errors: global scripts run for
+   * every channel, so they are not left to fail each channel's deploy (D-285).
    */
   static async update(
     input: UpdateGlobalScriptsInput,

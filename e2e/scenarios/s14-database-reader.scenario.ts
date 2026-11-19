@@ -1,9 +1,6 @@
-// S14: a Database Reader polls a Postgres table and marks rows it has read.
-// Gap doc 12 (Database connector). The select/update pair is Mirth's
-// "run update statement after each message" mode; ${id} in the update refers to
-// the current row's column. Mirth hands the row to scripts as XML; GalvaniGraph
-// reads rows as JSON objects, so the export keeps Mirth's XML data type and the
-// rewritten script reads msg.accession.
+// Gap doc 12. The select/update pair is Mirth's "run update statement after each message" mode.
+// Mirth hands the row to scripts as XML; GalvaniGraph reads it as a JSON object, so the export
+// keeps Mirth's XML data type while the rewritten script reads msg.accession.
 
 import { expect } from '@playwright/test';
 import { channelExport, dbReader, tcpSender } from './support/mirth-xml.js';

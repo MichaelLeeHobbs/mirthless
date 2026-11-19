@@ -1,9 +1,3 @@
-// ===========================================
-// HL7v2 Path Parser
-// ===========================================
-// Parses HL7 path strings like 'PID.3.1' into
-// structured objects for field access.
-
 /** Parsed HL7 path with all indices resolved. */
 export interface Hl7Path {
   readonly segment: string;
@@ -17,8 +11,8 @@ export interface Hl7Path {
 const PATH_REGEX = /^([A-Z][A-Z0-9]{2})(?:\[(\d+)\])?(?:\.(\d+)(?:\[(\d+)\])?(?:\.(\d+)(?:\.(\d+))?)?)?$/;
 
 /**
- * Parse an HL7 path string into its components.
- * Auto-resolves missing indices to 1 for get operations.
+ * `autoResolve` fills every missing index with 1, as reads want; pass false
+ * where a left-out index means the whole level (getRaw, set, delete).
  */
 export function parsePath(path: string, autoResolve = true): Hl7Path {
   if (!path || typeof path !== 'string') {
@@ -43,7 +37,7 @@ export function parsePath(path: string, autoResolve = true): Hl7Path {
   let component = rawComp ? parseInt(rawComp, 10) : undefined;
   let subComponent = rawSub ? parseInt(rawSub, 10) : undefined;
 
-  // Auto-resolve: fill in 1 for missing intermediate indices
+  // Even without autoResolve, an index left out between two given ones is 1.
   if (field !== undefined && segmentIndex === undefined) {
     segmentIndex = 1;
   }

@@ -1,7 +1,3 @@
-// ===========================================
-// Message Reprocess Controller
-// ===========================================
-
 import type { Request, Response } from 'express';
 import type { BulkDeleteInput, BulkReprocessInput } from '@galvanigraph/core-models';
 import { MessageReprocessService } from '../services/message-reprocess.service.js';

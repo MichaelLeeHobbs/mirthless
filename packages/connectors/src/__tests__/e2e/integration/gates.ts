@@ -1,18 +1,7 @@
-// ===========================================
-// Integration-test gates
-// ===========================================
-// Each connector-integration suite runs only when its backing service is
-// configured (via env), and self-skips otherwise. This keeps the integration
-// lane runnable anywhere while still exercising real protocols in docker.
-// CI sets CONNECTOR_ITEST_REQUIRED=1, which turns a missing service into a
-// failed run (see the end of this file), so a broken setup cannot pass green.
-
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe } from 'vitest';
 import type { PoolConfig } from '../../../index.js';
-
-// ----- Postgres (DATABASE_URL ending in *_test) -----
 
 export interface TestDbConfig extends PoolConfig {
   readonly url: string;
@@ -45,13 +34,10 @@ function readTestDbConfig(): TestDbConfig | null {
 export const dbConfig = readTestDbConfig();
 export const describeDb = dbConfig ? describe : describe.skip;
 
-/** Non-null DB config for use inside hooks/tests (never called when skipped). */
 export function requireDb(): TestDbConfig {
   if (!dbConfig) throw new Error('DATABASE_URL is not a *_test database');
   return dbConfig;
 }
-
-// ----- SFTP (SFTP_TEST_HOST) -----
 
 export interface TestSftpConfig {
   readonly host: string;
@@ -80,16 +66,13 @@ export function requireSftp(): TestSftpConfig {
   return sftpConfig;
 }
 
-// ----- SMTP / IMAP (GreenMail: SMTP_TEST_HOST) -----
-
 export interface TestMailConfig {
   readonly host: string;
   readonly smtpPort: number;
   readonly imapPort: number;
-  /** IMAP/SMTP login (GreenMail user login — e.g. "mirth"). */
+  /** GreenMail's user login, which differs from `address` (the SMTP envelope). */
   readonly username: string;
   readonly password: string;
-  /** Mailbox email address (e.g. "mirth@example.com") — the SMTP envelope. */
   readonly address: string;
 }
 
@@ -112,8 +95,6 @@ export function requireMail(): TestMailConfig {
   if (!mailConfig) throw new Error('SMTP_TEST_HOST is not set');
   return mailConfig;
 }
-
-// ----- Kafka (KAFKA_TEST_BROKERS) -----
 
 export interface TestKafkaConfig {
   /** Plaintext listener, `host:port`. */
@@ -141,8 +122,6 @@ export function requireKafka(): TestKafkaConfig {
   if (!kafkaConfig) throw new Error('KAFKA_TEST_BROKERS is not set');
   return kafkaConfig;
 }
-
-// ----- AMQP / RabbitMQ (AMQP_TEST_HOST) -----
 
 export interface TestAmqpConfig {
   readonly host: string;
@@ -172,15 +151,13 @@ export function requireAmqp(): TestAmqpConfig {
   return amqpConfig;
 }
 
-// ----- AMQPS (AMQP_TEST_HOST plus the test CA the rabbitmq-test entrypoint writes) -----
-
 export interface TestAmqpTlsConfig {
   readonly port: number;
   /** PEM of the CA that signed the broker's test certificate. */
   readonly ca: string;
 }
 
-/** docker/test-certs/ca.pem at the repository root, six levels above this file's folder. */
+/** Written by the rabbitmq-test container's entrypoint on first start. */
 const DEFAULT_TEST_CA = fileURLToPath(new URL('../../../../../../docker/test-certs/ca.pem', import.meta.url));
 
 function readAmqpTlsConfig(): TestAmqpTlsConfig | null {
@@ -200,8 +177,6 @@ export function requireAmqpTls(): TestAmqpTlsConfig {
   return amqpTlsConfig;
 }
 
-// ----- Required mode (CONNECTOR_ITEST_REQUIRED=1) -----
-
 const missingServices = [
   dbConfig ? null : 'DATABASE_URL (a *_test database)',
   sftpConfig ? null : 'SFTP_TEST_HOST',
@@ -211,10 +186,9 @@ const missingServices = [
   amqpTlsConfig ? null : 'the AMQP test CA (docker/test-certs/ca.pem or AMQP_TEST_CA_FILE)',
 ].filter((name): name is string => name !== null);
 
-// Thrown at import, so every suite file fails to load and the run goes red.
+// CI sets this (D-273). Throwing at import fails every suite instead of letting it skip green.
 if (process.env.CONNECTOR_ITEST_REQUIRED === '1' && missingServices.length > 0) {
   throw new Error(`CONNECTOR_ITEST_REQUIRED=1 but these are not configured, so their suites would skip: ${missingServices.join(', ')}`);
 }
 
-// (DICOM needs no gate: the dcmjs-dimse connector runs in-process, so its cascade
-// test lives in the default lane — packages/connectors/src/__tests__/e2e/connector-dicom.e2e.test.ts.)
+// DICOM has no gate: dcmjs-dimse runs in-process, so its test is in the default lane.

@@ -1,10 +1,3 @@
-// ===========================================
-// API key dialogs
-// ===========================================
-// The token dialog closes only with Done and says when it could not copy; the
-// offboarding dialog starts at "disable" and sends the choice; the issue
-// dialog keeps the form when the server refuses it and shows why.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';

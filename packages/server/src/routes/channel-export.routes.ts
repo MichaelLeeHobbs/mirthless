@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Export/Import Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { channelImportSchema } from '@galvanigraph/core-models';
@@ -21,14 +17,12 @@ scopeToChannel(router);
 // Large bodies are parsed here, after authentication, never before it.
 router.use(largeJsonBody);
 
-// GET /channels/export — Export all channels
 router.get(
   '/export',
   requirePermission('channels:read'),
   ChannelExportController.exportAll
 );
 
-// GET /channels/:id/export — Export a single channel
 router.get(
   '/:id/export',
   requirePermission('channels:read'),
@@ -36,7 +30,6 @@ router.get(
   ChannelExportController.exportChannel
 );
 
-// POST /channels/import — Import channels from JSON
 router.post(
   '/import',
   requirePermission('channels:write'),

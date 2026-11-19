@@ -1,7 +1,3 @@
-// ===========================================
-// Global Scripts E2E Tests
-// ===========================================
-
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { API_BASE, adminApi, getData } from './fixtures/api.js';
@@ -20,11 +16,7 @@ async function savedScripts(): Promise<GlobalScripts> {
   return getData<GlobalScripts>(api, '/global-scripts');
 }
 
-/**
- * Add a line at the end of the open editor and save. The text goes in as one
- * edit: typing it key by key raced the editor and saved a script with
- * characters missing, which then could not compile.
- */
+// One insertText: typing key by key raced the editor and saved a script with characters missing.
 async function appendLineAndSave(page: Page, line: string): Promise<void> {
   const editor = page.locator('.monaco-editor').first();
   await expect(editor.locator('.view-line').first()).toBeVisible();
@@ -54,7 +46,6 @@ test.describe('Global Scripts', () => {
   test('navigate to Global Scripts page', async ({ page }) => {
     await page.goto('/global-scripts');
     await expect(page.getByRole('heading', { name: 'Global Scripts' })).toBeVisible();
-    // Should show 4 tabs
     await expect(page.getByRole('tab', { name: 'Deploy', exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Undeploy' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Preprocessor' })).toBeVisible();
@@ -64,7 +55,6 @@ test.describe('Global Scripts', () => {
   test('enter deploy script code and save', async ({ page }) => {
     await page.goto('/global-scripts');
 
-    // Deploy tab should be active by default
     await expect(page.getByRole('tab', { name: 'Deploy', exact: true, selected: true })).toBeVisible();
 
     await appendLineAndSave(page, '// E2E test deploy script');
@@ -81,7 +71,6 @@ test.describe('Global Scripts', () => {
   test('switch to preprocessor tab and edit', async ({ page }) => {
     await page.goto('/global-scripts');
 
-    // Click Preprocessor tab
     await page.getByRole('tab', { name: 'Preprocessor' }).click();
 
     await appendLineAndSave(page, '// E2E preprocessor');

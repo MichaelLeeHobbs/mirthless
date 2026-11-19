@@ -1,12 +1,5 @@
-// ===========================================
-// Configuration Map API Hooks
-// ===========================================
-// TanStack Query hooks for categorized configuration map CRUD.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface ConfigMapEntry {
   readonly category: string;
@@ -14,14 +7,10 @@ export interface ConfigMapEntry {
   readonly value: string | null;
 }
 
-// ----- Query Keys -----
-
 const CMAP_KEYS = {
   all: ['config-map'] as const,
   list: (category?: string) => [...CMAP_KEYS.all, 'list', category ?? 'all'] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useConfigMap(category?: string): ReturnType<typeof useQuery<readonly ConfigMapEntry[]>> {
   return useQuery({

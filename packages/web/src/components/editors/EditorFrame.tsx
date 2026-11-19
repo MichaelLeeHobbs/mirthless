@@ -1,13 +1,4 @@
-// ===========================================
-// Editor frame
-// ===========================================
-// The shared chrome around every code editor: a toolbar, the editor, and a
-// status line, with a full-screen mode. ScriptEditor, TextEditor and
-// CodeDiffEditor all render inside it, so every host looks the same.
-//
-// Full screen restyles the same elements to cover the window rather than
-// rendering the editor again in a dialog: a second editor would start with an
-// empty undo history and lose the cursor (#183).
+// Full screen restyles the same elements rather than rendering the editor again in a dialog: a second editor would start with an empty undo history and lose the cursor (#183).
 
 import { type KeyboardEvent, type ReactNode, useEffect } from 'react';
 import Box from '@mui/material/Box';
@@ -18,26 +9,19 @@ import { RADIUS } from '../../styles/tokens.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 
 interface EditorFrameProps {
-  /** Accessible name and toolbar title, e.g. "Deploy script". */
   readonly label: string;
-  /** Show the label in the toolbar. Hosts that already title the editor hide it. */
+  /** Off when the host already titles the editor. */
   readonly showLabel?: boolean;
-  /** Controls after the title (language switch). */
   readonly start?: ReactNode;
-  /** Controls at the right end, before the expand button. */
   readonly end?: ReactNode;
-  /** The status line. */
   readonly status?: ReactNode;
-  /** Shown below the status line (the test run panel). */
   readonly footer?: ReactNode;
-  /** Height of the editor area when not expanded (CSS length or px). */
   readonly height: string | number;
   readonly expanded: boolean;
   readonly onExpandedChange: (expanded: boolean) => void;
   readonly children: ReactNode;
 }
 
-/** While full screen, the page behind does not scroll. */
 function useScrollLock(locked: boolean): void {
   useEffect(() => {
     if (!locked) return undefined;
@@ -47,7 +31,6 @@ function useScrollLock(locked: boolean): void {
   }, [locked]);
 }
 
-/** Toolbar, editor body and status line; full screen when `expanded`. */
 export function EditorFrame({
   label, showLabel, start, end, status, footer, height, expanded, onExpandedChange, children,
 }: EditorFrameProps): ReactNode {

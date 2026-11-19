@@ -1,14 +1,6 @@
-// ===========================================
-// Charset Normalization
-// ===========================================
-// Maps human/IANA charset names to valid Node Buffer encodings so a config value
-// like 'ISO-8859-1' or 'US-ASCII' (which fs.readFile/writeFile reject with
-// ERR_UNKNOWN_ENCODING) is coerced to the Node equivalent instead of crashing the
-// poll/write. The file connectors refuse an unknown value at deploy (see
-// isKnownEncoding): decoding with the wrong charset corrupts text in silence.
-
 import type { QueueCharset } from '@galvanigraph/core-models';
 
+// fs.readFile/writeFile reject IANA names like 'ISO-8859-1' or 'US-ASCII' with ERR_UNKNOWN_ENCODING.
 const ALIASES: Readonly<Record<string, BufferEncoding>> = {
   'utf8': 'utf8',
   'utf-8': 'utf8',
@@ -27,27 +19,21 @@ const ALIASES: Readonly<Record<string, BufferEncoding>> = {
   'binary': 'binary',
 };
 
-/**
- * Coerce a configured charset string to a valid Node Buffer encoding.
- * Falls back to 'utf8' for empty or unrecognized values.
- */
+/** Falls back to 'utf8' for empty or unrecognized values. */
 export function normalizeEncoding(charset: string | undefined | null): BufferEncoding {
   if (typeof charset !== 'string' || charset.length === 0) return 'utf8';
   return ALIASES[charset.toLowerCase()] ?? 'utf8';
 }
 
 /**
- * Whether a configured charset is one this server can read and write. Empty
- * means the UTF-8 default. Connectors check this at deploy so a charset Node
- * cannot handle (for example windows-1252) stops the channel with a clear
- * error instead of being read as UTF-8.
+ * Empty means the UTF-8 default. Connectors check this at deploy: decoding with the
+ * wrong charset (for example windows-1252 read as UTF-8) corrupts text in silence.
  */
 export function isKnownEncoding(charset: string | undefined | null): boolean {
   if (typeof charset !== 'string' || charset.length === 0) return true;
   return Object.hasOwn(ALIASES, charset.toLowerCase());
 }
 
-/** A payload as text, and whether bytes had to be replaced to get there. */
 export interface DecodedPayload {
   readonly text: string;
   /** True when the bytes were not valid UTF-8 and invalid ones became U+FFFD. */
@@ -70,9 +56,8 @@ function windows1252Decoder(): InstanceType<typeof TextDecoder> {
 }
 
 /**
- * Throw when this server cannot decode `charset`, so a queue source set to it
- * fails to deploy instead of failing on every message. Only windows-1252 can
- * be missing (a Node built without full ICU).
+ * Throws so a queue source fails to deploy rather than on every message. Only
+ * windows-1252 can be missing (a Node built without full ICU).
  */
 export function assertCharsetAvailable(charset: QueueCharset | undefined): void {
   if (charset !== 'windows-1252') return;
@@ -84,11 +69,6 @@ export function assertCharsetAvailable(charset: QueueCharset | undefined): void 
   }
 }
 
-/**
- * Decode a queue payload (Kafka, AMQP) with the source's charset. In UTF-8
- * mode a payload that is not valid UTF-8 is still decoded (invalid bytes
- * become U+FFFD) but reported, so the caller can flag it.
- */
 export function decodePayload(bytes: Buffer, charset: QueueCharset): DecodedPayload {
   switch (charset) {
     case 'utf-8':
@@ -109,7 +89,6 @@ export function decodePayload(bytes: Buffer, charset: QueueCharset): DecodedPayl
   }
 }
 
-/** Error text for a charset that failed {@link isKnownEncoding}. */
 export function unknownEncodingMessage(charset: string): string {
   return `Unknown character set "${charset}". Supported: utf-8, iso-8859-1 (latin1), us-ascii, utf-16le.`;
 }

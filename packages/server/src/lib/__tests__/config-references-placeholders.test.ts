@@ -1,6 +1,3 @@
-// ===========================================
-// Configuration references: the placeholder rule
-// ===========================================
 // Configuration values are strings, so the object and bigint rows of the
 // shared rule cannot occur here.
 

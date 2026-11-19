@@ -14,7 +14,6 @@ function key(over: Partial<ApiKeyView>): ApiKeyView {
   };
 }
 
-/** A datetime-local value for `ms` in this machine's zone. */
 function local(ms: number): string {
   const d = new Date(ms);
   return new Date(ms - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);

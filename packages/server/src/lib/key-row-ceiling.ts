@@ -1,37 +1,22 @@
-// ===========================================
-// API key daily row ceiling
-// ===========================================
-// A key may read at most a set number of rows from fail-closed reads (message
-// searches, details, attachments, exports, sends) in a UTC day (D-313, RBAC
-// plan section 7). The count lives in memory and is rebuilt per key and day
-// from the audit log, where every such read by a key records its rows, so a
-// restart neither resets it nor loses it. A leaked key with messages:read can
-// then take at most a day's ceiling.
-//
-// At 80% of the ceiling the key's owner is warned once a day (#301): the
-// caller claims the warning, writes it, and releases the claim if the write
-// failed, so the next read tries again. Whether today's warning was already
-// written is read back with the count, so a restart does not warn twice.
-//
-// One server process holds the count: a second process would rebuild its own
-// from the audit log once a day and then count apart (the plan runs one).
+// An API key's daily row ceiling (D-313) and 80% warning (#301), per UTC day.
+// Counts live in memory, rebuilt per key and day from the audit log, so a
+// restart neither resets the count nor warns twice. One server process holds
+// the count: a second would rebuild its own and then count apart.
 
-/** The rows a key may read in a day, unless API_KEY_DAILY_ROWS sets another. */
+/** API_KEY_DAILY_ROWS overrides it. */
 export const DEFAULT_KEY_DAILY_ROWS = 5000;
 
-/** The share of the ceiling at which a key's day is warned about. */
 export const KEY_ROWS_WARN_FRACTION = 0.8;
 
 export interface KeyRowCeilingOptions {
   readonly limit: number;
-  /** The rows the audit log already holds for this principal since `since`. */
+  /** Rows the audit log holds for the principal since `since`. */
   readonly seed: (principalId: string, since: Date) => Promise<number>;
-  /** Whether today's 80% warning for this principal was already written since `since`. */
+  /** Whether the 80% warning was already written since `since`. */
   readonly seedWarned?: (principalId: string, since: Date) => Promise<boolean>;
   readonly now?: () => Date;
 }
 
-/** A warning that is due: its day, the day's count and the ceiling it is measured against. */
 export interface RowWarning {
   readonly day: string;
   readonly used: number;
@@ -45,14 +30,13 @@ interface Day {
   warned: boolean;
 }
 
-/** Rows counted for a read, kept so they go back to the day they were taken from. */
+/** Carries its day so giveBack returns rows to the day they were counted on. */
 export interface RowTicket {
   readonly principalId: string;
   readonly day: string;
   readonly rows: number;
 }
 
-/** The UTC day of `at`, as YYYY-MM-DD. */
 function dayOf(at: Date): string {
   return at.toISOString().slice(0, 10);
 }
@@ -70,7 +54,6 @@ export class KeyRowCeiling {
     return this.options.limit;
   }
 
-  /** Today's count for `principalId`, read from the audit log the first time each day. */
   private async today(principalId: string): Promise<Day> {
     const day = dayOf(this.now());
     const current = this.days.get(principalId);
@@ -96,10 +79,8 @@ export class KeyRowCeiling {
   }
 
   /**
-   * Count `rows` against today's ceiling and return the ticket to give them
-   * back with, or null and count nothing when they would pass it. Throws when
-   * today's count cannot be read, so the read is refused rather than let
-   * through uncounted.
+   * Null counts nothing. Throws when today's count cannot be read: refuse the
+   * read rather than let it through uncounted.
    */
   async take(principalId: string, rows: number): Promise<RowTicket | null> {
     const entry = await this.today(principalId);
@@ -108,17 +89,13 @@ export class KeyRowCeiling {
     return { principalId, day: entry.day, rows };
   }
 
-  /** Give back the rows of a read that was then not sent, to the day they were counted on. */
+  /** For a read that was counted and then not sent. */
   giveBack(ticket: RowTicket): void {
     const entry = this.days.get(ticket.principalId);
     if (entry?.day === ticket.day) entry.used = Math.max(0, entry.used - ticket.rows);
   }
 
-  /**
-   * True the first time it is asked each day for `principalId`: the refusal
-   * should be recorded. Call `forgetRefusal` when that record could not be
-   * written, so the next refusal tries again.
-   */
+  /** True once a day per principal. Call `forgetRefusal` when the refusal record could not be written. */
   firstRefusalToday(principalId: string): boolean {
     const entry = this.days.get(principalId);
     if (!entry || entry.day !== dayOf(this.now()) || entry.refusalNoted) return false;
@@ -131,11 +108,7 @@ export class KeyRowCeiling {
     if (entry) entry.refusalNoted = false;
   }
 
-  /**
-   * The warning to write when today's count has reached 80% of the ceiling and
-   * none was claimed yet today, or null. Claiming marks it sent; call
-   * `releaseWarning` when the write failed.
-   */
+  /** Claiming marks the warning sent; call `releaseWarning` when the write failed. */
   claimWarning(principalId: string): RowWarning | null {
     const entry = this.days.get(principalId);
     if (!entry || entry.day !== dayOf(this.now()) || entry.warned) return null;
@@ -144,7 +117,6 @@ export class KeyRowCeiling {
     return { day: entry.day, used: entry.used, limit: this.options.limit };
   }
 
-  /** Undo a claim whose write failed, unless the day it was claimed on has passed. */
   releaseWarning(principalId: string, warning: RowWarning): void {
     const entry = this.days.get(principalId);
     if (entry?.day === warning.day) entry.warned = false;

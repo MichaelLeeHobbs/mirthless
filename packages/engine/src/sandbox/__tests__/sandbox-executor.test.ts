@@ -1,7 +1,3 @@
-// ===========================================
-// Sandbox Executor Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   VmSandboxExecutor,
@@ -12,8 +8,6 @@ import {
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy, createX12Proxy } from '../../pipeline/data-type-handler.js';
 import { Hl7Message, X12Message } from '@galvanigraph/core-util';
-
-// ----- Helpers -----
 
 function makeScript(code: string): CompiledScript {
   return { code };
@@ -27,8 +21,6 @@ function makeContext(overrides?: Partial<SandboxContext>): SandboxContext {
   const base = createSandboxContext({ field: 'value' }, 'raw HL7 data');
   return { ...base, ...overrides };
 }
-
-// ----- Tests -----
 
 let executor: VmSandboxExecutor;
 
@@ -203,15 +195,12 @@ describe('VmSandboxExecutor', () => {
       const result1 = await executor.execute(script1, makeContext(), makeOptions());
       expect(result1.ok).toBe(true);
 
-      // Fresh context should not see previous execution's map
       const result2 = await executor.execute(script2, makeContext(), makeOptions());
       expect(result2.ok).toBe(true);
       if (!result2.ok) return;
       expect(result2.value.returnValue).toBeUndefined();
     });
   });
-
-  // ----- Sandbox escape hardening (CRITICAL: no host realm reachable) -----
 
   describe('per-script time limit', () => {
     it('stops a script waiting on slow IO at its own timeout, even when the caller passes a longer-lived signal', async () => {
@@ -302,7 +291,6 @@ describe('VmSandboxExecutor', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.returnValue).toBe('undefined');
-      // And the legitimate proxy still works.
       const legit = await executor.execute(makeScript('return msg.get("PID.3");'), context, makeOptions());
       expect(legit.ok).toBe(true);
       if (!legit.ok) return;

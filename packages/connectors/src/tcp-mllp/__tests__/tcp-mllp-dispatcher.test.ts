@@ -1,7 +1,3 @@
-// ===========================================
-// TCP/MLLP Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
@@ -10,11 +6,8 @@ import { wrapMllp, MllpParser } from '../../transmission/mllp-mode.js';
 import type { ConnectorMessage } from '../../base.js';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 
-// ----- Helpers -----
-
 const DEST_PORT = 16662;
 
-/** A full HL7 acknowledgement with the given MSA-1 code. */
 function ackFrame(code: string): string {
   return `MSH|^~\\&|R|F|S|SF|20240101||ACK|1|P|2.5.1\rMSA|${code}|MSGID`;
 }
@@ -42,9 +35,6 @@ function makeMessage(overrides?: Partial<ConnectorMessage>): ConnectorMessage {
   };
 }
 
-/**
- * Create a mock TCP/MLLP server that echoes ACK for each received message.
- */
 function createMockServer(
   port: number,
   handler?: (msg: string) => string,
@@ -70,8 +60,6 @@ function createMockServer(
   };
 }
 
-// ----- Lifecycle -----
-
 let dispatcher: TcpMllpDispatcher | null = null;
 let mockServer: { server: net.Server; close: () => Promise<void> } | null = null;
 
@@ -86,8 +74,6 @@ afterEach(async () => {
     mockServer = null;
   }
 });
-
-// ----- Tests -----
 
 describe('TcpMllpDispatcher', () => {
   it('validates config on deploy', async () => {
@@ -106,7 +92,6 @@ describe('TcpMllpDispatcher', () => {
 
   it('sends message and receives response', async () => {
     mockServer = createMockServer(DEST_PORT);
-    // Wait for server to be ready
     await new Promise<void>((resolve) => {
       mockServer!.server.once('listening', resolve);
     });
@@ -170,7 +155,6 @@ describe('TcpMllpDispatcher', () => {
   });
 
   it('errors when abort signal fires during send', async () => {
-    // Start a server that never responds
     const silentServer = net.createServer(() => {
       // Accept connection but never send data
     });
@@ -184,7 +168,6 @@ describe('TcpMllpDispatcher', () => {
     await dispatcher.onStart();
 
     const controller = new AbortController();
-    // Abort after 200ms
     setTimeout(() => { controller.abort(); }, 200);
 
     const result = await dispatcher.send(makeMessage(), controller.signal);
@@ -205,7 +188,6 @@ describe('TcpMllpDispatcher', () => {
     await dispatcher.onDeploy();
     await dispatcher.onStart();
 
-    // Send two messages — should reuse connection
     await dispatcher.send(makeMessage({ messageId: 1 }), AbortSignal.timeout(5_000));
     await dispatcher.send(makeMessage({ messageId: 2 }), AbortSignal.timeout(5_000));
 
@@ -222,7 +204,6 @@ describe('TcpMllpDispatcher', () => {
     await dispatcher.onDeploy();
     await dispatcher.onStart();
 
-    // Use a connection
     await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
 
     const stopResult = await dispatcher.onStop();
@@ -317,7 +298,6 @@ describe('TcpMllpDispatcher resilience', () => {
     serverSocket!.resetAndDestroy();
     await new Promise<void>((r) => setTimeout(r, 150));
 
-    // A subsequent send must still succeed on a fresh connection.
     const second = await dispatcher.send(makeMessage({ messageId: 2 }), AbortSignal.timeout(5_000));
     expect(second.ok).toBe(true);
     expect(connectionCount).toBe(2);

@@ -1,16 +1,9 @@
-// ===========================================
-// Cross-Channel Search Service
-// ===========================================
-// Searches messages across all channels.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, gte, lte, inArray, desc, sql, type SQL } from 'drizzle-orm';
 import { db } from '../lib/db.js';
 import { messages, connectorMessages, channels } from '../db/schema/index.js';
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
-
-// ----- Types -----
 
 export interface SearchItem {
   readonly messageId: number;
@@ -38,13 +31,9 @@ export interface SearchFilters {
   readonly offset: number;
 }
 
-// ----- Service -----
-
 export class CrossChannelSearchService {
-  /** Search messages across all channels with filters. */
   static async search(filters: SearchFilters, scope: ChannelScope = ALL_CHANNELS): Promise<Result<SearchResult>> {
     return tryCatch(async () => {
-      // Build WHERE conditions
       const conditions: SQL[] = [];
       // Only channels inside the caller's scope (D-310); no filter for every channel.
       const inScope = channelIdIn(messages.channelId, scope);
@@ -104,7 +93,6 @@ export class CrossChannelSearchService {
         order by (cm.status = ${displayStatus}) desc, (cm.status = 'ERROR') desc, cm.meta_data_id asc limit 1
       )`;
 
-      // Data
       const dataQuery = db
         .select({
           messageId: messages.id,

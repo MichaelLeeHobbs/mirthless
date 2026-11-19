@@ -1,17 +1,9 @@
-// ===========================================
-// Global Map Service
-// ===========================================
-// Business logic for global map key-value store CRUD.
-// All methods return Result<T> using tryCatch from stderr-lib.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { globalMapEntries } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface GlobalMapEntry {
   readonly key: string;
@@ -33,10 +25,7 @@ function notify(change: GlobalMapChange): void {
   if (changeListener) changeListener(change);
 }
 
-// ----- Service -----
-
 export class GlobalMapService {
-  /** Register the engine's listener for edits made through the API or a restore. */
   static onChange(listener: (change: GlobalMapChange) => void): void {
     changeListener = listener;
   }
@@ -55,14 +44,13 @@ export class GlobalMapService {
     });
   }
 
-  /** Remove a key a script deleted. A key that is already gone is not an error. */
+  /** For a key a script deleted; one already gone is not an error. */
   static async persistRemoval(key: string): Promise<Result<void>> {
     return tryCatch(async () => {
       await db.delete(globalMapEntries).where(eq(globalMapEntries.key, key));
     });
   }
 
-  /** List all global map entries sorted by key. */
   static async list(): Promise<Result<readonly GlobalMapEntry[]>> {
     return tryCatch(async () => {
       const rows = await db
@@ -79,7 +67,6 @@ export class GlobalMapService {
     });
   }
 
-  /** Get a single entry by key. */
   static async getByKey(key: string): Promise<Result<GlobalMapEntry>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -100,10 +87,7 @@ export class GlobalMapService {
     });
   }
 
-  /**
-   * Create or update an entry by key. The value is plain text unless `isJson`
-   * is set, which only a backup restore does.
-   */
+  /** Only a backup restore sets `isJson`. */
   static async upsert(
     key: string,
     value: string,
@@ -139,7 +123,6 @@ export class GlobalMapService {
     });
   }
 
-  /** Delete a single entry by key. */
   static async delete(key: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -166,7 +149,6 @@ export class GlobalMapService {
     });
   }
 
-  /** Clear all entries. */
   static async clear(context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       await db.delete(globalMapEntries);

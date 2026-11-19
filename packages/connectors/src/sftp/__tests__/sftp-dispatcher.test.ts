@@ -1,14 +1,8 @@
-// ===========================================
-// SFTP Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import { SftpDispatcher, type SftpDispatcherConfig } from '../sftp-dispatcher.js';
 import type { SftpClient, SftpClientFactory } from '../sftp-client.js';
 import { RemoteState, makeMockSftpClient, type MockFailures } from '../../__fixtures__/mock-sftp-client.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<SftpDispatcherConfig>): SftpDispatcherConfig {
   return {
@@ -46,8 +40,6 @@ function factoryFor(state: RemoteState, failures?: MockFailures): SftpClientFact
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- onDeploy -----
 
 describe('onDeploy', () => {
   it('refuses a file name template with a placeholder it cannot fill', async () => {
@@ -100,8 +92,6 @@ describe('onDeploy', () => {
   });
 });
 
-// ----- send: happy path -----
-
 describe('send', () => {
   it('errors when not started', async () => {
     const d = new SftpDispatcher(makeConfig(), factoryFor(new RemoteState()));
@@ -126,8 +116,8 @@ describe('send', () => {
     expect(result.ok).toBe(true);
     expect(result.value!.content).toBe('/outbound/99.dat');
     expect(state.files.get('99.dat')?.content).toBe('BODY');
-    expect(state.mkdirs).toContain('/outbound'); // ensured the directory
-    expect(state.endCount).toBe(1); // connection torn down
+    expect(state.mkdirs).toContain('/outbound');
+    expect(state.endCount).toBe(1);
   });
 
   it('substitutes ${timestamp} in the filename template', async () => {
@@ -171,17 +161,14 @@ describe('send', () => {
 
     const result = await d.send(makeMessage(), makeSignal());
     expect(result.ok).toBe(false);
-    expect(state.endCount).toBe(1); // still torn down in finally
+    expect(state.endCount).toBe(1);
   });
 });
-
-// ----- send: timeout -----
 
 describe('send timeout', () => {
   it('fails with a timeout when the remote write hangs', async () => {
     vi.useFakeTimers();
     try {
-      // A client whose put never resolves simulates a hung server.
       const hangingClient: SftpClient = {
         ...makeMockSftpClient(new RemoteState()),
         put: () => new Promise<void>(() => { /* never resolves */ }),

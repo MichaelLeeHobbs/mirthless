@@ -1,21 +1,12 @@
-// ===========================================
-// Settings API Hooks
-// ===========================================
-// TanStack Query hooks for system settings CRUD.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UpsertSettingInput, BulkUpsertSettingsInput } from '@galvanigraph/core-models';
 import { api, type SettingDetail } from '../api/client.js';
-
-// ----- Query Keys -----
 
 const SETTING_KEYS = {
   all: ['settings'] as const,
   list: (category?: string) => [...SETTING_KEYS.all, 'list', { category }] as const,
   detail: (key: string) => [...SETTING_KEYS.all, 'detail', key] as const,
 } as const;
-
-// ----- Query Hooks -----
 
 export function useSettings(
   category?: string,
@@ -44,8 +35,6 @@ export function useSetting(
     enabled: key !== null,
   });
 }
-
-// ----- Mutation Hooks -----
 
 export function useUpsertSetting(): ReturnType<typeof useMutation<SettingDetail, Error, UpsertSettingInput>> {
   const queryClient = useQueryClient();

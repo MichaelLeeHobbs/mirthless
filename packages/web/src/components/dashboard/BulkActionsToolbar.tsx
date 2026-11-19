@@ -1,8 +1,3 @@
-// ===========================================
-// Bulk Actions Toolbar
-// ===========================================
-// Floating toolbar for bulk channel operations.
-
 import type { ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -27,7 +22,6 @@ export function BulkActionsToolbar({ selectedIds, onClear }: BulkActionsToolbarP
   const { has } = usePermissions();
   const count = selectedIds.size;
 
-  // Bulk deploy/start/stop/undeploy all require channels:deploy.
   if (count === 0 || !has(PERMISSION.CHANNELS_DEPLOY)) return null;
 
   const handleBulk = (action: 'deploy' | 'undeploy' | 'start' | 'stop'): void => {

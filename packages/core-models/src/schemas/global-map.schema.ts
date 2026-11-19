@@ -1,8 +1,3 @@
-// ===========================================
-// Global Map Schemas
-// ===========================================
-// Zod validation schemas for global map key-value store.
-
 import { z } from 'zod/v4';
 
 export const globalMapKeyParamSchema = z.object({

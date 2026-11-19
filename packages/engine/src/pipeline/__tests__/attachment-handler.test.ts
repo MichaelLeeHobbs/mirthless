@@ -1,21 +1,13 @@
-// ===========================================
-// Attachment Handler Tests
-// ===========================================
-
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AttachmentHandler, ATTACHMENT_MODE, type AttachmentConfig } from '../attachment-handler.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
 import { compileScript } from '../../sandbox/script-compiler.js';
-
-// ----- Helpers -----
 
 async function compile(code: string): Promise<{ code: string }> {
   const result = await compileScript(code, { sourcefile: 'attachment-test.js' });
   if (!result.ok) throw new Error('Compile failed');
   return result.value;
 }
-
-// ----- Tests -----
 
 describe('AttachmentHandler', () => {
   describe('NONE mode', () => {
@@ -132,7 +124,6 @@ describe('AttachmentHandler', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // With global regex on "ATT", both matches should produce attachments
       if (result.value.attachments.length >= 2) {
         expect(result.value.attachments[0]!.id).not.toBe(result.value.attachments[1]!.id);
       }

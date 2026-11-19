@@ -1,13 +1,7 @@
-// ===========================================
-// Alert Manager Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertManager } from '../alert-manager.js';
 import type { LoadedAlert, ChannelErrorEvent } from '../alert-evaluator.js';
 import type { ActionDispatcherDeps } from '../action-dispatcher.js';
-
-// ----- Helpers -----
 
 function makeEvent(overrides?: Partial<ChannelErrorEvent>): ChannelErrorEvent {
   return {
@@ -41,8 +35,6 @@ function makeDeps(): ActionDispatcherDeps {
   };
 }
 
-// ----- Setup -----
-
 let manager: AlertManager;
 let deps: ActionDispatcherDeps;
 
@@ -51,8 +43,6 @@ beforeEach(() => {
   deps = makeDeps();
   manager = new AlertManager(deps);
 });
-
-// ----- loadAlerts / getAlerts -----
 
 describe('AlertManager.loadAlerts', () => {
   it('loads alerts', () => {
@@ -68,8 +58,6 @@ describe('AlertManager.loadAlerts', () => {
     expect(manager.getAlerts()[0]?.id).toBe('a2');
   });
 });
-
-// ----- handleEvent -----
 
 describe('AlertManager.handleEvent', () => {
   it('dispatches matching alert actions', async () => {
@@ -97,21 +85,16 @@ describe('AlertManager.handleEvent', () => {
   });
 });
 
-// ----- Throttling -----
-
 describe('AlertManager throttling', () => {
   it('throttles re-alerts within interval', async () => {
     manager.loadAlerts([makeAlert({ reAlertIntervalMs: 5000 })]);
 
-    // First alert at t=1000
     await manager.handleEvent(makeEvent({ timestamp: 1000 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(1);
 
-    // Second alert at t=2000 (within 5000ms interval) — should be throttled
     await manager.handleEvent(makeEvent({ timestamp: 2000 }));
-    expect(deps.logger.warn).toHaveBeenCalledTimes(1); // Still 1
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
 
-    // Third alert at t=7000 (after 5000ms interval) — should fire
     await manager.handleEvent(makeEvent({ timestamp: 7000 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
   });
@@ -152,15 +135,13 @@ describe('AlertManager throttling', () => {
   });
 });
 
-// ----- Max alerts -----
-
 describe('AlertManager max alerts', () => {
   it('stops after maxAlerts is reached', async () => {
     manager.loadAlerts([makeAlert({ maxAlerts: 2, reAlertIntervalMs: 0 })]);
 
     await manager.handleEvent(makeEvent({ timestamp: 1 }));
     await manager.handleEvent(makeEvent({ timestamp: 2 }));
-    await manager.handleEvent(makeEvent({ timestamp: 3 })); // Should be blocked
+    await manager.handleEvent(makeEvent({ timestamp: 3 }));
 
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
   });
@@ -176,8 +157,6 @@ describe('AlertManager max alerts', () => {
   });
 });
 
-// ----- resetAlert -----
-
 describe('AlertManager.resetAlert', () => {
   it('resets throttle state for a specific alert', async () => {
     manager.loadAlerts([makeAlert({ id: 'a1', maxAlerts: 1 })]);
@@ -185,20 +164,15 @@ describe('AlertManager.resetAlert', () => {
     await manager.handleEvent(makeEvent({ timestamp: 1 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(1);
 
-    // This would be blocked by maxAlerts
     await manager.handleEvent(makeEvent({ timestamp: 2 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(1);
 
-    // Reset the alert
     manager.resetAlert('a1');
 
-    // Now it should fire again
     await manager.handleEvent(makeEvent({ timestamp: 3 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
   });
 });
-
-// ----- clearThrottleState -----
 
 describe('AlertManager.clearThrottleState', () => {
   it('clears all throttle state', async () => {
@@ -210,19 +184,15 @@ describe('AlertManager.clearThrottleState', () => {
     await manager.handleEvent(makeEvent({ timestamp: 1 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
 
-    // Both blocked by maxAlerts
     await manager.handleEvent(makeEvent({ timestamp: 2 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
 
     manager.clearThrottleState();
 
-    // Both should fire again
     await manager.handleEvent(makeEvent({ timestamp: 3 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(4);
   });
 });
-
-// ----- checkSilence (NO_MESSAGES) -----
 
 describe('AlertManager.checkSilence', () => {
   const MIN = 60_000;

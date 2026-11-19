@@ -1,11 +1,5 @@
-// ===========================================
-// Channel Revision API Hooks
-// ===========================================
-
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface RevisionSummary {
   readonly id: string;
@@ -20,15 +14,11 @@ export interface RevisionDetail extends RevisionSummary {
   readonly snapshot: Record<string, unknown>;
 }
 
-// ----- Query Keys -----
-
 const REV_KEYS = {
   all: ['channel-revisions'] as const,
   list: (channelId: string) => [...REV_KEYS.all, 'list', channelId] as const,
   detail: (channelId: string, rev: number) => [...REV_KEYS.all, 'detail', channelId, rev] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useChannelRevisions(channelId: string): ReturnType<typeof useQuery<readonly RevisionSummary[]>> {
   return useQuery({

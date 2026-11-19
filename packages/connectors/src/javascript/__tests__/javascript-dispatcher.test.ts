@@ -1,13 +1,7 @@
-// ===========================================
-// JavaScript Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { stderr } from '@galvanigraph/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import { JavaScriptDispatcher, type JavaScriptDispatcherConfig, type DestScriptRunner } from '../javascript-dispatcher.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<JavaScriptDispatcherConfig>): JavaScriptDispatcherConfig {
   return {
@@ -44,13 +38,9 @@ function makeSignal(aborted = false): AbortSignal {
   return new AbortController().signal;
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- onDeploy -----
 
 describe('JavaScriptDispatcher.onDeploy', () => {
   it('succeeds with valid config', async () => {
@@ -65,8 +55,6 @@ describe('JavaScriptDispatcher.onDeploy', () => {
     expect(result.ok).toBe(false);
   });
 });
-
-// ----- Lifecycle -----
 
 describe('JavaScriptDispatcher lifecycle', () => {
   it('starts successfully', async () => {
@@ -95,8 +83,6 @@ describe('JavaScriptDispatcher lifecycle', () => {
     expect(result.ok).toBe(true);
   });
 });
-
-// ----- send -----
 
 describe('JavaScriptDispatcher.send', () => {
   it('returns SENT with script return value as content', async () => {

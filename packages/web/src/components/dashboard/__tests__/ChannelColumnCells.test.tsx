@@ -27,7 +27,7 @@ afterEach(() => { cleanup(); });
 describe('ChannelBodyCells', () => {
   it('renders only the visible columns', () => {
     renderCells(['source', 'received']);
-    expect(screen.getByText('TCP/MLLP')).toBeTruthy(); // source label
+    expect(screen.getByText('TCP/MLLP')).toBeTruthy();
     expect(screen.getByText('5')).toBeTruthy();          // received
     expect(screen.queryByText('8')).toBeNull();          // rev hidden
   });
@@ -40,12 +40,9 @@ describe('ChannelBodyCells', () => {
 
   it('renders the errored count as a link when > 0', () => {
     renderCells(['errored']);
-    // Link with an accessible label pointing at the errored messages view.
     expect(screen.getByLabelText(/errored messages for My Channel/)).toBeTruthy();
   });
 });
-
-// ----- The "updated" column -----
 
 const ORIGINAL_TZ = process.env['TZ'];
 const NOW = '2026-06-15T14:05:09.000Z';

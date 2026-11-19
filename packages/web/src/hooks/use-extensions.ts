@@ -1,11 +1,5 @@
-// ===========================================
-// Extension API Hooks
-// ===========================================
-
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface ExtensionInfo {
   readonly id: string;
@@ -17,15 +11,11 @@ export interface ExtensionInfo {
   readonly capabilities: readonly string[];
 }
 
-// ----- Query Keys -----
-
 const EXT_KEYS = {
   all: ['extensions'] as const,
   list: () => [...EXT_KEYS.all, 'list'] as const,
   detail: (id: string) => [...EXT_KEYS.all, 'detail', id] as const,
 } as const;
-
-// ----- Hooks -----
 
 export function useExtensions(): ReturnType<typeof useQuery<readonly ExtensionInfo[]>> {
   return useQuery({

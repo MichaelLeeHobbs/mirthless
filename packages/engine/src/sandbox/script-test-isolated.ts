@@ -1,76 +1,55 @@
-// ===========================================
-// Isolated script test run
-// ===========================================
-// A test run executes user code on demand (the editor's Run button). In the
-// main thread an endless loop would stop every listener, queue and API request
-// until the timeout, and an allocation loop would crash the process: node:vm has
-// no memory limit. So the run happens in a worker thread with a heap limit, and
-// the main thread terminates it when its time is up. Reads the script makes are
-// answered on the main thread by the caller's readers.
+// In the main thread an endless loop would stop every listener, queue and API request until
+// the timeout, and an allocation loop would crash the process (node:vm has no memory limit),
+// so a test run happens in a worker with a heap limit that is terminated when its time is up.
 
 import { Worker } from 'node:worker_threads';
 import type { ScriptTestInput, ScriptTestReaders, ScriptTestResult } from './script-test-run.js';
 import { workerEntry } from './worker-entry.js';
 
-/** The test-run input that crosses into the worker: everything but the readers. */
 export type IsolatedTestInput = Omit<ScriptTestInput, 'readers' | 'timeoutMs' | 'onCompiled'>;
 
 export interface IsolationLimits {
-  /**
-   * Wall-clock time the script may run, as the pipeline gives a script. The
-   * worker's start-up is not counted (it has WORKER_START_LIMIT_MS of its own).
-   */
+  /** The worker's start-up is not counted: it has WORKER_START_LIMIT_MS of its own. */
   readonly timeoutMs: number;
-  /** Heap limit for the worker. */
   readonly maxOldGenerationSizeMb: number;
   /**
-   * How much the process's resident memory may grow while the script runs.
-   * The heap limit does not count ArrayBuffer memory (typed arrays), which a
-   * script can allocate without bound, so the main thread watches the process
-   * and terminates the worker past this.
+   * Growth of the process's resident memory. The heap limit does not count ArrayBuffer memory,
+   * which a script can allocate without bound, so the main thread terminates the worker past this.
    */
   readonly maxMemoryGrowthMb: number;
 }
 
-/** Most reads (getResource, collection find) one test run may make; each is a database query. */
+/** Each read (getResource, collection find) is a database query. */
 export const MAX_TEST_READS = 100;
-/** How often the main thread samples the process's memory during a run. */
 const MEMORY_SAMPLE_MS = 20;
 /**
- * How long a worker may take to start (load its modules, parse the sample and
- * compile the script) before the run is given up. Start-up is the engine's cost,
- * not the script's, and on a busy machine it can take seconds (esbuild starts a
- * process of its own), so it is not charged to the script's time limit (#188).
+ * Start-up (modules, sample parse, compile) is the engine's cost, not the script's, and on a
+ * busy machine takes seconds (esbuild starts a process of its own), so it is not charged to
+ * the script's limit (#188).
  */
 export const WORKER_START_LIMIT_MS = 30_000;
 /**
- * How long past its two limits a started worker is terminated: the script's,
- * and collecting its result, which has a limit of the same length (D-323). The
- * sandbox's own limits stop a script first; this covers building the sandbox's
- * globals, which is not counted against either, and a script the sandbox fails
- * to stop.
+ * Past the script's limit and the result-collecting limit of the same length (D-323). Covers
+ * building the sandbox's globals, counted against neither, and a script the sandbox fails to stop.
  */
 const STOP_GRACE_MS = 5_000;
 
-/** What the worker starts with. */
 export interface WorkerStart {
   readonly input: ScriptTestInput;
   readonly readers: ReadonlyArray<'getResource' | 'collectionFind'>;
 }
 
-/** Worker to main thread. `started`: the script is compiled and about to run. */
+/** `started`: the script is compiled and about to run. */
 export type WorkerRequest =
   | { readonly type: 'started' }
   | { readonly type: 'read'; readonly id: number; readonly call: 'getResource' | 'collectionFind'; readonly args: readonly unknown[] }
   | { readonly type: 'done'; readonly result: ScriptTestResult }
   | { readonly type: 'failed'; readonly error: string };
 
-/** Main thread to worker. */
 export type WorkerReply =
   | { readonly type: 'read-result'; readonly id: number; readonly ok: true; readonly value: unknown }
   | { readonly type: 'read-result'; readonly id: number; readonly ok: false; readonly error: string };
 
-/** The error a read past the cap gets, in the worker and on the main thread alike. */
 export function tooManyReads(): string {
   return `A test run may read at most ${String(MAX_TEST_READS)} times (getResource, collection find).`;
 }
@@ -90,11 +69,7 @@ async function answer(readers: ScriptTestReaders, request: Extract<WorkerRequest
   }
 }
 
-/**
- * Run a test run in a worker thread with a heap limit and a hard time limit.
- * Never rejects: a timeout, an out-of-memory crash or any failure of the run
- * itself comes back as an `error` outcome.
- */
+/** Never rejects: a timeout, an out-of-memory crash or any other failure is an `error` outcome. */
 export function runScriptTestIsolated(
   input: IsolatedTestInput, readers: ScriptTestReaders, limits: IsolationLimits,
 ): Promise<ScriptTestResult> {
@@ -111,8 +86,7 @@ export function runScriptTestIsolated(
     const worker = new Worker(entry.url, {
       workerData: start,
       execArgv: entry.execArgv,
-      // The worker runs user code: it gets none of the server's environment
-      // (database URL, JWT secret).
+      // Runs user code: none of the server's environment (database URL, JWT secret).
       env: entry.env,
       resourceLimits: { maxOldGenerationSizeMb: limits.maxOldGenerationSizeMb, maxYoungGenerationSizeMb: 16 },
     });

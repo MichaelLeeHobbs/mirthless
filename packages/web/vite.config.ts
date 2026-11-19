@@ -9,16 +9,12 @@ const pkg = JSON.parse(
 ) as { version: string };
 
 export default defineConfig({
-  // The websocket proxy's teardown errors from closed tabs are dropped from the dev
-  // server's and `vite preview`'s log, and nothing else (#167).
   plugins: [react(), quietWsProxyResetsPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
   build: {
-    // Route-level React.lazy handles page splitting; this keeps the big, stable
-    // vendor libraries in their own long-cacheable chunks so the app shell and
-    // per-page chunks stay lean.
+    // Big, stable vendor libraries get their own long-cacheable chunks.
     rolldownOptions: {
       output: {
         codeSplitting: {

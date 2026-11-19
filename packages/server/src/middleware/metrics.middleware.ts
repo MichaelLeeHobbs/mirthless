@@ -1,9 +1,3 @@
-// ===========================================
-// Metrics Middleware
-// ===========================================
-// Records HTTP request duration and count for Prometheus.
-// Normalizes paths to prevent label cardinality explosion.
-
 import type { Request, Response, NextFunction } from 'express';
 import { httpRequestDuration, httpRequestTotal } from '../lib/metrics.js';
 
@@ -11,12 +5,11 @@ const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 
 const SKIP_PATHS = new Set(['/health', '/health/live', '/health/ready', '/metrics']);
 
-/** Normalize path by replacing UUIDs with :id to prevent cardinality explosion */
+/** UUIDs become :id to keep metric label cardinality bounded. */
 export function normalizePath(path: string): string {
   return path.replace(UUID_REGEX, ':id');
 }
 
-/** Express middleware that records HTTP request duration and count */
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const path = req.path;
   if (SKIP_PATHS.has(path)) {

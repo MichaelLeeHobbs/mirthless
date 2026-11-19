@@ -1,6 +1,3 @@
-// ===========================================
-// Job Queue Start/Stop Tests
-// ===========================================
 // A pg-boss that fails to start is stopped, and one whose start hangs is
 // stopped at shutdown, so neither leaves its pool and timers behind (#259).
 
@@ -12,7 +9,6 @@ interface FakeBoss {
   readonly stop: ReturnType<typeof vi.fn>;
 }
 
-/** What the next PgBoss's start() and stop() do. */
 interface Behaviour {
   start: () => Promise<void>;
   stop: () => Promise<void>;
@@ -38,7 +34,6 @@ vi.mock('../logger.js', () => ({ default: { info: vi.fn(), warn: mockWarn, error
 
 const { startQueue, stopQueue, getBoss } = await import('../queue.js');
 
-/** The FakeBoss made by the most recent `new PgBoss()`. */
 function latest(): FakeBoss {
   const instance = instances[instances.length - 1];
   if (!instance) throw new Error('no PgBoss was created');

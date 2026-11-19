@@ -1,8 +1,3 @@
-// ===========================================
-// HL7 v2.5 Code Tables
-// ===========================================
-// Lookup tables for generating realistic HL7 messages.
-
 export const MESSAGE_TYPES = {
   ADT_A01: { type: 'ADT', trigger: 'A01', segments: ['MSH', 'EVN', 'PID', 'PV1'] },
   ORM_O01: { type: 'ORM', trigger: 'O01', segments: ['MSH', 'PID', 'PV1', 'ORC', 'OBR'] },

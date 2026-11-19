@@ -1,12 +1,3 @@
-// ===========================================
-// Access Tab
-// ===========================================
-// Who can access this channel, now or as of a past time rebuilt from the
-// audit log (D-310, plan section 8), and how: people
-// whose assignments cover it, with their permissions and the role and scope
-// that give them; then the people who reach every channel through code they
-// can change or deploy (not recorded), or through data every channel shares.
-
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
@@ -38,7 +29,7 @@ interface AccessTabProps {
   readonly channelName: string;
 }
 
-/** `asOf`: an ISO time to rebuild the answer for, or undefined for now. */
+/** `asOf`: an ISO time, or undefined for now. */
 function useChannelAccess(channelId: string, asOf: string | undefined): ReturnType<typeof useQuery<ChannelAccessView>> {
   return useQuery({
     queryKey: ['channel-access', channelId, asOf ?? 'now'],
@@ -62,7 +53,6 @@ function OtherWays({ title, note, people }: { readonly title: string; readonly n
   );
 }
 
-/** The As of field: blank for now, or a local date and time. */
 function AsOfField({ value, onChange }: { readonly value: string; readonly onChange: (value: string) => void }): ReactNode {
   return (
     <Stack direction="row" sx={{ alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>

@@ -1,7 +1,3 @@
-// ===========================================
-// JAVASCRIPT Connector Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   javascriptSourcePropertiesSchema,

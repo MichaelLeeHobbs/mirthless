@@ -1,8 +1,4 @@
-// ===========================================
-// Navigation Items
-// ===========================================
-// The sidebar's pages, grouped by section. The command palette reads the same
-// list, so a page added here shows up in both places.
+// The command palette reads this list too.
 
 import type { ReactNode } from 'react';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -30,7 +26,6 @@ export interface NavItem {
   readonly label: string;
   readonly path: string;
   readonly icon: ReactNode;
-  /** If set, the item is shown only when the user holds one of these permissions. */
   readonly anyOf?: readonly PermissionString[];
 }
 
@@ -39,7 +34,6 @@ export interface NavSection {
   readonly items: readonly NavItem[];
 }
 
-/** Sidebar sections in display order. */
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
     heading: 'Overview',

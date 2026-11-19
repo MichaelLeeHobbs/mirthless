@@ -1,6 +1,4 @@
 // Usage: node docs/research/voice-of-user/score.mjs docs/research/voice-of-user/data [--check|--json]
-// Scores each theme (clusters.mjs) from its entries and prints a ranking, a coverage check (every entry in exactly one theme), or JSON.
-// Score = 4 x research streams that found it + 2 x log2(1 + sources) + log2(1 + votes/stars) + engines named (max 6).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CLUSTERS, AREAS } from './clusters.mjs';

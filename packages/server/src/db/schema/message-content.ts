@@ -1,7 +1,3 @@
-// ===========================================
-// Message Content Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, boolean, integer, bigint, primaryKey } from 'drizzle-orm/pg-core';
 
 export const CONTENT_TYPE = {

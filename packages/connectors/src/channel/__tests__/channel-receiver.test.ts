@@ -1,14 +1,8 @@
-// ===========================================
-// Channel Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import type { Result } from '@galvanigraph/core-util';
 import { ChannelReceiver, type ChannelReceiverConfig } from '../channel-receiver.js';
 import { getChannelDispatcher, clearChannelRegistry, hasChannel } from '../channel-registry.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<ChannelReceiverConfig>): ChannelReceiverConfig {
   return {
@@ -27,8 +21,6 @@ function makeDispatcher(
   });
 }
 
-// ----- Lifecycle -----
-
 let receiver: ChannelReceiver | null = null;
 
 beforeEach(() => {
@@ -44,8 +36,6 @@ afterEach(async () => {
   clearChannelRegistry();
 });
 
-// ----- onDeploy -----
-
 describe('ChannelReceiver.onDeploy', () => {
   it('succeeds with valid config', async () => {
     receiver = new ChannelReceiver(makeConfig());
@@ -59,8 +49,6 @@ describe('ChannelReceiver.onDeploy', () => {
     expect(result.ok).toBe(false);
   });
 });
-
-// ----- onStart -----
 
 describe('ChannelReceiver.onStart', () => {
   it('registers channel in the registry on start', async () => {
@@ -101,8 +89,6 @@ describe('ChannelReceiver.onStart', () => {
   });
 });
 
-// ----- onStop -----
-
 describe('ChannelReceiver.onStop', () => {
   it('unregisters channel from registry', async () => {
     receiver = new ChannelReceiver(makeConfig({ channelId: 'ch-stop' }));
@@ -116,8 +102,6 @@ describe('ChannelReceiver.onStop', () => {
   });
 });
 
-// ----- onHalt -----
-
 describe('ChannelReceiver.onHalt', () => {
   it('unregisters channel from registry on halt', async () => {
     receiver = new ChannelReceiver(makeConfig({ channelId: 'ch-halt' }));
@@ -129,8 +113,6 @@ describe('ChannelReceiver.onHalt', () => {
     receiver = null; // Already halted
   });
 });
-
-// ----- onUndeploy -----
 
 describe('ChannelReceiver.onUndeploy', () => {
   it('unregisters channel and clears dispatcher', async () => {
@@ -145,8 +127,6 @@ describe('ChannelReceiver.onUndeploy', () => {
     receiver = null;
   });
 });
-
-// ----- Multiple channels -----
 
 describe('ChannelReceiver multiple instances', () => {
   it('can register multiple channels simultaneously', async () => {

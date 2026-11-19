@@ -1,10 +1,6 @@
-// ===========================================
-// Assignments Table Schema
-// ===========================================
-// An assignment gives a user a role over a scope (D-310): every channel, or
-// the channels in a set of groups. An expired assignment counts for nothing:
-// the resolver filters on expires_at, so an expiry takes effect with no
-// background job. Only services/grant.service.ts writes these tables.
+// An assignment gives a user a role over a scope (D-310). Expiry needs no
+// background job: the resolver filters on expires_at. Only
+// services/grant.service.ts writes these tables.
 
 import { pgTable, uuid, text, timestamp, boolean, index, primaryKey } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
@@ -30,11 +26,7 @@ export const assignments = pgTable('assignments', {
   index('assignments_role_idx').on(table.roleId),
 ]);
 
-/**
- * The channel groups a scoped assignment covers. A group in use cannot be
- * deleted (restrict): plan section 2, "deleting a group is refused while any
- * assignment uses it".
- */
+/** Restrict on purpose: deleting a group is refused while any assignment uses it. */
 export const assignmentGroups = pgTable('assignment_groups', {
   assignmentId: uuid('assignment_id')
     .notNull()

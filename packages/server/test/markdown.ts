@@ -1,19 +1,11 @@
-// ===========================================
-// Markdown helpers for the docs guard tests
-// ===========================================
-// The docs guards in src/__tests__/docs/ read user docs and compare them with
-// the code. This file parses just enough Markdown for that: headings and pipe
-// tables, skipping fenced code blocks. It lives under test/ so it is neither
-// built nor counted as source coverage.
+// Lives under test/ so it is neither built nor counted as source coverage.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Repository root (packages/server/test -> repo). */
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
-/** Read a file by its path from the repository root. */
 export function readRepoFile(relativePath: string): string {
   return readFileSync(resolve(REPO_ROOT, relativePath), 'utf8');
 }
@@ -21,20 +13,19 @@ export function readRepoFile(relativePath: string): string {
 export interface Heading {
   readonly level: number;
   readonly text: string;
-  /** 1-based line number. */
+  /** 1-based. */
   readonly line: number;
 }
 
 export interface Table {
   readonly header: readonly string[];
   readonly rows: readonly (readonly string[])[];
-  /** 1-based line number of the header row. */
+  /** 1-based, of the header row. */
   readonly line: number;
-  /** The nearest heading above the table, or null. */
+  /** The nearest heading above the table. */
   readonly under: Heading | null;
 }
 
-/** Lines outside fenced code blocks, with their 1-based numbers. */
 function proseLines(markdown: string): ReadonlyArray<{ readonly text: string; readonly line: number }> {
   const out: Array<{ text: string; line: number }> = [];
   let inFence = false;
@@ -48,7 +39,6 @@ function proseLines(markdown: string): ReadonlyArray<{ readonly text: string; re
   return out;
 }
 
-/** ATX headings (`#` to `######`) outside code fences. */
 export function headings(markdown: string): readonly Heading[] {
   const out: Heading[] = [];
   for (const { text, line } of proseLines(markdown)) {
@@ -58,7 +48,6 @@ export function headings(markdown: string): readonly Heading[] {
   return out;
 }
 
-/** Split a table row into trimmed cells, honouring `\|` escapes. */
 function cells(row: string): string[] {
   const inner = row.trim().replace(/^\|/, '').replace(/\|$/, '');
   const parts: string[] = [];
@@ -82,10 +71,9 @@ function cells(row: string): string[] {
 const DIVIDER = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /**
- * Pipe tables outside code fences, written with a leading `|` on every row (the
- * house style). Throws when a row has a different number of cells from its
- * header, so a shifted or missing column fails loudly instead of passing; GFM
- * would render a short row, but these docs never need one.
+ * Finds only tables with a leading `|` on every row (the house style). Throws on
+ * a row whose cell count differs from its header, which GFM would render, so a
+ * shifted or missing column fails loudly.
  */
 export function tables(markdown: string): readonly Table[] {
   const lines = proseLines(markdown);
@@ -139,11 +127,6 @@ export function headingAnchors(markdown: string): ReadonlySet<string> {
   return anchors;
 }
 
-/**
- * Relative links that lead nowhere: a file that doesn't exist, or a `#fragment`
- * that matches no heading in the target (or in this doc, for `#fragment` alone).
- * Links with a scheme (https:, mailto:) are not checked.
- */
 export function brokenRelativeLinks(relativeDocPath: string): readonly string[] {
   const markdown = readRepoFile(relativeDocPath);
   const docDir = dirname(resolve(REPO_ROOT, relativeDocPath));

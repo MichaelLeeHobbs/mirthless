@@ -1,25 +1,16 @@
-// ===========================================
-// Error Handling Middleware
-// ===========================================
-// Global error handler for Express.
-
 import type { NextFunction, Request, Response } from 'express';
 import { errorInfo } from '@galvanigraph/core-util';
 import logger from '../lib/logger.js';
 import { config } from '../config/index.js';
 
-/** What the caller is told about a body the parser refused. Never the parser's own text: it quotes the body. */
+/** Never the parser's own text: it quotes the body. */
 const CLIENT_ERRORS: Readonly<Record<number, { readonly code: string; readonly message: string }>> = {
   413: { code: 'PAYLOAD_TOO_LARGE', message: 'The request body is too large' },
   415: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'The request body encoding is not supported' },
 };
 const BAD_REQUEST = { code: 'BAD_REQUEST', message: 'The request body could not be read' } as const;
 
-/**
- * The 4xx status of an error that is the caller's fault, such as a body the
- * JSON parser refused. These are http-errors with `expose` set; anything else
- * is a server fault.
- */
+/** A caller's fault is an http-errors 4xx with `expose` set; anything else is a server fault. */
 function clientError(err: unknown): { readonly status: number; readonly type: string | undefined } | undefined {
   // A thrown value's getters or Proxy traps may throw (#238): such a value is a server fault.
   try {

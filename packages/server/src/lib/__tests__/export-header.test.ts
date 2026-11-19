@@ -45,7 +45,6 @@ describe('csvHeaderLines', () => {
 
   it('keeps each line one CSV field, so a reason cannot add a column, open a quote or start a formula', () => {
     const lines = csvHeaderLines(exportHeader(req, 1, 'Audit, =HYPERLINK("http://x","click")', NOW)).split('\r\n');
-    // One quoted field: the comma stays inside it and the quotes are doubled.
     expect(lines[5]).toBe('"# reason: Audit, =HYPERLINK(""http://x"",""click"")"');
     const openQuote = csvHeaderLines(exportHeader(req, 1, 'a, "b', NOW)).split('\r\n')[5];
     expect(openQuote).toBe('"# reason: a, ""b"');

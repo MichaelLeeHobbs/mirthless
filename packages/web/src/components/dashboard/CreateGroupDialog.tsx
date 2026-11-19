@@ -1,8 +1,3 @@
-// ===========================================
-// Create Group Dialog
-// ===========================================
-// Simple dialog for creating a new channel group from the dashboard.
-
 import { useState, useCallback, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';

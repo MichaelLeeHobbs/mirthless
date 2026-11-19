@@ -45,7 +45,6 @@ describe('X12Message', () => {
   });
 
   it('keeps line breaks after each segment terminator, and other delimiters', () => {
-    // Element |, component >, terminator ~ followed by CRLF.
     const isa = ISA.replaceAll('*', '|').replace(':~', '>~');
     const text = `${isa}\r\nST|270|1~\r\nEQ|30||HC>99213~\r\n`;
     const msg = X12Message.parse(`  \n${text}`);

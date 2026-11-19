@@ -1,7 +1,3 @@
-// ===========================================
-// Destination templates: the placeholder rule
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { renderDestinationTemplate } from '../destination-template.js';
 
@@ -24,7 +20,7 @@ describe('renderDestinationTemplate', () => {
     ['an object value', '<${obj}>', '<{"a":1}>'],
     ['a bigint value', '<${big}>', '<10>'],
     ['a function value, left as written', '<${fn}>', '<${fn}>'],
-    // A failed parseFloat in a transformer: written as NaN, as before the shared rule, not as null.
+    // A failed parseFloat in a transformer: written as NaN, not as null.
     ['a NaN value', '<${nan}>', '<NaN>'],
     // A function has no text, so the search goes on to the next map, as for null.
     ['a function value, from the next map', '<${shadowed}>', '<from the second map>'],

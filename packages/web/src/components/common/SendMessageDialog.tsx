@@ -1,9 +1,3 @@
-// ===========================================
-// Send Message Dialog
-// ===========================================
-// Dialog with Monaco editor for sending raw messages to a deployed channel.
-// Fire-and-forget: closes immediately on send, notifications arrive async.
-
 import { useState, type ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -30,7 +24,7 @@ export function SendMessageDialog({ open, onClose, channelId, channelName }: Sen
 
   const handleSend = (): void => {
     if (!content.trim()) return;
-    // Fire-and-forget: close immediately, notify async
+    // Fire-and-forget: the dialog closes now and the outcome arrives as a notification.
     sendMessage.mutate(
       { channelId, content },
       {

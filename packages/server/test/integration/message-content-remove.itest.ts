@@ -1,6 +1,3 @@
-// ===========================================
-// Removing one content type — real Postgres integration
-// ===========================================
 // A queued destination that delivers after failing drops the earlier failure
 // reason and nothing else.
 

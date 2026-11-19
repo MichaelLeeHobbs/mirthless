@@ -1,13 +1,5 @@
-// ===========================================
-// Every /api/v1 route needs a session, except the listed public ones
-// ===========================================
-// routes/index.ts authenticates once, in front of every router (#217, D-299).
-// This boots the real app, walks every route the routers define, and calls
-// each one without credentials, with a bogus bearer token and with a malformed
-// body. Anything other than the guard's 401 fails, unless the route is in
-// PUBLIC_ROUTES (api-routes.ts); a body parser in front of the guard fails it too (#157). A route
-// mounted above the guard by mistake, or a router mounted before it, shows up
-// here. Nothing reaches a handler, so no database is needed.
+// The guard in front of every router (#217, D-299, #157). Nothing reaches a
+// handler, so no database is needed.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'node:http';
@@ -72,20 +64,15 @@ async function call(route: ApiRoute, headers: Readonly<Record<string, string>> =
 
 const takesBody = (r: ApiRoute): boolean => r.method !== 'GET' && r.method !== 'HEAD';
 
-/** How long `postUnfinishedBody` waits for an answer before failing. */
 const ANSWER_WAIT_MS = 15_000;
 
 /**
- * POST a chunked body (no length header) over a raw socket, send its first
- * 8 KB and never finish it, then read the status line of the answer. A body
- * parser in front of the guard would wait for the body's end, which never
- * comes, so only a server that answers without reading the body answers at all.
+ * POST a chunked body that never ends and read the answer's status line. A body
+ * parser in front of the guard would wait for the end forever.
  *
- * Streaming megabytes until the answer came (#254) made the server close with
- * unread bytes, and the reset that sends could beat the 401 to the client on
- * a loaded machine. 8 KB fits in what the server reads off the socket
- * unasked, so nothing is left unread and the answer arrives cleanly. A reset
- * after the status line is still taken as the answer.
+ * Only 8 KB, which the server reads off the socket unasked: streaming more left
+ * unread bytes, and the reset on close could beat the 401 to the client (#254).
+ * A reset after the status line is still taken as the answer.
  */
 function postUnfinishedBody(path: string): Promise<number> {
   return new Promise((resolve, reject) => {

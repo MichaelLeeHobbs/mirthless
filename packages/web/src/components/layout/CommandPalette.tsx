@@ -1,9 +1,4 @@
-// ===========================================
-// Command Palette
-// ===========================================
-// Ctrl+K (Cmd+K) "Jump to" box, like VS Code's: type a few
-// letters of a page, a channel, a collection or an action and press Enter. Everything it
-// offers is permission-gated the same way as the sidebar.
+// Every command is permission-gated the same way as the sidebar.
 
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
@@ -20,12 +15,11 @@ import { PERMISSION } from '../../lib/permissions.js';
 import { rankCommands, type Command } from '../../lib/command-search.js';
 import { NAV_SECTIONS } from './nav-items.js';
 
-/** A palette entry: a command plus what choosing it does. */
 export interface PaletteCommand extends Command {
   readonly run: () => void;
 }
 
-/** The palette shows at most this many matches, so a short query stays readable. */
+/** So a short query's list stays readable. */
 const MAX_RESULTS = 12;
 
 interface CommandPaletteProps {
@@ -34,7 +28,6 @@ interface CommandPaletteProps {
   readonly onShowShortcuts: () => void;
 }
 
-/** Build every command this user may run: pages, channels, collections, then actions. */
 function usePaletteCommands(onShowShortcuts: () => void): readonly PaletteCommand[] {
   const navigate = useNavigate();
   const { has, hasAny } = usePermissions();
@@ -48,7 +41,6 @@ function usePaletteCommands(onShowShortcuts: () => void): readonly PaletteComman
     const pages: PaletteCommand[] = NAV_SECTIONS.flatMap((section) => section.items
       .filter((item) => (item.anyOf ? hasAny(item.anyOf) : true))
       .map((item) => ({ id: `page:${item.path}`, label: item.label, section: 'Pages', keywords: section.heading, run: go(item.path) })));
-    // The System Information tabs, so logs, pruner and backup are one jump away.
     const systemTabs: PaletteCommand[] = has(PERMISSION.SYSTEM_INFO) ? [
       { id: 'page:/system/logs', label: 'Server logs', section: 'Pages', keywords: 'system log', run: go('/system/logs') },
       { id: 'page:/system/pruner', label: 'Data pruner', section: 'Pages', keywords: 'system prune', run: go('/system/pruner') },

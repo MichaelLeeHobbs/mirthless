@@ -1,7 +1,3 @@
-// ===========================================
-// Secret Redaction Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } from '@galvanigraph/core-models';
 import {
@@ -88,9 +84,8 @@ describe('secret-redaction — connector properties', () => {
     expect(isSecretPropertyKey('x-api-key')).toBe(true);
   });
 
-  // A redacted property is shown masked and dropped on import. The Kafka record
-  // key was named `key`, so an imported channel published unkeyed, losing
-  // per-patient ordering without an error.
+  // A redacted property is dropped on import: masking the Kafka record key would
+  // publish an imported channel unkeyed, losing per-patient ordering without an error.
   it('masks only the passwords of the Kafka and AMQP connectors', () => {
     const tls = { caCertId: 'ca-1', clientCertId: 'client-1', rejectUnauthorized: true };
     const kafka = kafkaDestinationPropertiesSchema.parse({

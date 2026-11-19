@@ -1,7 +1,3 @@
-// The declarations are only useful if TypeScript accepts them and they give
-// scripts the types the engine really passes, so these tests compile scripts
-// against them with the same settings the editor and the deploy check use.
-
 import { describe, it, expect, vi } from 'vitest';
 import ts from 'typescript';
 import {
@@ -13,7 +9,6 @@ import { SCRIPT_COMPILER_OPTIONS, wrapScriptBody } from '../script-check.js';
 // the gate's coverage and parallel workers, so the 5 s default is too short.
 vi.setConfig({ testTimeout: 30_000 });
 
-// Parse TypeScript's lib files once per file run instead of once per check.
 const libCache = new Map<string, ts.SourceFile | undefined>();
 
 function cachedLib(
@@ -23,7 +18,6 @@ function cachedLib(
   return libCache.get(name);
 }
 
-/** Type-check one script against a surface, as the body the engine runs it in; returns the messages TypeScript reports. */
 function check(script: string | readonly string[], surface: ScriptSurface, templates: readonly TemplateSource[] = []): string[] {
   const scripts = typeof script === 'string' ? [script] : script;
   const files: Record<string, string> = {
@@ -81,7 +75,7 @@ describe('scriptDeclarations', () => {
     expect(check("const r = await routeMessage('Archive', rawData);\nif (r.filtered) logger.info(r.messageId);", { dataType: 'HL7V2' })).toEqual([]);
   });
 
-  // #200: a JavaScript destination's script also gets the channel identity and the connector message.
+  // #200
   it('declares connectorMessage and the channel identity for a JavaScript destination script only', () => {
     const script = "logger.info(`${channelName}: message ${String(connectorMessage.messageId)} to ${String(connectorMessage.metaDataId)}`);\nreturn msg.get('MSH.10');";
     expect(check(script, { dataType: 'HL7V2', connectorMessage: true })).toEqual([]);
@@ -103,19 +97,15 @@ describe('scriptDeclarations', () => {
   });
 
   it('keeps two separate scripts that declare the same name from colliding', () => {
-    // Filter rules (each its own function) and scripts open in other editors are
-    // separate, so each is its own module (moduleDetection force) and a second
-    // script's `const hl7` is not "Cannot redeclare". Transformer steps are not
-    // separate: they run as one body, and deploy checks them joined.
+    // Filter rules and scripts in other editors are separate modules. Transformer
+    // steps are not: they run as one body, and deploy checks them joined.
     const both = ['const hl7 = parseHL7(rawData);', 'const hl7 = parseHL7(rawData);'];
     expect(check(both, { dataType: 'HL7V2' })).toEqual([]);
   });
 
   it('keeps two wrapped scripts from clashing, which needs every script to be a module', () => {
-    // Each wrapped script declares the same wrapper function. The editor keeps
-    // one hidden wrapped model per editor in one TypeScript project (D-297):
-    // only moduleDetection Force keeps the wrapper's name out of the global
-    // scope, where two of them are "Duplicate function implementation" (2393).
+    // The editor keeps one wrapped model per editor in one TypeScript project (D-297);
+    // without Force the wrappers' shared name clashes in the global scope (TS2393).
     expect(SCRIPT_COMPILER_OPTIONS.moduleDetection).toBe(ts.ModuleDetectionKind.Force);
     expect(check(['return 1;', 'return 2;'], {})).toEqual([]);
   });

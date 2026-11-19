@@ -49,9 +49,8 @@ describe('parseDelimited', () => {
     expect(parseDelimited('"a\\b"', o)).toEqual([{ column1: 'a\\b' }]);
   });
 
-  // Regression: each quoted field searched the rest of the text for an escaped
-  // quote, and each field of a one-column file for a column delimiter, so a
-  // 338 KB file took 11 s. A linear parse takes well under a second.
+  // Regression: per-field scans of the rest of the text made a 338 KB file take
+  // 11 s. A linear parse takes well under a second.
   it.each([
     ['quoted', '"v","w"\n', 60_000],
     ['single-column', 'value\n', 200_000],

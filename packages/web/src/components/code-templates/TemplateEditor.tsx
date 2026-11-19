@@ -1,8 +1,3 @@
-// ===========================================
-// Template Editor
-// ===========================================
-// Form for editing a code template: name, type, contexts, and Monaco code editor.
-
 import { useState, useEffect, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
@@ -54,11 +49,10 @@ interface TemplateEditorProps {
   readonly onDelete: (id: string) => void;
   readonly onClose: () => void;
   readonly saving: boolean;
-  /** Hide Save and disable the fields for users without code_templates:write. */
+  /** True without code_templates:write. */
   readonly readOnly: boolean;
-  /** Show Delete only to users with code_templates:delete. */
+  /** True with code_templates:delete. */
   readonly canDelete: boolean;
-  /** Reports unsaved-changes state up so the page can guard navigation/switching. */
   readonly onDirtyChange?: (dirty: boolean) => void;
 }
 
@@ -75,7 +69,6 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
   const [code, setCode] = useState(template.code);
   const [contexts, setContexts] = useState<ReadonlySet<string>>(new Set(template.contexts));
 
-  // Reset form when template changes
   useEffect(() => {
     setName(template.name);
     setDescription(template.description ?? '');

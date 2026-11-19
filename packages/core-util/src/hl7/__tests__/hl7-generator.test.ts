@@ -1,12 +1,6 @@
-// ===========================================
-// HL7v2 Message Generator Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { generateHL7Messages } from '../hl7-generator.js';
 import { Hl7Message } from '../hl7-message.js';
-
-// ----- ADT^A01 -----
 
 describe('generateHL7Messages — ADT_A01', () => {
   it('generates a single ADT^A01 message', () => {
@@ -39,8 +33,6 @@ describe('generateHL7Messages — ADT_A01', () => {
   });
 });
 
-// ----- ORM^O01 -----
-
 describe('generateHL7Messages — ORM_O01', () => {
   it('generates ORM^O01 with correct message type', () => {
     const messages = generateHL7Messages({ messageType: 'ORM_O01', seed: 100 });
@@ -57,8 +49,6 @@ describe('generateHL7Messages — ORM_O01', () => {
   });
 });
 
-// ----- ORU^R01 -----
-
 describe('generateHL7Messages — ORU_R01', () => {
   it('generates ORU^R01 with correct message type', () => {
     const messages = generateHL7Messages({ messageType: 'ORU_R01', seed: 200 });
@@ -73,8 +63,6 @@ describe('generateHL7Messages — ORU_R01', () => {
     expect(parsed.getSegmentCount('OBX')).toBe(1);
   });
 });
-
-// ----- SIU^S12 -----
 
 describe('generateHL7Messages — SIU_S12', () => {
   it('generates SIU^S12 with correct message type', () => {
@@ -91,8 +79,6 @@ describe('generateHL7Messages — SIU_S12', () => {
     expect(parsed.getSegmentCount('AIG')).toBe(1);
   });
 });
-
-// ----- Count -----
 
 describe('generateHL7Messages — count', () => {
   it('generates multiple messages', () => {
@@ -119,8 +105,6 @@ describe('generateHL7Messages — count', () => {
   });
 });
 
-// ----- Seed determinism -----
-
 describe('generateHL7Messages — seed determinism', () => {
   it('same seed produces same output', () => {
     const a = generateHL7Messages({ messageType: 'ADT_A01', count: 3, seed: 12345 });
@@ -134,8 +118,6 @@ describe('generateHL7Messages — seed determinism', () => {
     expect(a[0]).not.toBe(b[0]);
   });
 });
-
-// ----- Common fields -----
 
 describe('generateHL7Messages — common fields', () => {
   it('MSH.12 version is 2.5.1', () => {

@@ -1,7 +1,3 @@
-// ===========================================
-// Trigger Section Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';

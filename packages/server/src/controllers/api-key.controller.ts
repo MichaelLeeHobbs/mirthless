@@ -1,6 +1,3 @@
-// ===========================================
-// API Key Controller
-// ===========================================
 // Issue, list, enable, disable and revoke API keys (D-313). The token is in
 // the answer to an issue only; nothing else ever returns a secret.
 

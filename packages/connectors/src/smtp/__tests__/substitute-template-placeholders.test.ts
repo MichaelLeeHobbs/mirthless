@@ -1,7 +1,3 @@
-// ===========================================
-// SMTP templates: the placeholder rule
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { substituteTemplate } from '../smtp-dispatcher.js';
 import type { ConnectorMessage } from '../../base.js';

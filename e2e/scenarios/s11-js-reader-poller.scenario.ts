@@ -1,4 +1,3 @@
-// S11: a JavaScript Reader poller keeps state between polls in $gc.
 // Production pattern: "mirthEventPoller" / "Channels Monitor", which poll on an
 // interval and remember where they left off in the global channel map.
 

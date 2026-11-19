@@ -1,20 +1,15 @@
-// ===========================================
-// Database Vendors
-// ===========================================
-// Which database a Database Reader or Writer talks to. The names are the JDBC
-// URL schemes Mirth uses (jdbc:postgresql:, jdbc:mysql:).
-
 import { ConnectionPool, type DatabasePool } from './connection-pool.js';
 import { MysqlPool } from './mysql-pool.js';
 import type { PlaceholderStyle } from './query-builder.js';
 
+/** The JDBC URL schemes Mirth uses (jdbc:postgresql:, jdbc:mysql:). */
 export const DATABASE_VENDOR = {
   POSTGRESQL: 'postgresql',
   MYSQL: 'mysql',
 } as const;
 export type DatabaseVendor = (typeof DATABASE_VENDOR)[keyof typeof DATABASE_VENDOR];
 
-/** A new, not yet created, pool for the vendor. */
+/** Not yet created: the caller calls `create`. */
 export function createPool(vendor: DatabaseVendor): DatabasePool {
   return vendor === DATABASE_VENDOR.MYSQL ? new MysqlPool() : new ConnectionPool();
 }

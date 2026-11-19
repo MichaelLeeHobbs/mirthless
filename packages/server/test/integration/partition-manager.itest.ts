@@ -1,10 +1,5 @@
-// ===========================================
-// Partition Manager — real Postgres integration
-// ===========================================
-// Exercises the raw pg_tables existence query and the create_channel_partitions
-// owner function (migration 0016) against a real database, things a mocked
-// db.execute cannot validate. runtime-role.itest.ts runs the same service as
-// the production server's role, which owns no tables.
+// runtime-role.itest.ts runs the same service as the production server's role,
+// which owns no tables.
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';

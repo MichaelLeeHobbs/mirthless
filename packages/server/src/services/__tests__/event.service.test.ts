@@ -1,10 +1,4 @@
-// ===========================================
-// Event Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -103,8 +97,6 @@ vi.mock('../audit.service.js', () => ({ AuditService: { recordInTx } }));
 const { EventService } = await import('../event.service.js');
 const { sql } = await import('drizzle-orm');
 
-// ----- Fixtures -----
-
 const NOW = new Date('2026-03-01T12:00:00Z');
 const USER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 const CHANNEL_ID = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b22';
@@ -125,8 +117,6 @@ function makeEventRow(overrides?: Partial<Record<string, unknown>>): Record<stri
   };
 }
 
-// ----- Tests -----
-
 beforeEach(() => {
   recordInTx.mockReset();
   recordInTx.mockResolvedValue(undefined);
@@ -136,14 +126,10 @@ beforeEach(() => {
 });
 
 describe('EventService', () => {
-  // ===== list =====
-
   describe('list', () => {
     it('returns paginated events', async () => {
       const event = makeEventRow();
-      // Total count (no where)
       pushResponse([{ value: 1 }]);
-      // Events list (orderBy chain)
       pushResponse([event]);
 
       const result = await EventService.list({ page: 1, pageSize: 25 });
@@ -281,8 +267,6 @@ describe('EventService', () => {
     });
   });
 
-  // ===== getById =====
-
   describe('getById', () => {
     it('returns full event detail', async () => {
       pushResponse([makeEventRow()]);
@@ -328,8 +312,6 @@ describe('EventService', () => {
       expect(result.value.attributes).toBeNull();
     });
   });
-
-  // ===== create =====
 
   describe('create', () => {
     it('creates event with all fields', async () => {
@@ -381,8 +363,6 @@ describe('EventService', () => {
       expect(result.value.attributes).toBeNull();
     });
   });
-
-  // ===== purge =====
 
   describe('purge', () => {
     it('purges through the owner function, not a DELETE, and returns its count', async () => {

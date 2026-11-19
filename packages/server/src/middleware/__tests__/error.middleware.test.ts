@@ -1,9 +1,4 @@
-// ===========================================
-// Error Handler Tests
-// ===========================================
-// A body the parser refuses (too large, not JSON) is the caller's mistake: it
-// keeps its 4xx status instead of becoming a 500, and the reply never echoes
-// the body, which can hold PHI.
+// A reply never echoes a refused body, which can hold PHI.
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import express from 'express';

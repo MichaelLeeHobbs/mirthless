@@ -1,7 +1,3 @@
-// ===========================================
-// Kafka Client Option Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { clientOptions, describeKafkaError, parseBrokers, type KafkaConnectionConfig } from '../kafka-client.js';
 

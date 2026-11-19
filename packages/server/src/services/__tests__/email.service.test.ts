@@ -1,11 +1,5 @@
-// ===========================================
-// Email Service Tests
-// ===========================================
-
 import { createRequire } from 'node:module';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// ----- Mocks -----
 
 vi.mock('../settings.service.js', () => ({
   SettingsService: { getByKey: vi.fn() },
@@ -22,8 +16,6 @@ vi.mock('../../lib/logger.js', () => ({
 const { EmailService, setTransportFactory, resetTransportFactory } = await import('../email.service.js');
 const { SettingsService } = await import('../settings.service.js');
 
-// ----- Transport Mock -----
-
 const mockSendMail = vi.fn().mockResolvedValue({ messageId: 'test-msg-id' });
 const mockClose = vi.fn();
 
@@ -32,8 +24,6 @@ function makeMockTransport(): { sendMail: ReturnType<typeof vi.fn>; close: Retur
 }
 
 const mockTransportFactory = vi.fn().mockReturnValue(makeMockTransport());
-
-// ----- Helpers -----
 
 type MockGetByKey = ReturnType<typeof vi.fn>;
 const mockGetByKey = SettingsService.getByKey as unknown as MockGetByKey;
@@ -76,8 +66,6 @@ function mockSmtpSettings(overrides?: Partial<Record<string, string | null>>): v
   });
 }
 
-// ----- Setup / Teardown -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   mockSendMail.mockResolvedValue({ messageId: 'test-msg-id' });
@@ -89,11 +77,7 @@ afterEach(() => {
   resetTransportFactory();
 });
 
-// ----- Tests -----
-
 describe('EmailService', () => {
-  // ===== getSmtpConfig =====
-
   describe('getSmtpConfig', () => {
     it('reads all 6 settings', async () => {
       mockSmtpSettings();
@@ -122,7 +106,6 @@ describe('EmailService', () => {
     });
 
     it('returns error when host setting is missing', async () => {
-      // All settings return NOT_FOUND => host will be empty string
       mockGetByKey.mockResolvedValue({
         ok: false as const,
         value: null,
@@ -156,8 +139,6 @@ describe('EmailService', () => {
       expect(result.value.secure).toBe(true);
     });
   });
-
-  // ===== sendMail =====
 
   describe('sendMail', () => {
     it('returns success when SMTP is configured', async () => {
@@ -281,8 +262,6 @@ describe('EmailService', () => {
     });
   });
 
-  // ===== default transport factory (nodemailer boundary) =====
-
   describe('default transport factory', () => {
     type CreateTransport = (opts: Record<string, unknown>) => unknown;
     const nodemailer = createRequire(import.meta.url)('nodemailer') as { createTransport: CreateTransport };
@@ -298,14 +277,12 @@ describe('EmailService', () => {
       vi.restoreAllMocks();
     });
 
-    /** The single options object nodemailer.createTransport received. */
     function transportOptions(): Record<string, unknown> {
       const spy = vi.mocked(nodemailer.createTransport);
       expect(spy).toHaveBeenCalledTimes(1);
       return spy.mock.calls[0]![0];
     }
 
-    /** requireTLS must stay off for server mail: absent or false, never true. */
     function expectRequireTlsOff(opts: Record<string, unknown>): void {
       expect(opts['requireTLS'] === undefined || opts['requireTLS'] === false).toBe(true);
     }

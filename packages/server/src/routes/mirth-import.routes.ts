@@ -1,7 +1,3 @@
-// ===========================================
-// Mirth Connect XML Import Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { mirthImportSchema } from '@galvanigraph/core-models';
 import { MirthImportController } from '../controllers/mirth-import.controller.js';
@@ -14,7 +10,6 @@ const router: IRouter = Router();
 // Large bodies are parsed here, after authentication, never before it.
 router.use(largeJsonBody);
 
-// POST /channels/import/mirth — Import from Mirth Connect XML
 router.post(
   '/',
   requirePermission('channels:write'),
@@ -22,7 +17,6 @@ router.post(
   MirthImportController.importFromXml,
 );
 
-// POST /channels/import/mirth/preview — Preview conversion (dry run)
 router.post(
   '/preview',
   requirePermission('channels:read'),

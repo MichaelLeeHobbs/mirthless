@@ -1,8 +1,3 @@
-// ===========================================
-// Settings Controller
-// ===========================================
-// Handles HTTP requests for system settings CRUD operations.
-
 import type { Request, Response } from 'express';
 import type {
   SettingsListQuery,

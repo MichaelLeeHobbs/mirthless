@@ -1,16 +1,6 @@
-// ===========================================
-// Audited Reads
-// ===========================================
-// A PHI read is recorded in the audit log before its content is sent, and is
-// refused with 503 AUDIT_UNAVAILABLE when the record cannot be written
-// (D-312). Repeats of the same read by the same caller are deduped
-// (audit-dedupe.ts); exports and attachment downloads pass no dedupe key, so
-// they are recorded every time.
-//
-// A read by an API key is never deduped: it records the message rows it
-// returns, and those count against the key's daily row ceiling
-// (key-row-ceiling.ts, D-313). A read that would pass the ceiling is refused
-// with 429 before anything is sent.
+// A PHI read is recorded before its content is sent, and refused with 503 when
+// the record cannot be written (D-312). An API key's reads are never deduped and
+// count against its daily row ceiling (D-313).
 
 import type { Request, Response } from 'express';
 import { AuditService } from '../services/audit.service.js';
@@ -45,31 +35,22 @@ const keyCeiling = new KeyRowCeiling({
 export interface AuditedRead {
   readonly action: string;
   readonly channelId?: string | null;
-  /** What was read: filters, ids, counts. Never message content. */
+  /** Never message content. */
   readonly attributes: Record<string, unknown>;
   /**
-   * The read's dedupe key (route, channel, message id or filters with page)
-   * and the message ids it returned, at most a page (200). Omit to record
-   * every time. `idsOnlyForDedupe` keeps the ids out of the record, for ids
-   * that can themselves be PHI (global map keys) or are not ids (log lines).
+   * Omit to record every time. Set `idsOnlyForDedupe` when the ids are
+   * themselves PHI (global map keys) or are not ids (log lines).
    */
   readonly dedupe?: { readonly key: string; readonly ids: readonly (string | number)[]; readonly idsOnlyForDedupe?: boolean };
-  /** The rows the read returns (messages, collection records), counted against an API key's daily ceiling. Omit for a read that returns none. */
+  /** Messages or collection records returned; counted against an API key's daily ceiling. */
   readonly rows?: number;
 }
 
-/** Answer `res` with the refusal `error` carries. */
 function refuse(res: Response, error: unknown): void {
   res.status(mapErrorToStatus(error)).json({ success: false, error: errorResponse(error) });
 }
 
-/**
- * Record a read made with an API key, every time and with its rows, after
- * counting the rows against the key's ceiling. Returns the record's id, or
- * null when the request has been answered: 429 over the ceiling (recorded
- * once a day per key), 503 when today's count or the record could not be
- * read or written.
- */
+/** Null means the request has been answered (429 or 503). */
 async function recordKeyRead(req: Request, res: Response, read: Omit<AuditedRead, 'dedupe'>, attributes: Record<string, unknown>): Promise<number | null> {
   const userId = req.user?.id;
   if (userId === undefined) {
@@ -81,7 +62,7 @@ async function recordKeyRead(req: Request, res: Response, read: Omit<AuditedRead
   try {
     ticket = await keyCeiling.take(userId, rows);
   } catch (err: unknown) {
-    // Today's count could not be read from the audit log: refuse, as any read the log cannot account for is.
+    // Fail closed: a read the audit log cannot account for is refused.
     logger.error({ ...errorInfo(err), apiKeyId: req.apiKeyId }, 'Could not read an API key\'s rows for today; refusing the read');
     refuse(res, new ServiceError('AUDIT_UNAVAILABLE', 'The audit log could not be read to count this API key\'s rows, so the read was refused. Try again, and tell an administrator if it keeps happening.'));
     return null;
@@ -110,11 +91,8 @@ async function recordKeyRead(req: Request, res: Response, read: Omit<AuditedRead
 }
 
 /**
- * Once a day per key, when its count first reaches 80% of the ceiling, write a
- * WARN event naming the key, its count and the ceiling (#301). The claim is
- * released when the write fails, so the key's next read tries again. The write
- * runs beside the response: the warning is advice, the ceiling is the limit,
- * so the read neither waits for it nor is refused over it.
+ * The 80% warning, once a day per key (#301). Not awaited: the warning is
+ * advice, so the read neither waits for it nor is refused over it.
  */
 function warnNearCeiling(req: Request, userId: string): void {
   const due = keyCeiling.claimWarning(userId);
@@ -131,11 +109,7 @@ function warnNearCeiling(req: Request, userId: string): void {
   });
 }
 
-/**
- * Record, once a day per key, that a read was refused at the ceiling. A day's
- * count is rebuilt from each record's `rows`, so the refused read's are named
- * refusedRows. When the record cannot be written the next refusal tries again.
- */
+/** `refusedRows`, not `rows`: a day's count is rebuilt from each record's `rows`. */
 async function recordCeilingRefusal(req: Request, userId: string, read: Omit<AuditedRead, 'dedupe'>, rows: number): Promise<void> {
   if (!keyCeiling.firstRefusalToday(userId)) return;
   const recorded = await AuditService.recordOrRefuse({
@@ -147,10 +121,9 @@ async function recordCeilingRefusal(req: Request, userId: string, read: Omit<Aud
 }
 
 /**
- * Record `read` for the signed-in caller, best effort: the request goes on
- * whether or not the row is written, and a lost row is counted for system
- * info (D-312). For reads the plan does not make fail-closed: the maps,
- * collections, the server log, unmasked secrets and Events page searches.
+ * The request goes on whether or not the row is written (D-312). Only for
+ * reads D-312 does not make fail-closed: the maps, collections, the server log,
+ * unmasked secrets and Events page searches.
  */
 export function recordReadBestEffort(req: Request, read: AuditedRead): void {
   const userId = req.user?.id ?? null;
@@ -175,11 +148,8 @@ export function recordReadBestEffort(req: Request, read: AuditedRead): void {
 }
 
 /**
- * A best-effort read whose rows an API key may not take without limit:
- * collection records, which can hold PHI from many channels. A person's read
- * is recorded best effort, as before; a key's is counted against its daily
- * ceiling and recorded fail-closed, like a message read (D-313). Returns false
- * when the request has been answered (429 or 503).
+ * For collection records, which can hold PHI from many channels: a key's read
+ * is counted and fail-closed (D-313). False means the request has been answered.
  */
 export async function recordCountedRead(req: Request, res: Response, read: AuditedRead): Promise<boolean> {
   if (req.apiKeyId === undefined) {
@@ -190,10 +160,8 @@ export async function recordCountedRead(req: Request, res: Response, read: Audit
 }
 
 /**
- * Record an export for the signed-in caller before the file is sent, never
- * deduped, and return the audit row's id for the file's header. Returns null
- * when the record could not be written: the request has then been answered
- * 503 and the caller must send nothing more.
+ * Never deduped; the id goes in the file's header. Null means the request has
+ * been answered: send nothing more.
  */
 export async function recordExportOrRefuse(req: Request, res: Response, read: Omit<AuditedRead, 'dedupe'>): Promise<number | null> {
   if (req.apiKeyId !== undefined) return recordKeyRead(req, res, read, read.attributes);
@@ -209,11 +177,8 @@ export async function recordExportOrRefuse(req: Request, res: Response, read: Om
 }
 
 /**
- * Record `read` for the signed-in caller before anything is sent. A deduped
- * read records every id the page returned that is not recorded yet (D-317),
- * so the dedupe never holds an id that was not written. Returns false when
- * the record could not be written: the request has then been answered 503
- * and the caller must send nothing more.
+ * The dedupe remembers ids only after they are written (D-317). False means the
+ * request has been answered: send nothing more.
  */
 export async function recordReadOrRefuse(req: Request, res: Response, read: AuditedRead): Promise<boolean> {
   if (req.apiKeyId !== undefined) {

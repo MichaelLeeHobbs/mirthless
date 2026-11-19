@@ -1,13 +1,6 @@
-// ===========================================
-// Channel Import/Export Schemas
-// ===========================================
-// Zod schemas for channel export/import payloads.
-
 import { z } from 'zod/v4';
 import { toScriptLanguage } from './script-language.schema.js';
 import { sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
-
-// ----- Export Schema -----
 
 // Script languages and response transformers are optional so files exported
 // before they were included still import (as JavaScript, with no response transformer).
@@ -133,8 +126,6 @@ export const channelExportSchema = z.object({
 export type ChannelExport = z.infer<typeof channelExportSchema>;
 export type ChannelExportEntry = z.infer<typeof channelExportEntrySchema>;
 
-// ----- Import Schema -----
-
 const COLLISION_MODE = {
   SKIP: 'SKIP',
   OVERWRITE: 'OVERWRITE',
@@ -146,12 +137,10 @@ export { COLLISION_MODE };
 export type { CollisionMode };
 
 /**
- * Refuse connector types the registry cannot build in their position, naming
- * the channel (and destination) so the client can find it in a large file.
  * Import writes channels straight to the database, so it checks what the
- * channel API checks. The export and backup schemas keep plain strings, so a
- * channel saved before this check still exports and a backup holding one
- * still restores.
+ * channel API checks; messages name the channel so a client can find it in a
+ * large file. The export and backup schemas keep plain strings, so a channel
+ * saved before this check still exports and a backup holding one still restores.
  */
 function checkImportConnectorTypes(channel: z.infer<typeof channelExportEntrySchema>, ctx: z.RefinementCtx): void {
   if (!sourceConnectorTypeSchema.safeParse(channel.sourceConnectorType).success) {
@@ -182,7 +171,6 @@ export const channelImportSchema = z.object({
 
 export type ChannelImportInput = z.infer<typeof channelImportSchema>;
 
-/** Result of an import operation. */
 export interface ImportResult {
   readonly created: number;
   readonly updated: number;

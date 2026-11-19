@@ -1,15 +1,9 @@
-// ===========================================
-// Database Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, appendLockClause, type DatabaseReceiverConfig } from '../database-receiver.js';
 import { ConnectionPool } from '../connection-pool.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<DatabaseReceiverConfig>): DatabaseReceiverConfig {
   return {
@@ -62,8 +56,7 @@ function makeMockPool(): {
   });
   const destroyFn = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 
-  // Transaction runs its callback against a tx.query that delegates to queryFn.
-  // A queryFn error is thrown (as the real TxQuery does), rolling back the tx.
+  // A queryFn error is thrown, as the real TxQuery does, rolling back the tx.
   const transactionFn = vi.fn().mockImplementation(async (fn: (tx: { query: (sql: string, params: readonly unknown[]) => Promise<unknown> }) => Promise<unknown>) => {
     try {
       const value = await fn({
@@ -92,8 +85,6 @@ function makeMockPool(): {
   return { pool, createFn, queryFn, destroyFn, transactionFn };
 }
 
-// ----- Lifecycle -----
-
 let receiver: DatabaseReceiver | null = null;
 
 beforeEach(() => {
@@ -109,8 +100,6 @@ afterEach(async () => {
     receiver = null;
   }
 });
-
-// ----- Tests -----
 
 describe('DatabaseReceiver', () => {
   describe('onDeploy', () => {
@@ -336,7 +325,6 @@ describe('DatabaseReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // Only the SELECT query should be called, not any UPDATE
       expect(queryFn).toHaveBeenCalledTimes(1);
     });
 
@@ -358,7 +346,6 @@ describe('DatabaseReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // SELECT + UPDATE
       expect(queryFn).toHaveBeenCalledTimes(2);
       expect(queryFn.mock.calls[1]![0]).toBe(
         'UPDATE messages SET processed = true WHERE id = $1',
@@ -384,7 +371,6 @@ describe('DatabaseReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // SELECT + UPDATE (dispatch succeeded)
       expect(queryFn).toHaveBeenCalledTimes(2);
     });
 
@@ -406,7 +392,6 @@ describe('DatabaseReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // Only SELECT, no UPDATE since dispatch failed
       expect(queryFn).toHaveBeenCalledTimes(1);
     });
 
@@ -428,7 +413,6 @@ describe('DatabaseReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // SELECT + UPDATE (ALWAYS mode ignores dispatch result)
       expect(queryFn).toHaveBeenCalledTimes(2);
     });
   });
@@ -569,7 +553,6 @@ describe('DatabaseReceiver', () => {
     });
 
     it('two concurrent pollers over a locking table dispatch each row exactly once', async () => {
-      // Shared table with FOR UPDATE SKIP LOCKED semantics.
       const table = [1, 2, 3].map((id) => ({ id, processed: false, locked: false }));
       const dispatched: number[] = [];
 
@@ -621,10 +604,8 @@ describe('DatabaseReceiver', () => {
       await a.onStart();
       await b.onStart();
 
-      // Both pollers fire on the same tick.
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // Every row dispatched, and none dispatched twice.
       expect([...dispatched].sort()).toEqual([1, 2, 3]);
       expect(new Set(dispatched).size).toBe(dispatched.length);
       expect(table.every((r) => r.processed)).toBe(true);
@@ -651,7 +632,6 @@ describe('DatabaseReceiver', () => {
 
     it('logs an error when a mark-as-processed UPDATE fails', async () => {
       const { pool, queryFn } = makeMockPool();
-      // First call (SELECT) returns one row; second call (UPDATE) fails.
       queryFn
         .mockResolvedValueOnce({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null })
         .mockResolvedValueOnce({ ok: false, value: null, error: { name: 'Error', code: 'X', message: 'update failed' } });

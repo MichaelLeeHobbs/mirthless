@@ -1,16 +1,9 @@
-// ===========================================
-// Code Template Route Permission Tests
-// ===========================================
-// Sends real requests through the router to check which permission each
-// write and delete route enforces.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 vi.mock('../../middleware/auth.middleware.js', () => ({
-  // Stands in for JWT auth: the test names the caller's permissions in a header.
   authenticate: vi.fn((req: express.Request, _res: express.Response, next: express.NextFunction) => {
     const header = req.header('x-test-permissions') ?? '';
     req.user = {

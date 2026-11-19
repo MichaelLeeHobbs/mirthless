@@ -1,10 +1,4 @@
-// ===========================================
-// Login lockout and refresh rotation under concurrency (real Postgres, #174)
-// ===========================================
-// Wrong passwords are counted by one UPDATE that only touches an unlocked row,
-// so concurrent guesses each count, the fifth locks, and no late write clears
-// the lock. A refresh consumes its session with DELETE ... RETURNING, so two
-// concurrent refreshes with one token cannot both succeed.
+// Regression suite for #174.
 
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';

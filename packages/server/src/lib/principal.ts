@@ -1,12 +1,5 @@
-// ===========================================
-// Principal Resolver
-// ===========================================
-// The one place a user's standing is read (D-310, RBAC plan section 4): who
-// they are, whether they may still act, and the grants their live assignments
-// fold into. authenticate, the socket middleware, login and token refresh all
-// call it, so a role edit, an assignment change or an expiry reaches every path
-// at the next request. One statement: the user row with their live
-// assignments, each role's permissions, aggregated in a correlated subquery.
+// The one place a user's standing is read (D-310), so a role edit, an assignment
+// change or an expiry reaches every path at the next request.
 
 import { eq, gt, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod/v4';
@@ -17,23 +10,19 @@ import { users, assignments, assignmentGroups, roles, rolePermissions } from '..
 import { db } from './db.js';
 import logger from './logger.js';
 
-/** A user as every guard sees them. */
 export interface UserStanding {
   readonly id: string;
   readonly username: string;
   readonly email: string;
   readonly enabled: boolean;
   readonly mustChangePassword: boolean;
-  /** Names of the roles the user holds through live assignments, sorted. */
   readonly roles: readonly string[];
   readonly grants: FoldedGrants;
-  /** The permissions held anywhere, sorted: the flat list the web and sockets read. */
   readonly permissions: readonly Permission[];
-  /** When the first live assignment with an end time ends, or null when none has one (D-310). */
+  /** When the first expiring live assignment ends (D-310). */
   readonly nextExpiry: Date | null;
 }
 
-/** The earliest end time among assignments still live at `now`, or null. */
 export function nextExpiryOf(grants: readonly AssignmentGrant[], now: Date): Date | null {
   let next: Date | null = null;
   for (const { expiresAt } of grants) {
@@ -50,35 +39,31 @@ const assignmentRowSchema = z.object({
   admin: z.boolean(),
   permissions: z.array(z.string()),
   expiresAt: z.string().nullable(),
-  /** Every channel, or only the groups in `groupIds` (D-310). Required: a row without it fails closed, never widens to every channel. */
+  /** Required: a row without it fails closed, never widens to every channel. */
   allChannels: z.boolean(),
   groupIds: z.array(z.string()).default([]),
 });
 const assignmentRowsSchema = z.array(assignmentRowSchema);
 
-/** Drizzle's db, or a transaction, or a test's own connection. */
 type Executor = Pick<typeof db, 'select'>;
 
 function isPermission(name: string): name is Permission {
   return KNOWN_PERMISSIONS.has(name);
 }
 
-// ----- What "live" means, in one place -----
-// An assignment counts until its expiry. Two forms of the one rule: a Drizzle
-// condition on the assignments table, and the same test on the alias `a` that
-// the correlated subqueries below use.
+// What "live" means, in two forms of one rule: the Drizzle condition and the
+// test on alias `a`. Change both together.
 
-/** A live assignment, as a condition on the assignments table. */
 export function isLiveAssignment(): SQL {
   return or(isNull(assignments.expiresAt), gt(assignments.expiresAt, sql`now()`)) as SQL;
 }
 
-/** The same test on the alias `a`. A function, so importing this file builds no SQL. */
+/** A function, so importing this file builds no SQL. */
 function liveOnAliasA(): SQL {
   return sql.raw('(a.expires_at IS NULL OR a.expires_at > now())');
 }
 
-/** The names of the roles the outer `users` row holds through live assignments, sorted, as a SQL array. */
+/** Correlated on the outer `users` row. */
 export function heldRoleNamesSql(): SQL<string[]> {
   return sql<string[]>`coalesce((
   SELECT array_agg(DISTINCT r.name ORDER BY r.name)
@@ -88,9 +73,8 @@ export function heldRoleNamesSql(): SQL<string[]> {
 }
 
 /**
- * Live assignments with their roles' permissions, as one JSON array per user.
- * Written with aliases: inside a single-table select Drizzle leaves column
- * names unqualified, which the correlated subquery would make ambiguous.
+ * Aliases: inside a single-table select Drizzle leaves column names
+ * unqualified, which the correlated subquery would make ambiguous.
  */
 function liveAssignments(): SQL<unknown> {
   return sql<unknown>`coalesce((
@@ -108,9 +92,8 @@ function liveAssignments(): SQL<unknown> {
 }
 
 /**
- * Turn the stored rows into grants. A permission name the code does not know
- * (a row left by a newer or older version) grants nothing and is logged; an
- * unreadable row fails closed: the user holds nothing.
+ * A permission name this code does not know (from a newer or older version)
+ * grants nothing; an unreadable row fails closed.
  */
 export function toAssignmentGrants(userId: string, raw: unknown): { readonly roles: readonly string[]; readonly grants: readonly AssignmentGrant[] } {
   const parsed = assignmentRowsSchema.safeParse(raw);
@@ -131,7 +114,6 @@ export function toAssignmentGrants(userId: string, raw: unknown): { readonly rol
   };
 }
 
-/** Load a user's standing through `executor`, or null when there is no such user. */
 export async function queryUserStanding(executor: Executor, userId: string, now: Date = new Date()): Promise<UserStanding | null> {
   const [row] = await executor
     .select({
@@ -160,12 +142,10 @@ export async function queryUserStanding(executor: Executor, userId: string, now:
   };
 }
 
-/** Load a user's standing from the server's database. */
 export function loadUserStanding(userId: string): Promise<UserStanding | null> {
   return queryUserStanding(db, userId);
 }
 
-/** The role names as one label, for screens and records that show a single role. */
 export function roleLabel(roleNames: readonly string[]): string {
   return roleNames.join(', ');
 }

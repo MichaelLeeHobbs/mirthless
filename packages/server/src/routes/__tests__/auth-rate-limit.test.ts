@@ -1,11 +1,5 @@
-// ===========================================
-// Auth Rate Limit Tests
-// ===========================================
-// Verifies that authentication endpoints have rate limiting applied.
-
 import { describe, it, expect, vi } from 'vitest';
 
-// Mock dependencies before importing routes
 vi.mock('../../controllers/auth.controller.js', () => ({
   AuthController: {
     login: vi.fn((_req, res) => { res.json({ ok: true }); }),
@@ -26,8 +20,6 @@ const { authRateLimiter, refreshRateLimiter } = await import('../../middleware/r
 const { authJsonBody } = await import('../../middleware/body-limit.middleware.js');
 const router = (await import('../auth.routes.js')).default;
 
-// ----- Helpers -----
-
 interface RouteLayer {
   readonly route?: {
     readonly path: string;
@@ -41,7 +33,6 @@ interface MiddlewareLayer {
   readonly name: string;
 }
 
-/** Get the middleware stack for a specific route + method. */
 function getRouteMiddleware(path: string, method: string): readonly MiddlewareLayer[] {
   const layers = router.stack as unknown as readonly RouteLayer[];
   for (const layer of layers) {
@@ -51,8 +42,6 @@ function getRouteMiddleware(path: string, method: string): readonly MiddlewareLa
   }
   return [];
 }
-
-// ----- Tests -----
 
 describe('Auth Rate Limiting', () => {
   it('applies authRateLimiter to POST /login', () => {

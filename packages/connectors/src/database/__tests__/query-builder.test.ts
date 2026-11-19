@@ -1,7 +1,3 @@
-// ===========================================
-// Query Builder Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { prepare } from '../query-builder.js';
 
@@ -90,10 +86,8 @@ describe('prepare', () => {
       { name: malicious },
     );
 
-    // The SQL should NOT contain the malicious string
     expect(result.sql).toBe('SELECT * FROM users WHERE name = $1');
     expect(result.sql).not.toContain(malicious);
-    // The value should be in params, where the driver will safely bind it
     expect(result.params).toEqual([malicious]);
   });
 
@@ -138,7 +132,6 @@ describe('prepare', () => {
     );
 
     expect(result.sql).toBe('INSERT INTO t (c, b, a) VALUES ($1, $2, $3)');
-    // params are in order of first encounter in the template, not context key order
     expect(result.params).toEqual([3, 2, 1]);
   });
 

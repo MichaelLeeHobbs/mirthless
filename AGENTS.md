@@ -251,7 +251,7 @@ Key rules:
 - Exhaustive switch with `default: assertUnreachable(x)`
 - Explicit function return types
 - Cyclomatic complexity ≤10
-- TSDoc on all public APIs
+- Comments, doc comments included, say only what the code and types cannot: a reason, an outside fact, a deliberate oddity, or a caller rule. No comment that repeats a name, a type or the code (D-327)
 - The copies in `docs/standards/` are what applies here. Their upstream is the mission-critical-ts project (see Related Projects).
 
 ---

@@ -1,8 +1,3 @@
-// ===========================================
-// User Preference Schemas
-// ===========================================
-// Zod validation schemas for user preference CRUD.
-
 import { z } from 'zod/v4';
 
 export const preferenceKeyParamSchema = z.object({

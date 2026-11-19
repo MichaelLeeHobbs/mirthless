@@ -1,11 +1,4 @@
-// ===========================================
-// Database Query Builder
-// ===========================================
-// Converts template strings with ${variable} placeholders
-// into parameterized SQL with the driver's placeholders.
-// CRITICAL: No string interpolation of values into SQL.
-
-// ----- Types -----
+// Values are never interpolated into SQL; they are always passed as parameters.
 
 export interface PreparedQuery {
   readonly sql: string;
@@ -18,21 +11,8 @@ export interface PreparedQuery {
  */
 export type PlaceholderStyle = 'numbered' | 'question';
 
-// ----- Placeholder regex -----
-
-/** Matches `${variableName}` placeholders in a query template. */
 const PLACEHOLDER_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 
-// ----- Public API -----
-
-/**
- * Prepare a parameterized query from a template string.
- * Replaces `${variable}` with the driver's placeholders.
- *
- * @example
- * prepare("INSERT INTO t (a, b) VALUES (${name}, ${age})", { name: "John", age: 30 })
- * // => { sql: "INSERT INTO t (a, b) VALUES ($1, $2)", params: ["John", 30] }
- */
 export function prepare(
   template: string,
   context: Readonly<Record<string, unknown>>,

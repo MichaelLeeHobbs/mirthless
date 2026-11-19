@@ -1,9 +1,4 @@
-// ===========================================
-// Fake API for `pnpm shots`
-// ===========================================
-// Answers /api/v1 requests with realistic synthetic data so pages render
-// populated and signed in without a server or database. No real PHI: every
-// name, id and message here is made up.
+// Fake API for `pnpm shots`. No real PHI: every name, id and message here is made up.
 //
 // `route(pathname, search, method)` returns the `data` for the standard
 // { success: true, data } envelope, or `undefined` for an empty list. Add a
@@ -84,7 +79,6 @@ function revisionDetail(revision) {
   };
 }
 
-/** A Kafka source with SASL and TLS on, and an AMQP destination, for the queue connector forms. */
 const queueChannelDetail = {
   ...channelDetail,
   id: 'c8', name: 'Lab Results via Kafka', sourceConnectorType: 'KAFKA',
@@ -178,15 +172,14 @@ const users = [
   lastLoginAt: lastLogin === null ? null : ago(lastLogin), createdAt: ago(200000),
 }));
 
-// A user's access (D-310): a role on every channel, one on a group until a
-// time with a reason, and one that has expired.
+// A user's access (D-310).
 const assignments = [
   { id: 'a1', roleId: 'r7', roleName: 'viewer', groupIds: null, expiresAt: null, reason: null, live: true, createdAt: ago(90000) },
   { id: 'a2', roleId: 'r8', roleName: 'Lab analyst', groupIds: ['g1'], expiresAt: new Date(Date.now() + 8 * 3600_000).toISOString(), reason: 'On call, INC-4411', live: true, createdAt: ago(120) },
   { id: 'a3', roleId: 'r2', roleName: 'channel-deployer', groupIds: ['g2'], expiresAt: ago(3000), reason: null, live: false, createdAt: ago(9000) },
 ];
 
-// Who can access a channel (D-310): through assignments, then through code and shared data.
+// Who can access a channel (D-310).
 const channelAccess = {
   asOf: null,
   people: [
@@ -197,8 +190,7 @@ const channelAccess = {
   throughSharedData: [{ userId: 'u1', username: 'admin' }],
 };
 
-// Roles (D-310): the seven built in, and one custom role with holders. The
-// server sends the locked admin role with every permission.
+// Roles (D-310). The server sends the locked admin role with every permission.
 const ALL_PERMS = Object.values(PERMISSIONS);
 const VIEWER_PERMS = ['channels:read', 'messages:read', 'code_templates:read', 'alerts:read', 'events:read', 'resources:read', 'collections:read', 'datasources:read'];
 const DEVELOPER_PERMS = [...VIEWER_PERMS, 'channels:write', 'code_templates:write', 'resources:write', 'collections:write', 'global_scripts:read', 'global_map:read', 'config_map:read'];

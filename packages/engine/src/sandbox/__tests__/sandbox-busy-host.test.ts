@@ -1,6 +1,3 @@
-// ===========================================
-// Sandbox on a busy host
-// ===========================================
 // Node starts and joins a watchdog thread for every vm call that has a time
 // limit. On a busy machine each one waits to be scheduled, so a timed entry into
 // the sandbox costs milliseconds instead of microseconds. A run that entered the

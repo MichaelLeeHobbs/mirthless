@@ -15,7 +15,6 @@ vi.mock('bcrypt', () => {
 
 const { verifyPassword, hashPassword, MAX_CONCURRENT_HASHES } = await import('../password.js');
 
-/** Let queued promise callbacks run. */
 async function flush(): Promise<void> {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 }
@@ -33,7 +32,6 @@ describe('password hash limit', () => {
     for (let started = MAX_CONCURRENT_HASHES; started < calls.length; started++) {
       pending.shift()?.settle(true);
       await flush();
-      // One finished, so exactly one more started: never more than the limit.
       expect(pending).toHaveLength(MAX_CONCURRENT_HASHES);
     }
     while (pending.length > 0) { pending.shift()?.settle(true); await flush(); }

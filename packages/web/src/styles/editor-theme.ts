@@ -1,14 +1,7 @@
-// ===========================================
-// Code editor themes
-// ===========================================
-// Monaco themes built from the app tokens, so the editor's background, gutter,
-// selection and popups match the page in both modes.
-
 import type { PaletteMode } from '@mui/material/styles';
 import type { editor } from 'monaco-editor';
 import { colorsForMode, syntaxForMode } from './tokens.js';
 
-/** Monaco theme name for a palette mode. */
 export function editorThemeName(mode: PaletteMode): string {
   return mode === 'dark' ? 'galvanigraph-dark' : 'galvanigraph-light';
 }
@@ -24,12 +17,11 @@ export function toMonacoColor(css: string): string {
   return `#${hex(r)}${hex(g)}${hex(b)}${alpha}`;
 }
 
-/** Token colours without the leading `#`, as Monaco's token rules expect. */
+/** Monaco's token rules take colours without the leading `#`. */
 function bare(color: string): string {
   return color.slice(1);
 }
 
-/** The Monaco theme for a palette mode. */
 export function editorTheme(mode: PaletteMode): editor.IStandaloneThemeData {
   const c = colorsForMode(mode);
   const s = syntaxForMode(mode);

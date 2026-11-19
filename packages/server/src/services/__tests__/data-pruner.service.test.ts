@@ -1,10 +1,4 @@
-// ===========================================
-// Data Pruner Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -84,19 +78,12 @@ vi.mock('drizzle-orm', () => ({
 const { DataPrunerService } = await import('../data-pruner.service.js');
 const { emitEvent } = await import('../../lib/event-emitter.js');
 
-// ----- Fixtures -----
-
-/** True when a mocked sql`` object is the pruner's "next batch of ids" query. */
 function isBatchSelect(query: unknown): boolean {
   const strings = (query as { strings?: readonly string[] }).strings ?? [];
   return strings.join('').includes('SELECT m.id FROM messages');
 }
 
-/**
- * Queue the id batches the pruner will read, in order (one per channel, or several
- * for one channel). A batch may be an Error to make that read fail. Every other
- * statement (the deletes) succeeds unless a test overrides it.
- */
+// Id batches the pruner reads, in order: one per channel, or several for one channel.
 let staleBatches: Array<readonly number[] | Error> = [];
 let deleteStatements = 0;
 function queueStale(...batches: Array<readonly number[] | Error>): void {
@@ -114,8 +101,6 @@ function installExecute(): void {
 const CHANNEL_ID_1 = '00000000-0000-0000-0000-000000000001';
 const CHANNEL_ID_2 = '00000000-0000-0000-0000-000000000002';
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
@@ -131,10 +116,7 @@ beforeEach(() => {
   });
 });
 
-// ----- Tests -----
-
 describe('DataPrunerService', () => {
-  // ========== PRUNE CHANNEL ==========
   describe('pruneChannel', () => {
     it('deletes the old messages and their child rows', async () => {
       queueStale([100, 200, 300]);
@@ -212,10 +194,8 @@ describe('DataPrunerService', () => {
     });
   });
 
-  // ========== PRUNE ALL ==========
   describe('pruneAll', () => {
     it('iterates pruning-enabled channels and aggregates counts', async () => {
-      // First call: fetch prunable channels
       pushSelectResponse([
         { id: CHANNEL_ID_1, pruningMaxAgeDays: 7 },
         { id: CHANNEL_ID_2, pruningMaxAgeDays: 14 },
@@ -312,16 +292,13 @@ describe('DataPrunerService', () => {
     });
   });
 
-  // ========== GET STATISTICS ==========
   describe('getStatistics', () => {
     it('returns prunable counts per channel', async () => {
       pushSelectResponse([
         { id: CHANNEL_ID_1, pruningMaxAgeDays: 7 },
         { id: CHANNEL_ID_2, pruningMaxAgeDays: 30 },
       ]);
-      // execute for channel 1 count
       mockExecute.mockResolvedValueOnce({ rows: [{ count: '42' }] });
-      // execute for channel 2 count
       mockExecute.mockResolvedValueOnce({ rows: [{ count: '0' }] });
 
       const result = await DataPrunerService.getStatistics();

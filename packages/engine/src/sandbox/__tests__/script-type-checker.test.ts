@@ -1,7 +1,3 @@
-// Type checks run in a long-lived worker thread so a deploy's checks never block
-// the engine's main thread, and results are cached by their inputs so a
-// redeploy, or a channel that shares unchanged scripts, does not check again.
-
 import { describe, it, expect, afterAll, vi } from 'vitest';
 import { checkScriptTypesBatch, stopTypeChecker } from '../script-type-checker.js';
 import { checkScriptTypes } from '../script-type-check.js';

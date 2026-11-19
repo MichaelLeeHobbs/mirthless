@@ -1,7 +1,3 @@
-// ===========================================
-// createThrottle tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createThrottle } from '../throttle.js';
 
@@ -43,7 +39,6 @@ describe('createThrottle', () => {
     const duringBurst = fn.mock.calls.length;
     expect(duringBurst).toBe(3);
 
-    // The last call came after the last run, so one more run follows within the window.
     vi.advanceTimersByTime(1000);
     expect(fn.mock.calls.length).toBe(duringBurst + 1);
     vi.advanceTimersByTime(5000);

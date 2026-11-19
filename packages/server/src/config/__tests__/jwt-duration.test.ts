@@ -1,7 +1,3 @@
-// ===========================================
-// JWT Duration Validation Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { jwtDuration, durationMs, validatedConfigSchema } from '../index.js';
 

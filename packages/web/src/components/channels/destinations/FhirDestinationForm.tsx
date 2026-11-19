@@ -1,8 +1,3 @@
-// ===========================================
-// FHIR R4 Destination Connector Form
-// ===========================================
-// Configuration form for FHIR REST API destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -40,7 +35,6 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — FHIR Server */}
       <Grid
         size={{
           xs: 12,
@@ -114,7 +108,6 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
         />
       </Grid>
 
-      {/* Right column — Authentication */}
       <Grid
         size={{
           xs: 12,

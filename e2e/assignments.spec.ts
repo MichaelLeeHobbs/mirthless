@@ -1,12 +1,4 @@
-// ===========================================
-// Assignments E2E Tests (#266 slice 10c)
-// ===========================================
-// An admin opens a user, adds access with a role on one channel group, and
-// saves; the server then holds that assignment. A role that holds system-wide
-// permissions cannot be given on groups, so the editor does not offer it.
-//
-// Users can't be deleted, so each run uses names of its own (D-289). Cleanup
-// clears the user's access, disables them, and deletes the group.
+// Users can't be deleted, so each run uses names of its own (D-289).
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -14,7 +6,6 @@ import { API_BASE, adminApi, deleteOk, getData, postData } from './fixtures/api.
 
 const RUN_ID = Date.now().toString(36);
 const USERNAME = `e2e-access-${RUN_ID}`;
-// Names of this spec's own: spec files run in parallel against one database (D-289).
 const GROUP = `e2e-assign-lab-${RUN_ID}`;
 
 interface Assignment { readonly roleName: string; readonly groupIds: readonly string[] | null; readonly reason: string | null }
@@ -47,7 +38,6 @@ test.describe.serial('Assignments', () => {
     await page.getByRole('row', { name: new RegExp(USERNAME) }).getByRole('button', { name: 'Edit user' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: 'Edit User' })).toBeVisible();
-    // The user starts with the role they were created with, on every channel.
     await expect(dialog.getByRole('combobox', { name: 'Scope' })).toHaveText('All channels');
 
     await dialog.getByRole('button', { name: 'Add access' }).click();
@@ -79,7 +69,6 @@ test.describe.serial('Assignments', () => {
     await page.goto('/users');
     await page.getByRole('row', { name: new RegExp(USERNAME) }).getByRole('button', { name: 'Edit user' }).click();
     const dialog = page.getByRole('dialog');
-    // The list shows what the server holds now, both rows.
     await expect(dialog.getByRole('button', { name: 'Remove Channel viewer' })).toBeVisible();
     await dialog.getByRole('textbox', { name: 'Email' }).fill(`${USERNAME}+new@example.test`);
     await dialog.getByRole('button', { name: 'Save' }).click();

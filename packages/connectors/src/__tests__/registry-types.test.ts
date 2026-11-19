@@ -1,16 +1,10 @@
-// ===========================================
-// Registry ↔ core-models connector lists
-// ===========================================
-// The registry's map keys are typed by the core-models lists, so the compiler
-// rejects a factory for a type the lists don't name. These tests cover the other
-// direction: every type the lists name has a factory, so the UI and the API never
-// offer a connector the engine can't build.
+// The compiler checks the other direction: the registry's keys are typed by these lists.
 
 import { describe, it, expect } from 'vitest';
 import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 
-/** The error a create call threw, or undefined. A factory may reject empty props; that still proves it exists. */
+/** A factory may reject empty props; that still proves it exists. */
 function errorOf(create: () => unknown): string | undefined {
   try {
     create();

@@ -1,13 +1,6 @@
-// ===========================================
-// Server Backup/Restore Schemas
-// ===========================================
-// Zod schemas for full server backup and restore payloads.
-
 import { z } from 'zod/v4';
 import { channelExportEntrySchema } from './channel-export.schema.js';
 import { updateGlobalScriptsSchema } from './global-script.schema.js';
-
-// ----- Collision Mode -----
 
 const BACKUP_COLLISION_MODE = {
   SKIP: 'SKIP',
@@ -18,8 +11,6 @@ type BackupCollisionMode = typeof BACKUP_COLLISION_MODE[keyof typeof BACKUP_COLL
 export { BACKUP_COLLISION_MODE };
 export type { BackupCollisionMode };
 
-// ----- Backup Entity Schemas -----
-
 const backupUserSchema = z.object({
   id: z.string().uuid(),
   username: z.string(),
@@ -27,7 +18,6 @@ const backupUserSchema = z.object({
   firstName: z.string().nullable(),
   lastName: z.string().nullable(),
   description: z.string().nullable(),
-  /** The roles the user held (D-310). */
   roles: z.array(z.string()).optional(),
   /** The one role a user held in a backup made before roles were rows. */
   role: z.string().optional(),
@@ -145,8 +135,6 @@ const backupTagAssignmentSchema = z.object({
   channelId: z.string().uuid(),
 });
 
-// ----- Server Backup Schema -----
-
 export const serverBackupSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
@@ -169,16 +157,12 @@ export const serverBackupSchema = z.object({
 
 export type ServerBackup = z.infer<typeof serverBackupSchema>;
 
-// ----- Restore Input Schema -----
-
 export const serverRestoreInputSchema = z.object({
   backup: serverBackupSchema,
   collisionMode: z.enum(['SKIP', 'OVERWRITE']),
 });
 
 export type ServerRestoreInput = z.infer<typeof serverRestoreInputSchema>;
-
-// ----- Restore Result -----
 
 export interface RestoreSectionResult {
   readonly section: string;

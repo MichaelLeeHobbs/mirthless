@@ -1,17 +1,6 @@
-// ===========================================
-// Docs guard: docs/user/capabilities.md
-// ===========================================
-// The capabilities page is where users see what GalvaniGraph does and
-// maintainers see the gaps. It is only useful if its statuses mean what the page
-// says they mean, so this guard enforces the rules stated at its top:
-// - Yes is proved by a test that runs in the gate or in CI, and the file exists;
-// - Partial says in Limits what doesn't work;
-// - No names its plan (an issue in this repository, or a ROADMAP ID that is open);
-// - Won't names a decision that exists and quotes at least three words of it;
-// - every open ROADMAP item is the plan of some row, so the page is the gap list.
-// Not checked: whether a proof test really covers the row (a reviewer's job),
-// whether a cited issue is still open (that needs the network), open ROADMAP
-// items with no bracketed ID, and the free-text cells of the migration table.
+// Enforces the status rules stated at the top of the page. Not checked: whether a proof test
+// really covers its row (a reviewer's job), whether a cited issue is still open (that needs the
+// network), open ROADMAP items with no bracketed ID, and the migration table's free-text cells.
 
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
@@ -26,7 +15,6 @@ const STATUSES = new Set(['Yes', 'Partial', 'No', "Won't"]);
 
 type Lane = 'gate' | 'ci' | 'local' | 'manual' | 'unknown';
 
-/** Where a proof file runs, from its path alone. */
 function lane(path: string): Lane {
   if (/^packages\/[^/]+\/src\/.+\.test\.tsx?$/.test(path)) return 'gate';
   if (/^packages\/server\/test\/integration\/.+\.itest\.ts$/.test(path)) return 'ci';
@@ -37,12 +25,11 @@ function lane(path: string): Lane {
   return 'unknown';
 }
 
-/** Backticked paths in a Proof cell. */
 function proofPaths(cell: string): readonly string[] {
   return [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? '');
 }
 
-/** Open ROADMAP items' IDs: unticked lines tagged like [V12], [N7], [B2] or a rank [3]. */
+/** Unticked lines tagged like [V12], [N7], [B2] or a rank [3]. */
 function openRoadmapIds(): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const line of readRepoFile('docs/progress/ROADMAP.md').split(/\r?\n/)) {
@@ -52,7 +39,7 @@ function openRoadmapIds(): ReadonlySet<string> {
   return ids;
 }
 
-/** ROADMAP IDs a Plan cell names, written "ROADMAP V12" or "ROADMAP 3". */
+/** Written "ROADMAP V12" or "ROADMAP 3". */
 function roadmapIdsIn(cell: string): readonly string[] {
   return [...cell.matchAll(/ROADMAP ([A-Z]{1,2}\d{1,3}|\d{1,3})\b/g)].map((m) => m[1] ?? '');
 }
@@ -67,7 +54,6 @@ function rows(): ReadonlyArray<{ readonly section: string; readonly cells: reado
 
 const decisions = readRepoFile('docs/progress/DECISIONS.md');
 
-/** The text of decision D-NNN, up to the next decision. */
 function decisionText(id: string): string | null {
   const start = decisions.search(new RegExp(`^${id}:`, 'm'));
   if (start < 0) return null;

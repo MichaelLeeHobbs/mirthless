@@ -1,6 +1,3 @@
-// ===========================================
-// Migration journal
-// ===========================================
 // drizzle-orm's migrator applies a migration only when its `when` is later than
 // the newest one the database has applied. A `when` in the future, or one out
 // of order, silently skips every migration generated before it on a database

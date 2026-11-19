@@ -1,8 +1,3 @@
-// ===========================================
-// HL7v2 Module
-// ===========================================
-// Re-exports all HL7v2 parser components.
-
 export type { Hl7Encoding, HexEscapeCharset } from './hl7-encoding.js';
 export { detectEncoding, encodingCharsString, escapeValue, unescapeValue, hexEscapeCharset } from './hl7-encoding.js';
 

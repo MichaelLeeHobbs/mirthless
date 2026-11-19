@@ -1,4 +1,3 @@
-// S09: the target channel is chosen at run time.
 // Production pattern: Gov "Message Router" (Channel Writer to
 // ${destinationChannelId}) and channelUtils.routeJsonMsg (router.routeMessage
 // by channel name, which is routeMessage in GalvaniGraph).

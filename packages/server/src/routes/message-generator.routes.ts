@@ -1,7 +1,3 @@
-// ===========================================
-// Message Generator Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { generateMessagesInputSchema } from '@galvanigraph/core-models';
 import { MessageGeneratorController } from '../controllers/message-generator.controller.js';

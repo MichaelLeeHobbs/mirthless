@@ -1,4 +1,3 @@
-// S20: an X12 270 eligibility request is read with the EDI/X12 data type.
 // Gap doc 13 N1. Mirth serializes X12 to XML and scripts read
 // msg['NM1'][2]['NM1.09']. GalvaniGraph has no E4X (D-244); the expectation here
 // is that X12 is read with the same path API as HL7: the third NM1's ninth

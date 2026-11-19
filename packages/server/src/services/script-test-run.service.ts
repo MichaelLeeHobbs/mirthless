@@ -1,13 +1,5 @@
-// ===========================================
-// Script test run service
-// ===========================================
-// Runs one script against a sample message for the editor's Run button, with no
-// side effects: sends, writes and routing are refused by the engine's test run;
-// reads (resources, collection find) go to the real services. The run happens
-// in a worker thread with a heap limit and a fixed time limit, one at a time per
-// server, so a test run can never stall or crash the engine's main thread. The
-// sample can hold PHI, so it is never stored or logged; the audit event records
-// who ran a script for which channel.
+// The sample can hold PHI, so it is never stored or logged; the audit event
+// records only who ran a script for which channel.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { runScriptTestIsolated, type ScriptTestResult } from '@galvanigraph/engine';
@@ -19,11 +11,9 @@ import { ChannelService } from './channel.service.js';
 import { CodeTemplateService } from './code-template.service.js';
 import { createCollectionBridge, createResourceBridge } from '../engine.js';
 
-/** The most a test run may take, whatever the channel's own script timeout. */
 export const TEST_RUN_TIMEOUT_MS = 5_000;
-/** Heap limit of the worker a test run runs in. */
 export const TEST_RUN_HEAP_MB = 64;
-/** How far the process's memory may grow during a test run (typed arrays are outside the heap limit). */
+/** Typed arrays are outside the worker's heap limit, so process growth is capped separately. */
 export const TEST_RUN_MEMORY_GROWTH_MB = 256;
 
 interface ChannelScope {
@@ -32,7 +22,6 @@ interface ChannelScope {
   readonly timeoutMs: number;
 }
 
-/** Templates, destinations and timeout for the channel being edited (or all templates without one). */
 async function channelScope(channelId: string | undefined): Promise<ChannelScope> {
   if (channelId === undefined) {
     const templates = await CodeTemplateService.listTemplates();
@@ -52,12 +41,10 @@ async function channelScope(channelId: string | undefined): Promise<ChannelScope
   };
 }
 
-/** One test run at a time per server: a second request is refused, not queued. */
 let running = false;
 
 /**
- * Record a test run in the audit log: who, which channel, never the sample. A
- * run that returned a result can show resource and collection data, so it is
+ * A run that returned a result can show resource and collection data, so it is
  * recorded fail-closed and the result withheld when that fails (D-312); a run
  * that threw is recorded best effort.
  */
@@ -75,13 +62,12 @@ async function audit(input: ScriptTestRunInput, context: AuditContext | undefine
   if (!recorded.ok) throw recorded.error;
 }
 
-/** Which reads a test run may make: each bridge only with its read permission (D-310, amends D-286). */
+/** Each bridge only with its read permission (D-310). */
 export interface TestRunReads {
   readonly resources: boolean;
   readonly collections: boolean;
 }
 
-/** A reader the caller may not use: the script gets an error naming the permission it lacks. */
 function refused(label: string, permission: string): () => Promise<never> {
   return () => Promise.reject(new Error(`This test run cannot read ${label}: it needs the ${permission} permission.`));
 }

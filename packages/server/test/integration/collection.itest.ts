@@ -1,9 +1,4 @@
-// ===========================================
-// Collection Service — real Postgres integration
-// ===========================================
-// Exercises the real jsonb queries (@> match, ->> multi-filter), newest-wins
-// ordering, TTL default/override, and expiry pruning — behaviour that mock-DB
-// unit tests cannot verify. Models the order/report matching use case.
+// What mock-DB unit tests cannot verify: the real jsonb queries, ordering, TTL and pruning.
 
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
@@ -17,7 +12,7 @@ describeIntegration('CollectionService (real Postgres)', () => {
   });
 
   afterEach(async () => {
-    // Clean up collections created by each test (cascade removes records).
+    // Cascade removes the records.
     const { db, schema, eq } = mods;
     for (const id of created.splice(0)) {
       await db.delete(schema.collections).where(eq(schema.collections.id, id));
@@ -28,7 +23,6 @@ describeIntegration('CollectionService (real Postgres)', () => {
     await mods?.pool.end();
   });
 
-  /** Create a uniquely-named collection and track it for cleanup. */
   async function makeCollection(
     fields: string[],
     defaultTtlSeconds: number | null = null,
@@ -45,7 +39,6 @@ describeIntegration('CollectionService (real Postgres)', () => {
     const { CollectionService } = mods;
     const { name } = await makeCollection(['accessionNumber', 'institutionName', 'orderControl']);
 
-    // Two orders for the same accession/institution: an older NW, a newer SC.
     unwrap(await CollectionService.store(name, {
       fields: { accessionNumber: 'A1', institutionName: 'North', orderControl: 'NW' },
       payload: 'ORDER-NW',
@@ -55,7 +48,6 @@ describeIntegration('CollectionService (real Postgres)', () => {
       fields: { accessionNumber: 'A1', institutionName: 'North', orderControl: 'SC' },
       payload: 'ORDER-SC',
     }));
-    // A decoy for a different accession.
     unwrap(await CollectionService.store(name, {
       fields: { accessionNumber: 'OTHER', institutionName: 'North', orderControl: 'SC' },
       payload: 'DECOY',
@@ -97,7 +89,6 @@ describeIntegration('CollectionService (real Postgres)', () => {
 
   it('applies the collection default TTL and prunes expired records', async () => {
     const { CollectionService, db, schema, eq } = mods;
-    // Default TTL of 1s; the stored record expires almost immediately.
     const { id, name } = await makeCollection(['k'], 1);
 
     unwrap(await CollectionService.store(name, { fields: { k: 'v' }, payload: 'EXPIRES' }));
@@ -167,11 +158,8 @@ describeIntegration('CollectionService (real Postgres)', () => {
     expect(rows).toHaveLength(0);
   });
 
-  // ----- UI grid: list / create / update / delete -----
-
   const PAGE = { page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' } as const;
 
-  /** A collection with three records stored oldest to newest. */
   async function makeGridCollection(): Promise<{ id: string; name: string }> {
     const made = await makeCollection(['accession', 'facility']);
     for (const [accession, facility, payload] of [
@@ -257,8 +245,6 @@ describeIntegration('CollectionService (real Postgres)', () => {
     const result = await CollectionService.updateRecord(id, record.id, { fields: { bogus: 'x' }, payload: 'p', expireAt: null });
     expect(result.ok).toBe(false);
   });
-
-  // ----- Script bridge: update / delete by collection name -----
 
   it('lets a script change only the payload and expiry, keeping the fields', async () => {
     const { CollectionService } = mods;

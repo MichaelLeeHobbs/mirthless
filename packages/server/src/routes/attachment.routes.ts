@@ -1,8 +1,3 @@
-// ===========================================
-// Attachment Routes
-// ===========================================
-// Mounted under /channels (before greedy /:id).
-
 import { Router, type IRouter } from 'express';
 import {
   attachmentListParamsSchema,

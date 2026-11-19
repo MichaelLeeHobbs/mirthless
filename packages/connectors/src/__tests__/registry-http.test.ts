@@ -1,7 +1,3 @@
-// ===========================================
-// Registry: HTTP properties parsed by the core-models schema
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 
@@ -42,7 +38,6 @@ describe('registry HTTP factories', () => {
     })).not.toThrow();
   });
 
-  // By the time the registry runs, the server has swapped the stored certificate ids for PEM.
   it('read the PEM the server resolved, which the stored-id schema would refuse', () => {
     expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS', tls: { ...PEM, requireClientCert: false } })).not.toThrow();
     expect(() => createDestinationConnector('HTTP', { url: 'https://lis', scheme: 'HTTPS', tls: { ...PEM, rejectUnauthorized: true } })).not.toThrow();

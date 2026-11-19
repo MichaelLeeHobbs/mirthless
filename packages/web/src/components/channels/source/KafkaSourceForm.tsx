@@ -1,8 +1,4 @@
-// ===========================================
-// Kafka Source Connector Form
-// ===========================================
-// Reads a topic as a member of a consumer group. Property keys must match the
-// Kafka source schema in core-models (see connector-defaults.ts).
+// Property keys must match the Kafka source schema in core-models (see connector-defaults.ts).
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';

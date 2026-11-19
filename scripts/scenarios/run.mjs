@@ -1,15 +1,5 @@
 #!/usr/bin/env node
-// ===========================================
-// Migration scenario suite: run and score
-// ===========================================
-// 1. Recreates the scenario database (SCENARIO_DATABASE_URL, must end in _test)
-//    from scratch, migrates and seeds it, so every run starts from the same state.
-// 2. Runs e2e/scenarios through playwright.scenarios.config.ts.
-// 3. Prints each scenario's result and the weighted score, and writes
-//    tmp/feature-climb/score.json.
-//
-// Usage: node scripts/scenarios/run.mjs [--no-reset] [-- <extra playwright args>]
-// Needs Docker test services: docker compose -f docker/docker-compose.yml --profile test up -d sftp-test mail-test mysql-test
+// How to run it, and the Docker test services it needs: docs/testing/migration-scenarios.md.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';

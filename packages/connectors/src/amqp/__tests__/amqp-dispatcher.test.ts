@@ -1,7 +1,3 @@
-// ===========================================
-// AMQP Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import { AmqpDispatcher, type AmqpDispatcherConfig } from '../amqp-dispatcher.js';
@@ -18,7 +14,6 @@ const message = (variables?: Record<string, unknown>): ConnectorMessage => ({
 });
 const signal = (): AbortSignal => new AbortController().signal;
 
-/** A factory handing out fresh fake publishers, so reconnects are visible. */
 function publishers(): { factory: AmqpPublisherFactory; made: FakeAmqpPublisher[]; failNext: number } {
   const state = { made: [] as FakeAmqpPublisher[], failNext: 0, factory: (async () => {
     if (state.failNext > 0) { state.failNext -= 1; throw new Error('ECONNREFUSED'); }
@@ -82,7 +77,7 @@ describe('send', () => {
     const result = await dispatcher.send(message(), signal());
     expect(result.ok).toBe(false);
     expect(result.error?.message).toContain('returned the message');
-    expect(pubs.made).toHaveLength(1); // the connection is still good and is kept
+    expect(pubs.made).toHaveLength(1);
   });
 
   it('reconnects on the next send after the connection is lost', async () => {

@@ -1,17 +1,4 @@
-// ===========================================
-// Showcase Seed
-// ===========================================
-// Populates one human-reviewable EXAMPLE row for every feature page that would
-// otherwise render empty: Resources, Collections, Code Templates, Global
-// Scripts, Global Map, Config Map, Data Sources, Alerts, plus a headline
-// channel that exercises destination-level filter + transformer + response
-// transformer. All rows are clearly named ("Example"/"example-") so they read
-// as seed data.
-//
-// Idempotent: every entity is checked by its natural key before creation and a
-// short +/= line is logged per item (matching run-seed's style). Re-running is
-// a clean no-op. The data source is gated on content encryption being
-// configured (its password is encrypted at rest); it is skipped otherwise.
+// Every row is named "Example"/"example-" so it reads as seed data.
 
 import { eq, and } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -24,8 +11,6 @@ import { createSeededChannelPartitions, findChannelId } from './seed-examples.js
 
 type Db = NodePgDatabase<typeof schema>;
 
-// ----- Logging helpers (match run-seed's +/= style) -----
-
 function added(label: string): void {
   // eslint-disable-next-line no-console
   console.log(`  + ${label}`);
@@ -35,8 +20,6 @@ function skipped(label: string): void {
   // eslint-disable-next-line no-console
   console.log(`  = ${label} (exists)`);
 }
-
-// ----- Resources -----
 
 interface ResourceSeed {
   readonly name: string;
@@ -79,8 +62,6 @@ async function seedResources(db: Db): Promise<void> {
   });
 }
 
-// ----- Collections -----
-
 interface RecordSeed {
   readonly fields: Record<string, string | number | boolean>;
   readonly payload: string;
@@ -119,8 +100,6 @@ async function seedCollection(db: Db): Promise<void> {
   added(`collection ${name} (${records.length} records)`);
 }
 
-// ----- Code Templates -----
-
 async function seedCodeTemplate(db: Db): Promise<void> {
   const libName = 'Example Library';
   const [existing] = await db
@@ -156,8 +135,6 @@ async function seedCodeTemplate(db: Db): Promise<void> {
   added(`code template library ${libName} (+ formatName)`);
 }
 
-// ----- Global Scripts -----
-
 interface GlobalScriptSeed {
   readonly scriptType: string;
   readonly script: string;
@@ -182,8 +159,6 @@ async function seedGlobalScripts(db: Db): Promise<void> {
   }
 }
 
-// ----- Global Map -----
-
 async function seedGlobalMap(db: Db): Promise<void> {
   const entries: ReadonlyArray<{ readonly key: string; readonly value: string }> = [
     { key: 'environment', value: 'development' },
@@ -202,8 +177,6 @@ async function seedGlobalMap(db: Db): Promise<void> {
     added(`global map ${entry.key}`);
   }
 }
-
-// ----- Config Map -----
 
 async function seedConfigMap(db: Db): Promise<void> {
   const rows: ReadonlyArray<{ readonly category: string; readonly name: string; readonly value: string }> = [
@@ -224,8 +197,6 @@ async function seedConfigMap(db: Db): Promise<void> {
     added(`config ${row.category}/${row.name}`);
   }
 }
-
-// ----- Data Source (gated on content encryption) -----
 
 async function seedDataSource(db: Db): Promise<void> {
   const name = 'reporting-db';
@@ -264,8 +235,6 @@ async function seedDataSource(db: Db): Promise<void> {
   added(`data source ${name}`);
 }
 
-// ----- Alert -----
-
 async function seedAlert(db: Db): Promise<void> {
   const name = 'Example: Channel Error Alert';
   const [existing] = await db
@@ -294,8 +263,6 @@ async function seedAlert(db: Db): Promise<void> {
   }
   added(`alert ${name}`);
 }
-
-// ----- Headline Channel (dest filter + transformer + response transformer) -----
 
 const HEADLINE_SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
 
@@ -385,8 +352,6 @@ async function seedHeadlineChannel(db: Db): Promise<void> {
   await addDestinationTransformer(db, channelId, connectorId);
   added(`channel ${name} (dest filter + transformer + response transformer)`);
 }
-
-// ----- Main -----
 
 export async function seedShowcase(db: Db): Promise<void> {
   // eslint-disable-next-line no-console

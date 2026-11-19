@@ -1,10 +1,3 @@
-// ===========================================
-// TCP/MLLP Receiver (Source Connector)
-// ===========================================
-// Listens for inbound TCP (optionally TLS) connections, parses MLLP frames,
-// and dispatches messages to the engine pipeline. Responds with a real HL7
-// ACK/NAK by default — never raw destination content.
-
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
@@ -20,16 +13,12 @@ import type { TlsServerOptions } from '../tls.js';
 import { buildAck, type AckCode } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
-/** Close an inbound MLLP connection after this long with no traffic. */
 const IDLE_SOCKET_TIMEOUT_MS = 300_000;
 
-/** On stop, how long messages already being processed get to finish and be acknowledged. */
 const STOP_DRAIN_MS = 5_000;
 
-/** On stop, how long to wait for sockets to close once they have been told to. */
 const STOP_CLOSE_MS = 2_000;
 
-/** Resolve when `work` settles or after `ms`, whichever is first. */
 async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
@@ -37,13 +26,7 @@ async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
   clearTimeout(timer);
 }
 
-// ----- Config -----
-
-/**
- * How the receiver acknowledges an inbound message.
- * - AUTO_ACK: generate a real HL7 ACK/NAK from the inbound MSH (default).
- * - PASSTHROUGH: return the pipeline/destination response verbatim (legacy).
- */
+/** PASSTHROUGH returns the pipeline response verbatim; AUTO_ACK builds an HL7 ACK/NAK from the inbound MSH. */
 export const MLLP_RESPONSE_MODE = {
   AUTO_ACK: 'AUTO_ACK',
   PASSTHROUGH: 'PASSTHROUGH',
@@ -54,19 +37,14 @@ export interface TcpMllpReceiverConfig {
   readonly host: string;
   readonly port: number;
   readonly maxConnections: number;
-  /** Acknowledgement strategy. Defaults to AUTO_ACK. */
   readonly responseMode: MllpResponseMode;
-  /** Payload charset for framing/parsing. Defaults to utf-8. */
   readonly charset: BufferEncoding;
-  /** Max buffered bytes per connection before rejecting (DoS guard). */
+  /** Per-connection buffer cap, a DoS guard. */
   readonly maxFrameBytes: number;
-  /** Optional TLS termination. When present the server speaks TLS. */
   readonly tls?: TlsServerOptions | undefined;
-  /** Frame bytes around each message and response (default MLLP). */
+  /** MLLP when unset. */
   readonly framing?: Framing | undefined;
 }
-
-// ----- Receiver -----
 
 export class TcpMllpReceiver implements SourceConnectorRuntime {
   private readonly config: TcpMllpReceiverConfig;
@@ -119,7 +97,6 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Create a plain-TCP or TLS server depending on config. */
   private createServer(): net.Server {
     const onConnection = (socket: net.Socket): void => { this.handleConnection(socket); };
     if (this.config.tls) {
@@ -139,13 +116,10 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
   }
 
   /**
-   * Stop gracefully. HL7 senders hold their connection open, and `server.close`
-   * only completes once every connection is gone, so the order matters:
-   *   1. stop accepting connections and stop reading new messages,
-   *   2. let messages already being processed finish and send their ACK,
-   *   3. close the connections, then wait for the listener to close.
-   * A message that arrives after step 1 is neither processed nor acknowledged,
-   * so the sender still holds it and resends it elsewhere or later.
+   * HL7 senders hold their connection open and `server.close` completes only
+   * once every connection is gone, so the order matters: stop reading, let
+   * in-flight messages finish and ACK, then close the connections. A message
+   * arriving after reading stops is not acknowledged, so the sender keeps it.
    */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
@@ -195,7 +169,6 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Handle an incoming TCP connection. */
   private handleConnection(socket: net.Socket): void {
     this.connections.add(socket);
 
@@ -255,7 +228,6 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Process a complete MLLP message and send an acknowledgement. */
   private async processMessage(content: string, socket: net.Socket): Promise<void> {
     if (!this.dispatcher) return;
 
@@ -275,7 +247,6 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** Determine the wire response for a dispatched message. */
   private buildResponse(content: string, result: Result<DispatchResult>): string | null {
     if (this.config.responseMode === MLLP_RESPONSE_MODE.PASSTHROUGH) {
       if (result.ok && result.value.response !== undefined) return result.value.response;
@@ -287,7 +258,6 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
   }
 }
 
-/** Map a dispatch result to an HL7 acknowledgement code: AE for an error, AA otherwise (filtered included). */
 function ackCodeFor(result: Result<DispatchResult>): AckCode {
   if (!result.ok) return 'AE';
   const status = result.value.status;

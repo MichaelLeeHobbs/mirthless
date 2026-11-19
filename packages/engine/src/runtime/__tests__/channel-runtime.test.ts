@@ -1,13 +1,7 @@
-// ===========================================
-// Channel Runtime Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { ChannelRuntime } from '../channel-runtime.js';
 import type { RuntimeSourceConnector, RuntimeConnector, ChannelRuntimeConfig } from '../channel-runtime.js';
-
-// ----- Helpers -----
 
 function ok(): Result<void> {
   return { ok: true, value: undefined, error: null } as Result<void>;
@@ -39,8 +33,6 @@ function makeConfig(overrides?: Partial<ChannelRuntimeConfig>): ChannelRuntimeCo
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 let runtime: ChannelRuntime;
 
@@ -292,7 +284,6 @@ describe('ChannelRuntime', () => {
       await runtime.pause();
       await runtime.resume();
 
-      // onStart called twice: once at start, once at resume
       expect(source.onStart).toHaveBeenCalledTimes(2);
     });
 

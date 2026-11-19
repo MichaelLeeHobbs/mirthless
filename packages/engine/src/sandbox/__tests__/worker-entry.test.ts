@@ -1,6 +1,4 @@
-// Workers run user code (test runs) or need nothing from the server (type
-// checks), so they must not inherit its environment: the database URL and the
-// JWT secret live there.
+// Workers must not inherit the server's environment: the database URL and the JWT secret live there.
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { workerEntry } from '../worker-entry.js';

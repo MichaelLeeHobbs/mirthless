@@ -1,10 +1,5 @@
-// ===========================================
-// Permission Picker
-// ===========================================
-// The role editor's permission list, grouped by area from the permission
-// catalog. A permission the editor does not hold cannot be added: the server
-// refuses it (the within rule, D-310). One the role already had can be removed
-// and put back, since putting it back adds nothing.
+// The server refuses adding a permission the editor does not hold (the within
+// rule, D-310). One the role already had may be put back, since that adds nothing.
 
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
@@ -20,15 +15,12 @@ import { StatusChip } from '../common/StatusChip.js';
 
 interface PermissionPickerProps {
   readonly selected: ReadonlySet<string>;
-  /** The permissions the editor holds; others cannot be added. */
   readonly held: ReadonlySet<string>;
-  /** The permissions the role had when it was loaded; these can always be put back. */
   readonly original: ReadonlySet<string>;
   readonly readOnly: boolean;
   readonly onToggle: (permission: Permission) => void;
 }
 
-/** The catalog's permissions grouped by area, in catalog order. */
 function byArea(): ReadonlyArray<readonly [string, readonly Permission[]]> {
   const groups = new Map<string, Permission[]>();
   for (const [name, info] of Object.entries(PERMISSION_CATALOG) as [Permission, (typeof PERMISSION_CATALOG)[Permission]][]) {

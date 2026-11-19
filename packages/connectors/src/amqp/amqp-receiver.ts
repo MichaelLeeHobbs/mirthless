@@ -1,21 +1,5 @@
-// ===========================================
-// AMQP Receiver (Source Connector)
-// ===========================================
-// Consumes an existing queue one message at a time and acknowledges a message
-// only after the pipeline has stored it. A message the pipeline could not take
-// goes back to the queue (after a pause, so a down database is not hammered)
-// and is delivered again first. A message stored with an ERROR status is
-// rejected without requeue, which sends it to the queue's dead-letter exchange
-// if one is configured. A crash or lost connection between storing and
-// acknowledging delivers the message again (at-least-once); such a message has
-// `redelivered: true` in the source map.
-//
-// A message the pipeline refuses every time (one the store rejects) would come
-// back forever. After `maxStoreAttempts` failures on the same message (counted
-// per message id, or in a row for a message without one) the receiver stops
-// without acknowledging or rejecting it, so it stays on the queue, and reports
-// a fatal error, which stops the channel. An operator fixes the cause and
-// starts it again.
+// At-least-once (D-266): a message is acked only after the pipeline stores it.
+// One the pipeline never stores stops the channel and stays on the queue (D-271).
 
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
@@ -26,24 +10,18 @@ import { assertCharsetAvailable, decodePayload, INVALID_UTF8_MESSAGE } from '../
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
 import { consumeAmqp, type AmqpConnectionConfig, type AmqpConsume, type AmqpConsumer, type AmqpDelivery } from './amqp-client.js';
 
-/** Wait before reconnecting, and before returning a message the pipeline could not take. */
+/** Pause before reconnecting and before requeueing, so a down database is not hammered. */
 const DEFAULT_RETRY_DELAY_MS = 5_000;
-/** Bound on letting the message in progress finish during a stop, and on closing. */
 const AMQP_OP_TIMEOUT_MS = 30_000;
 
 export interface AmqpReceiverConfig extends AmqpConnectionConfig {
   readonly queue: string;
-  /** How a message body becomes message text; UTF-8 when absent. */
+  /** UTF-8 when absent. */
   readonly charset?: QueueCharset;
   /** Failures in a row before the receiver stops; DEFAULT_MAX_STORE_ATTEMPTS when absent. */
   readonly maxStoreAttempts?: number;
 }
 
-/**
- * The message the pipeline receives for a delivery, its body decoded with the
- * source's charset. A body that is not valid UTF-8 (in UTF-8 mode) gets a
- * `charsetError` in the source map, so the stored message shows it.
- */
 export function toRawMessage(delivery: AmqpDelivery, queue: string, charset: QueueCharset = 'utf-8'): RawMessage {
   const decoded = decodePayload(delivery.content, charset);
   return {
@@ -71,18 +49,14 @@ export class AmqpReceiver implements SourceConnectorRuntime {
   private running = false;
   /** Counts starts, so a loop left over from before a halt and restart exits. */
   private generation = 0;
-  /** Deliveries are handled one after another, in the order they arrive. */
   private queue: Promise<void> = Promise.resolve();
-  /** Ends a wait (between reconnects, or before a requeue) early when the channel stops. */
   private readonly wakers = new Set<() => void>();
   private onFatal: SourceFatalHandler | null = null;
   /**
-   * Failures to store, per message id. A message without an id is counted under
-   * '' as failures in a row, which assumes it comes back before the messages
-   * behind it (true for a classic queue with prefetch 1, not promised by a
-   * quorum queue). The broker's `x-delivery-count` is not used: RabbitMQ 4.x
-   * does not raise it for a nack with requeue, which is how this source returns
-   * a message.
+   * Per message id. A message without one counts under '' as failures in a row, which assumes
+   * it returns before the messages behind it (true for a classic queue with prefetch 1, not
+   * promised by a quorum queue). Not `x-delivery-count`: RabbitMQ 4.x does not raise it for a
+   * nack with requeue.
    */
   private readonly failures = new Map<string, number>();
 
@@ -111,7 +85,6 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Connect and start consuming; a broker that cannot be reached or a missing queue fails the start. */
   async onStart(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (!this.dispatcher) throw new Error('Dispatcher not set — call setDispatcher before start');
@@ -119,7 +92,6 @@ export class AmqpReceiver implements SourceConnectorRuntime {
       const generation = this.generation;
       this.running = true;
       this.failures.clear();
-      // A dispatch left hanging by a halt must not hold up this start's deliveries.
       this.queue = Promise.resolve();
       try {
         this.consumer = await this.consume(this.config, (d) => { this.enqueue(generation, d); });
@@ -131,7 +103,6 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Let the message in progress finish and be acknowledged, then disconnect; unacknowledged ones return to the queue. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.running = false;
@@ -141,7 +112,6 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Disconnect at once; the message in progress returns to the queue. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.running = false;
@@ -160,7 +130,6 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     return this.running && generation === this.generation;
   }
 
-  /** Reconnect whenever the connection is lost, until stopped. */
   private async watch(generation: number, first: AmqpConsumer): Promise<void> {
     let consumer: AmqpConsumer | null = first;
     while (this.isCurrent(generation)) {
@@ -192,10 +161,7 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /**
-   * Handle deliveries one after another. The chain must never stay rejected:
-   * every later delivery would be skipped while the channel shows STARTED.
-   */
+  /** The chain must never stay rejected, or every later delivery is skipped while the channel shows STARTED. */
   private enqueue(generation: number, delivery: AmqpDelivery): void {
     this.queue = this.queue
       .then(() => this.handle(generation, delivery))
@@ -205,11 +171,7 @@ export class AmqpReceiver implements SourceConnectorRuntime {
       });
   }
 
-  /**
-   * Convert and dispatch a delivery. A throw (a decoder that cannot be built, a
-   * dispatcher bug) becomes a failed result, so the message goes back to the
-   * queue and counts toward the cap like any message the pipeline did not store.
-   */
+  /** A throw becomes a failed result, so the message is requeued and counts toward the cap. */
   private async dispatchDelivery(dispatcher: MessageDispatcher, delivery: AmqpDelivery, where: Readonly<Record<string, unknown>>): Promise<Result<DispatchResult>> {
     return tryCatch(async () => {
       const raw = toRawMessage(delivery, this.config.queue, this.config.charset);
@@ -222,7 +184,6 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Dispatch one delivery and settle it with the broker. */
   private async handle(generation: number, delivery: AmqpDelivery): Promise<void> {
     const dispatcher = this.dispatcher;
     // Not acknowledged: the channel closes on stop and the broker requeues it.
@@ -245,11 +206,6 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     this.settle(where, () => { delivery.ack(); });
   }
 
-  /**
-   * Return a message the pipeline did not store to the queue, or stop at the
-   * cap. A failure that comes back after a stop or halt (the pipeline was being
-   * shut down) is not counted and never stops a later start.
-   */
   private async notStored(generation: number, delivery: AmqpDelivery, cause: Error, where: Readonly<Record<string, unknown>>): Promise<void> {
     if (!this.isCurrent(generation)) {
       this.logger.warn({ ...errorInfo(cause), ...where }, 'Pipeline did not store the AMQP message while the source was stopping; it returns to the queue');
@@ -268,17 +224,13 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     this.settle(where, () => { delivery.nack(true); });
   }
 
-  /**
-   * Stop consuming after a message failed too many times. It is neither
-   * acknowledged nor rejected: closing the connection returns it to the queue,
-   * so a restart delivers it again.
-   */
+  /** Neither acks nor rejects: closing the connection returns the message to the queue for the next start. */
   private async giveUp(generation: number, cause: Error, where: Readonly<Record<string, unknown>>, attempts: number): Promise<void> {
     this.running = false;
     this.wakeAll();
     this.logger.error({ ...errorInfo(cause), ...where, attempts }, 'AMQP source stopped: the message failed too many times in a row; it stays on the queue');
     await this.closeConsumer();
-    // Closing can take up to 30 s; a start in that time is a new run this report must not stop.
+    // A start while closing is a new run this report must not stop.
     if (generation !== this.generation) return;
     this.onFatal?.(new Error(
       `AMQP source stopped: the channel could not store a message from queue ${this.config.queue} after ${String(attempts)} attempts ` +

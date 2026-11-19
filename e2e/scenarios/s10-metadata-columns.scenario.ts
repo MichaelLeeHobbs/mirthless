@@ -1,11 +1,5 @@
-// S10: custom metadata columns are filled and searchable.
-// Production pattern: every channel carries ACCESSION / INSTITUTION columns
-// mapped from channel-map variables, and operators find a study's messages by
-// accession number.
-//
-// Search contract: GET /channels/:id/messages?metaDataColumn=<NAME>&metaDataValue=<v>
-// returns only messages whose column equals the value, and each summary carries
-// a `metaData` record of column values.
+// Production pattern: every channel carries ACCESSION / INSTITUTION columns mapped from
+// channel-map variables, and operators find a study's messages by accession number.
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, jsWriter } from './support/mirth-xml.js';

@@ -1,7 +1,3 @@
-// ===========================================
-// Message Export Schema Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { messageExportQuerySchema } from '../message-export.schema.js';
 

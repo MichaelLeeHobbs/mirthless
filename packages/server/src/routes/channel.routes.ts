@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Routes
-// ===========================================
-
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import {
@@ -67,8 +63,7 @@ router.patch(
   ChannelController.setEnabled
 );
 
-// Who can access the channel, now or as of a past time (rebuilt from the audit
-// log): people and how they hold access, so users:read (D-310).
+// Lists people and how they hold access, so users:read (D-310).
 router.get(
   '/:id/access',
   requirePermission('users:read'),

@@ -1,13 +1,4 @@
-// ===========================================
-// Roles E2E Tests (#265 slice 7)
-// ===========================================
-// An admin clones a built-in role on the Roles page, narrows it, and gives it
-// to a new user. That user, signed in, holds exactly what the role grants: the
-// pages it allows and nothing else, with the server refusing the rest. Deleting
-// the role while it is assigned is refused and names the holder.
-//
-// Users can't be deleted, so each run uses names of its own (D-289). Cleanup
-// moves the user back to viewer, disables them, and deletes the role.
+// Users can't be deleted, so each run uses names of its own (D-289).
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -70,7 +61,6 @@ test.describe.serial('Roles', () => {
     await postData(api, '/users', { username: USERNAME, email: `${USERNAME}@test.local`, password: PASSWORD, role: ROLE });
 
     await login(page, { username: USERNAME, password: PASSWORD });
-    // The sidebar lists only the pages the role allows.
     const link = (name: string) => page.getByRole('link', { name, exact: true });
     await expect(link('Code Templates')).toBeVisible();
     await expect(link('Collections')).toHaveCount(0);
@@ -96,7 +86,6 @@ test.describe.serial('Roles', () => {
     await expect(row).toContainText('1 user');
     await expect(row.getByRole('button', { name: `Delete ${ROLE}` })).toBeDisabled();
 
-    // The server refuses it too, naming the holder to an admin.
     const role = await findRole();
     const refused = await api.delete(`${API_BASE}/roles/${role?.id ?? ''}`);
     expect(refused.status()).toBe(409);

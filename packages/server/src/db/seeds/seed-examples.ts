@@ -1,11 +1,3 @@
-// ===========================================
-// Example Channels Seed
-// ===========================================
-// Creates 10 example channels in an "Examples" group.
-// Demonstrates RAW, HL7V2, JSON, XML data types, transformers,
-// filters, channel-to-channel routing, HTTP/File/JS connectors.
-//
-// Idempotent: checks by channel name before creating.
 // A channel's message partitions are created with it, as channel creation
 // does, so its example messages land in its own partitions (#260).
 
@@ -32,14 +24,6 @@ type Db = NodePgDatabase<typeof schema>;
 const EXAMPLES_GROUP = 'Examples';
 const SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
 
-// ----- Helpers -----
-
-/**
- * Looks up a channel that has not been soft-deleted by its name.
- * @param db - Drizzle database handle
- * @param name - Channel name
- * @returns The channel id, or null when no live channel has that name
- */
 export async function findChannelId(db: Db, name: string): Promise<string | null> {
   const [row] = await db
     .select({ id: schema.channels.id })
@@ -49,12 +33,9 @@ export async function findChannelId(db: Db, name: string): Promise<string | null
 }
 
 /**
- * Creates a newly seeded channel's message partitions the way channel
- * creation does, after its row is written (the partition function refuses a
- * channel that does not exist). Throws when they can't be created, so the
- * seed fails instead of putting the channel's messages in the default partitions.
- * @param db - The seed's database handle, which wrote the channel
- * @param channelId - The channel just inserted
+ * Call after the channel's row is written: the partition function refuses a
+ * channel that does not exist. Throws rather than let its messages land in the
+ * default partitions.
  */
 export async function createSeededChannelPartitions(db: Db, channelId: string): Promise<void> {
   const result = await PartitionManagerService.createPartitions(channelId, db);
@@ -97,7 +78,6 @@ async function insertChannel(
 
   const channelId = row!.id;
 
-  // Insert 4 default scripts
   for (const scriptType of SCRIPT_TYPES) {
     const scriptContent = input.scripts?.[scriptType.toLowerCase() as keyof typeof input.scripts] ?? '';
     await db.insert(schema.channelScripts).values({
@@ -107,7 +87,6 @@ async function insertChannel(
     });
   }
 
-  // Insert destinations
   if (input.destinations) {
     for (let i = 0; i < input.destinations.length; i++) {
       const dest = input.destinations[i]!;
@@ -177,13 +156,10 @@ async function addSourceTransformer(db: Db, channelId: string, inType: string, o
   }
 }
 
-// ----- Main -----
-
 export async function seedExampleChannels(db: Db): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('\nSeeding example channels...');
 
-  // Create Examples group (idempotent)
   let [group] = await db.select({ id: schema.channelGroups.id })
     .from(schema.channelGroups)
     .where(eq(schema.channelGroups.name, EXAMPLES_GROUP));
@@ -198,7 +174,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
   }
   const groupId = group!.id;
 
-  // Helper: create channel if not exists, assign to group
   const create = async (
     name: string,
     fn: () => Promise<string>,
@@ -212,7 +187,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     const id = await fn();
     // Not one transaction: a seed killed between these two lines leaves this channel without partitions, and a rerun skips it as existing; reset the database.
     await createSeededChannelPartitions(db, id);
-    // Assign to Examples group
     await db.insert(schema.channelGroupMembers).values({
       channelGroupId: groupId,
       channelId: id,
@@ -222,9 +196,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   };
 
-  // ===== Phase 1: No cross-channel dependencies =====
-
-  // 1. Echo (RAW)
   const echoId = await create('Example: Echo (RAW)', () =>
     insertChannel(db, {
       name: 'Example: Echo (RAW)',
@@ -236,7 +207,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     }),
   );
 
-  // 2. String Transform (RAW)
   const stringTransId = await create('Example: String Transform', async () => {
     const id = await insertChannel(db, {
       name: 'Example: String Transform',
@@ -256,7 +226,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   });
 
-  // 3. HL7 to JSON
   const hl7ToJsonId = await create('Example: HL7 to JSON', async () => {
     const id = await insertChannel(db, {
       name: 'Example: HL7 to JSON',
@@ -287,7 +256,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   });
 
-  // 4. JSON Processor
   await create('Example: JSON Processor', async () => {
     const id = await insertChannel(db, {
       name: 'Example: JSON Processor',
@@ -321,7 +289,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   });
 
-  // 5. XML Transform
   await create('Example: XML Transform', async () => {
     const id = await insertChannel(db, {
       name: 'Example: XML Transform',
@@ -356,7 +323,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   });
 
-  // 6. Error Handler
   await create('Example: Error Handler', async () => {
     const id = await insertChannel(db, {
       name: 'Example: Error Handler',
@@ -379,7 +345,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   });
 
-  // 7. Filter Demo
   await create('Example: Filter Demo', async () => {
     const id = await insertChannel(db, {
       name: 'Example: Filter Demo',
@@ -400,7 +365,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   });
 
-  // 8. JS Scripted
   await create('Example: JS Scripted', () =>
     insertChannel(db, {
       name: 'Example: JS Scripted',
@@ -432,9 +396,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     }),
   );
 
-  // ===== Phase 2: Cross-channel dependencies =====
-
-  // 9. HL7 ADT Router
+  // These reference the channels above, so they come last.
   await create('Example: HL7 ADT Router', async () => {
     const id = await insertChannel(db, {
       name: 'Example: HL7 ADT Router',
@@ -479,7 +441,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     return id;
   });
 
-  // 10. Multi-Destination
   await create('Example: Multi-Destination', () =>
     insertChannel(db, {
       name: 'Example: Multi-Destination',
@@ -518,6 +479,6 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     }),
   );
 
-  // Suppress unused variable warnings for channels not referenced in Phase 2
+  // Keeps the unused-variable check quiet.
   void stringTransId;
 }

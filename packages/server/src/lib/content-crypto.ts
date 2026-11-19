@@ -1,18 +1,4 @@
-// ===========================================
-// Content Encryption (at-rest)
-// ===========================================
-// AES-256-GCM authenticated encryption for message content when a channel has
-// `encryptData` enabled. The key is derived from the CONTENT_ENCRYPTION_KEY
-// environment variable (64 hex chars = 32 bytes), validated at startup.
-//
-// WIRED: the message store adapter (packages/server/src/engine.ts) calls
-// `encryptContent()` before persisting content rows for channels with
-// `encryptData` true (setting message_content.is_encrypted). Read paths
-// (MessageService.loadContent, MessageQueryService.getMessageDetail,
-// MessageReprocessService) call `decryptIfEncrypted()`, which decrypts only
-// self-describing envelopes so mixed plaintext/ciphertext rows both read back
-// correctly. EngineManager.deploy() refuses to deploy an encryptData channel
-// when no key is configured. See docs/progress/DECISIONS.md (D-143).
+// At-rest encryption of message content for channels with `encryptData` (D-143).
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { tryCatch, type Result } from 'stderr-lib';
@@ -21,12 +7,10 @@ import { config } from '../config/index.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12; // 96-bit nonce recommended for GCM
-const KEY_BYTES = 32; // AES-256
+const KEY_BYTES = 32;
 const AUTH_TAG_BYTES = 16;
-/** Marker prefix so encrypted blobs are self-describing and versioned. */
 const ENVELOPE_PREFIX = 'enc:v1:';
 
-/** True when a content-encryption key is configured. */
 export function isContentEncryptionConfigured(): boolean {
   return typeof config.CONTENT_ENCRYPTION_KEY === 'string' && config.CONTENT_ENCRYPTION_KEY.length > 0;
 }
@@ -43,15 +27,10 @@ function loadKey(): Buffer {
   return key;
 }
 
-/** True when the given string is a content-crypto envelope produced by encryptContent. */
 export function isEncryptedEnvelope(value: string): boolean {
   return value.startsWith(ENVELOPE_PREFIX);
 }
 
-/**
- * Encrypt UTF-8 plaintext into a self-describing base64 envelope:
- * `enc:v1:<base64(iv | authTag | ciphertext)>`.
- */
 export function encryptContent(plaintext: string): Result<string> {
   return tryCatch(() => {
     const key = loadKey();
@@ -64,13 +43,7 @@ export function encryptContent(plaintext: string): Result<string> {
   });
 }
 
-/**
- * Decrypt content read from storage when it is an encrypted envelope; otherwise
- * return it unchanged. This lets mixed plaintext/ciphertext rows (written before
- * and after encryptData was enabled) both read back correctly. A `null` value
- * (absent content) passes through untouched. Decryption of a genuine envelope
- * fails loudly (missing key, tampering) rather than returning ciphertext.
- */
+/** Plaintext passes through: rows written before encryptData was enabled are not envelopes. */
 export function decryptIfEncrypted(content: string | null): Result<string | null> {
   if (content === null || !isEncryptedEnvelope(content)) {
     return { ok: true, value: content, error: null };
@@ -78,11 +51,7 @@ export function decryptIfEncrypted(content: string | null): Result<string | null
   return decryptContent(content);
 }
 
-/**
- * Decrypt an envelope produced by encryptContent back to UTF-8 plaintext.
- * A tampered or malformed envelope fails loudly (never returns partial data).
- * Envelopes come from storage, so a bad one is INTERNAL (HTTP 500), not bad input.
- */
+/** A bad envelope is INTERNAL (500), not bad input: envelopes come from storage. */
 export function decryptContent(envelope: string): Result<string> {
   return tryCatch(() => {
     if (!isEncryptedEnvelope(envelope)) {

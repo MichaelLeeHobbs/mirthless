@@ -1,10 +1,3 @@
-// ===========================================
-// X12 Message
-// ===========================================
-// EDI X12 (270/271 eligibility, 837 claims, 835 remits) read and edited with
-// the same path API as HL7: `NM1[3].9` is the ninth element of the third NM1,
-// `NM1[3].9.2` its second component. The delimiters come from the ISA segment.
-
 /** ISA is fixed width: 106 characters, the last being the segment terminator. */
 const ISA_LENGTH = 106;
 const ELEMENT_SEPARATOR_AT = 3;
@@ -34,7 +27,7 @@ function parsePath(path: string): X12Path {
   return { segment: match[1]!, occurrence, element, component };
 }
 
-/** A parsed X12 interchange. Each segment is its id followed by its elements. */
+/** Each segment holds its id at index 0, so element N is at index N. */
 export class X12Message {
   private constructor(
     private readonly segments: string[][],
@@ -45,10 +38,7 @@ export class X12Message {
     private readonly segmentEnd: string,
   ) {}
 
-  /**
-   * Parse an interchange that starts with an ISA segment. Throws when the text
-   * does not start with a full ISA, since the delimiters are read from it.
-   */
+  /** Throws without a full ISA, which holds the delimiters. */
   static parse(text: string): X12Message {
     const body = text.replace(/^\s+/, '');
     if (!body.startsWith('ISA') || body.length < ISA_LENGTH) {
@@ -79,7 +69,6 @@ export class X12Message {
     if (found !== undefined) throw new Error(`X12 value cannot contain the delimiter "${found}"`);
   }
 
-  /** The indexes of the segments with this id, in order. */
   private indexesOf(id: string): number[] {
     const found: number[] = [];
     this.segments.forEach((segment, index) => { if (segment[0] === id) found.push(index); });
@@ -91,7 +80,7 @@ export class X12Message {
     return index === undefined ? undefined : this.segments[index];
   }
 
-  /** The value at a path, or undefined when the segment or element is not there. A segment path returns the segment's text. */
+  /** A segment path returns the segment's text. */
   get(path: string): string | undefined {
     const p = parsePath(path);
     const segment = this.find(p);
@@ -103,9 +92,8 @@ export class X12Message {
   }
 
   /**
-   * Set an element or component, adding empty elements or components before it
-   * as needed. Throws when the segment is not there or the value holds a
-   * delimiter (an element may hold component separators: it is a composite).
+   * Throws when the segment is not there or the value holds a delimiter (an
+   * element may hold component separators: it is a composite).
    */
   set(path: string, value: string): void {
     const p = parsePath(path);
@@ -124,7 +112,7 @@ export class X12Message {
     segment[p.element] = components.join(this.componentSeparator);
   }
 
-  /** Remove a segment (a segment path) or empty an element or component. A path that is not there does nothing. */
+  /** Removes a segment, but only empties an element or component. */
   delete(path: string): void {
     const p = parsePath(path);
     if (p.element === undefined) {
@@ -135,12 +123,10 @@ export class X12Message {
     if (this.get(path) !== undefined) this.set(path, '');
   }
 
-  /** How many segments have this id. */
   getSegmentCount(id: string): number {
     return this.indexesOf(id).length;
   }
 
-  /** The interchange as text, with the delimiters and line breaks it was read with. */
   toString(): string {
     return this.segments.map((segment) => segment.join(this.elementSeparator) + this.segmentEnd).join('');
   }

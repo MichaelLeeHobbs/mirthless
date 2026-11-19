@@ -1,16 +1,8 @@
-// ===========================================
-// Attachment Handler
-// ===========================================
-// Extracts attachments from message content using REGEX, JAVASCRIPT, or NONE modes.
-// Runs between preprocessor and source filter in the pipeline.
-
 import * as crypto from 'node:crypto';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
-
-// ----- Constants -----
 
 export const ATTACHMENT_MODE = {
   NONE: 'NONE',
@@ -20,9 +12,6 @@ export const ATTACHMENT_MODE = {
 
 export type AttachmentMode = (typeof ATTACHMENT_MODE)[keyof typeof ATTACHMENT_MODE];
 
-// ----- Types -----
-
-/** Configuration for attachment extraction. */
 export interface AttachmentConfig {
   readonly mode: AttachmentMode;
   readonly pattern?: string;
@@ -30,7 +19,6 @@ export interface AttachmentConfig {
   readonly script?: CompiledScript;
 }
 
-/** A single extracted attachment. */
 export interface ExtractedAttachment {
   readonly id: string;
   readonly mimeType: string;
@@ -38,13 +26,10 @@ export interface ExtractedAttachment {
   readonly size: number;
 }
 
-/** Result of attachment extraction. */
 export interface AttachmentResult {
   readonly content: string;
   readonly attachments: readonly ExtractedAttachment[];
 }
-
-// ----- Handler -----
 
 export class AttachmentHandler {
   private readonly config: AttachmentConfig;
@@ -65,7 +50,6 @@ export class AttachmentHandler {
     }
   }
 
-  /** Extract attachments from content. Returns modified content and extracted attachments. */
   async extract(content: string, signal?: AbortSignal): Promise<Result<AttachmentResult>> {
     return tryCatch(async () => {
       switch (this.config.mode) {
@@ -84,7 +68,6 @@ export class AttachmentHandler {
     });
   }
 
-  /** Extract attachments using regex pattern matching. */
   private extractRegex(content: string): AttachmentResult {
     if (!this.compiledRegex) {
       return { content, attachments: [] };
@@ -105,7 +88,6 @@ export class AttachmentHandler {
     return { content: modifiedContent, attachments };
   }
 
-  /** Extract attachments using a JavaScript script in the sandbox. */
   private async extractJavaScript(content: string, signal?: AbortSignal): Promise<AttachmentResult> {
     if (!this.config.script || !this.sandbox || !this.execOptions) {
       return { content, attachments: [] };

@@ -1,12 +1,6 @@
-// ===========================================
-// HL7v2 ACK Tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Hl7Message } from '../hl7-message.js';
 import { createAck, newControlId } from '../hl7-ack.js';
-
-// ----- Helpers -----
 
 const ADT_A01 = [
   'MSH|^~\\&|SENDER|SFAC|RECV|RFAC|20260101120000||ADT^A01|MSG001|P|2.5.1',
@@ -17,15 +11,12 @@ function parseAck(ackStr: string): Hl7Message {
   return Hl7Message.parse(ackStr);
 }
 
-// ----- Tests -----
-
 describe('createAck', () => {
   it('generates AA ack with swapped sender/receiver', () => {
     const original = Hl7Message.parse(ADT_A01);
     const ackStr = createAck(original, { ackCode: 'AA' });
     const ack = parseAck(ackStr);
 
-    // Sender/receiver swapped
     expect(ack.get('MSH.3')).toBe('RECV');
     expect(ack.get('MSH.4')).toBe('RFAC');
     expect(ack.get('MSH.5')).toBe('SENDER');
@@ -52,7 +43,6 @@ describe('createAck', () => {
     const original = Hl7Message.parse(ADT_A01);
     const ackStr = createAck(original, { ackCode: 'AA' });
 
-    // Parse the raw string to check MSA
     const segments = ackStr.split('\r');
     const msaParts = segments[1]!.split('|');
     expect(msaParts[0]).toBe('MSA');

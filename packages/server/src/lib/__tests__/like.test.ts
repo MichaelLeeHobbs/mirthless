@@ -1,7 +1,3 @@
-// ===========================================
-// LIKE pattern escaping tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { containsPattern } from '../like.js';
 

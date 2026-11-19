@@ -1,18 +1,10 @@
-// ===========================================
-// Sandbox Globals — Ambient Types for Channel Scripts
-// ===========================================
-// The canonical type surface a filter / transformer / connector script sees when
-// it runs inside the engine sandbox (packages/engine/src/sandbox/). Author TS
-// channel scripts against these globals to get real type-checking and editor
-// completion.
+// Ambient types for authoring scripts in your own editor. The JSDoc here shows
+// in script authors' hover and completion.
 //
-// This file lives at the package root (NOT under src/) on purpose: including it
-// in the engine's own tsconfig would leak `msg`, `logger`, etc. into the engine
-// source as globals. It is consumed only by script-authoring tooling: a
-// tsconfig that lists it. The web editor and the deploy check use the same
-// surface built as a string in core-models (scripting/sandbox-declarations.ts),
-// which also types msg and tmp by data type; keep the two in sync when the
-// sandbox API changes (sandbox-types-consistency.test.ts checks the names).
+// At the package root, not under src/, on purpose: in the engine's own tsconfig
+// it would leak `msg`, `logger` and the rest into engine source as globals.
+// core-models' scripting/sandbox-declarations.ts declares the same surface; keep
+// the two in sync (sandbox-types-consistency.test.ts checks the names).
 
 /** HL7 message proxy returned by parseHL7(). Path-based access to HL7 fields. */
 interface Hl7MessageProxy {
@@ -41,8 +33,6 @@ interface SandboxLogger {
   error(message: unknown): void;
   debug(message: unknown): void;
 }
-
-// ----- Global Variables -----
 
 /** Current message being processed. Type depends on inbound data type. */
 declare var msg: unknown;
@@ -90,8 +80,6 @@ declare var configMap: Readonly<Record<string, unknown>>;
 /** Logger for sandbox scripts. */
 declare var logger: SandboxLogger;
 
-// ----- Map Shortcut Functions (Mirth-compatible) -----
-
 /** Look a key up in responseMap, connectorMap, channelMap, globalChannelMap, globalMap, configMap, sourceMap (first defined wins). */
 declare function $(key: string): unknown;
 /** Get or set a channelMap entry. */
@@ -113,8 +101,6 @@ declare function $gc(key: string, value: unknown): void;
 declare function $s(key: string): unknown;
 /** Get a configMap entry (read-only). */
 declare function $cfg(key: string): unknown;
-
-// ----- Global Functions -----
 
 /** Parse an HL7v2 message string into a proxy object. */
 declare function parseHL7(raw: string): Hl7MessageProxy;

@@ -1,7 +1,3 @@
-// ===========================================
-// Destination template tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { renderDestinationTemplate } from '../destination-template.js';

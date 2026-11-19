@@ -1,11 +1,4 @@
-// ===========================================
-// Engine Deploy/Undeploy Script Tests
-// ===========================================
-// Tests that deploy/undeploy scripts execute during channel lifecycle.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 const mockAlertManager = {
   loadAlerts: vi.fn(),
@@ -195,8 +188,6 @@ vi.mock('../../config/index.js', () => ({
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 
 function makeChannel(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -215,16 +206,12 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
   mockGlobalScriptGetAll.mockResolvedValue({
     ok: true, value: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }, error: null,
   });
 });
-
-// ----- Tests -----
 
 describe('EngineManager deploy/undeploy scripts', () => {
   describe('channel deploy script', () => {
@@ -236,7 +223,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
-      // compileScript should be called for the deploy script
       expect(mockCompileScript).toHaveBeenCalled();
       const compileCalls = mockCompileScript.mock.calls.map((c: unknown[]) => c[1]);
       const deployCall = compileCalls.find((c) => (c as { sourcefile: string }).sourcefile.includes('deploy'));
@@ -251,7 +237,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
-      // Sandbox should be called at least once for the deploy script
       expect(mockSandboxExecute).toHaveBeenCalled();
       const callCtx = mockSandboxExecute.mock.calls[0]![1] as Record<string, unknown>;
       const extras = callCtx['extras'] as Record<string, unknown>;
@@ -286,7 +271,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
-      // sandbox should not be called for deploy scripts (no scripts = no execution)
       expect(mockSandboxExecute).not.toHaveBeenCalled();
     });
   });
@@ -349,7 +333,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
     it('executes global deploy before channel deploy', async () => {
       const executionOrder: string[] = [];
 
-      // Use different compiled scripts to distinguish calls
       let compileCallIndex = 0;
       mockCompileScript.mockImplementation(async () => {
         const idx = compileCallIndex++;
@@ -380,7 +363,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
-      // Both scripts should have been executed
       expect(executionOrder.length).toBeGreaterThanOrEqual(2);
       // Global deploy should execute before channel deploy
       const globalIdx = executionOrder.findIndex((c) => c.includes('compiled'));
@@ -486,7 +468,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
         ok: false, value: null, error: { code: 'EXECUTION_ERROR', message: 'Script error' },
       });
 
-      // Should not throw — undeploy continues even if undeploy script fails
       await engine.undeploy(CHANNEL_ID);
 
       expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();

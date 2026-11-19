@@ -1,6 +1,3 @@
-// Table tests for the CI change classifier (#177). Run with `pnpm test:ci`,
-// which `pnpm gate` runs.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -26,7 +23,6 @@ const testSources = [SERVER_DOC_TEST, MODELS_DOC_TEST, PLAIN_TEST];
 
 const run = (changed) => classify({ changed, packages, testSources });
 
-/** Which of the classifier's jobs run, as a sorted list. */
 function jobs(result) {
   const out = [];
   if (result.gate) out.push('gate');
@@ -40,7 +36,6 @@ function jobs(result) {
 const EVERYTHING = ['connectors', 'e2e', 'gate', 'pg'];
 
 const TABLE = [
-  // Root config and CI itself run everything.
   { changed: ['package.json'], jobs: EVERYTHING, full: true },
   { changed: ['pnpm-lock.yaml'], jobs: EVERYTHING, full: true },
   { changed: ['pnpm-workspace.yaml'], jobs: EVERYTHING, full: true },
@@ -52,10 +47,8 @@ const TABLE = [
   { changed: ['docker/docker-compose.yml'], jobs: EVERYTHING, full: true },
   { changed: ['scripts/ci/classify-changes.mjs'], jobs: EVERYTHING, full: true },
   { changed: ['.npmrc'], jobs: EVERYTHING, full: true },
-  // A path the classifier has no rule for runs everything.
   { changed: ['some-new-top-level-file.json'], jobs: EVERYTHING, full: true },
   { changed: ['packages/brand-new/src/index.ts'], jobs: EVERYTHING, full: true },
-  // Packages: a job runs when a package it exercises, or one of their dependencies, changed.
   { changed: ['packages/web/src/App.tsx'], jobs: ['e2e', 'gate'], test: ['@galvanigraph/web'] },
   { changed: ['packages/server/src/app.ts'], jobs: ['e2e', 'gate', 'pg'], test: ['@galvanigraph/server'] },
   { changed: ['packages/connectors/src/registry.ts'], jobs: EVERYTHING, test: ['@galvanigraph/connectors', '@galvanigraph/server'] },
@@ -67,10 +60,8 @@ const TABLE = [
   },
   // Every workspace package depends on core-models.
   { changed: ['packages/core-models/src/index.ts'], jobs: EVERYTHING, test: [...packages.values()].map((p) => p.name).sort() },
-  // E2E specs alone run only the e2e job.
   { changed: ['e2e/auth.spec.ts'], jobs: ['e2e'] },
   { changed: ['playwright.config.ts'], jobs: ['e2e'] },
-  // Docs: only the tests that read the changed file.
   { changed: ['docs/user/connector-reference.md'], jobs: ['docs'] },
   { changed: ['docs/ops/soak-test.md'], jobs: [] },
   { changed: ['AGENTS.md', 'README.md'], jobs: [] },
@@ -79,7 +70,6 @@ const TABLE = [
   // The gate already runs the doc test's package, so the docs job is not needed.
   { changed: ['docs/user/connector-reference.md', 'packages/server/src/app.ts'], jobs: ['docs', 'e2e', 'gate', 'pg'], test: ['@galvanigraph/server'] },
   { changed: ['docs/user/connector-reference.md', 'packages/web/src/App.tsx'], jobs: ['docs', 'e2e', 'gate'], test: ['@galvanigraph/web'] },
-  // One root file among many still runs everything.
   { changed: ['docs/README.md', 'packages/web/src/App.tsx', 'pnpm-lock.yaml'], jobs: EVERYTHING, full: true },
 ];
 
@@ -168,7 +158,6 @@ test('the real doc guards are found by what they read', () => {
 // (or never runs) and ci-ok stops meaning "everything passed".
 const ciYml = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
 
-/** Top-level job ids and each job's body text, from ci.yml's two-space indentation. */
 function ciJobs() {
   const lines = ciYml.split(/\r?\n/);
   const start = lines.indexOf('jobs:');
@@ -204,7 +193,6 @@ test('every job but changes and ci-ok is gated on a changes output', () => {
   }
 });
 
-/** The `run: |` lines of the step named `name` in job `job`. */
 function stepRun(job, name) {
   const lines = (ciJobs().get(job) ?? '').split('\n');
   const at = lines.findIndex((l) => l.trim() === `- name: ${name}`);
@@ -226,7 +214,6 @@ test('the CI gate step runs what pnpm gate runs, with only the test filter added
   assert.deepEqual(stepRun('build-lint-test', 'Gate (build, lint, test with coverage)'), expected);
 });
 
-/** The `changes` job's output names. */
 function changesOutputs() {
   const body = ciJobs().get('changes') ?? '';
   const block = /\n {4}outputs:\n((?: {6}.+\n)+)/.exec(`\n${body}`)?.[1] ?? '';

@@ -1,8 +1,5 @@
-// S02: listener fans out to lane channels through queued Channel Writers.
-// Production pattern: "10000 HL7 LISTENER" -> "HL7 ROUTER - Orders/Priors/
-// Priority". The transformer picks a lane with destinationSet.removeAllExcept;
-// ADT is ACKed but routed nowhere. Imported as a server backup, so the Channel
-// Writers point at the lane channels by their Mirth channel ids.
+// Production pattern: "10000 HL7 LISTENER" -> "HL7 ROUTER - Orders/Priors/Priority".
+// Imported as a server backup, so the Channel Writers point at the lane channels by their Mirth channel ids.
 
 import { expect } from '@playwright/test';
 import { serverBackup, tcpListener, channelReader, channelWriter, jsWriter, type ChannelSpec } from './support/mirth-xml.js';

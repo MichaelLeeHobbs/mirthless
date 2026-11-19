@@ -1,11 +1,3 @@
-// ===========================================
-// Dashboard Summary Cards
-// ===========================================
-// Top-row stat tiles: a labelled headline number per aggregate, colour-keyed to
-// the semantic status level it represents. Numbers are tabular so the row stays
-// aligned as counts change. Restrained by design — the colour and the number do
-// the talking, no chart chrome.
-
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -24,7 +16,6 @@ interface SummaryCardsProps {
 interface StatTileProps {
   readonly label: string;
   readonly value: number;
-  /** Semantic level; drives the accent + number colour. Omit for neutral ink. */
   readonly level?: StatusLevel;
 }
 
@@ -53,7 +44,6 @@ function StatTile({ label, value, level }: StatTileProps): ReactNode {
           width: 3,
           backgroundColor: accent,
         },
-        // Faint wash of the accent so the tile reads as "this colour" at a glance.
         backgroundImage: `linear-gradient(90deg, ${alpha(accent, 0.06)}, transparent 60%)`,
       }}
     >

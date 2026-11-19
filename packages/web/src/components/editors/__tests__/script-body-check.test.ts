@@ -1,12 +1,10 @@
-// #206: the editor checks a script as the body of the function the engine runs
-// it in, and puts TypeScript's errors for that wrapped text on the lines the
-// user wrote.
+// #206: errors from the script checked as the engine's function body go on the lines the user wrote.
 
 import { describe, it, expect } from 'vitest';
 import { wrapScriptBody } from '@galvanigraph/core-models';
 import { flattenMessage, scriptBodyMarkers } from '../script-body-check.js';
 
-/** 1-based line and column of an offset in `text`, as a Monaco model's getPositionAt gives it. */
+/** 1-based, as a Monaco model's getPositionAt. */
 function positionIn(text: string): (offset: number) => { lineNumber: number; column: number } {
   return (offset) => {
     const before = text.slice(0, offset).split('\n');

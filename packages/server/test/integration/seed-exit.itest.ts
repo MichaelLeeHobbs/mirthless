@@ -1,18 +1,8 @@
-// ===========================================
-// Seed script exit — real Postgres integration
-// ===========================================
-// `pnpm db:seed` must exit as soon as it has seeded. The example-message step
-// writes through the server's own pool (lib/db.ts), whose idle connections
-// kept node alive for idleTimeoutMillis (30s) after "Seed complete", which
-// CI paid on every e2e run.
-//
-// Runs the real script as a child process against the *_test database. The
-// seed is idempotent, and seed-example-messages.itest.ts already seeds the
-// demo content into this database.
-//
-// Only the time from the seed's "Seed finished." line to the process exit is
-// measured (#248). tsx start-up and the seeding itself depend on how busy the
-// machine is, and are not what this test is about (D-290).
+// The server pool's idle connections (lib/db.ts) once kept `pnpm db:seed` alive
+// for idleTimeoutMillis (30s) after seeding, which every CI e2e run paid.
+// The seed is idempotent, so running it on the *_test database is safe.
+// Only "Seed finished." to exit is timed: start-up and seeding vary with
+// machine load (#248, D-290).
 
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +23,6 @@ const RUN_LIMIT_MS = 120_000;
 interface SeedRun {
   readonly code: number | null;
   readonly output: string;
-  /** Milliseconds from the "Seed finished." line to the process exit, or null if the line never came. */
   readonly exitAfterFinishMs: number | null;
 }
 

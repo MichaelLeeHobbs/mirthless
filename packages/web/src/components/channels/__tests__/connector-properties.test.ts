@@ -21,7 +21,6 @@ describe('property getters', () => {
     expect(getBool(props, 'missing', false)).toBe(false);
   });
 
-  // Each row: the stored value and what getNum() reads with fallback 99.
   const numRows: ReadonlyArray<readonly [string, unknown, number]> = [
     ['number 5432', 5432, 5432],
     ['decimal string', '5432', 99],

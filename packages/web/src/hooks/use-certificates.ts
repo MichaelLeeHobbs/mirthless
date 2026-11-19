@@ -1,13 +1,6 @@
-// ===========================================
-// Certificate API Hooks
-// ===========================================
-// TanStack Query hooks for certificate CRUD.
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
-
-// ----- Types -----
 
 export interface CertificateSummary {
   readonly id: string;
@@ -29,15 +22,11 @@ export interface CertificateDetail extends CertificateSummary {
   readonly privateKeyPem: string | null;
 }
 
-// ----- Query Keys -----
-
 const CERT_KEYS = {
   all: ['certificates'] as const,
   list: (query?: CertificateListQuery) => [...CERT_KEYS.all, 'list', query] as const,
   detail: (id: string) => [...CERT_KEYS.all, 'detail', id] as const,
 } as const;
-
-// ----- Helpers -----
 
 function buildQueryString(query?: CertificateListQuery): string {
   if (!query) return '';
@@ -48,8 +37,6 @@ function buildQueryString(query?: CertificateListQuery): string {
   const str = params.toString();
   return str.length > 0 ? `?${str}` : '';
 }
-
-// ----- Hooks -----
 
 export function useCertificates(query?: CertificateListQuery): ReturnType<typeof useQuery<readonly CertificateSummary[]>> {
   return useQuery({

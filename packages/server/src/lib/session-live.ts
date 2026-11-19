@@ -1,19 +1,11 @@
-// ===========================================
-// Session Liveness
-// ===========================================
-// Shared by the REST auth middleware and the Socket.IO server so both stop
-// honoring a token as soon as its session is revoked.
-
 import { and, eq, gt } from 'drizzle-orm';
 import { db } from './db.js';
 import { sessions } from '../db/schema/index.js';
 
 /**
- * True when the token's session still exists and has not expired. Logout and
- * admin password-reset delete the session row, so this makes an access token stop
- * working immediately on logout instead of lingering until its 15-minute TTL.
- * A token with no sessionId is refused: the server never issues one, so it was
- * signed elsewhere with the secret (GHSA-r434-hwqg-cvcw).
+ * Logout and password reset delete the session row, so an access token stops
+ * working at once rather than at its expiry. A token with no sessionId is
+ * refused (GHSA-r434-hwqg-cvcw).
  */
 export async function isSessionLive(sessionId: string | undefined, userId: string): Promise<boolean> {
   if (sessionId === undefined || sessionId === '') return false;

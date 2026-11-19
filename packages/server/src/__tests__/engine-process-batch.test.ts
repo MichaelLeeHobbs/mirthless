@@ -1,9 +1,3 @@
-// ===========================================
-// Batch processing tests
-// ===========================================
-// processBatch runs each message of a batch through the channel and reports
-// the batch as one outcome to the source connector.
-
 import { describe, it, expect, vi } from 'vitest';
 import { processBatch } from '../engine.js';
 

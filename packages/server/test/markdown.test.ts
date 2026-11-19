@@ -1,8 +1,5 @@
-// ===========================================
-// Markdown helper tests
-// ===========================================
-// The docs guards trust this parser, so a parser that reads a broken table as
-// fine would make every guard pass. These cases pin the edges.
+// The docs guards trust this parser: one that reads a broken table as fine
+// would make every guard pass.
 
 import { describe, it, expect } from 'vitest';
 import { headings, tables, headingAnchors } from './markdown.js';

@@ -1,10 +1,5 @@
-// ===========================================
-// Message actions gate on the message permissions (#221)
-// ===========================================
-// The server checks messages:reprocess for reprocess and messages:delete for
-// delete. The message browser and the traffic page must gate on the same
-// permissions, not on channels:deploy and channels:delete: a custom role can
-// hold one without the other. Data hooks and heavy children are mocked.
+// #221: the server checks messages:reprocess and messages:delete, not
+// channels:deploy and channels:delete, and a custom role can hold one without the other.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';

@@ -1,8 +1,3 @@
-// ===========================================
-// Configuration Map Controller
-// ===========================================
-// Handles HTTP requests for categorized configuration map CRUD.
-
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type UpsertConfigMapEntryInput, type BulkUpsertConfigMapInput, type ConfigMapQuery } from '@galvanigraph/core-models';
 import { ConfigMapService } from '../services/config-map.service.js';

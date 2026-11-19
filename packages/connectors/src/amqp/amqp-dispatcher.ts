@@ -1,11 +1,4 @@
-// ===========================================
-// AMQP Dispatcher (Destination Connector)
-// ===========================================
-// Publishes each message to an exchange as a persistent message and reports
-// SENT only after the broker confirms it. A message no queue would receive is
-// an error, not a silent drop. Routing key and header values may use `${name}`,
-// filled per message (D-252). The connection opens on the first send and
-// reopens on the next send after it is lost.
+// Routing key and header values may use `${name}`, filled per message (D-252).
 
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
@@ -73,7 +66,6 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
             messageId,
           });
         } finally {
-          // A lost connection is replaced on the next send.
           if (!publisher.isOpen) await this.dropConnection();
         }
       };
@@ -94,7 +86,7 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
     return tryCatch(async () => { await this.close(); });
   }
 
-  /** The open publisher, connecting first if there is none. Concurrent sends share one connect. */
+  /** Concurrent sends share one connect. */
   private async connection(): Promise<AmqpPublisher> {
     this.publisher ??= this.createPublisher(this.config);
     try {

@@ -1,9 +1,3 @@
-// ===========================================
-// Code template library scope — real Postgres integration
-// ===========================================
-// A library for some channels only reaches only those channels' scripts; a
-// library with no scope reaches every channel.
-
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';

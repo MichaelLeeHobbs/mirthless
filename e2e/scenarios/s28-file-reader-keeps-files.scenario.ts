@@ -1,4 +1,3 @@
-// S28: a File Reader leaves or moves the files it reads, as its Mirth channel says.
 // Issue #178: the import dropped Mirth's "After Processing Action", and the File
 // source deletes by default, so files another system expects to stay were lost.
 // Mirth's "None" leaves the file, so every poll reads it again; "Move" moves it.

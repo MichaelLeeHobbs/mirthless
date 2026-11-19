@@ -1,20 +1,14 @@
-// ===========================================
-// Grant replay
-// ===========================================
-// Rebuilds who held which roles over which groups at a past moment from the
-// grant rows in audit_log (RBAC plan section 8, slice 11b): start from a
-// GRANT_BASELINE snapshot (written by record_grant_baseline(), migration 0022
-// and the seed) and apply each later grant row, oldest first. Every grant
-// write records its full after state, so each row replaces what it names.
-//
-// A row this cannot read throws, naming the row: an access answer built on a
-// skipped row would be wrong without saying so.
+// Rebuilds past grants from audit_log: a GRANT_BASELINE row (written by
+// record_grant_baseline(), migration 0022, and the seed), then each later grant
+// row. Every grant write records its full after state, so each row replaces what
+// it names. An unreadable row throws: an access answer built on a skipped row
+// would be wrong without saying so.
 
 import { z } from 'zod/v4';
 import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { ServiceError } from './service-error.js';
 
-/** The audit actions the replay reads; the partial index in migration 0022 covers the same list. */
+/** The partial index in migration 0022 covers the same list. */
 export const GRANT_REPLAY_ACTIONS = [
   AUDIT_ACTION.GRANT_BASELINE,
   AUDIT_ACTION.ASSIGNMENTS_CHANGED,
@@ -25,7 +19,6 @@ export const GRANT_REPLAY_ACTIONS = [
   AUDIT_ACTION.USER_ENABLED_CHANGED,
 ] as const;
 
-/** One audit row, as the replay reads it. */
 export interface GrantAuditRow {
   readonly id: number;
   readonly action: string;
@@ -36,7 +29,6 @@ export interface GrantAuditRow {
 export interface ReplayedRole { readonly name: string; readonly admin: boolean; readonly permissions: readonly string[] }
 export interface ReplayedAssignment { readonly roleId: string; readonly groupIds: readonly string[] | null; readonly expiresAt: string | null }
 
-/** The grant tables as they stood after the last row replayed. */
 export interface ReplayedGrants {
   readonly roles: Map<string, ReplayedRole>;
   /** By user id. */
@@ -71,7 +63,6 @@ function unreadable(what: string): ServiceError {
   return new ServiceError('INTERNAL', `The access history cannot be rebuilt: ${what}`);
 }
 
-/** The state a GRANT_BASELINE row's attributes hold. */
 function fromBaseline(attributes: unknown): ReplayedGrants {
   const parsed = baselineSchema.safeParse(attributes);
   if (!parsed.success) throw unreadable('the grant baseline is not readable');
@@ -88,14 +79,12 @@ function fromBaseline(attributes: unknown): ReplayedGrants {
   };
 }
 
-/** The role an assignment row means: its id when it carries one, else the role of that name at that point. */
 function roleIdFor(state: ReplayedGrants, summary: z.infer<typeof assignmentSummary>, rowId: number): string {
   if (summary.roleId !== undefined) return summary.roleId;
   for (const [id, role] of state.roles) if (role.name === summary.role) return id;
   throw unreadable(`audit row ${String(rowId)} assigns role "${summary.role}", which no earlier row defines`);
 }
 
-/** A row's attributes read with `action`'s schema, or a loud failure naming the row. */
 function read<A extends ReplayedAction>(row: GrantAuditRow, action: A): z.infer<(typeof ROW_SCHEMAS)[A]> {
   const parsed = ROW_SCHEMAS[action].safeParse(row.attributes);
   if (!parsed.success) throw unreadable(`audit row ${String(row.id)} (${action}) is not readable`);
@@ -106,7 +95,6 @@ function setRole(state: ReplayedGrants, roleId: string, name: string, permission
   state.roles.set(roleId, { name, admin: state.roles.get(roleId)?.admin ?? false, permissions: [...permissions].sort() });
 }
 
-/** Apply one grant row to `state`. */
 function apply(state: ReplayedGrants, row: GrantAuditRow, action: ReplayedAction): void {
   switch (action) {
     case AUDIT_ACTION.ASSIGNMENTS_CHANGED: {
@@ -141,11 +129,7 @@ function isReplayed(action: string): action is ReplayedAction {
   return Object.hasOwn(ROW_SCHEMAS, action);
 }
 
-/**
- * The grant tables after `rows` (oldest first, all later than the baseline)
- * are applied to `baseline` (a GRANT_BASELINE row's attributes). Rows of other
- * actions are skipped. Throws INTERNAL on anything it cannot read.
- */
+/** `rows` oldest first, all later than the baseline. Throws on anything it cannot read. */
 export function replayGrants(baseline: unknown, rows: readonly GrantAuditRow[]): ReplayedGrants {
   const state = fromBaseline(baseline);
   for (const row of rows) if (isReplayed(row.action)) apply(state, row, row.action);

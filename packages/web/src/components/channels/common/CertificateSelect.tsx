@@ -1,9 +1,3 @@
-// ===========================================
-// Certificate Select
-// ===========================================
-// Autocomplete that selects a certificate from the certificate store by ID.
-// Used by HTTPS connector forms to reference TLS material without pasting PEM.
-
 import { type ReactNode } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
@@ -15,22 +9,16 @@ import { expiryColor, expiryDays, expiryLabel } from '../../../lib/certificate-e
 
 interface CertificateSelectProps {
   readonly label: string;
-  /** Selected certificate ID (undefined = nothing selected). */
   readonly value: string | undefined;
   readonly onChange: (id: string | undefined) => void;
-  /** Restrict the list to a single certificate type (CA/CLIENT/SERVER/KEYPAIR). */
+  /** CA, CLIENT, SERVER or KEYPAIR. */
   readonly type?: string;
-  /** Only show certificates that carry a private key (for server/client certs). */
   readonly requirePrivateKey?: boolean;
   readonly required?: boolean;
   readonly error?: boolean;
   readonly helperText?: string;
 }
 
-/**
- * Certificate picker backed by the certificate store list.
- * Emits the selected certificate ID (or undefined when cleared).
- */
 export function CertificateSelect({
   label,
   value,
@@ -48,9 +36,8 @@ export function CertificateSelect({
     (cert) => !requirePrivateKey || cert.hasPrivateKey,
   );
 
-  // Resolve the selected option. If the referenced ID is not in the filtered
-  // list (still loading, deleted, or filtered out) keep a placeholder so the
-  // stored reference is not silently dropped and MUI does not warn.
+  // An ID not in the list (still loading, deleted, filtered out) keeps a
+  // placeholder, so the stored reference is not silently dropped and MUI does not warn.
   const selected: CertificateSummary | null =
     options.find((c) => c.id === value) ??
     (value ? ({ id: value, name: value } as CertificateSummary) : null);

@@ -1,8 +1,3 @@
-// ===========================================
-// Grouped Channel Table
-// ===========================================
-// Collapsible group sections with group headers and aggregate stats.
-
 import { Fragment, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
@@ -119,10 +114,6 @@ function sumTotals(channels: readonly ChannelRow[]): { received: number; filtere
   return { received, filtered, sent, errored, queued };
 }
 
-/**
- * A channel row that can be dragged (by its handle) into another group. The
- * handle shows only when `canDrag`, for a user who may change groups.
- */
 function DraggableChannelRow({ channelId, fromGroupId, canDrag, onContextMenu, children }: {
   readonly channelId: string;
   readonly fromGroupId: string;
@@ -145,7 +136,6 @@ function DraggableChannelRow({ channelId, fromGroupId, canDrag, onContextMenu, c
   );
 }
 
-/** A group header row that accepts a dropped channel. */
 function DroppableGroupRow({ groupId, onClick, onContextMenu, children }: {
   readonly groupId: string;
   readonly onClick: () => void;
@@ -179,29 +169,24 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
   const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
   const { notify } = useNotification();
 
-  // --- Group menu state (opens on right-click or the kebab, anchored at the pointer) ---
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [groupMenuTarget, setGroupMenuTarget] = useState<GroupSection | null>(null);
   const deployAction = useDeploymentAction();
 
-  // --- Drag-to-regroup ---
   const canChangeGroups = usePermissions().has(PERMISSION.CHANNELS_WRITE);
   const setChannelGroups = useSetChannelGroups();
   const [dragOverride, setDragOverride] = useState<ReadonlyMap<string, string | null>>(new Map());
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // --- Rename dialog state ---
   const [renameTarget, setRenameTarget] = useState<GroupSection | null>(null);
   const [renameName, setRenameName] = useState('');
   const [renameError, setRenameError] = useState<string | null>(null);
   const updateGroup = useUpdateChannelGroup();
 
-  // --- Delete dialog state ---
   const [deleteTarget, setDeleteTarget] = useState<GroupSection | null>(null);
   const deleteGroup = useDeleteChannelGroup();
 
-  // --- Assign group dialog state ---
   const [assignGroupTarget, setAssignGroupTarget] = useState<string | null>(null);
 
   const handleGroupMenuOpen = useCallback((e: React.MouseEvent, section: GroupSection): void => {
@@ -211,8 +196,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     setGroupMenuTarget(section);
   }, []);
 
-  // Fire a deployment action for every channel in the group that is in an
-  // applicable state (avoids error toasts for channels already in the target state).
+  // Only channels in a state the action applies to, so the rest raise no error toasts.
   const handleGroupBulk = useCallback((action: 'deploy' | 'start' | 'stop' | 'undeploy'): void => {
     const section = groupMenuTarget;
     setGroupMenuPos(null);
@@ -307,11 +291,9 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     if (overId === fromGroupId) return;
     const targetGroupId = overId === '__ungrouped__' ? null : overId;
 
-    // Optimistically move the row until the server answers.
     setDragOverride((prev) => new Map(prev).set(channelId, targetGroupId));
 
-    // One call replaces every membership the channel has (a channel has one group
-    // in the UI, D-126), so a failure leaves it where it was, never in no group.
+    // One call replaces every membership (one group per channel in the UI, D-126), so a failure leaves it where it was, never in no group.
     void (async () => {
       try {
         await setChannelGroups.mutateAsync({ channelId, groupIds: targetGroupId === null ? [] : [targetGroupId] });
@@ -341,7 +323,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     });
   };
 
-  // Build deployment map
   const deploymentMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const status of deploymentStatuses) {
@@ -350,7 +331,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     return map;
   }, [deploymentStatuses]);
 
-  // Build channel rows from statistics
   const allRows = useMemo((): readonly ChannelRow[] => {
     return statistics.map((s) => ({
       channelId: s.channelId,
@@ -370,8 +350,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     }));
   }, [statistics, deploymentMap]);
 
-  // Build membership map: channelId -> groupId, with optimistic drag overrides
-  // (a null override means "moved to Ungrouped").
+  // A null drag override means moved to Ungrouped.
   const channelGroupMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of memberships) {
@@ -384,7 +363,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     return map;
   }, [memberships, dragOverride]);
 
-  // Build group sections
   const sections = useMemo((): readonly GroupSection[] => {
     const groupMap = new Map<string, ChannelRow[]>();
     const ungrouped: ChannelRow[] = [];
@@ -453,7 +431,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                 const isOpen = !collapsed.has(section.groupId);
                 return (
                   <Fragment key={section.groupId}>
-                    {/* Group header row (also the drop target for drag-to-regroup) */}
                     <DroppableGroupRow
                       groupId={section.groupId}
                       onClick={() => toggleGroup(section.groupId)}
@@ -490,7 +467,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                       </TableCell>
                       <GroupTotalCells totals={section.totals} visible={visible} />
                     </DroppableGroupRow>
-                    {/* Channel rows — flat in same table body for aligned columns */}
+                    {/* In the header's table body, so the columns align. */}
                     {isOpen && section.channels.map((row) => (
                       <DraggableChannelRow
                         key={row.channelId}
@@ -550,7 +527,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
         onDelete={onDelete}
         onExport={onExport}
       />
-      {/* Group menu (right-click header or kebab) */}
       <Menu
         open={groupMenuPos !== null}
         onClose={handleGroupMenuClose}
@@ -600,7 +576,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
           }}>Delete</ListItemText>
         </MenuItem>
       </Menu>
-      {/* Rename group dialog */}
       <Dialog open={renameTarget !== null} onClose={() => { setRenameTarget(null); }} maxWidth="xs" fullWidth>
         <DialogTitle>Rename Group</DialogTitle>
         <DialogContent>
@@ -628,7 +603,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
           </Button>
         </DialogActions>
       </Dialog>
-      {/* Delete group confirm dialog */}
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete Group"
@@ -639,7 +613,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
         onConfirm={handleDeleteConfirm}
         onCancel={() => { setDeleteTarget(null); }}
       />
-      {/* Assign group dialog */}
       {assignGroupTarget ? (
         <AssignGroupDialog
           open

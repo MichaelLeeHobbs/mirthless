@@ -1,16 +1,8 @@
-// ===========================================
-// Database Dispatcher (Destination Connector)
-// ===========================================
-// Executes parameterized INSERT/UPDATE queries
-// against a PostgreSQL or MySQL database.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { toPoolConfig, type DatabasePool } from './connection-pool.js';
 import { prepare, type PreparedQuery } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
-
-// ----- Config -----
 
 export interface DatabaseDispatcherConfig {
   readonly host: string;
@@ -21,13 +13,10 @@ export interface DatabaseDispatcherConfig {
   readonly query: string;
   readonly useTransaction: boolean;
   readonly returnGeneratedKeys: boolean;
-  /** Connect with TLS and verify the server certificate. */
   readonly tls?: boolean;
-  /** The database it talks to (default PostgreSQL). */
+  /** Default PostgreSQL. */
   readonly vendor?: DatabaseVendor;
 }
-
-// ----- Dispatcher -----
 
 export class DatabaseDispatcher implements DestinationConnectorRuntime {
   private readonly config: DatabaseDispatcherConfig;
@@ -98,7 +87,6 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /** The query with the message's values as parameters, in the vendor's placeholder style. */
   private prepared(message: ConnectorMessage): PreparedQuery {
     return prepare(this.config.query, this.buildContext(message), placeholderStyle(this.config.vendor ?? DATABASE_VENDOR.POSTGRESQL));
   }
@@ -108,7 +96,6 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     return { status: 'SENT' as const, content };
   }
 
-  /** Execute the query, inside a transaction (rolled back if it fails) when `useTransaction` is set. */
   private async execute(message: ConnectorMessage, useTransaction: boolean): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
       const { sql, params } = this.prepared(message);
@@ -122,13 +109,7 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /**
-   * Values for the query's `${name}` parameters: the message's map variables,
-   * then the fields of a JSON message (which win over a variable of the same
-   * name), then the message's own ids and content.
-   */
   private buildContext(message: ConnectorMessage): Record<string, unknown> {
-    // Parse message content as JSON if possible, otherwise use raw content
     let parsed: Record<string, unknown> = {};
     try {
       const json: unknown = JSON.parse(message.content);
@@ -150,7 +131,6 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     };
   }
 
-  /** Drain the connection pool. */
   private async drainPool(): Promise<void> {
     const destroyResult = await this.pool.destroy();
     if (!destroyResult.ok) {

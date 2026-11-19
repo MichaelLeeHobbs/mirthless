@@ -1,10 +1,4 @@
-// ===========================================
-// Attachment Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -47,8 +41,6 @@ vi.mock('drizzle-orm', () => ({
 
 const { AttachmentService } = await import('../attachment.service.js');
 
-// ----- Fixtures -----
-
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const MESSAGE_ID = 1;
 
@@ -72,8 +64,6 @@ function makeDetail(overrides?: Partial<Record<string, unknown>>): Record<string
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();

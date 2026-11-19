@@ -1,7 +1,6 @@
-// S04: channel logic lives in code templates that come with a server backup.
-// Production pattern: 87 templates in 15 libraries; channel steps are one line
-// such as `msg = hl7ReportProcessorDHA(msg)`. Templates use global `var`
-// namespaces plus const and arrow functions, which Mirth's Rhino accepts.
+// Production pattern: 87 templates in 15 libraries; channel steps are one line such as
+// `msg = hl7ReportProcessorDHA(msg)`. Templates mix global `var` namespaces with const and
+// arrow functions, which Mirth's Rhino accepts.
 
 import { expect } from '@playwright/test';
 import { serverBackup, tcpListener, tcpSender } from './support/mirth-xml.js';

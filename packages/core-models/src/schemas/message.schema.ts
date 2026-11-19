@@ -1,10 +1,5 @@
-// ===========================================
-// Message Zod Schemas
-// ===========================================
-
 import { z } from 'zod/v4';
 
-/** Query params for message search endpoint (GET /channels/:id/messages). */
 export const messageSearchQuerySchema = z.object({
   status: z
     .union([
@@ -32,7 +27,6 @@ export const messageSearchQuerySchema = z.object({
 
 export type MessageSearchQuery = z.infer<typeof messageSearchQuerySchema>;
 
-/** Backward-compatible schema for internal use. */
 export const messageSearchSchema = z.object({
   channelId: z.string().uuid(),
   status: z

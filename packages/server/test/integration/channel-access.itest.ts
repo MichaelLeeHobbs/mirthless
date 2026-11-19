@@ -1,10 +1,3 @@
-// ===========================================
-// Who can access a channel (real Postgres, #266 slice 11)
-// ===========================================
-// GET /channels/:id/access lists every enabled person whose live assignments
-// cover the channel, with the channel permissions they give and through which
-// role and scope, plus who reaches every channel through code or shared data.
-
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -74,7 +67,6 @@ describeIntegration('who can access a channel (real Postgres)', () => {
     expect(byId.get(labViewer.id)?.permissions).toContain('messages:read');
     expect(byId.get(developer.id)?.through).toMatchObject([{ role: 'developer', groupIds: null, expiresAt: null }]);
     expect(byId.get(developer.id)?.through[0]?.permissions).toContain('channels:write');
-    // Scoped elsewhere, disabled, or expired: no access.
     expect(byId.has(radViewer.id)).toBe(false);
     expect(byId.has(disabled.id)).toBe(false);
     expect(byId.has(lapsed.id)).toBe(false);

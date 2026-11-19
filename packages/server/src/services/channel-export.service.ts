@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Export Service
-// ===========================================
-// Exports channels as structured JSON for backup/migration.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { ALL_CHANNELS, toScriptLanguage, type ChannelExport, type ChannelExportEntry } from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -10,9 +5,7 @@ import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import { ChannelService, type ChannelDetail } from './channel.service.js';
 import type { ChannelScope } from '../lib/channel-scope.js';
 
-// ----- Helpers -----
-
-/** The metaDataId of the destination a filter or transformer row belongs to; null for the source. */
+/** A null connectorId is the source. */
 function destinationMetaDataId(detail: ChannelDetail, connectorId: string | null): number | null {
   if (connectorId === null) return null;
   return detail.destinations.find((d) => d.id === connectorId)?.metaDataId ?? null;
@@ -105,10 +98,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
   };
 }
 
-// ----- Service -----
-
 export class ChannelExportService {
-  /** Export a single channel by ID. */
   static async exportChannel(id: string, context?: AuditContext): Promise<Result<ChannelExport>> {
     return tryCatch(async () => {
       const detailResult = await ChannelService.getById(id);
@@ -129,10 +119,8 @@ export class ChannelExportService {
     });
   }
 
-  /** Export all channels. */
   static async exportAll(context?: AuditContext, scope: ChannelScope = ALL_CHANNELS): Promise<Result<ChannelExport>> {
     return tryCatch(async () => {
-      // Load every channel inside the caller's scope (up to 10000 — reasonable upper bound)
       const listResult = await ChannelService.list({ page: 1, pageSize: 10000 }, scope);
       if (!listResult.ok) throw listResult.error;
 

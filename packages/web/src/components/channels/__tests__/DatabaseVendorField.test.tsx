@@ -1,7 +1,3 @@
-// ===========================================
-// Database vendor control tests
-// ===========================================
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

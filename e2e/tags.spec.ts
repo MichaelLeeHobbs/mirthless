@@ -1,8 +1,3 @@
-// ===========================================
-// Tags E2E Tests
-// ===========================================
-// Creates, edits and deletes a tag of this spec's own from the Tags page.
-
 import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, getData } from './fixtures/api.js';
@@ -13,7 +8,6 @@ const TEST_TAG_COLOR = '#1976d2';
 
 let api: APIRequestContext;
 
-/** The table row whose tag chip reads exactly this name. */
 function tagRow(page: Page, name: string): Locator {
   return page.getByRole('row').filter({ has: page.getByText(name, { exact: true }) });
 }
@@ -23,7 +17,6 @@ async function tagNames(): Promise<string[]> {
   return tags.map((t) => t.name);
 }
 
-/** Remove every tag this spec made, from this run or an interrupted one. */
 async function removeTestTags(): Promise<void> {
   const tags = await getData<Array<{ id: string; name: string }>>(api, '/tags');
   for (const tag of tags) {
@@ -71,7 +64,6 @@ test.describe('Tags', () => {
     await page.goto('/tags');
     const row = tagRow(page, TEST_TAG_NAME);
     await expect(row).toContainText(TEST_TAG_COLOR, { timeout: 10_000 });
-    // A new tag is on no channels yet.
     await expect(row.getByRole('cell').nth(2)).toHaveText('0');
   });
 

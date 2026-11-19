@@ -1,7 +1,3 @@
-// ===========================================
-// Configuration map references in connector settings
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { configLookup, resolveConfigReferences } from '../config-references.js';
 

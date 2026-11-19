@@ -1,8 +1,3 @@
-// ===========================================
-// Startup Security Checks
-// ===========================================
-// Loud, non-fatal warnings for insecure defaults at boot.
-
 import { eq } from 'drizzle-orm';
 import { verifyPassword } from './password.js';
 import { db } from './db.js';
@@ -12,10 +7,7 @@ import logger from './logger.js';
 const DEFAULT_ADMIN_USERNAME = 'admin';
 const DEFAULT_ADMIN_PASSWORD = 'Admin123!';
 
-/**
- * Warn loudly if the seeded admin still uses the default password. Never throws —
- * a failed check must not prevent the server from starting.
- */
+/** Never throws: a failed check must not stop the server from starting. */
 export async function warnIfDefaultAdminPassword(): Promise<void> {
   try {
     const [admin] = await db

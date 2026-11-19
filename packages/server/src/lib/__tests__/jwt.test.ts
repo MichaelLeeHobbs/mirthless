@@ -1,7 +1,3 @@
-// ===========================================
-// JWT Utility Tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../config/index.js', () => ({

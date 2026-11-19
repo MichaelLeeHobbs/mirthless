@@ -1,9 +1,3 @@
-// ===========================================
-// Custom metadata search — real Postgres integration
-// ===========================================
-// Operators find a study's messages by a metadata column such as ACCESSION,
-// and every message in the list shows its column values.
-
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { messageSearchQuerySchema } from '@galvanigraph/core-models';

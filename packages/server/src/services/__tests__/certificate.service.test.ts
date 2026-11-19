@@ -1,10 +1,4 @@
-// ===========================================
-// Certificate Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -26,12 +20,12 @@ function pushOrderableResponse(value: unknown): void {
   );
 }
 
-/** Push a response for queries that go through .from().orderBy() (no where). */
+/** For queries shaped .from().orderBy(), with no where. */
 function pushFromOrderByResponse(value: unknown): void {
   selectResponses.push(() => value);
 }
 
-/** Push a response for queries that go through .from().where().orderBy(). */
+/** For queries shaped .from().where().orderBy(). */
 function pushWhereOrderByResponse(value: unknown): void {
   selectResponses.push(() => ({
     orderBy: vi.fn().mockResolvedValue(value),
@@ -94,7 +88,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-// Mock node:crypto X509Certificate
 const mockX509 = {
   fingerprint256: 'AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89',
   issuer: 'CN=Test CA',
@@ -113,8 +106,6 @@ vi.mock('node:crypto', () => ({
 }));
 
 const { CertificateService } = await import('../certificate.service.js');
-
-// ----- Fixtures -----
 
 const NOW = new Date('2026-03-03T12:00:00Z');
 const CERT_ID = '00000000-0000-0000-0000-000000000001';
@@ -137,8 +128,6 @@ function makeCertRow(overrides?: Partial<Record<string, unknown>>): Record<strin
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();

@@ -1,8 +1,4 @@
-// ===========================================
-// Validation Middleware Tests
-// ===========================================
-// Exercised over real HTTP so the Express request object is the real one
-// (Express 5 makes req.query a getter, which a mocked request would hide).
+// Real HTTP: Express 5 makes req.query a getter, which a mocked request would hide.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';

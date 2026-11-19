@@ -1,8 +1,3 @@
-// ===========================================
-// About Dialog
-// ===========================================
-// Shows the application name and version.
-
 import { type ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -18,8 +13,7 @@ interface AboutDialogProps {
   readonly onClose: () => void;
 }
 
-// Injected by Vite (see vite.config.ts). Guarded so importing this in a bare
-// test environment without the define does not throw a ReferenceError.
+// Injected by Vite (vite.config.ts); a test without the define would throw a ReferenceError.
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 
 export function AboutDialog({ open, onClose }: AboutDialogProps): ReactNode {

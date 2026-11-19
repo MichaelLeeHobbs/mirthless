@@ -1,11 +1,6 @@
-// ===========================================
-// HL7v2 timestamp tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import { formatTimestamp } from '../hl7-timestamp.js';
 
-/** The instant an HL7 `YYYYMMDDHHmmss+ZZZZ` timestamp names. */
 function instantOf(ts: string): number {
   const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})([+-])(\d{2})(\d{2})$/.exec(ts);
   if (!m) throw new Error(`not an HL7 timestamp with offset: ${ts}`);

@@ -1,10 +1,3 @@
-// ===========================================
-// HTTP Receiver (Source Connector)
-// ===========================================
-// Listens for inbound HTTP(S) requests and dispatches messages to the engine
-// pipeline. Returns an error status when the pipeline fails (never a false
-// 200), bounds the request body (DoS guard), and supports optional auth.
-
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { TextDecoder } from 'node:util';
@@ -16,37 +9,23 @@ import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
-/**
- * Constant-time string comparison for credentials. Comparing SHA-256 digests keeps
- * the comparison fixed-length (so neither the value nor its length leaks via timing)
- * and satisfies timingSafeEqual's equal-length requirement.
- */
+/** Hashing first keeps the length from leaking and meets timingSafeEqual's equal-length rule. */
 function constantTimeEqual(a: string, b: string): boolean {
   const da = createHash('sha256').update(a).digest();
   const db = createHash('sha256').update(b).digest();
   return timingSafeEqual(da, db);
 }
 
-// ----- Config -----
-
-/** Optional inbound authentication guard. */
 export interface HttpAuthConfig {
   readonly type: 'BASIC' | 'TOKEN';
-  /** BASIC: expected username. */
   readonly username?: string | undefined;
-  /** BASIC: expected password. */
   readonly password?: string | undefined;
-  /** TOKEN: expected bearer token. */
   readonly token?: string | undefined;
 }
 
-/** Default cap on request body size (bytes), a DoS guard; core-models owns it with the property schema. */
 export { DEFAULT_MAX_BODY_BYTES };
 
-/**
- * Why an auth guard cannot be used, or undefined. A guard missing a credential
- * would compare the request against an empty one and let it in (#207).
- */
+/** A guard missing a credential would compare against an empty one and let the request in (#207). */
 function missingCredential(auth: HttpAuthConfig | undefined): string | undefined {
   if (!auth) return undefined;
   if (auth.type === 'TOKEN') return auth.token ? undefined : 'auth type TOKEN needs a token';
@@ -58,26 +37,20 @@ export interface HttpReceiverConfig {
   readonly port: number;
   readonly path: string;
   /**
-   * Accept any path under `path` too, as Mirth's HTTP Listener does with its
-   * context path (default false: `path` only). The request path is in the
-   * source map as `path` and, under Mirth's name, `contextPath`.
+   * Any path under `path` too, as Mirth's HTTP Listener takes its context path. The
+   * source map carries the request path as `path` and, under Mirth's name, `contextPath`.
    */
   readonly matchSubpaths?: boolean | undefined;
   readonly method: string;
   readonly responseContentType: string;
   readonly responseStatusCode: number;
-  /** Status returned when the pipeline dispatch fails. Default 500. */
+  /** Only for a failed pipeline dispatch. */
   readonly errorStatusCode: number;
-  /** Maximum accepted request body size in bytes. */
   readonly maxBodyBytes: number;
-  /** Optional authentication guard (default: none). */
   readonly auth?: HttpAuthConfig | undefined;
-  /** Optional TLS. When present the server speaks HTTPS. */
   readonly tls?: TlsServerOptions | undefined;
 }
 
-/** Sentinel raised when a request body exceeds the configured cap. */
-/** The request declares a character set this server cannot decode. */
 class UnsupportedCharsetError extends Error {
   constructor(contentType: string) {
     super(`Unsupported character set in Content-Type: ${contentType}`);
@@ -85,10 +58,8 @@ class UnsupportedCharsetError extends Error {
 }
 
 /**
- * A decoder for the charset a Content-Type header declares, UTF-8 when it
- * declares none, or null when the charset is unknown. Decoding a body in the
- * wrong character set corrupts every non-ASCII character without any error, so
- * an unknown one is refused (415). A byte order mark is kept, as before.
+ * Null for an unknown charset, which is refused (415): decoding in the wrong one
+ * corrupts every non-ASCII character without any error. A byte order mark is kept.
  */
 export function decoderFor(contentType: string | undefined): TextDecoder | null {
   const match = /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType ?? '');
@@ -106,16 +77,11 @@ class BodyTooLargeError extends Error {
   }
 }
 
-// ----- Receiver -----
-
-/** Headers that carry credentials. Their values never reach the source map. */
 const CREDENTIAL_HEADERS: ReadonlySet<string> = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
 
 /**
- * Copy request headers for the source map with credential values replaced.
- * The source map is stored with the message and shown in the message
- * browser, so a bearer token or session cookie must not be in it. The header
- * name is kept so a script can still tell that one was sent.
+ * The source map is stored with the message and shown in the message browser. The
+ * header name is kept so a script can still tell that a credential was sent.
  */
 function withoutCredentials(headers: http.IncomingHttpHeaders): Record<string, string | string[] | undefined> {
   const safe: Record<string, string | string[] | undefined> = {};
@@ -218,7 +184,6 @@ export class HttpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Handle an incoming HTTP request. */
   private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (req.method?.toUpperCase() !== this.config.method.toUpperCase()) {
       this.writePlain(res, 405, 'Method Not Allowed');
@@ -245,7 +210,6 @@ export class HttpReceiver implements SourceConnectorRuntime {
     await this.dispatchRequest(req, res, reqPath);
   }
 
-  /** The configured path, or with matchSubpaths any path below it (`/api` takes `/api/report`, not `/apix`). */
   private acceptsPath(reqPath: string): boolean {
     const base = this.config.path;
     if (reqPath === base) return true;
@@ -253,7 +217,6 @@ export class HttpReceiver implements SourceConnectorRuntime {
     return reqPath.startsWith(base.endsWith('/') ? base : `${base}/`);
   }
 
-  /** Read the body, dispatch, and respond with the appropriate status. */
   private async dispatchRequest(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -295,7 +258,6 @@ export class HttpReceiver implements SourceConnectorRuntime {
     res.end();
   }
 
-  /** Build the raw pipeline message from the request. */
   private buildRawMessage(req: http.IncomingMessage, body: string, reqPath: string): RawMessage {
     const urlObj = new URL(req.url ?? '/', `http://${req.headers['host'] ?? 'localhost'}`);
     const queryString: Record<string, string> = {};
@@ -316,7 +278,6 @@ export class HttpReceiver implements SourceConnectorRuntime {
     };
   }
 
-  /** Validate the Authorization header against the configured guard. */
   private isAuthorized(req: http.IncomingMessage): boolean {
     const auth = this.config.auth;
     if (!auth) return true;
@@ -337,10 +298,6 @@ export class HttpReceiver implements SourceConnectorRuntime {
     res.end(message);
   }
 
-  /**
-   * Read the full request body as a string, enforcing the size cap. The body is
-   * decoded in the character set the sender declared (UTF-8 when none is given).
-   */
   private readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const decoder = decoderFor(req.headers['content-type']);

@@ -1,7 +1,4 @@
-// #183: Monaco's TypeScript service has one set of declarations for every
-// editor. These cover the state that lets an editor tell whether its own set is
-// the one applied, and the declarations a transformer step gets for the names
-// the steps before it declare (deploy checks the steps joined).
+// #183: Monaco's TypeScript service has one set of declarations for every editor.
 
 import { describe, it, expect, vi } from 'vitest';
 import {

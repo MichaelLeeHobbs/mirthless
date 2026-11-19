@@ -1,7 +1,3 @@
-// ===========================================
-// Collections E2E Tests
-// ===========================================
-
 import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 import { adminApi, deleteOk, getData, postData } from './fixtures/api.js';
@@ -13,7 +9,6 @@ let api: APIRequestContext;
 
 interface CollectionSummary { readonly id: string; readonly name: string }
 
-/** The collections table row whose name link reads exactly this name. */
 function collectionRow(page: Page, name: string): Locator {
   return page.getByRole('row').filter({ has: page.getByRole('link', { name, exact: true }) });
 }
@@ -22,7 +17,6 @@ async function collectionNames(): Promise<string[]> {
   return (await getData<CollectionSummary[]>(api, '/collections')).map((c) => c.name);
 }
 
-/** Delete every collection whose name passes the test, from this run or an interrupted one. */
 async function removeCollections(match: (name: string) => boolean): Promise<void> {
   for (const c of await getData<CollectionSummary[]>(api, '/collections')) {
     if (match(c.name)) await deleteOk(api, `/collections/${c.id}`);
@@ -71,7 +65,7 @@ test.describe('Collections', () => {
     await dialog.getByLabel(/Default TTL/i).fill('604800');
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // Appears in the list with its fields; a TTL of 604800 seconds renders as 7d.
+    // 604800 seconds renders as 7d.
     await expect(dialog).toBeHidden();
     const row = collectionRow(page, TEST_COLLECTION_NAME);
     for (const field of INDEXED_FIELDS) await expect(row.getByText(field, { exact: true })).toBeVisible();
@@ -83,7 +77,6 @@ test.describe('Collections', () => {
     await page.getByRole('button', { name: 'Create Collection' }).click();
     const dialog = page.getByRole('dialog', { name: 'Create Collection' });
     await dialog.getByLabel('Name').fill(`${TEST_COLLECTION_NAME} NoFields`);
-    // No indexed fields entered → the Create button stays disabled.
     await expect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
     await dialog.getByLabel('Indexed Fields').fill('accession');
     await expect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeEnabled();
@@ -111,15 +104,12 @@ test.describe('Collections', () => {
   });
 });
 
-// ----- Records grid -----
-
 const GRID_COLLECTION_NAME = 'E2E Test Collection Records';
 
 test.describe('Collection records grid', () => {
   test.describe.configure({ mode: 'serial' });
   let collectionId = '';
 
-  // A fresh collection with three records, made through the API.
   test.beforeAll(async () => {
     await removeCollections((name) => name === GRID_COLLECTION_NAME);
     collectionId = (await postData<{ id: string }>(api, '/collections', { name: GRID_COLLECTION_NAME, indexedFields: ['accession', 'facility'] })).id;

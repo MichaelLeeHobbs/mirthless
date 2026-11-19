@@ -1,13 +1,5 @@
-// ===========================================
-// Graceful Shutdown Handler
-// ===========================================
-// Ordered cleanup of server resources on SIGTERM/SIGINT.
-// Ensures engine channels are undeployed and global map
-// values are flushed before the DB pool closes.
-
 import type { Logger } from 'pino';
 
-/** Dependencies for the shutdown handler. */
 export interface ShutdownDeps {
   readonly logger: Logger;
   readonly stopAccepting: () => Promise<void>;
@@ -22,21 +14,9 @@ export interface ShutdownDeps {
 const DRAIN_TIMEOUT_MS = 30_000;
 
 /**
- * Creates a graceful shutdown handler with ordered cleanup.
- * Each step is logged, and a force-exit timer ensures the
- * process terminates even if a step hangs.
- *
- * Shutdown order:
- * 1. Shutdown Socket.IO (disconnect clients) -- BEFORE the HTTP close, because
- *    open websockets keep server.close() from resolving.
- * 2. Stop accepting new HTTP connections
- * 3. Stop engine (undeploy channels, flush global maps)
- * 4. Stop pruner scheduler
- * 5. Stop job queue (pgboss)
- * 6. Close DB pool (last -- engine/queue may need DB)
- *
- * `exitCode` is the code to exit with after a clean shutdown: 0 for a signal,
- * non-zero when the shutdown was caused by a fatal error.
+ * Socket.IO goes before the HTTP close: open websockets keep server.close() from
+ * resolving. The database pool closes last: the engine and queue need it.
+ * `exitCode` is for a clean shutdown: 0 for a signal, non-zero after a fatal error.
  */
 export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exitCode?: number) => void {
   let shutting = false;
@@ -91,16 +71,14 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
   };
 }
 
-/** What {@link undeployAll} needs from the engine. */
 export interface UndeployableEngine {
   getAll(): ReadonlyMap<string, unknown>;
   undeploy(channelId: string): Promise<void>;
 }
 
 /**
- * Undeploy every channel for shutdown. One channel that fails to undeploy is
- * logged and the rest still undeploy, so a single bad channel cannot leave the
- * others running or skip the steps that follow (the global map flush).
+ * One channel failing to undeploy must not leave the others running or skip the
+ * steps that follow (the global map flush).
  */
 export async function undeployAll(
   engine: UndeployableEngine,

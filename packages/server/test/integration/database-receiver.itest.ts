@@ -1,6 +1,3 @@
-// ===========================================
-// Database Receiver — real Postgres integration
-// ===========================================
 // A failed mark-as-processed UPDATE aborts a Postgres transaction unless it
 // runs in a savepoint. A mocked pool cannot show that; a real one can.
 
@@ -72,8 +69,7 @@ describeIntegration('DatabaseReceiver (real Postgres)', () => {
     await receiver.onStop();
     receiver = null;
 
-    // Rows 1 and 3 were dispatched once. Only row 2, whose acknowledgement
-    // keeps failing, is read again.
+    // Row 2's acknowledgement keeps failing, so only it is read again.
     expect(dispatched.filter((id) => id === 1)).toHaveLength(1);
     expect(dispatched.filter((id) => id === 3)).toHaveLength(1);
     expect(dispatched.filter((id) => id === 2).length).toBeGreaterThan(1);

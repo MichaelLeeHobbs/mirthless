@@ -1,7 +1,3 @@
-// ===========================================
-// SMTP Dispatcher Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import {
@@ -13,8 +9,6 @@ import {
   type SmtpMailOptions,
   type TransportFactory,
 } from '../smtp-dispatcher.js';
-
-// ----- Helpers -----
 
 function makeConfig(overrides?: Partial<SmtpDispatcherConfig>): SmtpDispatcherConfig {
   return {
@@ -67,13 +61,9 @@ function makeFactory(transport: SmtpTransport): TransportFactory {
   return () => transport;
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- substituteTemplate -----
 
 describe('substituteTemplate', () => {
   const msg = makeMessage();
@@ -115,8 +105,6 @@ describe('substituteTemplate', () => {
   });
 });
 
-// ----- onDeploy -----
-
 describe('SmtpDispatcher.onDeploy', () => {
   it('succeeds with valid config', async () => {
     const dispatcher = new SmtpDispatcher(makeConfig());
@@ -155,8 +143,6 @@ describe('SmtpDispatcher.onDeploy', () => {
   });
 });
 
-// ----- Lifecycle -----
-
 describe('SmtpDispatcher lifecycle', () => {
   it('starts successfully', async () => {
     const dispatcher = new SmtpDispatcher(makeConfig());
@@ -184,8 +170,6 @@ describe('SmtpDispatcher lifecycle', () => {
     expect(result.ok).toBe(true);
   });
 });
-
-// ----- send -----
 
 describe('SmtpDispatcher.send', () => {
   it('sends email and returns SENT', async () => {
@@ -316,7 +300,6 @@ describe('SmtpDispatcher.send', () => {
     const opts = sendMail.mock.calls[0]?.[0] as SmtpMailOptions;
     expect(opts.attachments).toHaveLength(3);
     expect(opts.attachments?.map((a) => a.filename)).toEqual(['a.txt', 'b.txt', 'c-ch-1.txt']);
-    // No mimeType => no contentType key emitted.
     expect(opts.attachments?.[0]?.contentType).toBeUndefined();
     expect(opts.attachments?.[1]?.contentType).toBe('application/json');
   });
@@ -398,7 +381,6 @@ describe('SmtpDispatcher.send', () => {
       const result = await pending;
 
       expect(result.ok).toBe(false);
-      // Transport is still closed even though the send timed out.
       expect(transport.close).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();

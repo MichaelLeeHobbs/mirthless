@@ -1,7 +1,3 @@
-// ===========================================
-// Connector Validation Service Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { createSourceConnector, createDestinationConnector } from '@galvanigraph/connectors';
@@ -45,8 +41,6 @@ describe('validateConnectorProperties: Kafka and AMQP', () => {
     expect(validateConnectorProperties('AMQP', 'destination', { host: 'rabbit', routingKey: 'q', template: '${message.encodedData}' }).ok).toBe(true);
   });
 });
-
-// ----- Source Connectors -----
 
 describe('validateConnectorProperties', () => {
   describe('source connectors', () => {
@@ -264,8 +258,6 @@ describe('validateConnectorProperties', () => {
     });
   });
 
-  // ----- Destination Connectors -----
-
   describe('destination connectors', () => {
     it('accepts valid TCP_MLLP destination properties', () => {
       const result = validateConnectorProperties('TCP_MLLP', 'destination', {
@@ -405,8 +397,6 @@ describe('validateConnectorProperties', () => {
     });
   });
 
-  // ----- Unknown Type -----
-
   describe('unknown connector type', () => {
     it('rejects an unknown source connector type, naming it', () => {
       const result = validateConnectorProperties('UNKNOWN_TYPE', 'source', {});
@@ -432,7 +422,7 @@ describe('validateConnectorProperties', () => {
   });
 
   describe('every registry connector type has a schema', () => {
-    /** Types the connector registry can build in a mode (a factory that rejects empty properties still counts). */
+    /** A factory that rejects empty properties still counts. */
     function registryTypes(create: (type: string, props: Record<string, unknown>) => unknown): string[] {
       return CONNECTOR_TYPES.filter((type) => {
         try {
@@ -444,7 +434,6 @@ describe('validateConnectorProperties', () => {
       });
     }
 
-    /** Types validation knows in a mode: anything not refused as unknown. */
     function validatedTypes(mode: 'source' | 'destination'): string[] {
       return CONNECTOR_TYPES.filter((type) => {
         const result = validateConnectorProperties(type, mode, {});
@@ -686,8 +675,6 @@ describe('validateConnectorProperties', () => {
       expect(result.error.message).toContain(key);
     });
   });
-
-  // ----- Error Message Format -----
 
   describe('error messages', () => {
     it('includes connector type and mode in error message', () => {

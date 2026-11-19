@@ -1,7 +1,3 @@
-// ===========================================
-// Message Generator Controller
-// ===========================================
-
 import type { Request, Response } from 'express';
 import type { GenerateMessagesInput } from '@galvanigraph/core-models';
 import { MessageGeneratorService } from '../services/message-generator.service.js';

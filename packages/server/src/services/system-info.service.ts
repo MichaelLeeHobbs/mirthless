@@ -1,9 +1,3 @@
-// ===========================================
-// System Info Service
-// ===========================================
-// Aggregates server version, Node.js version, host and OS info, memory,
-// engine stats, and a database probe into a single response.
-
 import os from 'node:os';
 import v8 from 'node:v8';
 import { sql } from 'drizzle-orm';
@@ -12,15 +6,10 @@ import { db } from '../lib/db.js';
 import { getEngineStats, getMemoryStats } from './health.service.js';
 import { lostAuditRecordCount } from '../lib/event-emitter.js';
 
-// ----- Types -----
-
 export interface DatabaseProbe {
   readonly connected: boolean;
-  /** Round trip of the probe query; null when the database is unreachable. */
   readonly latencyMs: number | null;
-  /** PostgreSQL server_version; null when the database is unreachable. */
   readonly version: string | null;
-  /** On-disk size of the current database; null when the database is unreachable. */
   readonly sizeBytes: number | null;
 }
 
@@ -39,7 +28,7 @@ export interface SystemInfo {
     readonly release: string;
     readonly arch: string;
     readonly cpus: number;
-    /** 1, 5 and 15 minute load averages. Always zeros on Windows. */
+    /** Always zeros on Windows. */
     readonly loadAverage: readonly [number, number, number];
     readonly totalMemory: number;
     readonly freeMemory: number;
@@ -61,10 +50,8 @@ export interface SystemInfo {
   readonly database: DatabaseProbe;
   readonly audit: {
     /**
-     * Rows in audit_log's DEFAULT partition, counted up to 10,000; null when
-     * the count failed. Above 0 means a month's partition was missing when they
-     * were written, and the next one for that month cannot be created until
-     * they are moved (docs/ops/audit-log.md).
+     * Rows in audit_log's DEFAULT partition, counted up to 10,000. Above 0, that
+     * month's partition cannot be created until they are moved (docs/ops/audit-log.md).
      */
     readonly rowsOutsideMonths: number | null;
     /** Best-effort audit records this process failed to write since it started (D-312). */
@@ -77,7 +64,6 @@ const SERVER_VERSION = '0.1.0';
 
 const DISCONNECTED: DatabaseProbe = { connected: false, latencyMs: null, version: null, sizeBytes: null };
 
-/** One round trip that proves the connection and reads the server version and database size. */
 export async function probeDatabase(): Promise<DatabaseProbe> {
   const started = performance.now();
   const result = await tryCatch(async () => db.execute<{ version: string; size: string }>(sql`
@@ -94,7 +80,6 @@ export async function probeDatabase(): Promise<DatabaseProbe> {
   };
 }
 
-/** How many audit rows sit in the DEFAULT partition (capped), or null when the count fails. */
 async function auditRowsOutsideMonths(): Promise<number | null> {
   const result = await tryCatch(async () => db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM (SELECT 1 FROM public.audit_log_default LIMIT 10000) AS d
@@ -107,10 +92,7 @@ function loadAverage(): readonly [number, number, number] {
   return [one, five, fifteen];
 }
 
-// ----- Service -----
-
 export class SystemInfoService {
-  /** Get full system info. */
   static async getInfo(): Promise<Result<SystemInfo>> {
     return tryCatch(async () => {
       const [database, rowsOutsideMonths] = await Promise.all([probeDatabase(), auditRowsOutsideMonths()]);

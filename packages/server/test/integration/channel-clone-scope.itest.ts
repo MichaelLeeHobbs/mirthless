@@ -1,9 +1,4 @@
-// ===========================================
-// Channel clone and code template library scope — real Postgres integration
-// ===========================================
-// A clone joins every library whose channel list names the original (D-249),
-// so its scripts get the same template functions. A library for every channel
-// (null list) and a library for other channels are left as they were.
+// Library scope on clone: D-249.
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';

@@ -1,9 +1,4 @@
-// ===========================================
-// Error State
-// ===========================================
-// A shared, honest error surface. Failures must never be swallowed or shown as
-// an innocent "no data" — this healthcare tooling fails loud. The message says
-// what went wrong; the button offers the fix (retry).
+// Failures must never be swallowed or shown as an innocent "no data": this healthcare tooling fails loud.
 
 import type { ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
@@ -14,16 +9,12 @@ import type { SxProps, Theme } from '@mui/material/styles';
 import { errorMessage } from '../../../lib/error-message.js';
 
 interface ErrorStateProps {
-  /** Short headline, e.g. "Couldn't load channels". */
   readonly title?: string;
-  /** The error, or a message string. Rendered as detail text. */
   readonly error: unknown;
-  /** When provided, shows a Retry button that calls this. */
   readonly onRetry?: () => void;
   readonly sx?: SxProps<Theme>;
 }
 
-/** Detail text when the error carries no message. */
 const ERROR_STATE_FALLBACK = 'An unexpected error occurred.';
 
 export function ErrorState({ title = 'Something went wrong', error, onRetry, sx }: ErrorStateProps): ReactNode {

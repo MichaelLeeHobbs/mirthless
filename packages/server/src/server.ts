@@ -1,8 +1,3 @@
-// ===========================================
-// Server Entry Point
-// ===========================================
-// Starts the Express server with graceful shutdown.
-
 import app from './app.js';
 import { config } from './config/index.js';
 import logger from './lib/logger.js';
@@ -33,15 +28,10 @@ const server = app.listen(PORT, () => {
   );
 });
 
-// Attach Socket.IO to HTTP server
 initializeSocketIO(server);
 
-// Initialize log capture stream for server logs feature
 setLogCaptureStream(LogStreamService.createWritableStream());
 
-// Start the job queue (then the pruner scheduler) and redeploy channels. Each
-// step runs on its own: a failed one is logged, emitted as an event and shown
-// by the health endpoints, and does not skip the others (#259).
 const ensureAuditPartitions = (): Promise<Result<void>> =>
   tryCatch(async () => {
     const made = await PartitionManagerService.ensureAuditPartitions();
@@ -68,13 +58,11 @@ setInterval(() => {
 }, AUDIT_PARTITION_INTERVAL_MS).unref();
 void warnIfDefaultAdminPassword();
 
-// Graceful shutdown — ordered cleanup with engine disposal before DB pool close
 const shutdown = createShutdownHandler({
   logger,
   stopAccepting: () => new Promise<void>((resolve, reject) => {
     server.close((err) => {
-      // Socket.IO shutdown runs first and closes the shared HTTP server, so by
-      // the time we get here the server may already be closed — that's success.
+      // Socket.IO shutdown may already have closed the shared HTTP server: success.
       if (err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
         reject(err);
         return;
@@ -85,7 +73,7 @@ const shutdown = createShutdownHandler({
   stopEngine: async () => {
     const { getEngine } = await import('./engine.js');
     const engine = getEngine();
-    // Undeploy all channels (flushes global maps, runs undeploy scripts)
+    // Flushes global maps and runs undeploy scripts before dispose.
     await undeployAll(engine, logger);
     await engine.dispose();
   },

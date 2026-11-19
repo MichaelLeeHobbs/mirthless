@@ -1,14 +1,8 @@
-// ===========================================
-// File Receiver Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { FileReceiver, matchGlob, FILE_SORT_BY, FILE_POST_ACTION, type FileReceiverConfig } from '../file-receiver.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
-
-// ----- Mock node:fs/promises -----
 
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn(),
@@ -34,16 +28,13 @@ const mockMkdir = vi.mocked(fs.mkdir);
 const mockRealpath = vi.mocked(fs.realpath);
 
 const QUARANTINE_LEDGER = '.galvanigraph-quarantine.json';
-/** Ledgers written under the product's earlier names (D-205, D-309). Still read, never written. */
+/** Earlier names' ledgers (D-205, D-309): still read, never written. */
 const LEGACY_LEDGERS = ['.galvaniflow-quarantine.json', '.mirthless-quarantine.json'] as const;
 
 function isLegacyLedger(p: unknown): boolean {
   return LEGACY_LEDGERS.some((name) => String(p).endsWith(name));
 }
 
-// ----- Helpers -----
-
-/** The error fs raises for a missing file: a missing ledger must stay silent. */
 function enoent(): NodeJS.ErrnoException {
   return Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
 }
@@ -86,14 +77,11 @@ function makeStatResult(mtimeMs: number, size: number): { mtimeMs: number; size:
   return { mtimeMs, size };
 }
 
-// ----- Lifecycle -----
-
 let receiver: FileReceiver | null = null;
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
-  // Default: no ledger on disk (readFile rejects), writes succeed.
   mockReadFile.mockRejectedValue(enoent());
   mockWriteFile.mockResolvedValue(undefined as never);
   // No symlinks unless a test says so: every path is its own real path.
@@ -108,8 +96,6 @@ afterEach(async () => {
     receiver = null;
   }
 });
-
-// ----- matchGlob Tests -----
 
 describe('matchGlob', () => {
   it('matches * wildcard', () => {
@@ -135,7 +121,6 @@ describe('matchGlob', () => {
   });
 
   it('treats regex metacharacters as literals instead of throwing', () => {
-    // These patterns previously produced an invalid regex -> threw every poll.
     expect(() => matchGlob('report(1)*.hl7', 'report(1)_a.hl7')).not.toThrow();
     expect(matchGlob('report(1)*.hl7', 'report(1)_a.hl7')).toBe(true);
     expect(matchGlob('data[0]*.txt', 'data[0]_x.txt')).toBe(true);
@@ -153,8 +138,6 @@ describe('matchGlob', () => {
     expect(matchGlob('ADT_*', 'ORM_O01.hl7')).toBe(false);
   });
 });
-
-// ----- FileReceiver Tests -----
 
 describe('FileReceiver', () => {
   describe('onDeploy', () => {
@@ -192,8 +175,7 @@ describe('FileReceiver', () => {
     });
   });
 
-  // GHSA-r434-hwqg-cvcw: a File source pointed at the server's own directory
-  // turned its .env into messages anyone with messages:read could open.
+  // GHSA-r434-hwqg-cvcw: a File source on the server's own directory turned its .env into readable messages.
   describe('allowed roots', () => {
     it('refuses to deploy a directory outside FILE_CONNECTOR_ROOTS', async () => {
       receiver = new FileReceiver(makeConfig({ directory: '/app' }));
@@ -225,7 +207,6 @@ describe('FileReceiver', () => {
       mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
       receiver = new FileReceiver(makeConfig({ fileFilter: '*' }));
       expect((await receiver.onDeploy()).ok).toBe(true);
-      // Swapped for a symlink to the install directory after deploy.
       mockRealpath.mockImplementation(((p: string) =>
         Promise.resolve(p === path.resolve('/data/inbound') ? path.resolve('/app') : p)) as never);
       const dispatched: RawMessage[] = [];
@@ -291,10 +272,8 @@ describe('FileReceiver', () => {
       }));
       await receiver.onStart();
 
-      // Trigger poll interval
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // Should have dispatched 2 files (*.hl7 matches patient.hl7 and lab.hl7)
       expect(captured).toHaveLength(2);
       expect(captured[0]!.sourceMap['originalFilename']).toBe('lab.hl7');
       expect(captured[1]!.sourceMap['originalFilename']).toBe('patient.hl7');
@@ -328,9 +307,7 @@ describe('FileReceiver', () => {
 
     it('filters files by age when checkFileAge is true', async () => {
       const captured: RawMessage[] = [];
-      // After advanceTimersByTimeAsync(5_000), Date.now() in the receiver
-      // will be the current fake time + 5_000. We need the "new" file's
-      // mtime to be within 1_000ms of that future time.
+      // The receiver polls at fake now + 5_000.
       const pollTime = Date.now() + 5_000;
 
       mockReaddir.mockResolvedValue([
@@ -338,8 +315,7 @@ describe('FileReceiver', () => {
         makeDirent('new.hl7'),
       ] as never);
 
-      // old.hl7 is 5s before poll time (passes 1s threshold)
-      // new.hl7 is 500ms before poll time (fails 1s threshold)
+      // At poll time old.hl7 is 5s old (passes the 1s threshold), new.hl7 500ms (fails it).
       let callIdx = 0;
       mockStat.mockImplementation(async () => {
         callIdx++;
@@ -592,7 +568,6 @@ describe('FileReceiver', () => {
 
       mockReaddir.mockResolvedValue([makeDirent('image.dcm')] as never);
       mockStat.mockResolvedValue(makeStatResult(now - 5_000, 4) as never);
-      // No ledger; the data file comes back as a Buffer (read without an encoding).
       mockReadFile.mockImplementation((p: unknown) =>
         (String(p).endsWith('.json') ? Promise.reject(enoent()) : Promise.resolve(binaryBuffer)) as never,
       );
@@ -646,7 +621,6 @@ describe('FileReceiver', () => {
       const captured: RawMessage[] = [];
       const now = Date.now();
 
-      // First poll: error, second poll: success
       let callCount = 0;
       mockReaddir.mockImplementation(async () => {
         callCount++;
@@ -664,11 +638,9 @@ describe('FileReceiver', () => {
       }));
       await receiver.onStart();
 
-      // First poll fails
       await vi.advanceTimersByTimeAsync(5_000);
       expect(captured).toHaveLength(0);
 
-      // Second poll succeeds
       await vi.advanceTimersByTimeAsync(5_000);
       expect(captured).toHaveLength(1);
     });
@@ -702,9 +674,7 @@ describe('FileReceiver', () => {
       receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
       await receiver.onStart();
 
-      // Cycle 1: dispatched once, post-action fails → quarantined.
       await vi.advanceTimersByTimeAsync(5_000);
-      // Cycle 2: same file present; must NOT dispatch again.
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(dispatchCount).toBe(1);
@@ -761,7 +731,6 @@ describe('FileReceiver', () => {
       await receiver.onStart();
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // The ledger was written with this file's key (name:mtime) in the watched dir.
       const writeCall = mockWriteFile.mock.calls.find(
         (c) => typeof c[0] === 'string' && (c[0] as string).endsWith(QUARANTINE_LEDGER),
       );
@@ -777,7 +746,6 @@ describe('FileReceiver', () => {
 
       mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
       mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
-      // Ledger read returns the previously-quarantined key; data reads return content.
       mockReadFile.mockImplementation((p: unknown) =>
         (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)
           ? Promise.resolve(JSON.stringify([key]))
@@ -787,12 +755,10 @@ describe('FileReceiver', () => {
       let dispatchCount = 0;
       receiver = new FileReceiver(makeConfig(), logger);
       receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
-      await receiver.onStart(); // loads the ledger → key is already quarantined
+      await receiver.onStart();
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      // The file is the same (same name+mtime) and was quarantined before the
-      // "restart": it must NOT be re-dispatched.
       expect(dispatchCount).toBe(0);
     });
 
@@ -944,7 +910,6 @@ describe('FileReceiver', () => {
 });
 
 describe('FileReceiver leaves alone the files a Mirth File Reader leaves alone (#244)', () => {
-  /** Poll once over a folder of these names, and return the names dispatched and the paths deleted. */
   async function pollOnce(
     names: readonly string[],
     overrides?: Partial<FileReceiverConfig>,
@@ -1027,8 +992,6 @@ describe('FileReceiver when the pipeline recorded an error', () => {
     expect(mockUnlink).toHaveBeenCalledWith(expect.stringContaining('file.hl7'));
   });
 });
-
-// ----- Faults that must not stop the rest of the directory -----
 
 describe('FileReceiver faults', () => {
   it('refuses a character set it does not know instead of reading as UTF-8', async () => {

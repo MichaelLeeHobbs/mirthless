@@ -1,13 +1,4 @@
-// ===========================================
-// Engine Global Map Tests
-// ===========================================
-// The global map is one map shared by every deployed channel. These tests use
-// the real engine package and fake only the database, the services that read
-// it and the connectors that open sockets.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue({
@@ -136,8 +127,6 @@ vi.mock('../../config/index.js', () => ({
 
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
-
-// ----- Fixtures -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const OK_EMPTY = { ok: true, value: [], error: null };

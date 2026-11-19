@@ -1,12 +1,6 @@
-// ===========================================
-// Recovery Manager Tests
-// ===========================================
-
 import { describe, it, expect, vi } from 'vitest';
 import { RecoveryManager, type RecoveryStore, type UnprocessedMessage, type ConnectorMessageRecord } from '../recovery-manager.js';
 import type { Result } from '@galvanigraph/core-util';
-
-// ----- Helpers -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -37,8 +31,6 @@ function makeStore(
     finishSource: vi.fn().mockResolvedValue(ok(undefined)),
   };
 }
-
-// ----- Tests -----
 
 describe('RecoveryManager', () => {
   it('returns zeros when no unprocessed messages', async () => {

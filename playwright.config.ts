@@ -1,7 +1,3 @@
-// ===========================================
-// Playwright E2E Test Configuration
-// ===========================================
-
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
@@ -36,10 +32,9 @@ export default defineConfig({
       url: 'http://localhost:3000/api/v1/health',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
-      // Every worker's browser and API client shares one IP. A full run at four
-      // workers came within 70 requests of the 1000-a-minute test default, and
-      // a slower run went over: a dialog showed the 429 and stayed open. The
-      // limiter has unit tests; e2e doesn't test it.
+      // Every worker shares one IP: a full run at four workers came within 70
+      // requests of the 1000-a-minute test default, and a slower one went over.
+      // The limiter has unit tests; e2e doesn't test it.
       env: { API_RATE_LIMIT_MAX: '20000' },
     },
     {

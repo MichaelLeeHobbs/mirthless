@@ -1,9 +1,4 @@
-// ===========================================
-// usePermissions
-// ===========================================
-// Reads the authenticated user's permissions from the auth store and exposes
-// helpers for gating UI controls. UI gating is a UX convenience — the server
-// still enforces authorization on every request.
+// UI gating only: the server enforces authorization on every request.
 
 import { useMemo } from 'react';
 import { holdsPermission } from '@galvanigraph/core-models';
@@ -11,13 +6,9 @@ import { useAuthStore } from '../stores/auth.store.js';
 import type { PermissionString } from '../lib/permissions.js';
 
 export interface PermissionApi {
-  /** All permission strings granted to the current user. */
   readonly permissions: ReadonlySet<string>;
-  /** True if the user has the given permission. */
   readonly has: (permission: PermissionString) => boolean;
-  /** True if the user has at least one of the given permissions. */
   readonly hasAny: (permissions: readonly PermissionString[]) => boolean;
-  /** True if the user has all of the given permissions. */
   readonly hasAll: (permissions: readonly PermissionString[]) => boolean;
 }
 

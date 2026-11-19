@@ -1,9 +1,4 @@
-// ===========================================
-// Dashboard Column Model
-// ===========================================
-// Shared definition of the configurable dashboard columns. Name (+tags) and State
-// are always shown; everything here is toggleable per-user. Order here is the
-// render order (config columns, then the stat counters).
+// Name and State are always shown, so are not listed. Array order is render order.
 
 import type { ConnectorType } from '@galvanigraph/core-models';
 
@@ -15,7 +10,7 @@ export interface DashboardColumnDef {
   readonly id: DashboardColumnId;
   readonly label: string;
   readonly align: 'left' | 'right';
-  /** Numeric stat counter (aggregated in group totals). */
+  /** Totalled in group header rows. */
   readonly numeric: boolean;
   readonly defaultVisible: boolean;
 }

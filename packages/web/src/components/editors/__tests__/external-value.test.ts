@@ -1,7 +1,4 @@
-// #183: an editor whose text the host replaces (a list item removed or moved
-// under an index-keyed editor, another tab's script, a generated sample) must
-// not let undo bring back the text it held before. Replacing the model's whole
-// value does that, since Monaco clears a model's undo stack on setValue.
+// #183: undo must not bring back text the host replaced. Monaco clears a model's undo stack on setValue.
 
 import { describe, it, expect, vi } from 'vitest';
 import { isExternalReplace, replaceExternalValue } from '../editor-hooks.js';

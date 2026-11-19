@@ -1,8 +1,5 @@
-// #228: filter rules and transformer steps were keyed by position, so after a
-// remove or a move an item's editor showed another item. When the texts were
-// equal the editor kept its undo history, and Ctrl+Z put the removed item's
-// earlier text into the next one. Monaco is faked (fake-monaco.tsx) so the
-// editors can be typed in and undone.
+// #228: items keyed by position reused an editor after a remove or move, and
+// with equal texts Ctrl+Z put the removed item's earlier text into the next one.
 
 import { useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';

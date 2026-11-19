@@ -1,11 +1,6 @@
-// ===========================================
-// Built-in Roles
-// ===========================================
-// The roles the product ships (D-310). Migration 0018 creates them as rows, on
-// a fresh install as on an upgrade, and gives every existing user one
-// all-channel assignment of the role named in users.role. After that the rows
-// are the truth: an admin may edit every built-in role but Admin.
-// role-migration.itest.ts checks that the migration wrote exactly these.
+// The roles the product ships (D-310). Migration 0018 creates them as rows, and
+// after that the rows are the truth: an admin may edit every built-in role but
+// Admin. role-migration.itest.ts checks that the migration wrote exactly these.
 
 import { PERMISSIONS, USER_ROLE, allChannelsOnly, type Permission } from '@galvanigraph/core-models';
 
@@ -76,7 +71,7 @@ export const defaultRoles: readonly RoleDefinition[] = [
   { name: CHANNEL_ROLE.DEPLOYER, description: 'Deployer without the permissions limited to all-channel assignments, for an assignment scoped to channel groups.', admin: false, permissions: channelOnly(DEPLOYER) },
 ];
 
-/** The permissions a built-in role ships with, or none for a name that is not one. For tests and docs guards. */
+/** Empty for a name that is not a built-in role. For tests and docs guards. */
 export function builtInRolePermissions(name: string): readonly Permission[] {
   return defaultRoles.find((r) => r.name === name)?.permissions ?? [];
 }

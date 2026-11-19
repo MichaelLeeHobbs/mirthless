@@ -1,7 +1,3 @@
-// ===========================================
-// Alert Schema Validation Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   createAlertSchema,
@@ -12,8 +8,6 @@ import {
   patchAlertEnabledSchema,
   alertTriggerSchema,
 } from '../alert.schema.js';
-
-// ----- Fixtures -----
 
 const VALID_UUID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
@@ -37,8 +31,6 @@ const VALID_CREATE_INPUT = {
   reAlertIntervalMs: 60000,
   maxAlerts: 10,
 };
-
-// ----- alertTriggerSchema -----
 
 describe('alertTriggerSchema', () => {
   it('accepts valid CHANNEL_ERROR trigger', () => {
@@ -112,8 +104,6 @@ describe('alertTriggerSchema', () => {
   });
 });
 
-// ----- alertActionInputSchema -----
-
 describe('alertActionInputSchema', () => {
   it('accepts valid EMAIL action', () => {
     const result = alertActionInputSchema.safeParse({
@@ -171,8 +161,6 @@ describe('alertActionInputSchema', () => {
     expect(result.success).toBe(false);
   });
 });
-
-// ----- createAlertSchema -----
 
 describe('createAlertSchema', () => {
   it('accepts valid full input', () => {
@@ -250,8 +238,6 @@ describe('createAlertSchema', () => {
   });
 });
 
-// ----- updateAlertSchema -----
-
 describe('updateAlertSchema', () => {
   it('accepts partial update with revision', () => {
     const result = updateAlertSchema.safeParse({
@@ -296,8 +282,6 @@ describe('updateAlertSchema', () => {
   });
 });
 
-// ----- alertListQuerySchema -----
-
 describe('alertListQuerySchema', () => {
   it('applies defaults', () => {
     const result = alertListQuerySchema.safeParse({});
@@ -326,8 +310,6 @@ describe('alertListQuerySchema', () => {
   });
 });
 
-// ----- alertUuidParamSchema -----
-
 describe('alertUuidParamSchema', () => {
   it('accepts valid UUID', () => {
     const result = alertUuidParamSchema.safeParse({ id: VALID_UUID });
@@ -344,8 +326,6 @@ describe('alertUuidParamSchema', () => {
     expect(result.success).toBe(false);
   });
 });
-
-// ----- patchAlertEnabledSchema -----
 
 describe('patchAlertEnabledSchema', () => {
   it('accepts boolean enabled', () => {

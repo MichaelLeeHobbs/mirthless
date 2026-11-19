@@ -1,7 +1,3 @@
-// ===========================================
-// Timeout Utility Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { withTimeout, withTimeoutSignal, TimeoutError } from '../timeout.js';
 

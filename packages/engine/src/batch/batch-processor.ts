@@ -1,13 +1,6 @@
-// ===========================================
-// Batch Processor
-// ===========================================
-// Splits inbound content into multiple messages based on a configured mode.
-
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
-
-// ----- Types -----
 
 export const BATCH_MODE = {
   DISABLED: 'DISABLED',
@@ -25,13 +18,10 @@ export interface BatchConfig {
   readonly script?: CompiledScript | undefined;
 }
 
-/** Options for JavaScript-based batch splitting. */
 export interface BatchJsOptions {
   readonly sandbox: SandboxExecutor;
   readonly execOptions: ExecutionOptions;
 }
-
-// ----- Processor -----
 
 export class BatchProcessor {
   private readonly jsOptions?: BatchJsOptions | undefined;
@@ -40,7 +30,6 @@ export class BatchProcessor {
     this.jsOptions = jsOptions;
   }
 
-  /** Split content into individual messages based on batch config. */
   async split(content: string, config: BatchConfig): Promise<Result<readonly string[]>> {
     return tryCatch(async () => {
       if (content.length === 0) {

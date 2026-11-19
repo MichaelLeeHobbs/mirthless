@@ -1,7 +1,3 @@
-// ===========================================
-// Event Emitter Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const create = vi.fn().mockResolvedValue({ ok: true, value: undefined });

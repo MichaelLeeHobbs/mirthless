@@ -1,8 +1,3 @@
-// ===========================================
-// Pruner Scheduler Controller
-// ===========================================
-// Handles HTTP requests for pruner scheduling.
-
 import type { Request, Response } from 'express';
 import type { UpdatePrunerScheduleInput } from '../services/pruner-scheduler.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';

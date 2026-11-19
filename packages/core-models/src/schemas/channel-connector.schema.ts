@@ -1,13 +1,5 @@
-// ===========================================
-// CHANNEL Connector Property Schemas
-// ===========================================
-// Properties of the Channel Reader (source) and Writer (destination), as a
-// channel stores them. The server validates them at deploy and the connector
-// registry parses them, so defaults live here only. A key not listed here
-// fails validation, except the keys the Mirth importer used to copy.
-//
-// Deploy sets the source's `channelId` to the channel's own id before it
-// validates (packages/server/src/services/deployment.service.ts).
+// Defaults live here only (D-274). An unlisted key fails the deploy, except the keys the Mirth importer used to copy.
+// Deploy sets the source's `channelId` to the channel's own id before it validates (deployment.service.ts).
 
 import { z } from 'zod/v4';
 import {
@@ -19,7 +11,6 @@ import {
 
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const channelSourceObjectSchema = z.strictObject({
-  /** The channel's own id, which a CHANNEL destination targets. */
   channelId: requiredTextSchema,
   ...sourceCommonProperties,
 });

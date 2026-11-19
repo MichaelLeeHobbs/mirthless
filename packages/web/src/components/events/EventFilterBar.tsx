@@ -1,8 +1,3 @@
-// ===========================================
-// Event Filter Bar
-// ===========================================
-// Filter controls for the events list.
-
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import FormControl from '@mui/material/FormControl';

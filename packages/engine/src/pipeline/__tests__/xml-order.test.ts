@@ -1,13 +1,8 @@
-// ===========================================
-// Order-Preserving XML Serializer Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed } from '../data-type-handler.js';
 
 type Obj = Record<string, unknown>;
 
-/** Parse, let `edit` change the object the way a transformer would, and serialize. */
 function transform(original: string, edit: (msg: Obj) => void): string {
   const msg = parseForSandbox(original, 'XML') as Obj;
   edit(msg);

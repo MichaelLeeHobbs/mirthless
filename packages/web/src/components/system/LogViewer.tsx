@@ -1,8 +1,3 @@
-// ===========================================
-// Log Viewer
-// ===========================================
-// Real-time server log viewer with filtering, search, and download.
-
 import { useState, useEffect, useRef, useMemo, type ReactNode, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -21,8 +16,6 @@ import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 import { formatTimestampWith } from '../../lib/format.js';
 import { saveFile } from '../../lib/download.js';
 
-// ----- Constants -----
-
 const LEVELS = [
   { value: 20, label: 'DEBUG', color: 'text.disabled' },
   { value: 30, label: 'INFO', color: 'text.primary' },
@@ -30,9 +23,6 @@ const LEVELS = [
   { value: 50, label: 'ERROR', color: 'error.main' },
 ] as const;
 
-// ----- Helpers -----
-
-/** Theme palette path for a pino level, so log lines follow the status colours in both modes. */
 function getLevelColor(level: number): string {
   if (level >= 50) return 'status.critical';
   if (level >= 40) return 'status.warning';
@@ -48,10 +38,6 @@ function clockTime(d: Date): string {
   return `${hh}:${mm}:${ss}.${ms}`;
 }
 
-/**
- * Time of day of a log entry, `HH:MM:SS.mmm` in the browser's zone, with no
- * date. A missing or unparseable time follows `formatTimestampWith`'s rule.
- */
 export function formatClockTime(iso: string | null | undefined): string {
   return formatTimestampWith(iso, clockTime);
 }
@@ -60,25 +46,19 @@ function formatLogLine(entry: LogEntry): string {
   return `[${formatClockTime(entry.timestamp)}] ${entry.levelLabel.padEnd(5)} ${entry.message}`;
 }
 
-// ----- Component -----
-
 export function LogViewer(): ReactNode {
   const [selectedLevels, setSelectedLevels] = useState<readonly number[]>([20, 30, 40, 50]);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  // Initial load
   const { data: historicalData } = useHistoricalLogs({ limit: 1000 });
 
-  // Real-time stream
   const { entries: streamEntries, paused, setPaused, clear } = useLogStream();
 
-  // Merge historical + streamed entries
   const allEntries = useMemo(() => {
     const historical = historicalData?.entries ?? [];
-    // Stream entries are newest-first, historical are also newest-first
-    // Deduplicate by combining and taking unique timestamps+messages
+    // Both lists are newest-first, and the stream holds the newer lines.
     const seen = new Set<string>();
     const combined: LogEntry[] = [];
 
@@ -101,23 +81,19 @@ export function LogViewer(): ReactNode {
     return combined;
   }, [historicalData, streamEntries]);
 
-  // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchText), 300);
     return () => clearTimeout(timer);
   }, [searchText]);
 
-  // Apply client-side filters
   const filteredEntries = useMemo(() => {
     let result = allEntries;
 
-    // Level filter
     if (selectedLevels.length < LEVELS.length) {
       const levelSet = new Set(selectedLevels);
       result = result.filter((e) => levelSet.has(e.level) || (e.level >= 50 && levelSet.has(50)));
     }
 
-    // Search filter
     if (debouncedSearch) {
       const lower = debouncedSearch.toLowerCase();
       result = result.filter((e) => e.message.toLowerCase().includes(lower));

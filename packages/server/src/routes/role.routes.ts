@@ -1,8 +1,4 @@
-// ===========================================
-// Role Routes
-// ===========================================
-// Roles are rows an admin creates, edits, clones and deletes (D-310). A clone
-// is a create with `clonedFrom`, recorded in the audit log.
+// A clone is a create with `clonedFrom` (D-310).
 
 import { Router, type IRouter } from 'express';
 import { createRoleSchema, updateRoleSchema, roleIdParamSchema } from '@galvanigraph/core-models';

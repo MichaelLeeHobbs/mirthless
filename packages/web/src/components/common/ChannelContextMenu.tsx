@@ -1,8 +1,3 @@
-// ===========================================
-// Channel Context Menu
-// ===========================================
-// Right-click context menu for channel rows on the dashboard.
-
 import type { ReactNode, MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import Menu from '@mui/material/Menu';
@@ -36,7 +31,7 @@ interface ChannelContextMenuProps {
   readonly channelId: string | null;
   readonly channelName: string | null;
   readonly state: string | null;
-  /** Config enabled flag — drives the Enable/Disable item. Undefined hides it. */
+  /** undefined hides the Enable/Disable item. */
   readonly enabled?: boolean | undefined;
   readonly onClose: () => void;
   readonly onClone?: ((channelId: string, channelName: string) => void) | undefined;
@@ -117,7 +112,6 @@ export function ChannelContextMenu({
         </MenuItem>
       ) : null}
       {canDeploy ? <Divider /> : null}
-      {/* State-aware deployment actions (channels:deploy only) */}
       {canDeploy && (state === undefined || state === null || state === 'UNDEPLOYED') ? (
         <MenuItem onClick={() => handleDeploy('deploy')}>
           <ListItemIcon><CloudUploadIcon fontSize="small" /></ListItemIcon>

@@ -1,11 +1,6 @@
-// ===========================================
-// Channel Export Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { stderr } from '@galvanigraph/core-util';
 
-// Mock the channel service
 vi.mock('../channel.service.js', () => ({
   ChannelService: {
     getById: vi.fn(),
@@ -24,8 +19,6 @@ import { emitEvent } from '../../lib/event-emitter.js';
 const mockGetById = vi.mocked(ChannelService.getById);
 const mockList = vi.mocked(ChannelService.list);
 const mockEmitEvent = vi.mocked(emitEvent);
-
-// ----- Helpers -----
 
 function makeChannelDetail(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -70,13 +63,9 @@ function makeChannelDetail(overrides?: Record<string, unknown>): Record<string, 
   };
 }
 
-// ----- Setup -----
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// ----- exportChannel -----
 
 describe('ChannelExportService.exportChannel', () => {
   it('exports a single channel successfully', async () => {
@@ -118,7 +107,6 @@ describe('ChannelExportService.exportChannel', () => {
     expect(json).not.toContain('dest-secret');
     expect(result.value.channels[0]?.sourceConnectorProperties['password']).toBe('__REDACTED__');
     expect(result.value.channels[0]?.destinations[0]?.properties['password']).toBe('__REDACTED__');
-    // Non-secret values preserved.
     expect(result.value.channels[0]?.destinations[0]?.properties['user']).toBe('svc');
     expect(mockEmitEvent).toHaveBeenCalledWith(expect.objectContaining({ name: 'CHANNEL_EXPORTED' }));
   });
@@ -183,9 +171,7 @@ describe('ChannelExportService.exportChannel', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       const exported = result.value.channels[0];
-      // Scripts should NOT have 'id' field
       expect(exported?.scripts[0]).not.toHaveProperty('id');
-      // Destinations should NOT have 'id' field
       expect(exported?.destinations[0]).not.toHaveProperty('id');
     }
   });
@@ -229,8 +215,6 @@ describe('ChannelExportService.exportChannel', () => {
     }
   });
 });
-
-// ----- exportAll -----
 
 describe('ChannelExportService.exportAll', () => {
   it('exports all channels', async () => {

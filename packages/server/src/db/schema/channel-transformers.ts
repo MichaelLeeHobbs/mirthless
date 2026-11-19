@@ -1,7 +1,3 @@
-// ===========================================
-// Channel Transformers and Transformer Steps Table Schema
-// ===========================================
-
 import { pgTable, uuid, varchar, text, boolean, integer, jsonb, index } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 import { channelConnectors } from './channel-connectors.js';
@@ -32,7 +28,7 @@ export const transformerSteps = pgTable('transformer_steps', {
   name: varchar('name', { length: 255 }),
   type: varchar('type', { length: 30 }).notNull(),
   script: text('script'),
-  /** Language of `script`: JAVASCRIPT or TYPESCRIPT. Rows from before languages were stored are JavaScript. */
+  /** JAVASCRIPT or TYPESCRIPT. */
   language: varchar('language', { length: 20 }).notNull().default('JAVASCRIPT'),
 
   // Mapper fields (null for other types)

@@ -1,10 +1,4 @@
-// ===========================================
-// Grouped Channel Table: drag to regroup (#223)
-// ===========================================
-// The drag handle shows only to a user who may change groups, and a drop moves
-// the channel with one server call so a failure cannot leave it in no group.
-// jsdom has no layout for dnd-kit to measure, so the drop is delivered by
-// calling the DndContext's onDragEnd with the event dnd-kit would send.
+// #223. jsdom has no layout for dnd-kit to measure, so a drop is delivered by calling the DndContext's onDragEnd with the event dnd-kit would send.
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
@@ -12,8 +6,6 @@ import { ThemeProvider } from '@mui/material/styles';
 import type { ComponentProps, ReactNode } from 'react';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { darkTheme } from '../../../styles/theme.js';
-
-// ----- Mocks -----
 
 const setGroups = vi.fn();
 const notify = vi.fn();
@@ -51,8 +43,6 @@ vi.mock('../../../stores/notification.store.js', () => ({
 
 import { GroupedChannelTable } from '../GroupedChannelTable.js';
 
-// ----- Fixtures -----
-
 function stats(channelId: string, channelName: string): ComponentProps<typeof GroupedChannelTable>['statistics'][number] {
   return {
     channelId, channelName, enabled: true, sourceConnectorType: 'TCP_MLLP', inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
@@ -73,7 +63,6 @@ type Memberships = ComponentProps<typeof GroupedChannelTable>['memberships'];
 
 const INITIAL_MEMBERSHIPS: Memberships = [{ channelGroupId: 'g1', channelId: 'c1' }, { channelGroupId: 'g2', channelId: 'c2' }];
 
-/** Re-render with new server memberships, as the memberships query does after a refetch. */
 let rerenderWith: (memberships: Memberships) => void = () => undefined;
 
 function table(memberships: Memberships): ReactNode {
@@ -89,7 +78,6 @@ function table(memberships: Memberships): ReactNode {
   );
 }
 
-/** A promise the test settles by hand, to hold a move in flight. */
 function deferred(): { promise: Promise<void>; resolve: () => void; reject: (e: Error) => void } {
   let resolve: () => void = () => undefined;
   let reject: (e: Error) => void = () => undefined;
@@ -97,7 +85,6 @@ function deferred(): { promise: Promise<void>; resolve: () => void; reject: (e: 
   return { promise, resolve, reject };
 }
 
-/** Deliver the drop dnd-kit would send when channel `channelId` from `fromGroupId` lands on `overId`. */
 async function drop(channelId: string, fromGroupId: string, overId: string | null): Promise<void> {
   const event = {
     active: { id: channelId, data: { current: { fromGroupId } } },
@@ -106,7 +93,6 @@ async function drop(channelId: string, fromGroupId: string, overId: string | nul
   await act(async () => { onDragEnd?.(event); });
 }
 
-/** The name of the group section row that lists `channelName`. */
 function sectionOf(channelName: string): string | null {
   const rows = screen.getAllByRole('row');
   let section: string | null = null;
@@ -137,7 +123,6 @@ describe('GroupedChannelTable drag handle', () => {
     granted = new Set(['channels:read']);
     renderTable();
     expect(screen.queryByRole('button', { name: 'Drag to change group' })).toBeNull();
-    // The channels are still listed in their groups.
     expect(screen.getByText('ADT In')).toBeTruthy();
   });
 });

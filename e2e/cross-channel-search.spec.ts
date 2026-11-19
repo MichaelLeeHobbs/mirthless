@@ -1,10 +1,5 @@
-// ===========================================
-// Traffic & Triage E2E Tests (cross-channel)
-// ===========================================
-// The Traffic page's search runs across every channel, and other specs send
-// messages in parallel, so this spec sends one message through a channel of
-// its own and checks the search finds or drops that message's row as the
-// filters change. Empty states are checked against a stubbed empty result.
+// The search spans every channel and other specs send messages in parallel, so
+// assertions look only at this spec's own message row.
 
 import { test, expect, type APIRequestContext, type Locator, type Page, type Response } from '@playwright/test';
 import { login } from './fixtures/auth.js';
@@ -26,13 +21,12 @@ let api: APIRequestContext;
 let channelId = '';
 let message: SearchItem;
 
-/** A time as the value of a datetime-local input (browser and test share the host's time zone). */
+// datetime-local takes local time; browser and test share the host's time zone.
 function localMinute(date: Date): string {
   const pad = (n: number): string => String(n).padStart(2, '0');
   return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** Wait for the cross-channel search request whose query has this parameter value. */
 function searchResponse(page: Page, param: string, value: string): Promise<Response> {
   return page.waitForResponse((res) => {
     const url = new URL(res.url());
@@ -40,18 +34,13 @@ function searchResponse(page: Page, param: string, value: string): Promise<Respo
   });
 }
 
-/**
- * This run's message row: its ID and its channel's name. The ID matters because
- * Traffic still lists the messages of a deleted channel, so earlier runs'
- * messages show under the same channel name.
- */
+// Matched by ID too: Traffic still lists a deleted channel's messages, so earlier runs' rows share the channel name.
 function messageRow(page: Page): Locator {
   return page.getByRole('row')
     .filter({ has: page.getByRole('cell', { name: String(message.messageId), exact: true }) })
     .filter({ has: page.getByRole('button', { name: CHANNEL_NAME, exact: true }) });
 }
 
-/** The Status filter. */
 function statusSelect(page: Page): Locator {
   return page.getByRole('combobox', { name: 'Status', exact: true });
 }
@@ -129,7 +118,6 @@ test.describe('Traffic & Triage', () => {
     await page.goto('/messages');
     await page.getByRole('tab', { name: 'Search' }).click();
 
-    // From the minute this spec's message arrived: its row is there.
     const fromMinute = searchResponse(page, 'dateFrom', new Date(localMinute(receivedAt)).toISOString());
     await page.getByLabel('From', { exact: true }).fill(localMinute(receivedAt));
     await fromMinute;
@@ -137,21 +125,18 @@ test.describe('Traffic & Triage', () => {
     // The status chip shows the status in title case (SENT as Sent).
     await expect(messageRow(page)).toContainText(new RegExp(ownStatus, 'i'));
 
-    // Only errored messages: this one isn't, so its row goes.
     const errorsOnly = searchResponse(page, 'status', 'ERROR');
     await statusSelect(page).click();
     await page.getByRole('option', { name: 'ERROR', exact: true }).click();
     await errorsOnly;
     await expect(messageRow(page)).toHaveCount(0);
 
-    // Its own status brings it back.
     const ownStatusOnly = searchResponse(page, 'status', ownStatus);
     await statusSelect(page).click();
     await page.getByRole('option', { name: ownStatus, exact: true }).click();
     await ownStatusOnly;
     await expect(messageRow(page)).toHaveCount(1);
 
-    // From tomorrow: nothing has arrived yet.
     const tomorrow = localMinute(new Date(Date.now() + 86_400_000));
     const fromTomorrow = searchResponse(page, 'dateFrom', new Date(tomorrow).toISOString());
     await page.getByLabel('From', { exact: true }).fill(tomorrow);

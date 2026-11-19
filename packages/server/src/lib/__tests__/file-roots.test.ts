@@ -1,8 +1,4 @@
-// ===========================================
-// Server File roots (GHSA-r434-hwqg-cvcw)
-// ===========================================
-// Whatever FILE_CONNECTOR_ROOTS says, a File connector may not use the
-// server's install (its code and .env) or its working directory.
+// GHSA-r434-hwqg-cvcw.
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';

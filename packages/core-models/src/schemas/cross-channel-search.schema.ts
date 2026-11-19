@@ -1,7 +1,3 @@
-// ===========================================
-// Cross-Channel Search Schemas
-// ===========================================
-
 import { z } from 'zod';
 import { MESSAGE_STATUS } from '../constants.js';
 

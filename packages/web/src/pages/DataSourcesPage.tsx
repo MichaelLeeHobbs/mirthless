@@ -1,9 +1,4 @@
-// ===========================================
-// Data Sources Page
-// ===========================================
-// Manage database connection profiles that channel scripts query via
-// dbQuery(dataSourceName, sql, params). Passwords are write-only (never read
-// back). See docs/design/11-datasources.md.
+// The server never sends a password back. Design: docs/design/11-datasources.md.
 
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';

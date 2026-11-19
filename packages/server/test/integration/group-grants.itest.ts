@@ -1,10 +1,5 @@
-// ===========================================
-// Groups as an access boundary (real Postgres, #266 slice 9a)
-// ===========================================
 // Adding a channel to a group gives everyone the group's assignments cover
 // those permissions on the channel, so the actor must already hold them there.
-// Creating, renaming or deleting a group needs channels:write on every channel,
-// and a group an assignment scopes to cannot be deleted.
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';

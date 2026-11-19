@@ -1,10 +1,4 @@
-// ===========================================
-// Tag Service Tests
-// ===========================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock DB -----
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -37,7 +31,7 @@ const mockSelectFrom = vi.fn().mockImplementation(() => {
   const fn = selectResponses[selectCallIndex];
   if (fn) {
     const result = fn();
-    // Thenable response: returned directly from from() for queries without .where()
+    // A thenable answers a query that has no .where().
     if (result && typeof result === 'object' && 'then' in result) {
       selectCallIndex++;
       return result;
@@ -93,8 +87,6 @@ vi.mock('../../lib/event-emitter.js', () => ({
 
 const { TagService } = await import('../tag.service.js');
 
-// ----- Fixtures -----
-
 const TAG_ID = '00000000-0000-0000-0000-000000000001';
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000010';
 
@@ -106,8 +98,6 @@ function makeTagRow(overrides?: Partial<Record<string, unknown>>): Record<string
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 beforeEach(() => {
   resetSelectState();

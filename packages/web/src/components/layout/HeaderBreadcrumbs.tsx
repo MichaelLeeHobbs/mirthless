@@ -1,9 +1,4 @@
-// ===========================================
-// Header Breadcrumbs
-// ===========================================
-// The trail in the app bar. It reads the URL, so every page gets one without
-// rendering it, and it looks up a channel, alert or collection name from the query cache
-// the page already filled.
+// Built from the URL, so pages render nothing for it; names come from the query cache the page already filled.
 
 import type { ReactNode } from 'react';
 import { useLocation, Link as RouterLink } from 'react-router';
@@ -22,7 +17,6 @@ const PAGES = NAV_SECTIONS.flatMap((section) => section.items);
 const CRUMB_SX = { display: 'block', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
 
 interface HeaderBreadcrumbsProps {
-  /** Phones show only the current page, behind a tap-to-expand ellipsis. */
   readonly compact: boolean;
 }
 

@@ -1,9 +1,3 @@
-// ===========================================
-// Trigger Section
-// ===========================================
-// Alert trigger configuration: channel errors (event types + regex) or
-// "no messages received" for a number of minutes.
-
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -30,7 +24,6 @@ function isErrorEventType(value: string): value is ErrorEventType {
   return (ERROR_EVENT_TYPES as readonly string[]).includes(value);
 }
 
-/** Build the API trigger for the selected type, dropping the other type's fields. */
 export function buildTriggerPayload(values: TriggerFormValues): AlertTriggerInput {
   if (values.type === 'NO_MESSAGES') {
     return { type: 'NO_MESSAGES', windowMinutes: values.windowMinutes };

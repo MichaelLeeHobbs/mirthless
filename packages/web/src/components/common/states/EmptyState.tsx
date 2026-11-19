@@ -1,22 +1,12 @@
-// ===========================================
-// Empty State
-// ===========================================
-// A shared, inviting empty state: an icon, a short headline, a line of guidance,
-// and an optional primary action. An empty screen is an invitation to act, not
-// a dead end — so it names the next step instead of just saying "no data".
-
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
 interface EmptyStateProps {
-  /** An MUI icon element (rendered muted and enlarged). */
   readonly icon?: ReactNode;
   readonly title: string;
   readonly description?: string;
-  /** Optional call-to-action, e.g. a "New channel" button. */
   readonly action?: ReactNode;
-  /** Compact variant for use inside a table cell or small panel. */
   readonly dense?: boolean;
 }
 

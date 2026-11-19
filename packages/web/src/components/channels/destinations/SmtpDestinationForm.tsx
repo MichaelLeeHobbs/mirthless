@@ -1,8 +1,3 @@
-// ===========================================
-// SMTP Destination Connector Form
-// ===========================================
-// Configuration form for SMTP email destination connectors.
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
@@ -27,7 +22,6 @@ interface AttachmentRow {
   readonly content: string;
 }
 
-/** Read `properties.attachments` into a normalized row list (tolerant of junk). */
 function getAttachments(props: Record<string, unknown>): readonly AttachmentRow[] {
   const val = props['attachments'];
   if (!Array.isArray(val)) return [];
@@ -46,7 +40,6 @@ interface AttachmentsEditorProps {
   readonly onChange: (next: readonly AttachmentRow[]) => void;
 }
 
-/** Editable list of config-driven attachments (filename / MIME type / content). */
 function AttachmentsEditor({ value, onChange }: AttachmentsEditorProps): ReactNode {
   const setRow = (index: number, key: keyof AttachmentRow, v: string): void => {
     onChange(value.map((row, i) => (i === index ? { ...row, [key]: v } : row)));
@@ -127,7 +120,6 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — SMTP Server */}
       <Grid
         size={{
           xs: 12,
@@ -211,7 +203,6 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
         />
       </Grid>
 
-      {/* Right column — Email */}
       <Grid
         size={{
           xs: 12,

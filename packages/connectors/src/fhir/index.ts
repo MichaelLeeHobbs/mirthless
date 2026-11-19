@@ -1,7 +1,3 @@
-// ===========================================
-// FHIR Connector Exports
-// ===========================================
-
 export {
   FhirDispatcher,
   buildFhirUrl,

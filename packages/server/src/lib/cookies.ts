@@ -1,15 +1,9 @@
-// ===========================================
-// Cookie Utilities
-// ===========================================
-// Helpers for httpOnly refresh token cookies.
-
 import type { Response, CookieOptions } from 'express';
 import { config } from '../config/index.js';
 import { tokenExpiresAt } from './jwt.js';
 
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
 
-/** The cookie lives as long as the refresh token it carries (JWT_REFRESH_EXPIRES_IN). */
 function getCookieOptions(refreshToken: string): CookieOptions {
   return {
     httpOnly: true,

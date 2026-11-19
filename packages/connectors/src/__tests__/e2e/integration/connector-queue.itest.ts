@@ -1,18 +1,3 @@
-// ===========================================
-// Kafka and AMQP connectors — real brokers
-// ===========================================
-// Real messages through real brokers (docker compose --profile test up
-// kafka-test rabbitmq-test):
-//   Channel A: TCP source → Kafka/AMQP destination (topic, key, routing key and
-//   headers filled per message from the channel map).
-//   Channel B: Kafka/AMQP source → transform → sink.
-// Plus: redelivery after the pipeline fails to store a message, SASL login,
-// a message no queue would receive, dead-lettering of an ERROR message, the
-// broker dropping the consumer's connection, requeue on a quorum queue, AMQPS
-// with certificate checks, and the connection tests.
-// Runs only when KAFKA_TEST_BROKERS / AMQP_TEST_HOST are set (AMQPS also needs
-// the test CA that rabbitmq-test writes to docker/test-certs).
-
 import { it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Admin } from '@platformatic/kafka';
@@ -51,7 +36,6 @@ afterEach(async () => {
   deployed = [];
 });
 
-/** A store whose first `failures` attempts to record a message fail, as a database outage would. */
 function storeFailingFirst(failures: number): InMemoryStore {
   const store = createInMemoryStore();
   let left = failures;
@@ -67,7 +51,6 @@ function storeFailingFirst(failures: number): InMemoryStore {
   };
 }
 
-/** Puts the parts of the source map the connectors fill into the message, so the sink can check them. */
 const ECHO_SOURCE_MAP = `return JSON.stringify({
   body: String(msg),
   topic: $s('topic'), key: $s('key'), headers: $s('headers'),
@@ -76,10 +59,6 @@ const ECHO_SOURCE_MAP = `return JSON.stringify({
 
 const parsed = (sink: CaptureDestination, i = 0): Record<string, unknown> =>
   JSON.parse(sink.received[i]?.content ?? '{}') as Record<string, unknown>;
-
-// ===========================================
-// Kafka
-// ===========================================
 
 describeKafka('Kafka connectors (real broker)', () => {
   const topics = {
@@ -213,10 +192,6 @@ describeKafka('Kafka connectors (real broker)', () => {
   }, TEST_TIMEOUT);
 });
 
-// ===========================================
-// AMQP (RabbitMQ)
-// ===========================================
-
 describeAmqp('AMQP connectors (real RabbitMQ)', () => {
   const names = {
     exchange: `e2e-hl7-${RUN}`,
@@ -232,11 +207,8 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     return { host: cfg.host, port: cfg.port, vhost: '/', username: cfg.username, password: cfg.password };
   };
 
-  /**
-   * The broker's topology is the administrator's job; the suite plays administrator here.
-   * The queues are durable because RabbitMQ 4.3+ refuses transient non-exclusive queues
-   * (`transient_nonexcl_queues`); afterAll deletes them.
-   */
+  // Topology is the administrator's job, not the connector's. Queues are durable because
+  // RabbitMQ 4.3+ refuses transient non-exclusive ones (`transient_nonexcl_queues`).
   beforeAll(async () => {
     const cfg = requireAmqp();
     admin = await amqpConnect({ hostname: cfg.host, port: cfg.port, username: cfg.username, password: cfg.password });
@@ -354,7 +326,6 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await ch.waitForConfirms();
     await ch.close();
 
-    // Two failed stores, two requeues, then the third delivery is stored once.
     await vi.waitFor(() => { expect(sink.received).toHaveLength(1); }, WAIT);
     expect(parsed(sink)).toMatchObject({ body: 'quorum retry', redelivered: true });
     expect(store.messageCount()).toBe(1);
@@ -399,7 +370,6 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await publishDirect('before');
     await vi.waitFor(() => { expect(sink.received.map((m) => m.content)).toEqual(['before']); }, WAIT);
 
-    // Close the connector's connection from the broker side (it names itself "galvanigraph").
     const cfg = requireAmqp();
     const api = `http://${cfg.host}:${String(cfg.managementPort)}/api/connections`;
     const auth = { Authorization: `Basic ${Buffer.from(`${cfg.username}:${cfg.password}`).toString('base64')}` };
@@ -425,10 +395,6 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await expect(testAmqpConnection({ ...connection(), password: 'wrong' }, { queue: names.queue })).rejects.toThrow();
   }, TEST_TIMEOUT);
 });
-
-// ===========================================
-// AMQP over TLS (RabbitMQ's AMQPS listener)
-// ===========================================
 
 describeAmqpTls('AMQP connectors over TLS (real RabbitMQ)', () => {
   const queue = `e2e-tls-${RUN}`;
@@ -478,7 +444,6 @@ describeAmqpTls('AMQP connectors over TLS (real RabbitMQ)', () => {
   }, TEST_TIMEOUT);
 
   it('refuses a broker certificate no trusted CA signed, and connects once the CA is given', async () => {
-    // TLS on, no CA: the test CA is not in Node's trust store, so verification fails.
     await expect(testAmqpConnection({ ...tlsConnection(), tls: {} }, { queue })).rejects.toThrow(/self[- ]signed|certificate/i);
     await expect(testAmqpConnection(tlsConnection(), { queue })).resolves.toContain(`queue ${queue}`);
   }, TEST_TIMEOUT);

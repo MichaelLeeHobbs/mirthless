@@ -1,8 +1,3 @@
-// ===========================================
-// Traffic Summary
-// ===========================================
-// Engine-wide message totals across all channels, for the Traffic view.
-
 import { useMemo, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';

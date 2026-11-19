@@ -1,13 +1,7 @@
-// ===========================================
-// HL7v2 Encoding Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import {
   detectEncoding, encodingCharsString, escapeValue, hexEscapeCharset, unescapeValue, type Hl7Encoding,
 } from '../hl7-encoding.js';
-
-// ----- Helpers -----
 
 function standardEncoding(): Hl7Encoding {
   return {
@@ -19,8 +13,6 @@ function standardEncoding(): Hl7Encoding {
     segmentSep: '\r',
   };
 }
-
-// ----- Tests -----
 
 describe('detectEncoding', () => {
   it('detects standard delimiters from MSH', () => {
@@ -55,9 +47,8 @@ describe('detectEncoding', () => {
   });
 
   it('accepts a three-character MSH-2 with no subcomponent separator, as Mirth reads it', () => {
-    // Some legacy senders omit the fourth character. Nothing inside a field may then be
-    // split at subcomponent level, so the separator is the field separator, which a
-    // field never contains.
+    // Legacy senders omit the fourth character. The field separator stands in,
+    // since a field never contains it.
     const enc = detectEncoding('MSH|^~\\|A|B');
     expect(enc.escapeChar).toBe('\\');
     expect(enc.subComponentSep).toBe('|');

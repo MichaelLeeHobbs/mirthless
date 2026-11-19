@@ -1,9 +1,3 @@
-// ===========================================
-// Message Delete Helper
-// ===========================================
-// Shared dependency-order message deletion used by both
-// DataPrunerService and MessageReprocessService.
-
 import { sql } from 'drizzle-orm';
 import { db } from '../lib/db.js';
 
@@ -15,12 +9,8 @@ import { db } from '../lib/db.js';
 export const DELETE_BATCH_SIZE = 1_000;
 
 /**
- * Delete all message-related records for the given IDs in dependency order:
- * attachments → custom metadata → content → connector messages → messages.
- *
- * IDs are deleted in batches of DELETE_BATCH_SIZE, one transaction per batch, so a
- * message is never left with some of its child rows. A failure stops at the
- * failing batch; earlier batches stay deleted.
+ * One transaction per batch, so a message is never left with some of its child rows. A
+ * failure stops at the failing batch; earlier batches stay deleted.
  */
 export async function deleteMessagesByIds(channelId: string, messageIds: readonly number[]): Promise<void> {
   for (let start = 0; start < messageIds.length; start += DELETE_BATCH_SIZE) {
@@ -29,9 +19,8 @@ export async function deleteMessagesByIds(channelId: string, messageIds: readonl
 }
 
 async function deleteBatch(channelId: string, messageIds: readonly number[]): Promise<void> {
-  // Bind each id as its own positional param: `IN ($1, $2, ...)`. Passing a JS
-  // array to `= ANY($1)` renders a malformed Postgres array literal via the
-  // drizzle/pg param path, so we expand the list explicitly.
+  // One bind param per id: a JS array passed to `= ANY($1)` renders a malformed Postgres
+  // array literal through drizzle/pg.
   const idList = sql.join(messageIds.map((id) => sql`${id}`), sql`, `);
 
   await db.transaction(async (tx) => {

@@ -1,9 +1,4 @@
-// ===========================================
-// Channel CRUD Actions
-// ===========================================
-// Shared clone / delete / export handlers + their dialogs, so any view (the
-// dashboard tables, the context menu) can offer full channel actions without
-// duplicating dialog state. Render `dialogs` once and pass the handlers down.
+// Render `dialogs` once and pass the handlers down.
 
 import { useState, useCallback, type ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
@@ -32,7 +27,6 @@ export interface ChannelCrud {
   readonly dialogs: ReactNode;
 }
 
-/** Manage channel clone/delete dialogs + export, shared across views. */
 export function useChannelCrud(): ChannelCrud {
   const { notify } = useNotification();
   const deleteChannel = useDeleteChannel();

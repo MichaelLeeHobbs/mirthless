@@ -16,8 +16,8 @@ describe('contrastText', () => {
   it('returns dark text over a light background and white over a dark one', () => {
     expect(contrastText('#ffffff')).toBe(TAG_COLOR.textOnLight);
     expect(contrastText('#000000')).toBe(TAG_COLOR.textOnDark);
-    expect(contrastText('#f0e68c')).toBe(TAG_COLOR.textOnLight); // khaki (light)
-    expect(contrastText('#1a237e')).toBe(TAG_COLOR.textOnDark); // indigo (dark)
+    expect(contrastText('#f0e68c')).toBe(TAG_COLOR.textOnLight);
+    expect(contrastText('#1a237e')).toBe(TAG_COLOR.textOnDark);
   });
 
   it('returns undefined for null/invalid colors', () => {

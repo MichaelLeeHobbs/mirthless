@@ -1,6 +1,3 @@
-// ===========================================
-// Channel Import Schema Tests
-// ===========================================
 // Import writes channels straight to the database, so it must refuse a
 // connector type the registry cannot build in that position (#109).
 

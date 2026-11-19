@@ -1,9 +1,3 @@
-// ===========================================
-// Channel Controller
-// ===========================================
-// Handles HTTP requests for channel CRUD operations.
-// Validates input, calls service, formats responses.
-
 import type { Request, Response } from 'express';
 import type {
   CreateChannelInput,
@@ -28,9 +22,8 @@ import { isServiceError } from '../lib/service-error.js';
 import { errorInfo } from '@galvanigraph/core-util';
 
 /**
- * Refuse a save that puts a store certificate's private key to use outside
- * the writer's channels (D-310). Answers the request and returns false when
- * refused; an unexpected failure is logged and answered as a server fault.
+ * Refuses a save that puts a store certificate's private key to use outside
+ * the writer's channels (D-310). Answers the request itself when it returns false.
  */
 async function certificatesAllowed(req: Request, res: Response, connectorProps: readonly unknown[]): Promise<boolean> {
   try {
@@ -44,7 +37,6 @@ async function certificatesAllowed(req: Request, res: Response, connectorProps: 
 }
 
 export class ChannelController {
-  /** GET /channels/:id/access: who can access the channel now, or as of `asOf`, and how. */
   static async access(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const { asOf } = req.query as unknown as ChannelAccessQuery;
@@ -81,10 +73,7 @@ export class ChannelController {
       return;
     }
 
-    // Mask connector credentials (DB/SFTP passwords, API keys, private keys)
-    // for read-only callers. Only a caller who can already edit the channel
-    // (`channels:write`) sees the real values; everyone else, notably the
-    // `viewer` role, gets the redacted marker.
+    // Connector credentials are unmasked only for a caller who could edit them anyway.
     const canWrite = holdsPermission(req.user?.permissions, 'channels:write');
     const data = canWrite
       ? result.value

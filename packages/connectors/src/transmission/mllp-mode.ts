@@ -1,15 +1,9 @@
-// ===========================================
-// MLLP Transmission Mode
-// ===========================================
-// Framing for HL7 over TCP. MLLP frames a message as <VT>message<FS><CR>
-// (0x0B + payload + 0x1C 0x0D). Some partners frame with other bytes (STX/ETX,
-// Mirth's "Basic" mode), so the start and end bytes can be set.
+// MLLP frames a message as <VT>message<FS><CR> (0x0B + payload + 0x1C 0x0D).
+// Some partners frame with other bytes (STX/ETX, Mirth's "Basic" mode), so the
+// start and end bytes can be set.
 
 import { DEFAULT_MAX_FRAME_BYTES } from '@galvanigraph/core-models';
 
-// ----- Constants -----
-
-/** The bytes around each message on the wire. */
 export interface Framing {
   /** Bytes before each message; may be empty (the message starts right after the previous end). */
   readonly start: Buffer;
@@ -17,14 +11,9 @@ export interface Framing {
   readonly end: Buffer;
 }
 
-/** MLLP: start VT (0x0B), end FS CR (0x1C 0x0D). */
 export const MLLP_FRAMING: Framing = { start: Buffer.from([0x0b]), end: Buffer.from([0x1c, 0x0d]) };
 
-/**
- * Framing from hex strings such as "0B" and "1C0D" (Mirth's start and end of
- * message bytes). Absent values keep MLLP's. Throws on text that is not whole
- * hex bytes or on an empty end, so a bad setting fails the deploy.
- */
+/** Mirth's start/end-of-message hex (e.g. "0B", "1C0D"); absent values keep MLLP's. */
 export function framingFromHex(startHex: string | undefined, endHex: string | undefined): Framing {
   const parse = (hex: string, what: string): Buffer => {
     const clean = hex.replace(/\s+/g, '');
@@ -37,32 +26,14 @@ export function framingFromHex(startHex: string | undefined, endHex: string | un
   return { start, end };
 }
 
-/** Default maximum frame size (bytes); defined with the TCP/MLLP property schema. */
 export { DEFAULT_MAX_FRAME_BYTES };
 
-// ----- Framing -----
-
-/**
- * Wrap a message in its frame.
- * @param message - The message payload.
- * @param charset - Character encoding for the payload. Defaults to utf-8;
- *   latin1 (iso-8859-1) is common in real HL7 feeds with accented PHI.
- * @param framing - The frame bytes (default MLLP).
- */
 export function wrapMllp(message: string, charset: BufferEncoding = 'utf-8', framing: Framing = MLLP_FRAMING): Buffer {
   return Buffer.concat([framing.start, Buffer.from(message, charset), framing.end]);
 }
 
-// ----- Parser -----
-
-/**
- * Stateful frame parser.
- * Accumulates incoming TCP chunks and yields complete message payloads.
- * Handles frames split across multiple TCP packets.
- */
 export class MllpParser {
   private buffer: Buffer = Buffer.alloc(0);
-  /** Chunks of an unfinished frame that have not been joined to `buffer` yet. */
   private pending: Buffer[] = [];
   private pendingBytes = 0;
   private inFrame = false;
@@ -72,23 +43,13 @@ export class MllpParser {
   /** The last bytes received, so end bytes split across chunks are seen. */
   private tail: Buffer = Buffer.alloc(0);
 
-  /**
-   * @param options.maxFrameBytes - Hard cap on buffered bytes; on exceed the
-   *   parser resets and throws so the caller can NAK/close (DoS guard).
-   * @param options.charset - Payload decoding charset (default utf-8).
-   * @param options.framing - The frame bytes (default MLLP).
-   */
+  /** Past `maxFrameBytes` the parser resets and throws, so the caller can close the connection (DoS guard). */
   constructor(options?: { maxFrameBytes?: number; charset?: BufferEncoding; framing?: Framing }) {
     this.maxFrameBytes = options?.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
     this.charset = options?.charset ?? 'utf-8';
     this.framing = options?.framing ?? MLLP_FRAMING;
   }
 
-  /**
-   * Feed incoming data and return any complete messages extracted.
-   * May return 0, 1, or multiple messages from a single chunk.
-   * @throws Error when buffered data exceeds the configured max frame size.
-   */
   parse(chunk: Buffer): readonly string[] {
     if (this.buffer.length + this.pendingBytes + chunk.length > this.maxFrameBytes) {
       this.reset();
@@ -130,7 +91,7 @@ export class MllpParser {
       }
 
       const end = this.buffer.indexOf(this.framing.end, start);
-      if (end === -1) break; // incomplete frame: keep it for the next chunk
+      if (end === -1) break;
 
       results.push(this.buffer.subarray(start, end).toString(this.charset));
       this.inFrame = false;
@@ -142,7 +103,6 @@ export class MllpParser {
     return results;
   }
 
-  /** Whether the end bytes appear in the chunk, or start in the bytes before it and finish in it. */
   private completesEnd(chunk: Buffer): boolean {
     const end = this.framing.end;
     if (chunk.includes(end)) return true;
@@ -150,7 +110,7 @@ export class MllpParser {
     return Buffer.concat([this.tail, chunk.subarray(0, end.length - 1)]).includes(end);
   }
 
-  /** Keep the last (end length - 1) bytes received, the most of the end bytes that can precede a chunk. */
+  /** End length - 1 is the most of the end bytes that can precede a chunk. */
   private rememberTail(chunk: Buffer): void {
     const keep = this.framing.end.length - 1;
     if (keep === 0) return;
@@ -158,14 +118,13 @@ export class MllpParser {
     this.tail = Buffer.from(joined.subarray(joined.length - keep));
   }
 
-  /** Where the payload of the next frame begins, or -1 when no frame starts in the buffer. */
+  /** The index after the start bytes (where the payload begins), not of the start bytes. */
   private frameStart(from: number): number {
     if (this.framing.start.length === 0) return from;
     const index = this.buffer.indexOf(this.framing.start, from);
     return index === -1 ? -1 : index + this.framing.start.length;
   }
 
-  /** Reset parser state. */
   reset(): void {
     this.buffer = Buffer.alloc(0);
     this.pending = [];

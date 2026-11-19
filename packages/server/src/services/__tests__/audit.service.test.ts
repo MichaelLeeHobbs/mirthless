@@ -1,8 +1,4 @@
-// ===========================================
-// Audit Service Tests
-// ===========================================
-// The one writer of audit_log (D-312), in its three ways: in the caller's
-// transaction, fail-closed, and best effort (event-emitter.ts).
+// The one writer of audit_log (D-312).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SQL } from 'drizzle-orm';

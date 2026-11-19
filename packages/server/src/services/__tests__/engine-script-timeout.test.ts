@@ -1,13 +1,6 @@
-// ===========================================
-// Engine Script Timeout Tests
-// ===========================================
-// The channel's script timeout limits each script, not the whole message, and
-// never cuts a destination send short. Real engine package; fake database,
-// services and connectors.
+// The channel's script timeout limits each script, not the whole message.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ----- Mock Dependencies -----
 
 const mockSend = vi.hoisted(() => vi.fn());
 
@@ -136,8 +129,6 @@ vi.mock('../../config/index.js', () => ({
 
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
-
-// ----- Fixtures -----
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const OK_EMPTY = { ok: true, value: [], error: null };

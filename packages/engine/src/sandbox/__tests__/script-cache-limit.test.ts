@@ -1,6 +1,3 @@
-// ===========================================
-// Script Cache Limit Tests
-// ===========================================
 // Filling the cache takes SCRIPT_CACHE_LIMIT compiles. Through real esbuild that
 // took up to a minute on a loaded machine (#125), so this file stubs esbuild's
 // transform (an external dependency) with one that echoes its input. The cache

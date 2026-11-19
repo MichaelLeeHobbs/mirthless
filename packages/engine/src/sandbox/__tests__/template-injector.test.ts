@@ -1,11 +1,5 @@
-// ===========================================
-// Template Injector Tests
-// ===========================================
-
 import { describe, it, expect } from 'vitest';
 import { prependTemplates, type CodeTemplateData } from '../template-injector.js';
-
-// ----- Test Data -----
 
 function makeTemplate(overrides?: Partial<CodeTemplateData>): CodeTemplateData {
   return {
@@ -15,8 +9,6 @@ function makeTemplate(overrides?: Partial<CodeTemplateData>): CodeTemplateData {
     ...overrides,
   };
 }
-
-// ----- Tests -----
 
 describe('prependTemplates', () => {
   it('returns original script when no templates match', () => {

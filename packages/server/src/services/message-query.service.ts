@@ -1,9 +1,3 @@
-// ===========================================
-// Message Query Service
-// ===========================================
-// Read-only query service for message search, detail, and deletion.
-// Separated from the write-path MessageService used by the engine.
-
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, sql } from 'drizzle-orm';
 import type { MessageSearchQuery } from '@galvanigraph/core-models';
@@ -17,8 +11,6 @@ import {
   connectorMessages,
   messageContent,
 } from '../db/schema/index.js';
-
-// ----- Response Types -----
 
 export interface ConnectorSummary {
   readonly metaDataId: number;
@@ -34,7 +26,7 @@ export interface MessageSummary {
   readonly processed: boolean;
   readonly processedAt: string | null;
   readonly connectors: readonly ConnectorSummary[];
-  /** The source's custom metadata column values. */
+  /** Custom metadata of the source connector only. */
   readonly metaData: Readonly<Record<string, unknown>>;
 }
 
@@ -73,8 +65,6 @@ export interface MessageCounts {
   readonly errored: number;
 }
 
-// ----- Content Type Name Map -----
-
 const CONTENT_TYPE_NAMES: Record<number, string> = {
   1: 'raw',
   2: 'processed',
@@ -91,10 +81,7 @@ const CONTENT_TYPE_NAMES: Record<number, string> = {
   13: 'processingError',
 };
 
-// ----- Service -----
-
 export class MessageQueryService {
-  /** Search messages with filters, pagination, and sorting. */
   static async searchMessages(
     channelId: string,
     filters: MessageSearchQuery,
@@ -112,7 +99,6 @@ export class MessageQueryService {
         conditions.push(sql`${messages.receivedAt} <= ${filters.receivedTo.toISOString()}`);
       }
 
-      // If status or metaDataId or contentSearch are set, we need to join connector_messages / message_content
       const hasConnectorFilter = (filters.status !== undefined && filters.status.length > 0) || filters.metaDataId !== undefined;
       const hasContentSearch = filters.contentSearch !== undefined && filters.contentSearch.length > 0;
 
@@ -146,13 +132,11 @@ export class MessageQueryService {
 
       const whereClause = and(...conditions);
 
-      // Count total matching
       const countResult = await db.execute<{ count: string }>(
         sql`SELECT COUNT(*) as count FROM messages WHERE ${whereClause}`
       );
       const total = Number(countResult.rows[0]?.count ?? 0);
 
-      // Fetch message rows
       const sortCol = filters.sort === 'messageId' ? 'id' : 'received_at';
       const sortDirection = filters.sortDir === 'asc' ? sql`ASC` : sql`DESC`;
 
@@ -175,8 +159,7 @@ export class MessageQueryService {
         return { items: [], total, limit: filters.limit, offset: filters.offset };
       }
 
-      // Fetch connector messages for all returned message IDs
-      // Use raw SQL with IN clause to avoid Drizzle bigint/number coercion issues
+      // Raw SQL IN list avoids Drizzle bigint/number coercion issues.
       const messageIds = messageRows.rows.map(r => Number(r.id));
       const idParams = messageIds.map((id) => sql`${id}`);
       const connectorRows = await db.execute<{
@@ -192,7 +175,6 @@ export class MessageQueryService {
           AND message_id IN (${sql.join(idParams, sql`, `)})
       `);
 
-      // Group connectors by messageId
       const connectorMap = new Map<number, ConnectorSummary[]>();
       for (const row of connectorRows.rows) {
         const msgId = Number(row.message_id);
@@ -238,13 +220,11 @@ export class MessageQueryService {
     });
   }
 
-  /** Get full message detail with all content for each connector. */
   static async getMessageDetail(
     channelId: string,
     messageId: number,
   ): Promise<Result<MessageDetail>> {
     return tryCatch(async () => {
-      // Fetch message
       const [message] = await db
         .select()
         .from(messages)
@@ -259,7 +239,6 @@ export class MessageQueryService {
         throw new ServiceError('NOT_FOUND', `Message not found: ${String(messageId)}`);
       }
 
-      // Fetch all connector messages
       const connectorRows = await db
         .select()
         .from(connectorMessages)
@@ -270,7 +249,6 @@ export class MessageQueryService {
           ),
         );
 
-      // Fetch all content
       const contentRows = await db
         .select()
         .from(messageContent)
@@ -281,7 +259,6 @@ export class MessageQueryService {
           ),
         );
 
-      // Group content by metaDataId, decrypting any at-rest encrypted rows.
       const contentMap = new Map<number, ConnectorContent>();
       for (const row of contentRows) {
         const typeName = CONTENT_TYPE_NAMES[row.contentType] ?? `type_${String(row.contentType)}`;
@@ -316,13 +293,11 @@ export class MessageQueryService {
     });
   }
 
-  /** Delete a message and all related data. */
   static async deleteMessage(
     channelId: string,
     messageId: number,
   ): Promise<Result<void>> {
     return tryCatch(async () => {
-      // Check message exists
       const [message] = await db
         .select({ id: messages.id })
         .from(messages)
@@ -337,15 +312,12 @@ export class MessageQueryService {
         throw new ServiceError('NOT_FOUND', `Message not found: ${String(messageId)}`);
       }
 
-      // Delete atomically and in full dependency order (attachments + custom
-      // metadata included). The previous inline delete ran three non-transactional
-      // statements and left message_attachments / message_custom_metadata rows
-      // orphaned — PHI that persisted after a "delete" and was unreachable via UI.
+      // The shared helper is atomic and also removes attachments and custom metadata, which
+      // hold PHI that would otherwise outlive the delete.
       await deleteMessagesByIds(channelId, [messageId]);
     });
   }
 
-  /** Get message counts for a channel. */
   static async getMessageCounts(
     channelId: string,
   ): Promise<Result<MessageCounts>> {

@@ -1,10 +1,3 @@
-// ===========================================
-// Validation Middleware
-// ===========================================
-// Validates req.body, req.query, and/or req.params against Zod schemas.
-// On success, replaces the request data with parsed (coerced, defaulted) values.
-// On failure, returns 400 with prettified Zod error.
-
 import type { Request, Response, NextFunction } from 'express';
 import { z, type ZodType } from 'zod/v4';
 
@@ -16,7 +9,7 @@ interface ValidationTarget {
 
 const validators = new WeakSet<object>();
 
-/** True for a handler `validate` made. The role walk sends such a route input it refuses, so the handler never runs. */
+/** The role walk sends a route with a validator input it refuses, so its handler never runs. */
 export function isValidator(handler: unknown): boolean {
   return typeof handler === 'function' && validators.has(handler);
 }
@@ -45,7 +38,6 @@ export function validate(schema: ValidationTarget) {
         return;
       }
       // Express 5 exposes req.query as a getter, so plain assignment throws.
-      // Shadow it with an own property holding the parsed value.
       Object.defineProperty(req, 'query', {
         value: result.data,
         writable: true,
