@@ -322,11 +322,14 @@ export class QueueConsumer {
     }
     if (!delivered.value) return;
     const raw = await this.store.loadContent(this.config.channelId, msg.messageId, 0, CT_RAW);
-    if (!raw.ok || raw.value === null) {
-      const cause = raw.ok ? 'no raw content is stored' : raw.error.message;
-      await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} did not run: ${cause}`);
+    if (!raw.ok) {
+      await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} did not run: ${raw.error.message}`);
       return;
     }
+    // Gone: the pipeline saw the message finished too, ran the action itself
+    // and removed the content on completion. Queues need RAW stored (deploy
+    // refuses a storage mode without it), so nothing else empties it.
+    if (raw.value === null) return;
     try {
       await onMessageDelivered(msg.messageId, raw.value);
     } catch (e) {

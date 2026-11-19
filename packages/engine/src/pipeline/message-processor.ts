@@ -672,7 +672,19 @@ export class MessageProcessor {
   private async deliveredMeanwhile(messageId: number): Promise<boolean> {
     if (!this.store.isFullyDelivered) return false;
     const delivered = await this.store.isFullyDelivered(this.config.channelId, messageId);
-    return delivered.ok && delivered.value;
+    if (delivered.ok) return delivered.value;
+    // If the queue already delivered and saw the message unfinished, nobody
+    // finishes it: its source keeps its input and its content stays. Say so.
+    if (this.config.onError) {
+      await this.config.onError({
+        channelId: this.config.channelId,
+        errorType: 'DESTINATION_CONNECTOR',
+        errorMessage: `Message ${String(messageId)} has a queued destination, and whether it has delivered could not be read: ` +
+          `${delivered.error.message}. If it has, the source's after-processing action and content removal will not run.`,
+        timestamp: Date.now(),
+      });
+    }
+    return false;
   }
 
   /** Finish a message that failed with an error no stage handled. */

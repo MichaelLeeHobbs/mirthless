@@ -385,7 +385,7 @@ No network is involved, so there is nothing to encrypt. The message stays inside
 
 ### DICOM: what it does
 
-The source is a DICOM storage SCP. It accepts C-STORE associations, writes each instance to `storageDir` as `<SOPInstanceUID>.dcm`, and sends a message whose content is the file path, with the dataset's attributes and the AE titles in the source map. In `PER_ASSOCIATION` mode it sends one message per association whose content is a JSON list of file paths.
+The source is a DICOM storage SCP. It accepts C-STORE associations, writes each instance to `storageDir` as `<SOPInstanceUID>.dcm` (a copy that arrives while an earlier one is still there is written as `<SOPInstanceUID>_2.dcm`, `_3` and so on, never over it), and sends a message whose content is the file path, with the dataset's attributes and the AE titles in the source map. In `PER_ASSOCIATION` mode it sends one message per association whose content is a JSON list of file paths.
 
 The destination is a storage SCU. The message content must be the absolute path of a DICOM file under `FILE_CONNECTOR_ROOTS`, which it sends with C-STORE.
 
@@ -404,7 +404,7 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 | `aeTitle` | No | This listener's AE title, at most 16 characters, `GALVANIGRAPH` by default. Not checked against incoming associations. |
 | `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds, 10000 by default. |
 | `dispatchMode` | No | `PER_FILE` (default) or `PER_ASSOCIATION`. |
-| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, so the action waits until every destination has delivered the message, a queued destination included: a DICOM Sender retrying from its queue still finds the file (D-323). If a destination fails, or its queue gives up, the file stays where it is for manual recovery. A later reprocess of the message has no file to read after `DELETE`; use `MOVE` or `NONE` if anything reads the file afterwards. |
+| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, so the action waits until every destination has delivered the message, a queued destination included: a DICOM Sender retrying from its queue still finds the file (D-323). If a destination fails, or its queue gives up, the file stays where it is for manual recovery, whatever the channel's response mode tells the sender. A later reprocess of the message has no file to read after `DELETE`; use `MOVE` or `NONE` if anything reads the file afterwards. |
 | `moveToDirectory` | No | Where `MOVE` puts files: an absolute path under `FILE_CONNECTOR_ROOTS`. Required when `postAction` is `MOVE`. |
 
 ### DICOM as a destination

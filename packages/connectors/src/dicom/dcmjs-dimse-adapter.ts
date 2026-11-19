@@ -122,6 +122,29 @@ function writeDataset(dataset: DatasetType, filePath: string): Promise<void> {
   });
 }
 
+/** Copies of one instance that may wait in the storage directory at once. */
+const MAX_COPIES = 100;
+
+/**
+ * Claim a file name for an instance: `<uid>.dcm`, or `<uid>_<n>.dcm` while an
+ * earlier copy is still there. A file now waits until every destination,
+ * queued ones included, has sent it (D-323), so a modality that re-sends an
+ * instance must not overwrite the copy an earlier message still needs. The
+ * name is created exclusively, so two associations cannot claim the same one.
+ */
+async function claimFileName(dir: string, uid: string): Promise<string> {
+  for (let n = 1; n <= MAX_COPIES; n++) {
+    const filePath = path.join(dir, n === 1 ? `${uid}.dcm` : `${uid}_${String(n)}.dcm`);
+    try {
+      await (await fs.open(filePath, 'wx')).close();
+      return filePath;
+    } catch (err) {
+      if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+    }
+  }
+  throw new Error(`${String(MAX_COPIES)} copies of this instance are already waiting in the storage directory; the instance was not stored`);
+}
+
 class DimseReceiver implements DcmtkReceiver {
   private server: ServerType | null = null;
   private fileListener: ((data: DcmtkFileData) => void) | null = null;
@@ -144,8 +167,14 @@ class DimseReceiver implements DcmtkReceiver {
     const sopInstanceUid = instanceUid(elements['SOPInstanceUID']);
     const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
     await fs.mkdir(dir, { recursive: true });
-    const filePath = path.join(dir, `${sopInstanceUid}.dcm`);
-    await writeDataset(dataset, filePath);
+    const filePath = await claimFileName(dir, sopInstanceUid);
+    try {
+      await writeDataset(dataset, filePath);
+    } catch (err) {
+      // Give the name back; the sender is told the store failed.
+      await fs.rm(filePath, { force: true });
+      throw err;
+    }
     files.push(filePath);
     this.fileListener?.({
       filePath,

@@ -98,6 +98,18 @@ describe('DICOM SCP storage', () => {
     expect(received).toEqual([]);
   });
 
+  // #320 review: a modality that re-sends an instance must not overwrite the
+  // copy an earlier message still waits to send from its queue.
+  it('stores a re-sent instance as a second file instead of overwriting the first', async () => {
+    await startScp({ allowed: [base], denied: [] });
+
+    expect(await store('1.2.3')).toBe(Status.Success);
+    expect(await store('1.2.3')).toBe(Status.Success);
+
+    expect(await filesUnder(storageDir)).toEqual(['1.2.3.dcm', '1.2.3_2.dcm']);
+    expect(received.map((r) => path.basename(r.filePath))).toEqual(['1.2.3.dcm', '1.2.3_2.dcm']);
+  });
+
   it('refuses to write when the storage directory is outside the roots', async () => {
     const roots = path.join(base, 'roots');
     await fs.mkdir(roots);

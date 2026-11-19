@@ -873,9 +873,22 @@ describe('QueueConsumer onMessageDelivered', () => {
     expect(hook).not.toHaveBeenCalled();
   });
 
+  // The pipeline saw the message finished too, ran the source's action itself
+  // and removed the content on completion (#320 review).
+  it('does nothing when the raw content is already gone', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValue(undefined);
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const store = storeWith(vi.fn<Delivered>().mockResolvedValue(ok(true)), ok(null));
+
+    consumer = new QueueConsumer(makeConfig({ onMessageDelivered: hook, onError }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(hook).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['the state cannot be read', fail('db down'), ok('/x.dcm'), 'db down'],
-    ['no raw content is stored', ok(true), ok(null), 'no raw content is stored'],
     ['the raw content cannot be read', ok(true), fail('read failed'), 'read failed'],
   ] as const)('raises an alert instead of calling the source when %s', async (_case, delivered, raw, text) => {
     const hook = vi.fn<Hook>().mockResolvedValue(undefined);

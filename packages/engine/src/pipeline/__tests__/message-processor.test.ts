@@ -609,14 +609,16 @@ describe('MessageProcessor', () => {
       expect(store.removeCompletedContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1);
     });
 
-    it('counts it queued when the store cannot say', async () => {
+    it('counts it queued, and raises an alert, when the store cannot say', async () => {
       const store = { ...makeStore(), isFullyDelivered: vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('db down') }) };
-      const processor = new MessageProcessor(sandbox, store, makeSendFn(), queuedConfig, DEFAULT_EXECUTION_OPTIONS);
+      const onError = vi.fn().mockResolvedValue(undefined);
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), { ...queuedConfig, onError }, DEFAULT_EXECUTION_OPTIONS);
 
       const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
       expect(result.ok && result.value.queued).toBe(true);
       expect(store.removeCompletedContent).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('db down') }));
     });
 
     it('does not ask the store when nothing was queued', async () => {

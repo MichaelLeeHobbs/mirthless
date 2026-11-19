@@ -10,7 +10,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import type { SourceConnectorRuntime, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { isMissing, resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
@@ -228,9 +228,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
     const result = await this.dispatcher(raw);
     const failure = dispatchFailure(result);
     if (failure === null) {
-      // A queued destination reads the file when it sends, so the file stays
-      // until onMessageDelivered says the last one has (#243, D-323).
-      if (!(result.ok && result.value.queued === true)) await this.applyPostAction(data.filePath);
+      if (this.keepsInput(result, { filePath: data.filePath })) return;
+      await this.applyPostActions([data.filePath]);
     } else {
       // Pipeline rejected the file. This is event-driven (not polled), so the file
       // is never re-dispatched — surface it loudly and leave the file in place
@@ -262,7 +261,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
     const result = await this.dispatcher(raw);
     const failure = dispatchFailure(result);
     if (failure === null) {
-      if (!(result.ok && result.value.queued === true)) await this.applyPostActions(data.files);
+      if (this.keepsInput(result, { associationId: data.associationId, fileCount: data.files.length })) return;
+      await this.applyPostActions(data.files);
     } else {
       this.logger.error(
         { ...errorInfo(failure), associationId: data.associationId, fileCount: data.files.length },
@@ -278,35 +278,62 @@ export class DicomReceiver implements SourceConnectorRuntime {
    * shape, not the current mode, since the mode may have changed since.
    */
   async onMessageDelivered(content: string): Promise<void> {
-    await this.applyPostActions(filesIn(content));
+    const failures = await this.applyPostActions(filesIn(content));
+    // Thrown so the queue consumer raises an alert, not only a log line.
+    if (failures.length > 0) {
+      throw new Error(`DICOM post-action failed for ${String(failures.length)} file(s), left in place: ${failures.map((f) => f.message).join('; ')}`);
+    }
   }
 
-  private async applyPostActions(files: readonly string[]): Promise<void> {
-    await Promise.allSettled(files.filter((f) => f !== '').map((f) => this.applyPostAction(f)));
+  /**
+   * Whether the stored files must stay although the pipeline accepted the
+   * message: a queued destination still reads them when it sends, until
+   * onMessageDelivered says the last one has (#243, D-323), or a destination
+   * failed under a response mode that answers before destinations.
+   */
+  private keepsInput(result: Result<DispatchResult>, context: Readonly<Record<string, unknown>>): boolean {
+    if (!result.ok) return false;
+    if (result.value.destinationFailed === true) {
+      this.logger.error(
+        { ...context, messageId: result.value.messageId },
+        'DICOM message had a destination fail; file retained for reprocessing or manual recovery',
+      );
+      return true;
+    }
+    return result.value.queued === true;
+  }
+
+  /** Apply the post-action to each file; the failures, each already logged. */
+  private async applyPostActions(files: readonly string[]): Promise<Error[]> {
+    const results = await Promise.all(files.filter((f) => f !== '').map((f) => this.applyPostAction(f)));
+    return results.filter((e): e is Error => e !== null);
   }
 
   /**
    * Delete or move one stored file. A file already gone is fine: the pipeline
    * and the queue consumer can both finish a message (D-323). Anything else
-   * leaves the file where it is and is logged.
+   * leaves the file where it is, is logged, and is returned.
    */
-  private async applyPostAction(filePath: string): Promise<void> {
-    if (this.config.postAction === DICOM_POST_ACTION.NONE) return;
+  private async applyPostAction(filePath: string): Promise<Error | null> {
+    if (this.config.postAction === DICOM_POST_ACTION.NONE) return null;
     try {
       const file = await this.storedFile(filePath);
       if (this.config.postAction === DICOM_POST_ACTION.DELETE) {
         await fs.unlink(file);
-        return;
+        return null;
       }
       const target = await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
       await fs.mkdir(target, { recursive: true });
       await fs.rename(file, path.join(target, path.basename(file)));
+      return null;
     } catch (err) {
-      if (isMissing(err)) return;
+      if (isMissing(err)) return null;
+      const error = err instanceof Error ? err : new Error(String(err));
       this.logger.error(
-        { ...errorInfo(err), filePath, postAction: this.config.postAction },
+        { ...errorInfo(error), filePath, postAction: this.config.postAction },
         'DICOM post-action failed; file left in place',
       );
+      return error;
     }
   }
 

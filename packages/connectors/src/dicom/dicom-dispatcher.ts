@@ -80,6 +80,11 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
       if (this.config.callingAETitle.length > 16) {
         throw new Error('Calling AE Title must be 16 characters or fewer');
       }
+      // Every send would be refused, and a queue retrying forever would hold
+      // every message behind the first, so refuse to deploy instead.
+      if (this.config.roots.allowed.length === 0) {
+        throw new Error('DICOM Senders are turned off: FILE_CONNECTOR_ROOTS is not set. List the directories the files they send may be in.');
+      }
     });
   }
 

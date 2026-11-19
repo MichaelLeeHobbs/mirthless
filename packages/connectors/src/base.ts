@@ -63,6 +63,13 @@ export interface DispatchResult {
    * until `onMessageDelivered` says every destination has delivered.
    */
   readonly queued?: boolean | undefined;
+  /**
+   * True when a destination or the postprocessor failed although `status` is
+   * PROCESSED: the channel answers the sender before its destinations
+   * (AUTO_BEFORE, AUTO_AFTER_TRANSFORMER). A source must still keep what it
+   * read, so the message can be reprocessed.
+   */
+  readonly destinationFailed?: boolean | undefined;
 }
 
 /**

@@ -326,6 +326,28 @@ describe('DicomReceiver post-action', () => {
     await vi.waitFor(async () => { expect(await exists(filePath)).toBe(false); });
   });
 
+  // #320 review: under AUTO_BEFORE and AUTO_AFTER_TRANSFORMER a failed destination is reported as success.
+  it('keeps the file when a destination failed although the sender was answered with success', async () => {
+    const filePath = await storedFile('a.dcm');
+    await receiveFile(filePath, { ok: true, value: { messageId: 1, status: 'PROCESSED', destinationFailed: true }, error: null });
+    await new Promise((r) => { setTimeout(r, 50); });
+    expect(await exists(filePath)).toBe(true);
+  });
+
+  it('does nothing and throws nothing when the file was already deleted', async () => {
+    const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
+    await expect(receiver.onMessageDelivered(path.join(dir, 'gone.dcm'))).resolves.toBeUndefined();
+  });
+
+  it('throws when a queued message\'s post-action fails, so the queue raises an alert', async () => {
+    const filePath = await storedFile('a.dcm');
+    const receiver = new DicomReceiver(makeConfig({
+      storageDir: dir, postAction: 'MOVE', moveToDirectory: '/srv/not-allowed', roots: { allowed: [dir], denied: [] },
+    }));
+    await expect(receiver.onMessageDelivered(filePath)).rejects.toThrow('FILE_CONNECTOR_ROOTS');
+    expect(await exists(filePath)).toBe(true);
+  });
+
   it('keeps the file when dispatch fails', async () => {
     const filePath = await storedFile('a.dcm');
     await receiveFile(filePath, { ok: false, value: null, error: stderr('Dispatch failed') });
@@ -367,7 +389,7 @@ describe('DicomReceiver post-action', () => {
     const filePath = await storedFile('a.dcm');
     const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
     await receiver.onMessageDelivered('[not json');
-    await receiver.onMessageDelivered('{"a":1}');
+    await expect(receiver.onMessageDelivered('{"a":1}')).rejects.toThrow('must be absolute');
     expect(await exists(filePath)).toBe(true);
   });
 
@@ -378,8 +400,8 @@ describe('DicomReceiver post-action', () => {
     await fs.writeFile(victim, 'DICM');
     try {
       const receiver = new DicomReceiver(makeConfig({ storageDir: dir }));
-      await receiver.onMessageDelivered(victim);
-      await receiver.onMessageDelivered(path.join(dir, '..', path.basename(outside), 'keep.dcm'));
+      await expect(receiver.onMessageDelivered(victim)).rejects.toThrow('not a file in the DICOM storage directory');
+      await expect(receiver.onMessageDelivered(path.join(dir, '..', path.basename(outside), 'keep.dcm'))).rejects.toThrow();
       expect(await exists(victim)).toBe(true);
     } finally {
       await fs.rm(outside, { recursive: true, force: true });
@@ -394,7 +416,7 @@ describe('DicomReceiver post-action', () => {
       moveToDirectory: '/srv/not-allowed',
       roots: { allowed: [dir], denied: [] },
     }));
-    await receiver.onMessageDelivered(filePath);
+    await receiver.onMessageDelivered(filePath).catch(() => undefined);
     expect(await exists(filePath)).toBe(true);
   });
 });

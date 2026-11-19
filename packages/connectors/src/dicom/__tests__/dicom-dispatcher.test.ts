@@ -110,6 +110,13 @@ describe('DicomDispatcher.onDeploy', () => {
     const result = await dispatcher.onDeploy();
     expect(result.ok).toBe(false);
   });
+
+  // #320 review: without roots every send would fail, and a queue retrying forever would stall.
+  it('fails when FILE_CONNECTOR_ROOTS is not set', async () => {
+    const dispatcher = new DicomDispatcher(makeConfig({ roots: { allowed: [], denied: [] } }));
+    const result = await dispatcher.onDeploy();
+    expect(result.ok ? '' : result.error.message).toContain('FILE_CONNECTOR_ROOTS is not set');
+  });
 });
 
 // ----- onStart -----
