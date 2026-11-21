@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 const mockSend = vi.hoisted(() => vi.fn());
 
@@ -57,21 +58,6 @@ vi.mock('../config-map.service.js', () => ({
   ConfigMapService: { list: mockConfigMapList },
 }));
 
-const mockListTemplates = vi.fn();
-vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listTemplatesForChannel: mockListTemplates },
-}));
-
-const mockGlobalScriptGetAll = vi.fn().mockResolvedValue({
-  ok: true, value: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }, error: null,
-});
-
-vi.mock('../global-script.service.js', () => ({
-  GlobalScriptService: {
-    getAll: mockGlobalScriptGetAll,
-  },
-}));
-
 vi.mock('../alert.service.js', () => ({
   AlertService: {
     list: vi.fn().mockResolvedValue({
@@ -83,25 +69,6 @@ vi.mock('../alert.service.js', () => ({
 
 vi.mock('../email.service.js', () => ({
   EmailService: { sendMail: vi.fn() },
-}));
-
-// Deploy reads filter rules and transformer steps; these channels have none.
-const mockSelect = vi.fn();
-
-vi.mock('../../lib/db.js', () => ({
-  db: { select: mockSelect },
-}));
-
-vi.mock('../../db/schema/index.js', () => ({
-  channelFilters: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  filterRules: { id: 'id', filterId: 'filterId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', operator: 'operator', type: 'type', script: 'script' },
-  channelTransformers: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  transformerSteps: { id: 'id', transformerId: 'transformerId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', type: 'type', script: 'script' },
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn(),
-  asc: vi.fn(),
 }));
 
 vi.mock('../../lib/logger.js', () => ({
@@ -136,6 +103,8 @@ function makeChannel(overrides: Record<string, unknown> = {}): never {
     metadataColumns: [],
     destinations: [],
     scripts: [],
+    filters: [],
+    transformers: [],
     ...overrides,
   } as never;
 }
@@ -146,8 +115,6 @@ const DEST = { id: 'd1', metaDataId: 1, name: 'Lab', enabled: true, connectorTyp
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockSelect.mockImplementation(() => ({ from: () => ({ leftJoin: () => ({ where: () => ({ orderBy: () => Promise.resolve([]) }) }) }) }));
-  mockListTemplates.mockResolvedValue(OK_EMPTY);
   mockConfigMapList.mockResolvedValue(OK_EMPTY);
   mockGlobalMapList.mockResolvedValue(OK_EMPTY);
   mockSend.mockResolvedValue(ok({ status: 'SENT', content: 'ACK' }));
@@ -161,7 +128,7 @@ beforeEach(() => {
 
 async function deployAndRecover(): Promise<InstanceType<typeof EngineManager>> {
   const engine = new EngineManager('test-server');
-  await engine.deploy(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] }));
+  await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] })));
   const deployed = engine.getRuntime(CHANNEL_ID)!;
   await deployed.runtime.start();
   await deployed.recoverOnce();
@@ -271,7 +238,7 @@ describe('EngineManager recovery', () => {
 
   it('releases stale queue claims once, separately from recovery', async () => {
     const engine = new EngineManager('test-server');
-    await engine.deploy(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [{ ...DEST, queueMode: 'ALWAYS' }] }));
+    await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [{ ...DEST, queueMode: 'ALWAYS' }] })));
     const deployed = engine.getRuntime(CHANNEL_ID)!;
 
     await deployed.resetClaimsOnce();

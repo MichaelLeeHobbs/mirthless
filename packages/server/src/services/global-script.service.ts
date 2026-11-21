@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { ScriptLanguageCode, UpdateGlobalScriptsInput } from '@galvanigraph/core-models';
 import { GLOBAL_SCRIPT_TYPE, toScriptLanguage } from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { db } from '../lib/db.js';
+import { db, type DbReader } from '../lib/db.js';
 import { globalScripts } from '../db/schema/index.js';
 
 type GlobalScriptKey = 'deploy' | 'undeploy' | 'preprocessor' | 'postprocessor';
@@ -33,8 +33,8 @@ const ENTRIES: ReadonlyArray<{ readonly key: string; readonly field: GlobalScrip
 const NEVER_SAVED_LANGUAGE: ScriptLanguageCode = 'TYPESCRIPT';
 
 /** A saved script keeps its language even when empty (#183). */
-async function readAll(): Promise<GlobalScriptsData> {
-  const rows = await db.select().from(globalScripts);
+async function readAll(reader: DbReader = db): Promise<GlobalScriptsData> {
+  const rows = await reader.select().from(globalScripts);
   const byType = new Map(rows.map((r) => [r.scriptType, r]));
   const script = (key: string): string => byType.get(key)?.script ?? '';
   const language = (key: string): ScriptLanguageCode => {
@@ -80,8 +80,9 @@ async function assertTouchedScriptsTypeCheck(input: UpdateGlobalScriptsInput): P
 }
 
 export class GlobalScriptService {
-  static async getAll(): Promise<Result<GlobalScriptsData>> {
-    return tryCatch(readAll);
+  /** A deploy passes its transaction, so the scripts are read with the channel. */
+  static async getAll(reader: DbReader = db): Promise<Result<GlobalScriptsData>> {
+    return tryCatch(() => readAll(reader));
   }
 
   /**

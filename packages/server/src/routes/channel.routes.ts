@@ -56,9 +56,10 @@ router.delete(
   ChannelController.delete
 );
 
+// Whether an enabled channel comes back at a restart is deploy control (#225).
 router.patch(
   '/:id/enabled',
-  requirePermission('channels:write'),
+  requirePermission('channels:deploy'),
   validate({ params: uuidParamsSchema, body: patchChannelEnabledSchema }),
   ChannelController.setEnabled
 );

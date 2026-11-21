@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from 'stderr-lib';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 const mockEmitToChannel = vi.fn();
 const mockEmitToRoom = vi.fn();
@@ -37,12 +38,8 @@ vi.mock('../../engine.js', () => ({
   getEngine: () => mockEngine,
 }));
 
-const mockChannelService = {
-  getById: vi.fn(),
-};
-
 vi.mock('../channel.service.js', () => ({
-  ChannelService: mockChannelService,
+  ChannelService: {},
 }));
 
 vi.mock('../config-map.service.js', () => ({
@@ -53,17 +50,16 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-// Deploy type-checks TypeScript scripts with these; they read the database.
-vi.mock('../global-script.service.js', () => ({
-  GlobalScriptService: {
-    getAll: vi.fn().mockResolvedValue({
-      ok: true, error: null,
-      value: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '', languages: { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } },
-    }),
-  },
-}));
-vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listTemplatesForChannel: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
+// ----- Mock Deployment Records (deploy reads the saved bundle and records it) -----
+
+const mockRecords = {
+  loadSaved: vi.fn(),
+  record: vi.fn(),
+  markUndeployed: vi.fn(),
+};
+
+vi.mock('../deployment-record.service.js', () => ({
+  DeploymentRecordService: mockRecords,
 }));
 
 const mockInsertValues = vi.fn().mockResolvedValue(undefined);
@@ -125,11 +121,13 @@ beforeEach(() => {
   mockRuntime.resume.mockResolvedValue({ ok: true, value: undefined, error: null });
   mockInsertValues.mockResolvedValue(undefined);
   mockExecute.mockResolvedValue([]);
+  mockRecords.record.mockResolvedValue(ok(undefined));
+  mockRecords.markUndeployed.mockResolvedValue(ok(undefined));
 });
 
 describe('Socket emission on deployment state changes', () => {
   it('emits channel:state with STOPPED after deploy', async () => {
-    mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+    mockRecords.loadSaved.mockResolvedValue(ok(bundleOf(CHANNEL_DETAIL as never)));
 
     const result = await DeploymentService.deploy(CHANNEL_ID);
 

@@ -13,6 +13,14 @@ export const EVENT_NAME = {
   CHANNEL_STARTED: 'CHANNEL_STARTED',
   CHANNEL_STOPPED: 'CHANNEL_STOPPED',
   CHANNEL_PAUSED: 'CHANNEL_PAUSED',
+  CHANNEL_ENABLED: 'CHANNEL_ENABLED',
+  CHANNEL_DISABLED: 'CHANNEL_DISABLED',
+  // At startup: an enabled channel was not deployed because it has no usable
+  // deployment record (never deployed, or a record this version cannot read) (#225).
+  CHANNEL_NOT_REDEPLOYED: 'CHANNEL_NOT_REDEPLOYED',
+  // First start after the upgrade that added deployment records: the saved
+  // configuration was deployed and recorded as the channel's deployment (#225).
+  CHANNEL_DEPLOYMENT_ADOPTED: 'CHANNEL_DEPLOYMENT_ADOPTED',
   SETTINGS_CHANGED: 'SETTINGS_CHANGED',
   CODE_TEMPLATE_UPDATED: 'CODE_TEMPLATE_UPDATED',
   GLOBAL_SCRIPT_UPDATED: 'GLOBAL_SCRIPT_UPDATED',

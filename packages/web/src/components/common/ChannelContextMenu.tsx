@@ -103,7 +103,8 @@ export function ChannelContextMenu({
         <ListItemIcon><MessageIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Messages</ListItemText>
       </MenuItem>
-      {canWrite && enabled !== undefined ? (
+      {/* Enabling decides whether a channel comes back at a restart: deploy control (#225). */}
+      {canDeploy && enabled !== undefined ? (
         <MenuItem onClick={handleToggleEnabled}>
           <ListItemIcon>
             {enabled ? <ToggleOffIcon fontSize="small" /> : <ToggleOnIcon fontSize="small" />}

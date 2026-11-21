@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 const mockAlertManager = {
   loadAlerts: vi.fn(),
@@ -162,25 +163,12 @@ vi.mock('../message.service.js', () => ({
   },
 }));
 
-// Mock CodeTemplateService
 vi.mock('../global-map.service.js', () => ({
   GlobalMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }), upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() },
 }));
 
 vi.mock('../config-map.service.js', () => ({
   ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
-}));
-
-vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: {
-    listTemplatesForChannel: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
-  },
-}));
-
-vi.mock('../global-script.service.js', () => ({
-  GlobalScriptService: {
-    getAll: vi.fn().mockResolvedValue({ ok: true, value: { preprocessor: null, postprocessor: null }, error: null }),
-  },
 }));
 
 const mockAlertServiceList = vi.fn();
@@ -193,31 +181,6 @@ vi.mock('../alert.service.js', () => ({
     getById: mockAlertServiceGetById,
     getByIds: mockAlertServiceGetByIds,
   },
-}));
-
-const mockSelectFrom = vi.fn().mockReturnValue({
-  leftJoin: vi.fn().mockReturnValue({
-    where: vi.fn().mockReturnValue({
-      orderBy: vi.fn().mockResolvedValue([]),
-    }),
-  }),
-});
-const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
-
-vi.mock('../../lib/db.js', () => ({
-  db: { select: mockSelect },
-}));
-
-vi.mock('../../db/schema/index.js', () => ({
-  channelFilters: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  filterRules: { id: 'id', filterId: 'filterId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', operator: 'operator', type: 'type', script: 'script' },
-  channelTransformers: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  transformerSteps: { id: 'id', transformerId: 'transformerId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', type: 'type', script: 'script' },
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn(),
-  asc: vi.fn(),
 }));
 
 vi.mock('../../lib/logger.js', () => ({
@@ -252,6 +215,8 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
     metadataColumns: [],
     destinations: [],
     scripts: [],
+    filters: [],
+    transformers: [],
     ...overrides,
   };
 }
@@ -316,7 +281,7 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       const channel = makeChannel();
 
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(MockAlertManagerCtor).toHaveBeenCalledOnce();
       const deployed = engine.getRuntime(CHANNEL_ID);
@@ -343,7 +308,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       expect(mockAlertServiceGetByIds).toHaveBeenCalledOnce();
       expect(mockAlertServiceGetByIds).toHaveBeenCalledWith([ALERT_ID]);
@@ -377,7 +342,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       const loadedAlerts = mockAlertManager.loadAlerts.mock.calls[0]![0] as readonly unknown[];
       // Empty channelIds means all channels.
@@ -401,7 +366,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       const loadedAlerts = mockAlertManager.loadAlerts.mock.calls[0]![0] as readonly unknown[];
       expect(loadedAlerts).toHaveLength(1);
@@ -415,7 +380,7 @@ describe('EngineManager', () => {
 
       const engine = new EngineManager('test-server');
 
-      await expect(engine.deploy(makeChannel() as never)).rejects.toThrow('failed to load alerts: DB error');
+      await expect(engine.deploy(bundleOf(makeChannel() as never))).rejects.toThrow('failed to load alerts: DB error');
       expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
     });
 
@@ -437,12 +402,12 @@ describe('EngineManager', () => {
 
       const engine = new EngineManager('test-server');
 
-      await expect(engine.deploy(makeChannel() as never)).rejects.toThrow('failed to load alerts: DB error');
+      await expect(engine.deploy(bundleOf(makeChannel() as never))).rejects.toThrow('failed to load alerts: DB error');
     });
 
     it('passes onError callback to PipelineConfig', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       expect(MockAlertManagerCtor).toHaveBeenCalledOnce();
       // onError is wired inside PipelineConfig, so this checks it only indirectly.
@@ -462,7 +427,7 @@ describe('EngineManager', () => {
       const { MessageProcessor } = await import('@galvanigraph/engine');
       const ctor = vi.mocked(MessageProcessor);
       ctor.mockClear();
-      await new EngineManager('test-server').deploy(makeChannel({ destinations: [dicomDest(template)] }) as never);
+      await new EngineManager('test-server').deploy(bundleOf(makeChannel({ destinations: [dicomDest(template)] }) as never));
       const pipeline = ctor.mock.calls[0]?.[3] as { destinations: ReadonlyArray<{ template?: string }> };
       return pipeline.destinations[0]?.template;
     };
@@ -484,7 +449,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(mockSetScriptRunner).toHaveBeenCalledOnce();
       const scriptRunnerFn = mockSetScriptRunner.mock.calls[0]![0] as (script: string) => Promise<unknown>;
@@ -495,7 +460,7 @@ describe('EngineManager', () => {
       const channel = makeChannel({ sourceConnectorType: 'TCP_MLLP' });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(mockSetScriptRunner).not.toHaveBeenCalled();
     });
@@ -514,7 +479,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(mockSetDestScriptRunner).toHaveBeenCalledOnce();
       const destScriptRunnerFn = mockSetDestScriptRunner.mock.calls[0]![0] as (s: string, c: string, m: unknown) => Promise<unknown>;
@@ -535,7 +500,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(mockSetDestScriptRunner).not.toHaveBeenCalled();
     });
@@ -561,7 +526,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(mockSetDestScriptRunner).toHaveBeenCalledTimes(2);
     });
@@ -575,7 +540,7 @@ describe('EngineManager', () => {
         }],
       });
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
       const runner = mockSetDestScriptRunner.mock.calls[0]![0] as (s: string, c: string, m: unknown) => Promise<unknown>;
 
       await runner('return msg;', 'MSH|^~\\&|A', { dataType: 'HL7V2', variables: { accession: 'ACC1' } });
@@ -593,7 +558,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(mockCompileScript).toHaveBeenCalledWith('return "hello";', { sourcefile: 'Test Channel/js-source.js' });
       const compileCallCountAtDeploy = mockCompileScript.mock.calls.length;
@@ -619,7 +584,7 @@ describe('EngineManager', () => {
 
       const engine = new EngineManager('test-server');
 
-      await expect(engine.deploy(channel as never)).rejects.toThrow('js-source.js failed to compile');
+      await expect(engine.deploy(bundleOf(channel as never))).rejects.toThrow('js-source.js failed to compile');
       expect(mockSetScriptRunner).not.toHaveBeenCalled();
       expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
     });
@@ -638,7 +603,7 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
+      await engine.deploy(bundleOf(channel as never));
 
       expect(mockCompileScript).toHaveBeenCalledWith('return msg;', { sourcefile: 'Test Channel/js-dest-1.js' });
       const compileCallCountAtDeploy = mockCompileScript.mock.calls.length;
@@ -663,7 +628,7 @@ describe('EngineManager', () => {
   describe('undeploy', () => {
     it('clears alert throttle state on undeploy', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       await engine.undeploy(CHANNEL_ID);
 
@@ -672,7 +637,7 @@ describe('EngineManager', () => {
 
     it('clears GlobalChannelMap on undeploy', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       await engine.undeploy(CHANNEL_ID);
 
@@ -681,7 +646,7 @@ describe('EngineManager', () => {
 
     it('removes channel from runtimes on undeploy', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       expect(engine.getRuntime(CHANNEL_ID)).toBeDefined();
 
@@ -698,7 +663,7 @@ describe('EngineManager', () => {
 
     it('stops a STARTED channel before undeploying it (graceful shutdown safety)', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
       mockRuntimeGetState.mockReturnValue('STARTED');
 
       await engine.undeploy(CHANNEL_ID);
@@ -711,7 +676,7 @@ describe('EngineManager', () => {
 
     it('force-halts a STARTED channel when a graceful stop fails', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
       mockRuntimeGetState.mockReturnValue('STARTED');
       mockRuntimeStop.mockResolvedValue({ ok: false, value: null, error: new Error('stop boom') });
 
@@ -726,7 +691,7 @@ describe('EngineManager', () => {
   describe('DeployedChannel interface', () => {
     it('includes alertManager in deployed channel record', async () => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
+      await engine.deploy(bundleOf(makeChannel() as never));
 
       const deployed = engine.getRuntime(CHANNEL_ID);
       expect(deployed).toBeDefined();

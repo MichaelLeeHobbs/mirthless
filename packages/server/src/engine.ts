@@ -45,29 +45,25 @@ import {
   type DestinationConnectorRuntime,
 } from '@galvanigraph/connectors';
 import { AUDIT_ACTION, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvanigraph/core-models';
-import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
-import { GlobalScriptService } from './services/global-script.service.js';
 import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
 import { config } from './config/index.js';
-import { CodeTemplateService } from './services/code-template.service.js';
 import { CollectionService, type CollectionRecordResult } from './services/collection.service.js';
 import { ResourceService } from './services/resource.service.js';
 import { DataSourceService } from './services/data-source.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from './services/connector-tls-resolver.js';
-import { db } from './lib/db.js';
 import { ServiceError } from './lib/service-error.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
-import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
 import { emitAuditEvent, emitEvent } from './lib/event-emitter.js';
 import { emitToChannelAudience } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
+import type { DeploymentBundle } from './services/deployment-record.service.js';
 
 /** The maps a channel's own scripts (deploy, undeploy, JavaScript connectors) share with its pipeline. */
 interface ChannelMaps {
@@ -535,7 +531,13 @@ export class EngineManager {
     };
   }
 
-  async deploy(channel: ChannelDetail): Promise<void> {
+  /**
+   * The bundle's channel has its configuration map references resolved.
+   * Nothing a save changes is read from the database here, so a recorded
+   * deployment runs as it was deployed (#225).
+   */
+  async deploy(bundle: DeploymentBundle): Promise<void> {
+    const { channel } = bundle;
     if (this.runtimes.has(channel.id)) {
       throw new Error(`Channel ${channel.id} is already deployed`);
     }
@@ -547,13 +549,14 @@ export class EngineManager {
     }
     this.deploying.add(channel.id);
     try {
-      await this.deployChannel(channel);
+      await this.deployChannel(bundle);
     } finally {
       this.deploying.delete(channel.id);
     }
   }
 
-  private async deployChannel(channel: ChannelDetail): Promise<void> {
+  private async deployChannel(bundle: DeploymentBundle): Promise<void> {
+    const { channel } = bundle;
 
     // Fail loud, never silent: a channel that asks for at-rest encryption must
     // not deploy (and store PHI as plaintext) when no key is configured.
@@ -625,27 +628,23 @@ export class EngineManager {
       destinations.set(dest.metaDataId, connector);
     }
 
-    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
-      CodeTemplateService.listTemplatesForChannel(channel.id),
-      GlobalScriptService.getAll(),
-      this.loadFilterTransformerData(channel.id),
+    // Alerts, the configuration map and the global map are server settings,
+    // read live at every deploy; the channel's own code comes from the bundle.
+    const [loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
       this.loadAlertsForChannel(channel.id),
       ConfigMapService.list(),
       this.sharedGlobalMap(channel.id),
     ]);
 
-    // Fail loud, never silent: a channel deployed without its code templates,
-    // global scripts, config map or global map would run with different behaviour
-    // from the one it was configured with.
-    if (!templatesResult.ok) throw deployLoadError(channel.id, 'code templates', templatesResult.error);
-    if (!globalScriptsResult.ok) throw deployLoadError(channel.id, 'global scripts', globalScriptsResult.error);
+    // Fail loud, never silent: a channel deployed without its config map or
+    // global map would run with different behaviour from the one it was configured with.
     if (!configMapResult.ok) throw deployLoadError(channel.id, 'the configuration map', configMapResult.error);
 
-    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.value
-      .map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
+    const templates = templateData(bundle);
+    const filterTransformerData = filterTransformerDataOf(channel);
 
     const scripts = await this.compileChannelScripts(
-      channel, templates, globalScriptsResult.value, filterTransformerData,
+      channel, templates, bundle.globalScripts, filterTransformerData,
     );
 
     const destConfigs: DestinationConfig[] = await this.buildDestinationConfigs(
@@ -1349,17 +1348,11 @@ export class EngineManager {
    * stopped for a redeploy, so a script that does not compile cannot take a
    * working channel offline.
    */
-  async checkScripts(channel: ChannelDetail): Promise<void> {
-    const [templatesResult, globalScriptsResult, ftData] = await Promise.all([
-      CodeTemplateService.listTemplatesForChannel(channel.id),
-      GlobalScriptService.getAll(),
-      this.loadFilterTransformerData(channel.id),
-    ]);
-    if (!templatesResult.ok) throw deployLoadError(channel.id, 'code templates', templatesResult.error);
-    if (!globalScriptsResult.ok) throw deployLoadError(channel.id, 'global scripts', globalScriptsResult.error);
-    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.value
-      .map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
-    await this.compileChannelScripts(channel, templates, globalScriptsResult.value, ftData);
+  async checkScripts(bundle: DeploymentBundle): Promise<void> {
+    const { channel } = bundle;
+    const templates = templateData(bundle);
+    const ftData = filterTransformerDataOf(channel);
+    await this.compileChannelScripts(channel, templates, bundle.globalScripts, ftData);
     await this.buildDestinationConfigs(channel, templates, ftData);
     if (channel.sourceConnectorType === 'JAVASCRIPT') {
       const script = (channel.sourceConnectorProperties as { script: string }).script;
@@ -1414,92 +1407,6 @@ export class EngineManager {
     return loaded;
   }
 
-  private async loadFilterTransformerData(channelId: string): Promise<FilterTransformerData> {
-    const [filterRows, transformerRows] = await Promise.all([
-      db
-        .select({
-          filterId: channelFilters.id,
-          connectorId: channelFilters.connectorId,
-          ruleId: filterRules.id,
-          sequenceNumber: filterRules.sequenceNumber,
-          enabled: filterRules.enabled,
-          operator: filterRules.operator,
-          type: filterRules.type,
-          script: filterRules.script,
-          field: filterRules.field,
-          condition: filterRules.condition,
-          values: filterRules.values,
-        })
-        .from(channelFilters)
-        .leftJoin(filterRules, eq(filterRules.filterId, channelFilters.id))
-        .where(eq(channelFilters.channelId, channelId))
-        .orderBy(asc(filterRules.sequenceNumber)),
-      db
-        .select({
-          transformerId: channelTransformers.id,
-          connectorId: channelTransformers.connectorId,
-          stepId: transformerSteps.id,
-          sequenceNumber: transformerSteps.sequenceNumber,
-          enabled: transformerSteps.enabled,
-          type: transformerSteps.type,
-          script: transformerSteps.script,
-        })
-        .from(channelTransformers)
-        .leftJoin(transformerSteps, eq(transformerSteps.transformerId, channelTransformers.id))
-        .where(eq(channelTransformers.channelId, channelId))
-        .orderBy(asc(transformerSteps.sequenceNumber)),
-    ]);
-
-    const sourceFilterRules: FilterRuleRow[] = [];
-    const destinationFilterRules = new Map<string, FilterRuleRow[]>();
-    const sourceTransformerSteps: TransformerStepRow[] = [];
-    const destinationTransformerSteps = new Map<string, TransformerStepRow[]>();
-
-    for (const row of filterRows) {
-      if (!row.ruleId) continue; // LEFT JOIN produced no rules
-      const rule: FilterRuleRow = {
-        enabled: row.enabled ?? true,
-        operator: row.operator ?? 'AND',
-        type: row.type ?? 'JAVASCRIPT',
-        script: row.script ?? null,
-        field: row.field ?? null,
-        condition: row.condition ?? null,
-        values: row.values ?? null,
-      };
-      if (row.connectorId === null) {
-        sourceFilterRules.push(rule);
-      } else {
-        const existing = destinationFilterRules.get(row.connectorId);
-        if (existing) {
-          existing.push(rule);
-        } else {
-          destinationFilterRules.set(row.connectorId, [rule]);
-        }
-      }
-    }
-
-    for (const row of transformerRows) {
-      if (!row.stepId) continue; // LEFT JOIN produced no steps
-      const step: TransformerStepRow = {
-        enabled: row.enabled ?? true,
-        type: row.type ?? 'JAVASCRIPT',
-        script: row.script ?? null,
-      };
-      if (row.connectorId === null) {
-        sourceTransformerSteps.push(step);
-      } else {
-        const existing = destinationTransformerSteps.get(row.connectorId);
-        if (existing) {
-          existing.push(step);
-        } else {
-          destinationTransformerSteps.set(row.connectorId, [step]);
-        }
-      }
-    }
-
-    return { sourceFilterRules, destinationFilterRules, sourceTransformerSteps, destinationTransformerSteps };
-  }
-
   async dispose(): Promise<void> {
     if (this.silenceTimer) clearInterval(this.silenceTimer);
     this.silenceTimer = undefined;
@@ -1522,11 +1429,16 @@ interface FilterRuleRow {
   readonly values: ReadonlyArray<string> | null;
 }
 
+/** The four global scripts a deployment bundle carries (#225). */
 interface GlobalScripts {
   readonly preprocessor: string;
   readonly postprocessor: string;
   readonly deploy: string;
   readonly undeploy: string;
+}
+
+function templateData(bundle: DeploymentBundle): ReadonlyArray<CodeTemplateData> {
+  return bundle.templates.map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
 }
 
 function deployLoadError(channelId: string, what: string, cause: Error): Error {
@@ -1549,6 +1461,41 @@ interface FilterTransformerData {
   readonly destinationFilterRules: ReadonlyMap<string, ReadonlyArray<FilterRuleRow>>;
   readonly sourceTransformerSteps: ReadonlyArray<TransformerStepRow>;
   readonly destinationTransformerSteps: ReadonlyMap<string, ReadonlyArray<TransformerStepRow>>;
+}
+
+/**
+ * Read from the channel being deployed, not the database, so a recorded
+ * deployment compiles the filters and transformers it was deployed with (#225).
+ * A null connector is the source.
+ */
+export function filterTransformerDataOf(channel: ChannelDetail): FilterTransformerData {
+  const sourceFilterRules: FilterRuleRow[] = [];
+  const destinationFilterRules = new Map<string, FilterRuleRow[]>();
+  const sourceTransformerSteps: TransformerStepRow[] = [];
+  const destinationTransformerSteps = new Map<string, TransformerStepRow[]>();
+  const bySequence = (a: { readonly sequenceNumber: number }, b: { readonly sequenceNumber: number }): number => a.sequenceNumber - b.sequenceNumber;
+
+  for (const filter of channel.filters) {
+    const rules = filter.connectorId === null ? sourceFilterRules : getOrAdd(destinationFilterRules, filter.connectorId);
+    for (const r of [...filter.rules].sort(bySequence)) {
+      rules.push({ enabled: r.enabled, operator: r.operator, type: r.type, script: r.script, field: r.field, condition: r.condition, values: r.values });
+    }
+  }
+  for (const transformer of channel.transformers) {
+    const steps = transformer.connectorId === null ? sourceTransformerSteps : getOrAdd(destinationTransformerSteps, transformer.connectorId);
+    for (const s of [...transformer.steps].sort(bySequence)) {
+      steps.push({ enabled: s.enabled, type: s.type, script: s.script });
+    }
+  }
+  return { sourceFilterRules, destinationFilterRules, sourceTransformerSteps, destinationTransformerSteps };
+}
+
+function getOrAdd<T>(map: Map<string, T[]>, key: string): T[] {
+  const existing = map.get(key);
+  if (existing) return existing;
+  const created: T[] = [];
+  map.set(key, created);
+  return created;
 }
 
 async function loadGlobalMap(): Promise<GlobalMapProxy> {

@@ -65,10 +65,11 @@ describe('ChannelContextMenu', () => {
     expect(screen.queryByText('Disable')).toBeNull();
   });
 
-  it('hides the Enable/Disable item without channels:write', () => {
-    granted = new Set(['channels:read']);
-    renderMenu({ enabled: true });
+  it('hides the Enable/Disable item from someone who can edit but not deploy (#225)', () => {
+    granted = new Set(['channels:read', 'channels:write']);
+    renderMenu({ enabled: true, onChangeGroup: vi.fn() });
     expect(screen.queryByText('Disable')).toBeNull();
+    expect(screen.getByText('Change Group')).toBeTruthy();
   });
 
   it('invokes clone/delete with id and name', () => {

@@ -1,6 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
-import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, EVENT_NAME } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import {
   DEFAULT_STORED_SCRIPT_LANGUAGE,
@@ -15,7 +15,7 @@ import {
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { db } from '../lib/db.js';
+import { db, type DbReader } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
 import { ChannelRevisionService } from './channel-revision.service.js';
 import { GrantService } from './grant.service.js';
@@ -169,8 +169,8 @@ export interface ChannelListResult {
 
 const DEFAULT_SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
 
-async function findChannel(id: string): Promise<typeof channels.$inferSelect> {
-  const [channel] = await db
+async function findChannel(id: string, reader: DbReader = db): Promise<typeof channels.$inferSelect> {
+  const [channel] = await reader
     .select()
     .from(channels)
     .where(and(eq(channels.id, id), isNull(channels.deletedAt)));
@@ -190,15 +190,29 @@ interface ChannelRelations {
   readonly transformers: readonly ChannelTransformerDetail[];
 }
 
-async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
-  const [scriptRows, destinationRows, metadataRows, tagRows, filterRows, ruleRows, transformerRows, stepRows] = await Promise.all([
-    db
+type AwaitedAll<T extends readonly unknown[]> = { -readonly [P in keyof T]: Awaited<T[P]> };
+
+/**
+ * Run Drizzle queries (which start only when awaited): together on the pool,
+ * one after another in a transaction, whose single connection runs one query
+ * at a time (pg 9 refuses overlapping ones).
+ */
+async function runQueries<T extends readonly unknown[] | []>(reader: DbReader, queries: T): Promise<AwaitedAll<T>> {
+  if (reader === db) return Promise.all(queries);
+  const results: unknown[] = [];
+  for (const query of queries) results.push(await query);
+  return results as AwaitedAll<T>;
+}
+
+async function fetchChannelRelations(id: string, reader: DbReader = db): Promise<ChannelRelations> {
+  const [scriptRows, destinationRows, metadataRows, tagRows, filterRows, ruleRows, transformerRows, stepRows] = await runQueries(reader, [
+    reader
       .select({
         id: channelScripts.id, scriptType: channelScripts.scriptType, script: channelScripts.script, language: channelScripts.language,
       })
       .from(channelScripts)
       .where(eq(channelScripts.channelId, id)),
-    db
+    reader
       .select({
         id: channelConnectors.id,
         metaDataId: channelConnectors.metaDataId,
@@ -218,7 +232,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       .from(channelConnectors)
       .where(eq(channelConnectors.channelId, id))
       .orderBy(asc(channelConnectors.metaDataId)),
-    db
+    reader
       .select({
         id: channelMetadataColumns.id,
         name: channelMetadataColumns.name,
@@ -227,16 +241,16 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       })
       .from(channelMetadataColumns)
       .where(eq(channelMetadataColumns.channelId, id)),
-    db
+    reader
       .select({ id: channelTags.id, name: channelTags.name, color: channelTags.color })
       .from(channelTagAssignments)
       .innerJoin(channelTags, eq(channelTagAssignments.tagId, channelTags.id))
       .where(eq(channelTagAssignments.channelId, id)),
-    db
+    reader
       .select({ id: channelFilters.id, connectorId: channelFilters.connectorId })
       .from(channelFilters)
       .where(eq(channelFilters.channelId, id)),
-    db
+    reader
       .select({
         id: filterRules.id,
         filterId: filterRules.filterId,
@@ -254,7 +268,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       .from(filterRules)
       .innerJoin(channelFilters, eq(filterRules.filterId, channelFilters.id))
       .where(eq(channelFilters.channelId, id)),
-    db
+    reader
       .select({
         id: channelTransformers.id,
         connectorId: channelTransformers.connectorId,
@@ -267,7 +281,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       })
       .from(channelTransformers)
       .where(eq(channelTransformers.channelId, id)),
-    db
+    reader
       .select({
         id: transformerSteps.id,
         transformerId: transformerSteps.transformerId,
@@ -682,10 +696,11 @@ export class ChannelService {
       .orderBy(asc(channels.id)));
   }
 
-  static async getById(id: string): Promise<Result<ChannelDetail>> {
+  /** A deploy passes its transaction, so the parts are read from one snapshot. */
+  static async getById(id: string, reader: DbReader = db): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
-      const channel = await findChannel(id);
-      const relations = await fetchChannelRelations(id);
+      const channel = await findChannel(id, reader);
+      const relations = await fetchChannelRelations(id, reader);
       return assembleDetail(channel, relations);
     });
   }
@@ -1029,17 +1044,26 @@ export class ChannelService {
     });
   }
 
-  static async setEnabled(id: string, enabled: boolean): Promise<Result<ChannelDetail>> {
+  /**
+   * The route needs `channels:deploy`: the flag decides what a restart brings
+   * back (#225). The revision goes up so an editor opened before gets a conflict.
+   */
+  static async setEnabled(id: string, enabled: boolean, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       await findChannel(id);
 
       await db
         .update(channels)
-        .set({ enabled, updatedAt: new Date() })
+        .set({ enabled, revision: sql`${channels.revision} + 1`, updatedAt: new Date() })
         .where(eq(channels.id, id));
 
       const channel = await findChannel(id);
       const relations = await fetchChannelRelations(id);
+      emitEvent({
+        level: 'INFO', name: enabled ? EVENT_NAME.CHANNEL_ENABLED : EVENT_NAME.CHANNEL_DISABLED, outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: id,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: { channelName: channel.name },
+      });
       return assembleDetail(channel, relations);
     });
   }

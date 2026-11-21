@@ -86,10 +86,12 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
+  sql: vi.fn((strings: TemplateStringsArray) => ({ type: 'sql', text: strings.join('?') })),
 }));
 
+const mockEmitEvent = vi.fn();
 vi.mock('../../lib/event-emitter.js', () => ({
-  emitEvent: vi.fn(),
+  emitEvent: mockEmitEvent,
 }));
 
 // Placing a new channel in a group is covered against Postgres (create-in-scope.itest.ts).
@@ -541,6 +543,24 @@ describe('ChannelService', () => {
       if (!result.ok) return;
       expect(result.value.enabled).toBe(true);
       expect(mockUpdate).toHaveBeenCalled();
+    });
+
+    it('raises the revision, so an editor opened before the change cannot save the old flag back', async () => {
+      pushResponse([makeChannel({ enabled: false })]);
+      setupGetByIdMocks(makeChannel({ enabled: true }));
+
+      await ChannelService.setEnabled(CHANNEL_ID, true);
+
+      expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ enabled: true, revision: expect.objectContaining({ type: 'sql' }) }));
+    });
+
+    it('records who enabled or disabled the channel', async () => {
+      pushResponse([makeChannel({ enabled: true })]);
+      setupGetByIdMocks(makeChannel({ enabled: false }));
+
+      await ChannelService.setEnabled(CHANNEL_ID, false, { userId: 'user-1', ipAddress: '10.0.0.1' });
+
+      expect(mockEmitEvent).toHaveBeenCalledWith(expect.objectContaining({ name: 'CHANNEL_DISABLED', userId: 'user-1', channelId: CHANNEL_ID }));
     });
 
     it('returns NOT_FOUND for missing channel', async () => {

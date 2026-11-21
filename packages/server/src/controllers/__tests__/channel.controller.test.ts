@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
+import type { ChannelGroupId } from '@galvanigraph/core-models';
 
 const mockService = {
   list: vi.fn(),
@@ -19,12 +20,19 @@ vi.mock('../../engine.js', () => ({
   getEngine: () => ({ getRuntime: mockGetRuntime }),
 }));
 
+// The certificate scope check reads the database for a scoped caller; it is
+// tested in its own file, and these tests save no certificates.
+vi.mock('../../services/connector-tls-resolver.js', () => ({
+  assertCertificatesInScope: vi.fn(async () => undefined),
+}));
+
 vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 const { ChannelController } = await import('../channel.controller.js');
 const { ServiceError } = await import('../../lib/service-error.js');
+const { standingFor } = await import('../../../test/standing.js');
 
 function makeRes(): Response {
   const res = {
@@ -382,6 +390,96 @@ describe('ChannelController', () => {
     });
   });
 
+  describe('update of the enabled flag (#225)', () => {
+    const CHANNEL = '00000000-0000-0000-0000-000000000001';
+    const developer = { userId: 'u1', grants: standingFor({ id: 'u1', role: 'developer' }).grants };
+    const deployer = { userId: 'u2', grants: standingFor({ id: 'u2', role: 'deployer' }).grants };
+    /** The groups scopeToChannel would read for the channel. */
+    const GROUP_A = ['group-a'] as readonly string[] as readonly ChannelGroupId[];
+
+    function updateReq(body: Record<string, unknown>, principal: typeof developer): Request {
+      return makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, ...body }, principal } as Partial<Request>);
+    }
+
+    beforeEach(() => {
+      mockService.getById.mockResolvedValue({ ok: true, value: makeChannelDetail({ enabled: false }), error: null });
+      mockService.update.mockResolvedValue({ ok: true, value: makeChannelDetail({ revision: 2 }), error: null });
+    });
+
+    it('refuses a developer who changes it, and saves nothing', async () => {
+      const res = makeRes();
+
+      await ChannelController.update(updateReq({ name: 'x', enabled: true }, developer), res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockService.update).not.toHaveBeenCalled();
+    });
+
+    it('lets a developer save the stored value, as the editor always sends it', async () => {
+      const res = makeRes();
+
+      await ChannelController.update(updateReq({ name: 'x', enabled: false }, developer), res);
+
+      expect(mockService.update).toHaveBeenCalledOnce();
+      expect(res.status).not.toHaveBeenCalledWith(403);
+    });
+
+    it('lets a developer save without sending it', async () => {
+      await ChannelController.update(updateReq({ name: 'x' }, developer), makeRes());
+
+      expect(mockService.update).toHaveBeenCalledOnce();
+      expect(mockService.getById).not.toHaveBeenCalled();
+    });
+
+    it('lets a deployer change it without reading the channel first', async () => {
+      await ChannelController.update(updateReq({ enabled: true }, deployer), makeRes());
+
+      expect(mockService.update).toHaveBeenCalledOnce();
+      expect(mockService.getById).not.toHaveBeenCalled();
+    });
+
+    it('refuses someone who can deploy only in another channel group', async () => {
+      const elsewhere = { userId: 'u3', grants: standingFor({ id: 'u3', role: 'channel-deployer', groups: ['group-b'] }).grants };
+      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: elsewhere, channelScope: GROUP_A } as unknown as Partial<Request>);
+      const res = makeRes();
+
+      await ChannelController.update(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockService.update).not.toHaveBeenCalled();
+    });
+
+    it('lets someone who can deploy in the channel\'s own group change it', async () => {
+      const here = { userId: 'u4', grants: standingFor({ id: 'u4', role: 'channel-deployer', groups: ['group-a'] }).grants };
+      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: here, channelScope: GROUP_A } as unknown as Partial<Request>);
+
+      await ChannelController.update(req, makeRes());
+
+      expect(mockService.update).toHaveBeenCalledOnce();
+    });
+
+    it('refuses the save when the channel cannot be read to check, instead of skipping the check', async () => {
+      mockService.getById.mockResolvedValue({ ok: false, value: null, error: new Error('connection terminated') });
+      const res = makeRes();
+
+      await ChannelController.update(updateReq({ enabled: true }, developer), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(mockService.update).not.toHaveBeenCalled();
+    });
+
+    it('lets the update answer a channel that does not exist', async () => {
+      mockService.getById.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Channel not found') });
+      mockService.update.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Channel not found') });
+      const res = makeRes();
+
+      await ChannelController.update(updateReq({ enabled: true }, developer), res);
+
+      expect(mockService.update).toHaveBeenCalledOnce();
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+  });
+
   describe('workflow: full channel lifecycle', () => {
     it('creates, retrieves, updates, lists, and deletes a channel', async () => {
       const channelV1 = makeChannelDetail({ name: 'Lifecycle Channel', revision: 1 });
@@ -418,10 +516,12 @@ describe('ChannelController', () => {
 
       mockService.update.mockResolvedValue({ ok: true, value: channelV2, error: null });
 
+      // Enabling the channel is deploy control (#225): a deployer may.
       const updateReq = makeReq({
         params: { id: channelId } as Request['params'],
         body: { name: 'Lifecycle Channel (Updated)', enabled: true, revision: 1 },
-      });
+        principal: { userId: 'u1', grants: standingFor({ id: 'u1', role: 'deployer' }).grants },
+      } as Partial<Request>);
       const updateRes = makeRes();
       await ChannelController.update(updateReq, updateRes);
 

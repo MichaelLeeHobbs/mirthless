@@ -15,7 +15,7 @@ import { grantedChannels, holdsOnEveryChannel, linksInScope, type ChannelScope }
 import { queryUserStanding } from '../lib/principal.js';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { db } from '../lib/db.js';
+import { db, type DbReader } from '../lib/db.js';
 import { codeTemplateLibraries, codeTemplates, type CodeTemplate } from '../db/schema/index.js';
 
 export interface LibrarySummary {
@@ -66,9 +66,8 @@ function toTemplateDetail(r: CodeTemplate): TemplateDetail {
 // library or template write needs the permission on every linked channel (D-310).
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-type Reader = Pick<typeof db, 'select'>;
 
-async function writerGrants(reader: Reader, context?: AuditContext): Promise<FoldedGrants> {
+async function writerGrants(reader: DbReader, context?: AuditContext): Promise<FoldedGrants> {
   const standing = context?.userId ? await queryUserStanding(reader, context.userId) : null;
   return standing?.enabled === true ? standing.grants : new Map();
 }
@@ -80,7 +79,7 @@ async function defaultLinks(grants: FoldedGrants): Promise<string[] | null> {
   return [...scope];
 }
 
-async function assertLinksHeld(reader: Reader, grants: FoldedGrants, permission: Permission, links: readonly string[] | null): Promise<void> {
+async function assertLinksHeld(reader: DbReader, grants: FoldedGrants, permission: Permission, links: readonly string[] | null): Promise<void> {
   if (await holdsOnEveryChannel(grants, permission, links, reader)) return;
   const reach = links === null ? 'every channel' : links.length === 0 ? 'no channel, which only someone holding it on every channel may set' : 'channels outside your scope';
   throw new ServiceError('FORBIDDEN', `This needs ${permission} on every channel the library links to, and it links to ${reach}`);
@@ -98,7 +97,7 @@ async function assertLibraryWritable(tx: Tx, libraryId: string, permission: Perm
   await assertLinksHeld(tx, await writerGrants(tx, context), permission, library.channelIds ?? null);
 }
 
-async function findTemplate(reader: Reader, id: string): Promise<CodeTemplate> {
+async function findTemplate(reader: DbReader, id: string): Promise<CodeTemplate> {
   const [row] = await reader.select().from(codeTemplates).where(eq(codeTemplates.id, id));
   if (!row) throw new ServiceError('NOT_FOUND', `Template ${id} not found`);
   return row;
@@ -285,9 +284,10 @@ export class CodeTemplateService {
     });
   }
 
-  static async listTemplatesForChannel(channelId: string): Promise<Result<readonly TemplateDetail[]>> {
+  /** A deploy passes its transaction, so the templates are read with the channel. */
+  static async listTemplatesForChannel(channelId: string, reader: DbReader = db): Promise<Result<readonly TemplateDetail[]>> {
     return tryCatch(async () => {
-      const rows = await db
+      const rows = await reader
         .select({ template: codeTemplates })
         .from(codeTemplates)
         .innerJoin(codeTemplateLibraries, eq(codeTemplates.libraryId, codeTemplateLibraries.id))

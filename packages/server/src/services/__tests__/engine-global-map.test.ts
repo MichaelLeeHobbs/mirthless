@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { DeploymentBundle } from '../deployment-record.service.js';
+import { bundleOf } from '../../../test/deployment-bundle.js';
 
 vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue({
@@ -65,21 +67,6 @@ vi.mock('../config-map.service.js', () => ({
   ConfigMapService: { list: mockConfigMapList },
 }));
 
-const mockListTemplates = vi.fn();
-vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listTemplatesForChannel: mockListTemplates },
-}));
-
-const mockGlobalScriptGetAll = vi.fn().mockResolvedValue({
-  ok: true, value: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }, error: null,
-});
-
-vi.mock('../global-script.service.js', () => ({
-  GlobalScriptService: {
-    getAll: mockGlobalScriptGetAll,
-  },
-}));
-
 vi.mock('../alert.service.js', () => ({
   AlertService: {
     list: vi.fn().mockResolvedValue({
@@ -91,25 +78,6 @@ vi.mock('../alert.service.js', () => ({
 
 vi.mock('../email.service.js', () => ({
   EmailService: { sendMail: vi.fn() },
-}));
-
-// Deploy reads filter rules and transformer steps; these channels have none.
-const mockSelect = vi.fn();
-
-vi.mock('../../lib/db.js', () => ({
-  db: { select: mockSelect },
-}));
-
-vi.mock('../../db/schema/index.js', () => ({
-  channelFilters: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  filterRules: { id: 'id', filterId: 'filterId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', operator: 'operator', type: 'type', script: 'script' },
-  channelTransformers: { id: 'id', channelId: 'channelId', connectorId: 'connectorId' },
-  transformerSteps: { id: 'id', transformerId: 'transformerId', sequenceNumber: 'sequenceNumber', enabled: 'enabled', type: 'type', script: 'script' },
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn(),
-  asc: vi.fn(),
 }));
 
 vi.mock('../../lib/logger.js', () => ({
@@ -144,6 +112,8 @@ function makeChannel(overrides: Record<string, unknown> = {}): never {
     metadataColumns: [],
     destinations: [],
     scripts: [],
+    filters: [],
+    transformers: [],
     ...overrides,
   } as never;
 }
@@ -151,8 +121,8 @@ function makeChannel(overrides: Record<string, unknown> = {}): never {
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
 const OK = { ok: true, value: undefined, error: null };
 
-function scripted(id: string, name: string, preprocessor: string): never {
-  return makeChannel({ id, name, inboundDataType: 'RAW', outboundDataType: 'RAW', scripts: [{ scriptType: 'PREPROCESSOR', script: preprocessor }] });
+function scripted(id: string, name: string, preprocessor: string): DeploymentBundle {
+  return bundleOf(makeChannel({ id, name, inboundDataType: 'RAW', outboundDataType: 'RAW', scripts: [{ scriptType: 'PREPROCESSOR', script: preprocessor }] }));
 }
 
 async function run(engine: InstanceType<typeof EngineManager>, id: string, raw: string): Promise<void> {
@@ -163,8 +133,6 @@ async function run(engine: InstanceType<typeof EngineManager>, id: string, raw: 
 beforeEach(() => {
   vi.clearAllMocks();
   changeListener = null;
-  mockSelect.mockImplementation(() => ({ from: () => ({ leftJoin: () => ({ where: () => ({ orderBy: () => Promise.resolve([]) }) }) }) }));
-  mockListTemplates.mockResolvedValue(OK_EMPTY);
   mockConfigMapList.mockResolvedValue(OK_EMPTY);
   mockGlobalMapList.mockResolvedValue(OK_EMPTY);
   mockPersist.mockResolvedValue(OK);
