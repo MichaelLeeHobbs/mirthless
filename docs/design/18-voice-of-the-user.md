@@ -47,24 +47,24 @@ The ranking measures demand only. This order also weighs what is missing here, w
 
 | # | Themes | Why now | Issues |
 |---|---|---|---|
-| 1 | MON1 channel-health alerts [8], MON2 alert delivery [65], MON7 error triage [57] | The on-call theme. Queue depth, error rate, schedule-aware silence and a webhook action cover most of it. Only NO_MESSAGES exists today. | #338, #336; MON7 none |
-| 2 | OPS1 Git and CI/CD [12], OPS2 history and rollback [60], OPS3 promotion [16], OPS4 env config [36] | Most-built workaround. File-per-component export and import over the API (the CLI is gone, D-280), a revision diff and restore. Doc 14 B6. | #337, #346; OPS4 in part #346. #334 first |
+| 1 | MON1 channel-health alerts [8], MON2 alert delivery [65], MON7 error triage [57] | The on-call theme. Queue depth, error rate, schedule-aware silence and a webhook action cover most of it. Only NO_MESSAGES exists today. | #338, #336; escalation and MON7 none |
+| 2 | OPS1 Git and CI/CD [12], OPS2 history and rollback [60], OPS3 promotion [16], OPS4 env config [36] | Most-built workaround. File-per-component export and import over the API (the CLI is gone, D-280), a revision diff and restore. Doc 14 B6. | #334 first, #337, #346; OPS4 none (a gap named in #346) |
 | 3 | TEST2 channel tests in CI [18], TEST4 live sample-message editing [104], TEST1 debugger [72] | Nobody does tests well; Iguana's live editor is the most-loved feature in its reviews; Node's inspector makes a debugger possible. Doc 14 B5. | #345; TEST1 none |
-| 4 | SEC3 SSO, LDAP and MFA [41], SEC2 custom roles [75], SEC5 password policy [73] | All paid Gold in Mirth. Custom roles and access by channel group have shipped (D-310, D-311); sign-in and password policy have not. | #140 to #143, #148, #209, #210, #172; LDAP and SAML none |
+| 4 | SEC3 SSO, LDAP and MFA [41], SEC2 custom roles [75], SEC5 password policy [73] | All paid Gold in Mirth. Custom roles and access by channel group have shipped (D-310, D-311); sign-in and password policy have not. | #140 to #143, #148, #209, #210, #172, #355; LDAP, SAML and a forced password change none |
 | 5 | SEC1 dependency and CVE process [6], SEC12 outside pen test [158], LIC6 SBOM [96] | Trust for a new engine. Rank 158 understates SEC12: hospitals won't run an untested engine. | #341; SEC12 none |
 | 6 | HA1 free active-active HA [11] | Paid Platinum in Mirth and reported buggy. Doc 14 B2. | #308 (notes), #312 |
 | 7 | UPG2 safe upgrades [7], UPG1 runtime policy [47] | Mirth upgrades break channels and Java churn breaks installs. Migration tests per release and a published Node LTS policy. | #340 |
 | 8 | SCR4 standard library [4], SCR5 repeating segments [62], SCR8 maps and message model docs [58] | Rank 4 overall. Repeating-segment questions have 110k views, the most of any scripting theme on Stack Overflow. | #343; SCR8 none |
 | 9 | REC1 bulk and targeted reprocess [19], REC5 dead-letter queue [147] | Resend by search, by destination, with guardrails. | #339; REC5 none |
-| 10 | DT1 HL7 round-trip fidelity [15], UI11 HL7 viewer with field names [20], DT3 conformance validation [40] | A byte-identical round-trip corpus test and a viewer that shows what PID-3.4 means. | #344, #351, #189 to #191, #194; DT3 none |
+| 10 | DT1 HL7 round-trip fidelity [15], UI11 HL7 viewer with field names [20], DT3 conformance validation [40] | A byte-identical round-trip corpus test and a viewer that shows what PID-3.4 means. | #344, #351, #189 to #191, #194; DT3 in part #189 |
 | 11 | CON4 HTTP flexibility [2], CON5 OAuth2 with token refresh [61] | Rank 2 overall. OAuth2 also unblocks FHIR and cloud targets (B10). | #335 (bug) first, #342; CON5 none |
 | 12 | FHIR1 FHIR source, bundles, validation [10], FHIR2 v2-to-FHIR maps [69] | A strategic opening: maintained, overridable maps that produce valid resources (B7). | #349; FHIR2 none |
 | 13 | Migration blockers: CON8 database vendors [42], CON6 file schemes [33], DT5 X12 [27], CON9 SOAP [87] | Already ranked in docs 12, 13 and 17. MySQL (D-259) and reading X12 (D-258) have shipped. X12 doubles as a differentiator. | none; ROADMAP [1], [2], [6], N1 |
 | 14 | MSG1 search [25], MSG2 metadata search [56], MSG4 retention and archive [24] | N4, N5, N8. | none; ROADMAP N4, N5, N8 |
-| 15 | PERF1 throughput and memory [5] | Worker threads (D-212) and streaming large payloads. Keep publishing the soak baseline. | #348, #192 |
-| 16 | DOC1 docs [32], DOC3 recipes [121], UI13 generated channel docs [85], UI3 onboarding [34] | The Mirth wiki vanished. Example-channel repos (connect-examples, 114 stars) are among the most-starred community projects. | none |
+| 15 | PERF1 throughput and memory [5] | Worker threads (D-212) and streaming large payloads. Keep publishing the soak baseline. | #348, #192, #257 |
+| 16 | DOC1 docs [32], DOC3 recipes [121], UI13 generated channel docs [85], UI3 onboarding [34] | The Mirth wiki vanished. Example-channel repos (connect-examples, 114 stars) are among the most-starred community projects. | DOC1 in part #193, #340, #347; the rest none |
 | 17 | API1 generated client SDKs [14], AI2 MCP server [113], AI1 AI-assisted mapping [71] | The OpenAPI description covers 33 paths of about 165 routes, so it has to be completed first. AI suggestions must be reviewable and tested (AI4). | #347; AI1, AI2 none |
-| 18 | CON10 Kafka and AMQP [38], CON12 DICOM worklist, Q/R and TLS [17] | Kafka and AMQP connectors have shipped (D-261, D-265, D-266). | #151, #350 |
+| 18 | CON10 Kafka and AMQP [38], CON12 DICOM worklist, Q/R and TLS [17] | Kafka and AMQP connectors have shipped (D-261, D-265, D-266). | #353, #151, #350 |
 | 19 | DOC5 plugin SDK [35] | The ROADMAP [DECIDE] item. A stable API must come before a marketplace. | none |
 
 ## Already ours
@@ -74,7 +74,7 @@ These rank high and we already answer them. They are the pitch, so they need to 
 - UI1 web admin, nothing to install [1]; UI2 light and dark themes [9]
 - LIC1 and LIC2 free, no paywall, no license cost [3, 54]; LIC5 no phone-home [82]; LIC8 open code that outlives any vendor [105]; DOC6 free to learn on [126]
 - SCR1 modern JavaScript and TypeScript instead of Rhino [13]
-- CON3 ACK and response control [59]. CON1 MLLP robustness [29] was listed here by mistake: a destination cannot hold a connection open and the idle timeouts are fixed (#311)
+- CON3 ACK and response control [59]. CON1 MLLP robustness [29] was listed here by mistake: connection handling has open gaps (#311, #352)
 - MSG3 cross-channel search, paid Enterprise in Mirth [132]; MSG5 one well-tuned PostgreSQL backend [70]; MSG8 raw message kept for replay
 - UI6 optimistic locking on concurrent edits; RT3 and RT4 channel-to-channel routing and destinationSet
 
@@ -91,7 +91,7 @@ These rank high and we already answer them. They are the pitch, so they need to 
 - Score = 4 × streams that found the theme + 2 × log2(1 + sources) + log2(1 + votes and stars) + engines named (max 6). Breadth across independent streams counts most, so a theme raised in seven places outranks one with huge volume in one place. Repeating segments (SCR5) has the most Stack Overflow views but ranks 62 because only two streams found it. Use the score to order, not to settle close calls.
 - Source counts mean different things per stream: issues, questions matched by keyword, reviews, threads, tools. Reddit reaction counts are per thread, so an entry resting on one comment carries the whole thread's votes.
 - Review sites mostly block fetching. The commercial-engine stream leans on KLAS excerpts, PeerSpot, marketplace mirrors and snippets.
-- Theme assignment, status and call are judgment calls, made against the code on 2026-11-13. On 2026-11-23 the themes that had shipped or gained an issue were updated; the rest were not rechecked. To change one, edit `clusters.mjs` and run:
+- Theme assignment, status and call are judgment calls, made against the code on 2026-11-13. On 2026-11-23 themes found to have shipped or gained an issue were updated; the rest were not rechecked. To change one, edit `clusters.mjs` and run:
 
 ```bash
 node docs/research/voice-of-user/score.mjs docs/research/voice-of-user/data --check

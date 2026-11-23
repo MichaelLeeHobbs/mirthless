@@ -98,7 +98,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 > 865 complaints, requests and wishes from Mirth, OIE, BridgeLink, commercial engines and open-source tools, in 160 ranked themes: [`docs/design/18-voice-of-the-user.md`](../design/18-voice-of-the-user.md), full ranking in [`docs/research/voice-of-user/ranking.md`](../research/voice-of-user/ranking.md). Judged against D-260. Recommended order, each line naming doc 18 theme IDs (several overlap B1 to B10 and N4 to N13 above):
 
 - [ ] **[V1]** Channel-health alerts (queue depth, error rate, schedule-aware silence), webhook alert action, error triage view (MON1, MON2, MON7): #338, #336
-- [ ] **[V2]** Git and CI/CD for channels, revision diff and restore, environment promotion, env-sourced config (OPS1 to OPS4): #337, #346, after #334
+- [ ] **[V2]** Git and CI/CD for channels, revision diff and restore, environment promotion, env-sourced config (OPS1 to OPS4): #337, #346, after #334. Env-sourced config has no issue
 - [ ] **[V3]** Channel tests in CI, live sample-message editing, step-through debugger (TEST2, TEST4, TEST1): #345
 - [ ] **[V4]** SSO, LDAP and MFA; configurable password policy (SEC3, SEC5): #140 to #143, #148, #209, #210. Custom roles (SEC2) shipped in #265
 - [ ] **[V5]** Dependency/CVE process, SBOM, outside pen test (SEC1, LIC6, SEC12): #341
@@ -106,10 +106,10 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 - [ ] **[V7]** Upgrade safety: migration tests per release, published Node LTS policy (UPG2, UPG1): #340
 - [ ] **[V8]** Standard helper library, repeating-segment iteration, one page on maps and the message model (SCR4, SCR5, SCR8): #343
 - [ ] **[V9]** Bulk and per-destination reprocess with guardrails, dead-letter queue (REC1, REC5): #339
-- [ ] **[V10]** HL7 round-trip corpus test, HL7 viewer with field names, conformance-profile validation (DT1, UI11, DT3): #344, #351
+- [ ] **[V10]** HL7 round-trip corpus test, HL7 viewer with field names, conformance-profile validation (DT1, UI11, DT3): #344, #351, #189 to #191, #194
 - [ ] **[V11]** HTTP connector flexibility, OAuth2 with token refresh (CON4, CON5): #342, after #335
 - [ ] **[V12]** FHIR source, bundles and validation; maintained v2-to-FHIR maps (FHIR1, FHIR2, = B7): #349
-- [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
+- [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3): docs cleanup is #193, the rest has no issue
 - [ ] **[V14]** Complete OpenAPI and generated clients, MCP server, AI-assisted mapping (API1, AI2, AI1): #347
 - [x] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261) — shipped 2026-11-14 (D-265, D-266)
   - [x] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter — after `maxStoreAttempts` the channel stops and alerts, message kept (D-271, #86)
