@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 
-// Helpers with one home (.claude/reinvention/report.md). Only a non-exported function, or const
+// Helpers with one home (AGENTS.md lists them). Only a non-exported function, or const
 // holding a function, matches: the home's exported definition and plain values do not.
 const SHARED_HELPERS = [
   { names: 'mapErrorToStatus|errorResponse', home: 'packages/server/src/lib/controller-helpers.ts' },
