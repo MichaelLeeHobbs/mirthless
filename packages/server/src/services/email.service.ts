@@ -39,45 +39,33 @@ export function resetTransportFactory(): void {
   transportFactory = defaultTransportFactory;
 }
 
-async function readSettingValue(key: string): Promise<Result<string>> {
-  const result = await SettingsService.getByKey(key);
-  if (!result.ok) {
-    // NOT_FOUND is acceptable - return empty string
-    return { ok: true as const, value: '', error: null };
-  }
-  return { ok: true as const, value: result.value.value ?? '', error: null };
+async function readSetting(key: string): Promise<string> {
+  const result = await SettingsService.getStoredValue(key);
+  if (!result.ok) throw new Error(`Failed to read ${key}: ${result.error.message}`);
+  return result.value ?? '';
 }
 
 export class EmailService {
   static async getSmtpConfig(): Promise<Result<SmtpConfig>> {
     return tryCatch(async () => {
       const [host, port, secure, from, authUser, authPass] = await Promise.all([
-        readSettingValue('smtp.host'),
-        readSettingValue('smtp.port'),
-        readSettingValue('smtp.secure'),
-        readSettingValue('smtp.from'),
-        readSettingValue('smtp.auth_user'),
-        readSettingValue('smtp.auth_pass'),
+        readSetting('smtp.host'),
+        readSetting('smtp.port'),
+        readSetting('smtp.secure'),
+        readSetting('smtp.from'),
+        readSetting('smtp.auth_user'),
+        readSetting('smtp.auth_pass'),
       ]);
 
-      if (!host.ok) throw new Error(`Failed to read smtp.host: ${host.error.message}`);
-      if (!port.ok) throw new Error(`Failed to read smtp.port: ${port.error.message}`);
-      if (!secure.ok) throw new Error(`Failed to read smtp.secure: ${secure.error.message}`);
-      if (!from.ok) throw new Error(`Failed to read smtp.from: ${from.error.message}`);
-      if (!authUser.ok) throw new Error(`Failed to read smtp.auth_user: ${authUser.error.message}`);
-      if (!authPass.ok) throw new Error(`Failed to read smtp.auth_pass: ${authPass.error.message}`);
-
-      if (!host.value) {
-        throw new Error('SMTP host is not configured');
-      }
+      if (!host) throw new Error('SMTP host is not configured');
 
       return {
-        host: host.value,
-        port: port.value ? Number(port.value) : 587,
-        secure: secure.value === 'true',
-        from: from.value,
-        authUser: authUser.value,
-        authPass: authPass.value,
+        host,
+        port: port ? Number(port) : 587,
+        secure: secure === 'true',
+        from,
+        authUser,
+        authPass,
       };
     });
   }
