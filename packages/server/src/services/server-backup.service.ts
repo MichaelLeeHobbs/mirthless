@@ -24,7 +24,7 @@ import { GlobalScriptService } from './global-script.service.js';
 import { UserService } from './user.service.js';
 import { SettingsService } from './settings.service.js';
 import { REDACTED } from '../lib/secret-redaction.js';
-import { isServiceError } from '../lib/service-error.js';
+import { foundOrThrow, isServiceError, ServiceError } from '../lib/service-error.js';
 import { ResourceService } from './resource.service.js';
 import { ChannelGroupService } from './channel-group.service.js';
 import { TagService } from './tag.service.js';
@@ -41,6 +41,14 @@ import {
   channelGroups,
   channelTags,
 } from '../db/schema/index.js';
+
+const MAX_ALERTS = 10000;
+
+function assertAllAlertsRead(total: number): void {
+  if (total > MAX_ALERTS) {
+    throw new ServiceError('INTERNAL', `One backup reads at most ${String(MAX_ALERTS)} alerts and there are ${String(total)}, so no backup was made`);
+  }
+}
 
 export class ServerBackupService {
   /**
@@ -84,7 +92,7 @@ export class ServerBackupService {
         ChannelExportService.exportAll(),
         CodeTemplateService.listLibraries(),
         CodeTemplateService.listTemplates(),
-        AlertService.list({ page: 1, pageSize: 10000 }),
+        AlertService.list({ page: 1, pageSize: MAX_ALERTS }),
         GlobalScriptService.getAll(),
         UserService.listUsers(),
         SettingsService.list(),
@@ -101,6 +109,7 @@ export class ServerBackupService {
       if (!librariesResult.ok) throw librariesResult.error;
       if (!templatesResult.ok) throw templatesResult.error;
       if (!alertsResult.ok) throw alertsResult.error;
+      assertAllAlertsRead(alertsResult.value.pagination.total);
       if (!globalScriptsResult.ok) throw globalScriptsResult.error;
       if (!usersResult.ok) throw usersResult.error;
       if (!settingsResult.ok) throw settingsResult.error;
@@ -108,8 +117,8 @@ export class ServerBackupService {
 
       const resourceDetails = await Promise.all(
         resourcesResult.value.map(async (r) => {
-          const detail = await ResourceService.getById(r.id);
-          return detail.ok ? detail.value : { ...r, content: null };
+          // Null: deleted after the list was read.
+          return foundOrThrow(await ResourceService.getById(r.id));
         }),
       );
       if (!groupsResult.ok) throw groupsResult.error;
@@ -191,7 +200,7 @@ export class ServerBackupService {
           description: s.description,
           category: s.category,
         })),
-        resources: resourceDetails.map((r) => ({
+        resources: resourceDetails.filter((r) => r !== null).map((r) => ({
           id: r.id,
           name: r.name,
           description: r.description,
@@ -311,12 +320,12 @@ async function restoreSettings(
 
   for (const item of items) {
     try {
-      const existing = await SettingsService.getByKey(item.key);
+      const existing = foundOrThrow(await SettingsService.getByKey(item.key));
       // A backup masks secrets as REDACTED. Never write the marker back as a live
       // secret: keep an existing setting's real value; store a new one empty so
       // the operator must re-enter it.
       const isRedacted = item.value === REDACTED;
-      if (existing.ok) {
+      if (existing) {
         if (mode === 'SKIP') { skipped++; continue; }
         if (isRedacted) { skipped++; continue; }
         const res = await SettingsService.upsert({ key: item.key, value: item.value ?? '', type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
@@ -380,11 +389,11 @@ async function upsertMapEntry(
   lookup: () => Promise<Result<unknown>>,
   upsert: () => Promise<Result<unknown>>,
 ): Promise<RestoreOutcome> {
-  const existing = await lookup();
-  if (existing.ok && mode === 'SKIP') return 'skipped';
+  const existing = foundOrThrow(await lookup());
+  if (existing !== null && mode === 'SKIP') return 'skipped';
   const res = await upsert();
   if (!res.ok) throw res.error;
-  return existing.ok ? 'updated' : 'created';
+  return existing !== null ? 'updated' : 'created';
 }
 
 async function restoreTags(
@@ -539,7 +548,7 @@ async function restoreAlerts(
 
   for (const item of items) {
     try {
-      const existing = await AlertService.getById(item.id);
+      const existing = foundOrThrow(await AlertService.getById(item.id));
       const createInput = {
         name: item.name,
         description: item.description ?? '',
@@ -553,9 +562,9 @@ async function restoreAlerts(
         maxAlerts: item.maxAlerts,
       };
 
-      if (existing.ok) {
+      if (existing) {
         if (mode === 'SKIP') { skipped++; continue; }
-        const res = await AlertService.update(item.id, { ...createInput, revision: existing.value.revision });
+        const res = await AlertService.update(item.id, { ...createInput, revision: existing.revision });
         if (!res.ok) throw res.error;
         updated++;
       } else {

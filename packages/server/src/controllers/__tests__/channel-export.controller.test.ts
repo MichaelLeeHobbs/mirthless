@@ -5,6 +5,7 @@ const mockExport = { exportChannel: vi.fn(), exportAll: vi.fn() };
 
 vi.mock('../../services/channel-export.service.js', () => ({ ChannelExportService: mockExport }));
 vi.mock('../../services/channel-import.service.js', () => ({ ChannelImportService: { importChannels: vi.fn() } }));
+vi.mock('../../lib/channel-scope.js', () => ({ channelScopeOf: vi.fn().mockResolvedValue('ALL') }));
 vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
@@ -22,6 +23,28 @@ function makeReq(): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('ChannelExportController.exportAll', () => {
+  it('names the channel that could not be read', async () => {
+    mockExport.exportAll.mockResolvedValue({ ok: false, value: null, error: new ServiceError('INTERNAL', 'Channel "ADT" could not be read') });
+    const res = makeRes();
+
+    await ChannelExportController.exportAll(makeReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL', message: 'Channel "ADT" could not be read' } });
+  });
+
+  it('answers 500 with a generic body for an error that is not a service error', async () => {
+    mockExport.exportAll.mockResolvedValue({ ok: false, value: null, error: new Error('connection refused') });
+    const res = makeRes();
+
+    await ChannelExportController.exportAll(makeReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL', message: 'Export failed' } });
+  });
 });
 
 describe('ChannelExportController.exportChannel', () => {
