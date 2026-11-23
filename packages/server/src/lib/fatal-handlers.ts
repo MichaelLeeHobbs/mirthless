@@ -3,6 +3,7 @@
 
 import type { Logger } from 'pino';
 import { errorInfo } from '@galvanigraph/core-util';
+import { isHostValue, thrownText, UNREADABLE_ERROR } from '@galvanigraph/engine';
 
 export interface FatalEventSource {
   on(event: 'unhandledRejection' | 'uncaughtException', listener: (reason: unknown) => void): unknown;
@@ -14,6 +15,11 @@ export interface FatalHandlerDeps {
   readonly shutdown: (reason: string, exitCode: number) => void;
 }
 
+/** A value a script made is read without running its getters or Proxy traps: here, one that loops would stop the server. */
+function safeErrorInfo(value: unknown): Readonly<Record<string, unknown>> {
+  return isHostValue(value) ? errorInfo(value) : { errMsg: thrownText(value, UNREADABLE_ERROR) };
+}
+
 /**
  * A stray rejection must not stop every channel, so the server keeps running.
  * An uncaught exception leaves the process in an unknown state, so it shuts down
@@ -22,11 +28,11 @@ export interface FatalHandlerDeps {
  */
 export function installFatalHandlers(deps: FatalHandlerDeps): void {
   deps.proc.on('unhandledRejection', (reason) => {
-    deps.logger.error(errorInfo(reason),'Unhandled promise rejection. This is a bug: a promise failed with nothing handling it');
+    deps.logger.error(safeErrorInfo(reason), 'Unhandled promise rejection. This is a bug, in the server or in a channel script: a promise failed with nothing handling it');
   });
 
   deps.proc.on('uncaughtException', (error) => {
-    deps.logger.fatal(errorInfo(error),'Uncaught exception. Shutting down');
+    deps.logger.fatal(safeErrorInfo(error), 'Uncaught exception. Shutting down');
     deps.shutdown('uncaughtException', 1);
   });
 }

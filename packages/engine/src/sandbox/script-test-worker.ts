@@ -1,11 +1,22 @@
 // Reads are asked of the main thread, which owns the database.
 
 import { parentPort, workerData } from 'node:worker_threads';
+import { thrownText, UNREADABLE_ERROR } from './sandbox-value.js';
 import { runScriptTest, type ScriptTestInput, type ScriptTestReaders } from './script-test-run.js';
 import { MAX_TEST_READS, tooManyReads, type WorkerReply, type WorkerRequest, type WorkerStart } from './script-test-isolated.js';
 
 if (!parentPort) throw new Error('script-test-worker must run in a worker thread');
 const port = parentPort;
+
+// Left to itself, Node copies a value the script threw or rejected, and nothing caught, to the
+// main thread, running the value's getters to do it. The worker must still end at once, as it
+// does without a handler, so that nothing of the failed run carries on.
+const uncaught = (value: unknown): void => {
+  port.postMessage({ type: 'failed', error: thrownText(value, UNREADABLE_ERROR) } satisfies WorkerRequest);
+  process.exit(1);
+};
+process.on('unhandledRejection', uncaught);
+process.on('uncaughtException', uncaught);
 
 const start = workerData as WorkerStart;
 let nextId = 0;

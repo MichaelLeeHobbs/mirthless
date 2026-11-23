@@ -4,6 +4,7 @@
 
 import { Worker } from 'node:worker_threads';
 import type { ScriptTestInput, ScriptTestReaders, ScriptTestResult } from './script-test-run.js';
+import { ownString, thrownText, UNREADABLE_ERROR } from './sandbox-value.js';
 import { workerEntry } from './worker-entry.js';
 
 export type IsolatedTestInput = Omit<ScriptTestInput, 'readers' | 'timeoutMs' | 'onCompiled'>;
@@ -133,10 +134,11 @@ export function runScriptTestIsolated(
     };
 
     worker.on('message', onMessage);
-    worker.on('error', (err: Error & { code?: string }) => {
-      fail(err.code === 'ERR_WORKER_OUT_OF_MEMORY'
+    // Any value at all, and a throw in here would be uncaught in the server.
+    worker.on('error', (err: unknown) => {
+      fail(ownString(err, 'code') === 'ERR_WORKER_OUT_OF_MEMORY'
         ? `The script ran out of memory (the test-run limit is ${String(limits.maxOldGenerationSizeMb)} MB).`
-        : `The test run failed: ${err.message}`);
+        : `The test run failed: ${thrownText(err, UNREADABLE_ERROR)}`);
     });
     worker.on('exit', (code) => { fail(`The test run ended unexpectedly (exit code ${String(code)}).`); });
   });

@@ -251,6 +251,35 @@ describe('VmSandboxExecutor', () => {
     });
   });
 
+  // Error.prototype.code is defined before the script runs, so that no script can put a setter there.
+  describe("a script's own error codes", () => {
+    it.each([
+      ['assigned to an error', "var e = new Error('x'); e.code = 'OWN'; return e.code;"],
+      ['assigned to a TypeError', "var e = new TypeError('x'); e.code = 'OWN'; return e.code;"],
+      ['assigned in a subclass constructor', "class E extends Error { constructor(m) { super(m); this.code = 'OWN'; } } return new E('x').code;"],
+      ['set by a class field', "class E extends Error { code = 'OWN'; } return new E('x').code;"],
+      ['set by a getter in a subclass', "class E extends Error { get code() { return 'OWN'; } } return new E('x').code;"],
+      ['set by a subclass accessor pair', "class E extends Error { set code(v) { this.kept = v; } get code() { return this.kept; } } var e = new E('x'); e.code = 'OWN'; return e.code;"],
+      ['copied with Object.assign', "return Object.assign(new Error('x'), { code: 'OWN' }).code;"],
+      ['defined as a property', "var e = new Error('x'); Object.defineProperty(e, 'code', { get: function () { return 'OWN'; } }); return e.code;"],
+      ['assigned to Error.prototype', "Error.prototype.code = 'OWN'; return new Error('x').code;"],
+      ['read back after a throw', "try { throw Object.assign(new Error('x'), { code: 'OWN' }); } catch (e) { return e.code; }"],
+    ])('%s still work', async (_name, code) => {
+      const result = await executor.execute(makeScript(code), makeContext(), makeOptions());
+
+      expect(result.ok && result.value.returnValue).toBe('OWN');
+    });
+
+    it('are undefined when none is set, and an assigned one is an ordinary own property', async () => {
+      const result = await executor.execute(
+        makeScript("var e = new Error('x'); var before = e.code === undefined && !Object.hasOwn(e, 'code'); e.code = 'OWN'; return [before, Object.keys(e)];"),
+        makeContext(), makeOptions(),
+      );
+
+      expect(result.ok && result.value.returnValue).toEqual([true, ['code']]);
+    });
+  });
+
   describe('escape prevention', () => {
     it('does not expose host process/require/module/globalThis', async () => {
       const script = makeScript(
