@@ -10,7 +10,7 @@ import { tryCatch } from '@galvanigraph/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
-import { ownString } from './sandbox-value.js';
+import { ownString, thrownText } from './sandbox-value.js';
 
 export interface CompiledScript {
   readonly code: string;
@@ -588,8 +588,7 @@ function restore(state: HostBridgeState, c: Collected): unknown {
  * that would run a Proxy's getPrototypeOf trap with nothing to stop it.
  */
 function toHostError(e: unknown): Error {
-  if (typeof e === 'string') return new Error(e);
-  return new Error(ownString(e, 'message') ?? 'Script failed');
+  return new Error(thrownText(e, 'Script failed'));
 }
 
 interface TimeLimit {

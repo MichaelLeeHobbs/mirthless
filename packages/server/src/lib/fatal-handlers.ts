@@ -3,7 +3,7 @@
 
 import type { Logger } from 'pino';
 import { errorInfo } from '@galvanigraph/core-util';
-import { isHostValue, ownString } from '@galvanigraph/engine';
+import { isHostValue, thrownText, UNREADABLE_ERROR } from '@galvanigraph/engine';
 
 export interface FatalEventSource {
   on(event: 'unhandledRejection' | 'uncaughtException', listener: (reason: unknown) => void): unknown;
@@ -17,8 +17,7 @@ export interface FatalHandlerDeps {
 
 /** A value a script made is read without running its getters or Proxy traps: here, one that loops would stop the server. */
 function safeErrorInfo(value: unknown): Readonly<Record<string, unknown>> {
-  if (isHostValue(value)) return errorInfo(value);
-  return { errMsg: ownString(value, 'message') ?? 'Unreadable error value' };
+  return isHostValue(value) ? errorInfo(value) : { errMsg: thrownText(value, UNREADABLE_ERROR) };
 }
 
 /**
@@ -29,9 +28,7 @@ function safeErrorInfo(value: unknown): Readonly<Record<string, unknown>> {
  */
 export function installFatalHandlers(deps: FatalHandlerDeps): void {
   deps.proc.on('unhandledRejection', (reason) => {
-    deps.logger.error(safeErrorInfo(reason), isHostValue(reason)
-      ? 'Unhandled promise rejection. This is a bug: a promise failed with nothing handling it'
-      : 'Unhandled promise rejection in a channel script: a promise the script did not await failed');
+    deps.logger.error(safeErrorInfo(reason), 'Unhandled promise rejection. This is a bug, in the server or in a channel script: a promise failed with nothing handling it');
   });
 
   deps.proc.on('uncaughtException', (error) => {

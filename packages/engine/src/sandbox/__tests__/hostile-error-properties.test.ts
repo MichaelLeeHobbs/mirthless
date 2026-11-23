@@ -20,12 +20,12 @@ const LOOP_TIMEOUT = 300;
 /** For scripts that must fail at once; only a hang reaches it. */
 const FAR_TIMEOUT = 20_000;
 
-interface Expected { readonly case: HostileCase; readonly error: RegExp | null }
+interface Expected { readonly case: HostileCase; readonly error: RegExp }
 
 function stopped(name: string, script: string, template?: string): Expected {
   return {
     case: { name, script: `${script} ${LOOP}`, timeout: LOOP_TIMEOUT, ...(template === undefined ? {} : { template }) },
-    error: /timed out after \d+ms/,
+    error: /timed out after 300ms$/,
   };
 }
 
@@ -59,8 +59,13 @@ const SYNC_CASES: readonly Expected[] = [
   stopped('a code setter installed with Reflect.defineProperty', `Reflect.defineProperty(Error.prototype, 'code', ${THROWING_SETTER});`),
   stopped('a code setter installed with __defineSetter__', "try { Error.prototype.__defineSetter__('code', function () { throw 1; }); } catch (ignored) {}"),
   stopped('a Proxy as the prototype of Error.prototype', 'Object.setPrototypeOf(Error.prototype, new Proxy({}, { set() { throw 1; }, get() { throw 1; } }));'),
-  stopped('a frozen Error.prototype', `Object.freeze(Error.prototype); ${define('Object.prototype', 'code', THROWING_SETTER)}`),
+  // Node's write then does nothing, so the timeout is not recognised and names the time the call had left.
+  {
+    ...stopped('a frozen Error.prototype', `Object.freeze(Error.prototype); ${define('Object.prototype', 'code', THROWING_SETTER)}`),
+    error: /timed out after \d+ms$/,
+  },
   stopped('a replaced Error constructor', `${define('Object.prototype', 'code', THROWING_SETTER)} Error = class { set code(v) { throw 1; } };`),
+  // These were never at risk: they pin that Node uses no other property of the timeout error.
   ...['message', 'stack', 'name', 'cause', 'constructor', 'toString', 'prepareStackTrace', 'stackTraceLimit'].map((key) =>
     stopped(`looping accessors for ${key} on every object in the error's chain`, [
       define('Error.prototype', key, LOOPING_ACCESSOR), define('Object.prototype', key, LOOPING_ACCESSOR), define('Error', key, LOOPING_ACCESSOR),
@@ -86,8 +91,23 @@ const ASYNC_CASES: readonly Expected[] = [
   fails('an error with a looping stack getter thrown by a replaced JSON.parse', `${EVIL_STACK} JSON.parse = function () { throw evil; }; ${AFTER_AWAIT}`, /^e$/),
 ];
 
+/** Keeps the script going until its unhandled rejection has been seen; a Test run refuses the reads. */
+const OUTLIVE = "for (let i = 0; i < 3; i++) { await getResource('x').catch(() => 0); }";
+
+function unhandled(name: string, reason: string, error: RegExp): Expected {
+  return { case: { name, script: `${reason} void Promise.reject(evil); ${OUTLIVE}`, timeout: LOOP_TIMEOUT }, error };
+}
+
+// In the worker, a value the script left unhandled is reported to the main thread.
 const ISOLATED_CASES: readonly Expected[] = [
   ...SETTER_CASES,
+  unhandled('an unhandled error with a looping stack getter', `const evil = new Error('e'); Object.defineProperty(evil, 'stack', ${LOOPING_ACCESSOR});`, /^The test run failed: e$/),
+  unhandled('an unhandled object with a looping inspect method', "const evil = { stack: 's', message: 'e', [Symbol.for('nodejs.util.inspect.custom')]() { for (;;) {} } };", /^The test run failed: e$/),
+  unhandled('an unhandled error whose message is not text', "const evil: any = new Error('e'); evil.message = { toString: 1, valueOf: 1 };", /^The test run failed: Unreadable error value$/),
+  unhandled('an unhandled Proxy whose traps loop', 'const loop = () => { for (;;) {} }; const evil = new Proxy({}, { get: loop, has: loop, getPrototypeOf: loop, getOwnPropertyDescriptor: loop, ownKeys: loop });', /^The test run failed: Unreadable error value$/),
+  unhandled('an unhandled null', 'const evil = null;', /^The test run failed: Unreadable error value$/),
+  unhandled('an unhandled string', "const evil = 'plain text';", /^The test run failed: plain text$/),
+  unhandled('an unhandled error that claims to be out of memory', "const evil = Object.assign(new Error('e'), { code: 'ERR_WORKER_OUT_OF_MEMORY' });", /^The test run failed: e$/),
   stopped('a throwing code setter installed by a code template', 'install();', `function install() { ${define('Error.prototype', 'code', THROWING_SETTER)} ${define('Object.prototype', 'code', THROWING_SETTER)} }`),
 ];
 
@@ -101,7 +121,8 @@ function runChild(mode: HostileRun['mode'], expected: readonly Expected[]): Prom
       ['--import', 'tsx', CHILD, JSON.stringify(run)],
       { cwd: ENGINE, timeout: CHILD_DEADLINE_MS, killSignal: 'SIGKILL' },
       (err, stdout, stderr) => {
-        const lines = stdout.split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as HostileOutcome);
+        // What follows the last newline is empty, or a line the child was killed while writing.
+        const lines = stdout.split('\n').slice(0, -1).map((l) => JSON.parse(l) as HostileOutcome);
         const end = err === null ? 'exited normally'
           : err.killed === true ? 'hung and was killed'
             : `ended with ${String(err.code)}: ${stderr.slice(0, 300)}`;
@@ -120,10 +141,10 @@ describe.each<[HostileRun['mode'], readonly Expected[]]>([
 
   beforeAll(async () => { child = await runChild(mode, expected); }, CHILD_DEADLINE_MS + 15_000);
 
-  it.each(expected.map((e): [string, RegExp | null] => [e.case.name, e.error]))('%s', (name, error) => {
+  it.each(expected.map((e): [string, RegExp] => [e.case.name, e.error]))('%s', (name, error) => {
     const outcome = child.outcomes.get(name);
 
-    expect(outcome === undefined ? `no outcome: the process ${child.end}` : outcome.error).toEqual(expect.stringMatching(error ?? /$^/));
+    expect(outcome === undefined ? `no outcome: the process ${child.end}` : outcome.error).toEqual(expect.stringMatching(error));
   });
 
   it('leaves the process running', () => {

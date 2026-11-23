@@ -83,7 +83,7 @@ describe('installFatalHandlers', () => {
 
       proc.emit('unhandledRejection', vm.runInNewContext("new TypeError('no such patient')"));
 
-      expect(logger.error).toHaveBeenCalledWith({ errMsg: 'no such patient' }, expect.stringContaining('channel script'));
+      expect(logger.error).toHaveBeenCalledWith({ errMsg: 'no such patient' }, expect.stringContaining('Unhandled promise rejection'));
     });
   });
 

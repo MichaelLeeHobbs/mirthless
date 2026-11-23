@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as vm from 'node:vm';
-import { isHostValue, ownString } from '../sandbox-value.js';
+import { isHostValue, ownString, thrownText } from '../sandbox-value.js';
 
 interface Foreign { readonly value: unknown; readonly touched: () => number }
 
@@ -49,6 +49,38 @@ describe('isHostValue', () => {
 
   it('refuses a host Proxy, whose traps could belong to anyone', () => {
     expect(isHostValue(new Proxy({}, {}))).toBe(false);
+  });
+});
+
+describe('a prototype chain longer than any real one', () => {
+  function chain(length: number): object {
+    let value: object = {};
+    for (let i = 0; i < length; i += 1) value = Object.create(value) as object;
+    return value;
+  }
+
+  it('is refused rather than walked to its end', () => {
+    expect(isHostValue(chain(90))).toBe(true);
+    expect(isHostValue(chain(200))).toBe(false);
+  });
+});
+
+describe('thrownText', () => {
+  it.each([
+    ['a string', "'text'", 'text'],
+    ['an error', "new Error('own')", 'own'],
+    ['an error with no message of its own', 'new Error()', 'fallback'],
+    ['an error with a message that is not text', "Object.assign(new Error('x'), { message: { toString: touch, valueOf: touch } })", 'fallback'],
+    ['an error with a message getter', "Object.defineProperty(new Error('x'), 'message', { get: touch })", 'fallback'],
+    ['a Proxy', COUNTING_PROXY, 'fallback'],
+    ['null', 'null', 'fallback'],
+    ['undefined', 'undefined', 'fallback'],
+    ['a symbol', "Symbol('x')", 'fallback'],
+  ])('reads %s without running its code', (_name, source, expected) => {
+    const { value, touched } = foreign(source);
+
+    expect(thrownText(value, 'fallback')).toBe(expected);
+    expect(touched()).toBe(0);
   });
 });
 
