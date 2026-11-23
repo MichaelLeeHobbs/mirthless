@@ -8,100 +8,100 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 
 | Rank | ID | Theme | Score | Status | Note |
 |---|---|---|---|---|---|
-| 2 | CON4 | HTTP connector flexibility: multipart, headers, binary, status codes, paths, gzip | 56.4 | Partial | matchSubpaths done (D-243); multipart and binary open. |
-| 4 | SCR4 | Thin standard library: dates/timezones, hashing, base64, UUID, identifiers, PDF | 55.3 | Partial | N9. A documented, typed helper library is the most-built community workaround. |
-| 5 | PERF1 | Throughput and memory: large messages, OOM, benchmarks | 55.2 | Partial | Published soak baseline; worker threads and streaming large payloads open. |
-| 6 | SEC1 | Unpatched dependencies and CVEs; slow security fixes; disclosure process | 54 | Partial | Dependency audit in CI, SECURITY.md, CVE list in release notes. |
-| 7 | UPG2 | Upgrades break channels, plugins and settings; no rollback | 54 | Partial | Migration tests per release, deprecation notes, pre-upgrade backup. |
-| 8 | MON1 | Channel health, not server up: silent interfaces, queue depth, error rate, schedule-aware | 53.6 | Partial | NO_MESSAGES exists; add queue depth, error rate and business-hours windows (B1). |
-| 10 | FHIR1 | First-class FHIR: listener, client, validation, R4/R5, bundles | 52.3 | Partial | FHIR destination (R4) exists. Add FHIR source, bundle/transaction support, profile validation (B7). |
-| 11 | HA1 | Free high availability: active-active, takeover, shared database | 51.5 | Missing | B2. Paid Platinum in Mirth and reported buggy. |
-| 12 | OPS1 | Git and CI/CD for channels with deterministic, diffable exports | 51.2 | Partial | Most-built workaround (mirthSync and 7 others). File-per-component export + CLI sync (B6). |
-| 14 | API1 | Complete, documented REST API, OpenAPI and client SDKs | 50.6 | Partial | OpenAPI at /api-docs; generate a TS/Python client from it. |
-| 15 | DT1 | HL7v2 fidelity: escapes, terminators, malformed input, structures across versions | 49.6 | Partial | Round-trip corpus tests (byte-identical when untouched). QA90 is the most-viewed theme in the Q&A set. |
-| 16 | OPS3 | Promote between environments with dependencies and environment settings | 49.2 | Partial | B6. Export completeness (N14) is a prerequisite. |
-| 17 | CON12 | DICOM: modern stack, worklist, query/retrieve, routing by AE, TLS | 48.8 | Partial | C-STORE on dcmjs-dimse works; MWL, Q/R and TLS open. |
-| 18 | TEST2 | Automated channel tests in CI: unit, golden files, replay-and-diff regression | 48.3 | Missing | B5. Nobody does this well; strongest DevEx differentiator. |
-| 19 | REC1 | Reprocess/resend: one destination, bulk, date range, order, lineage | 48 | Partial | Reprocess service exists; bulk by filter and destination targeting are the ask. |
-| 20 | UI11 | Readable HL7 viewer/editor: highlighting, field hover, hex, lab rendering | 47.5 | Partial | Message viewer with segment/field hover and a raw/hex toggle; HL7 files with CR-only endings must display. |
+| 2 | CON4 | HTTP connector flexibility: multipart, headers, binary, status codes, paths, gzip | 56.4 | Partial | #342. matchSubpaths done (D-243); methods, reply status and headers, multipart and binary open. Binary and gzip bodies are corrupted today (#335). |
+| 4 | SCR4 | Thin standard library: dates/timezones, hashing, base64, UUID, identifiers, PDF | 55.3 | Partial | #343, N9. Scripts have no base64, hash, UUID or date helpers. A documented, typed helper library is the most-built community workaround. |
+| 5 | PERF1 | Throughput and memory: large messages, OOM, benchmarks | 55.2 | Partial | Published soak baseline; server stalls under load (#257), worker threads (#348) and streaming large payloads (batch files: #192) open. |
+| 6 | SEC1 | Unpatched dependencies and CVEs; slow security fixes; disclosure process | 54 | Partial | #341. Dependency audit in CI, Dependabot and SECURITY.md exist; SBOM, image scan, scheduled audit and a CVE list per release open. |
+| 7 | UPG2 | Upgrades break channels, plugins and settings; no rollback | 54 | Partial | Upgrade and rollback tests per release: #340. Deprecation notes, and a check that a pre-upgrade backup was taken, are not planned in an issue. |
+| 8 | MON1 | Channel health, not server up: silent interfaces, queue depth, error rate, schedule-aware | 53.6 | Partial | #338. NO_MESSAGES exists; add queue depth, error rate and business-hours windows (B1). |
+| 10 | FHIR1 | First-class FHIR: listener, client, validation, R4/R5, bundles | 52.3 | Partial | #349. FHIR destination (R4) sends one resource. Add FHIR source, bundle/transaction support, profile validation (B7). |
+| 11 | HA1 | Free high availability: active-active, takeover, shared database | 51.5 | Missing | B2; notes in #308, with #312 a requirement. Paid Platinum in Mirth and reported buggy. |
+| 12 | OPS1 | Git and CI/CD for channels with deterministic, diffable exports | 51.2 | Partial | #337. Most-built workaround (mirthSync and 7 others). File-per-component export and import over the API (B6); no CLI (D-280). |
+| 14 | API1 | Complete, documented REST API, OpenAPI and client SDKs | 50.6 | Partial | #347. OpenAPI at /api-docs covers 33 paths of about 165 routes; complete it, then generate a TypeScript client. |
+| 15 | DT1 | HL7v2 fidelity: escapes, terminators, malformed input, structures across versions | 49.6 | Partial | #344. Round-trip corpus tests (byte-identical when untouched); parser gaps in #189, #190, #191, #194. QA90 is the most-viewed theme in the Q&A set. |
+| 16 | OPS3 | Promote between environments with dependencies and environment settings | 49.2 | Partial | #346, B6. Export completeness (N14) and #334 (export and import lose settings) are prerequisites. |
+| 17 | CON12 | DICOM: modern stack, worklist, query/retrieve, routing by AE, TLS | 48.8 | Partial | #350. C-STORE on dcmjs-dimse works; MWL, Q/R, storage commitment and TLS open. |
+| 18 | TEST2 | Automated channel tests in CI: unit, golden files, replay-and-diff regression | 48.3 | Missing | #345, B5. Nobody does this well; strongest DevEx differentiator. |
+| 19 | REC1 | Reprocess/resend: one destination, bulk, date range, order, lineage | 48 | Partial | #339. Up to 500 hand-picked ids, and one message per destination resend; bulk by filter and destination targeting are the ask. |
+| 20 | UI11 | Readable HL7 viewer/editor: highlighting, field hover, hex, lab rendering | 47.5 | Partial | #351. Plain numbered text today. Segment/field hover, tree, raw/hex toggle; CRLF, batch and custom delimiters must display. |
 | 21 | SCR6 | Lookup tables, value mapping and cached reference data | 46.7 | Partial | Collections cover keyed lookups; add a table editor UI and code-system crosswalks (LOINC/SNOMED ConceptMap import). |
 | 23 | UI9 | Keyboard shortcuts, copy/paste, multiple windows, deep links, tooltips | 46.2 | Partial | A browser gives tabs and links for free; audit copy-from-table and deep links. |
 | 24 | MSG4 | Storage growth, pruning, retention by status, archiving | 46.2 | Partial | Pruner and partitions exist; archiver (N8) and keep-errored retention open. |
 | 25 | MSG1 | Message search: slow, no saved filters, bulk IDs, regex, cancel | 46 | Partial | N4. |
-| 26 | CON2 | TLS on MLLP and every connector without a paid plugin | 45.7 | Partial | TCP TLS and certificates exist; DICOM TLS open ([8]). |
-| 27 | DT5 | X12/EDI and NCPDP support | 45.5 | Missing | Doc 17 S20. OS116: no mature open-source engine does X12 well, so this is a differentiator. |
+| 26 | CON2 | TLS on MLLP and every connector without a paid plugin | 45.7 | Partial | TCP TLS and certificates exist; DICOM TLS open ([8], #350). |
+| 27 | DT5 | X12/EDI and NCPDP support | 45.5 | Partial | X12 on the path API shipped (D-258). Open: envelope validation, 999/TA1, batch splitting, NCPDP (N1). OS116: no mature open-source engine does X12 well, so this is a differentiator. |
 | 28 | SCR9 | Code template libraries: backwards dependencies, no find-usages, fragile import | 45 | Partial | Library-to-channel scoping done (D-249); editor control and find-usages open (N12). |
-| 30 | MON6 | Per-channel logs, channel name on every line, logs in the UI, SIEM forwarding | 44.9 | Partial | Log viewer exists; filter by channel. |
+| 29 | CON1 | TCP/MLLP robustness: resets, keepalive, socket leaks, framing | 44.9 | Partial | #311, #352. Biggest Q&A theme by count. Framing configurable (D-253), but a destination connects only when a message needs it, retries a refused connection in a tight loop and sets no TCP keepalive, and the receiver closes a connection idle for 300 s. |
+| 30 | MON6 | Per-channel logs, channel name on every line, logs in the UI, SIEM forwarding | 44.9 | Partial | Log viewer exists; filter by channel. Script logger output is discarded (#164). |
 | 31 | MON5 | External monitoring: Prometheus, health checks, NMS, OpenTelemetry hooks | 44.8 | Partial | /metrics and health endpoints exist; per-channel labels (N10) and OTel (B4) open. |
 | 32 | DOC1 | Accurate public documentation: user guide, API, upgrade notes | 44.8 | Partial | The Mirth wiki disappeared; docs are a reason people pick an engine. |
 | 33 | CON6 | Remote files: SFTP/FTP/SMB/S3 reliability and schemes | 44.4 | Partial | SFTP exists; FTP/FTPS/SMB/S3 schemes are parity gap [2]. |
 | 34 | UI3 | Steep learning curve; needs specialist training | 43.3 | Partial | Guided first channel, inline help, recipes (see DOC3). |
 | 35 | DOC5 | Plugin SDK, stable plugin API and a marketplace | 43.2 | Missing | ROADMAP [DECIDE] item. A stable API must exist before any marketplace. |
-| 36 | OPS4 | Environment variables and layered config for containers | 43.1 | Partial | Config map `${}` (D-246); env-var sourcing for config map values. |
+| 36 | OPS4 | Environment variables and layered config for containers | 43.1 | Partial | Config map `${}` (D-246). Env-var sourcing for config map values is named as a gap in #346 but not planned there. |
 | 37 | HA2 | Kubernetes, Helm, cloud reference deployments; on-prem or cloud | 42.9 | Partial | Compose and images exist; Helm chart and reference HA deploy open. |
-| 38 | CON10 | Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub | 42.8 | Missing | D-261: Kafka and AMQP connectors on maintained Node clients, no broker of our own. JMS stays out; SQS and Pub/Sub wait for demand. |
+| 38 | CON10 | Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub | 42.8 | Partial | Kafka and AMQP shipped (D-261, D-265, D-266). Open: a missed loss of group membership (#353), Kafka TLS against a real broker (#151). JMS stays out; SQS and Pub/Sub wait for demand. |
 | 39 | LIC3 | Single-vendor control of roadmap and license; slow, unresponsive vendors | 42.7 | Partial | Public roadmap, contribution guide, release cadence, and a license that cannot be pulled (consider foundation or CLA-free contribution). |
-| 40 | DT3 | Validation: conformance profiles, strict parsing, data-quality rules, receiver-specific rules | 42.1 | Partial | Profile-based validation step with readable errors; per-partner profiles. |
-| 41 | SEC3 | SSO, directory login and MFA: LDAP/AD, OIDC, SAML, TOTP | 42 | Missing | All paid Gold in Mirth. None exist here yet, though the ROADMAP "Competitive Position" table said MFA ships free. |
-| 42 | CON8 | Database connector: more vendors, pooling, robustness | 41.6 | Partial | Postgres-only today; doc 17 S15 proposes MySQL first. Pooling exists. |
+| 40 | DT3 | Validation: conformance profiles, strict parsing, data-quality rules, receiver-specific rules | 42.1 | Partial | Parse warnings a filter can act on: #189. Profile-based validation with readable errors, and per-partner profiles, have no issue. |
+| 41 | SEC3 | SSO, directory login and MFA: LDAP/AD, OIDC, SAML, TOTP | 42 | Missing | All paid Gold in Mirth. None exist here yet: MFA and passkeys #140 to #143, OIDC #148. LDAP and SAML have no issue. |
+| 42 | CON8 | Database connector: more vendors, pooling, robustness | 41.6 | Partial | PostgreSQL and MySQL/MariaDB (D-259), pooled; SQL Server and Oracle open ([1]). |
 | 43 | DT4 | JSON and XML to/from HL7 conversion is fragile | 41.2 | Partial | Documented, lossless HL7 to JSON shape. |
-| 45 | SEC7 | Audit trail: who changed what, PHI access, SIEM forwarding, tamper-resistance | 40.8 | Partial | Audit events exist; add syslog/webhook forwarding and message-view events. |
+| 45 | SEC7 | Audit trail: who changed what, PHI access, SIEM forwarding, tamper-resistance | 40.8 | Partial | Append-only audit log, with message reads recorded (D-312). Syslog/webhook forwarding open; configuration changes are still in the purgeable event log. |
 | 46 | HA3 | Official, maintained container images; start with channels preloaded | 40.2 | Partial | Images build to ghcr; add declarative channel import at start. |
-| 47 | UPG1 | Runtime version churn (Java 8/11/17/21) breaks installs | 39.9 | Partial | Node LTS only; publish a runtime support policy and ship in containers. |
-| 49 | DT8 | Binary content: PDFs, images, base64, multipart corruption | 39.3 | Partial | Connector parity [10] binary data type. |
-| 50 | UI5 | Script editor lacks IDE features (autocomplete, typings, formatting) | 39.2 | Partial | Monaco + TS exist; finish typed autocomplete for msg and the sandbox API, and bundle Monaco offline (ROADMAP). |
-| 51 | UI8 | Transformer and rule editing ergonomics; mapper too limited | 39 | Partial | Mapper steps do not deploy yet (D-207). Fix before any visual mapper. |
+| 47 | UPG1 | Runtime version churn (Java 8/11/17/21) breaks installs | 39.9 | Partial | #340. Node LTS only; publish a runtime support policy and ship in containers. |
+| 49 | DT8 | Binary content: PDFs, images, base64, multipart corruption | 39.3 | Partial | Connector parity [10] binary data type. The HTTP source corrupts binary and gzip bodies (#335); binary over HTTP is in #342. |
+| 50 | UI5 | Script editor lacks IDE features (autocomplete, typings, formatting) | 39.2 | Partial | Monaco is bundled (D-283) and the sandbox API and msg are typed; what is left is ranked in doc 19. |
+| 51 | UI8 | Transformer and rule editing ergonomics; mapper too limited | 39 | Partial | Mapper steps do not deploy yet (D-207, #172). Fix before any visual mapper. |
 | 56 | MSG2 | Custom metadata and business-key search (MRN, facility) | 36.5 | Partial | Engine fills columns and API filters on them; UI open (N5). |
 | 57 | MON7 | Finding where and why a message errored | 36.5 | Partial | Failure reason kept (D-248); show stage, error and content side by side. |
 | 58 | SCR8 | Variable maps and the message model are confusing | 36.2 | Partial | Docs plus typings: one page that says which map lives where and for how long. |
-| 60 | OPS2 | Version history, diff and rollback | 36.1 | Partial | Revisions stored; diff viewer and restore UI open (v1.1). Paid in Mirth. |
+| 60 | OPS2 | Version history, diff and rollback | 36.1 | Partial | #337. Revisions stored; diff viewer and restore UI open (v1.1). Paid in Mirth. |
 | 61 | CON5 | Outbound auth: OAuth2 with token refresh, SMART, digest, proxy credentials | 36 | Missing | B10 credential vault. Blocks the FHIR/cloud direction. |
-| 62 | SCR5 | Iterating and editing repeating segments and fields | 35.9 | Partial | Top Stack Overflow theme by views. Path API + iterator step (N11) + examples. |
-| 63 | DT10 | Batch files (FHS/BHS), split and aggregate | 35.8 | Partial | HL7 batch split done (D-254); aggregator is B9. |
+| 62 | SCR5 | Iterating and editing repeating segments and fields | 35.9 | Partial | Top Stack Overflow theme by views. Script helpers: #343. Iterator step: N11. Examples open. |
+| 63 | DT10 | Batch files (FHS/BHS), split and aggregate | 35.8 | Partial | HL7 batch split done (D-254), but whole files are held in memory (#192); aggregator is B9. |
 | 64 | SEC6 | Encrypt secrets and data at rest; vault integration | 35.8 | Partial | Content encryption exists; encrypt connector credentials; env/vault references. |
-| 65 | MON2 | Alert delivery and escalation: webhook, Slack, PagerDuty, throttling, templates | 35.4 | Partial | Email works; add webhook (covers Slack/Teams/PagerDuty) and escalation. |
+| 65 | MON2 | Alert delivery and escalation: webhook, Slack, PagerDuty, throttling, templates | 35.4 | Partial | Email and a channel action work. Webhook (covers Slack/Teams/PagerDuty) and retries: #336. Escalation has no issue. |
 | 66 | TEST3 | Test message generator and simulators | 35.4 | Partial | Message generator service exists; add a listener/sender simulator. |
 | 67 | CON7 | File ergonomics: dynamic and original file names, move after read, header row, per-poll limit | 35.3 | Partial | `${originalFilename}` on destinations still open (D-219). |
 | 68 | UI4 | Managing hundreds of channels: find ports, search inside scripts, bulk edit, grouping | 34.6 | Partial | Groups and tags exist. Missing: listening-port column, grep across all scripts and templates, bulk edit. |
 | 69 | FHIR2 | HL7v2 to FHIR mapping that covers real messages and validates | 34.5 | Missing | Every open converter is criticised for gaps and invalid output. Maintained, testable, overridable maps (B7) would be a reason to switch. |
 | 71 | AI1 | AI-assisted mapping, channel generation and error explanation | 34.5 | Missing | B8. Rhapsody already markets AI mapping. |
 | 72 | TEST1 | Step-through debugger for channel scripts | 34.2 | Missing | v1.1. Node inspector makes this feasible where Rhino could not. |
-| 73 | SEC5 | Password policy, default credentials, lockout, auto-logoff | 34.1 | Partial | Server-side policy and forced first-login change; HIPAA auto-logoff. |
-| 74 | DT2 | Character encoding bugs | 33.8 | Partial | Charset per connector exists; test non-Latin content end to end. |
-| 75 | SEC2 | Role-based access: custom roles, channel and message-body visibility | 33.7 | Partial | Four roles + channel scope exist; custom roles (N13). |
+| 73 | SEC5 | Password policy, default credentials, lockout, auto-logoff | 34.1 | Partial | A fixed server-side rule and lockout exist. Configurable policy #209, #210; idle timeout #172. A forced change after an admin creates or resets a password has no issue. |
+| 74 | DT2 | Character encoding bugs | 33.8 | Partial | Charset per connector exists; test non-Latin content end to end (#344). Hex escapes: #194. |
+| 75 | SEC2 | Role-based access: custom roles, channel and message-body visibility | 33.7 | Partial | Custom roles and access by channel group shipped (D-310, D-311), with a role-editing defect open (#355). No separate permission for message export (#172). |
 | 76 | MON8 | End-to-end visual trace of a message across channels | 33 | Partial | InterSystems Visual Trace is the most-praised competitor feature. correlationId exists; B4. |
 | 79 | CON13 | Email: OAuth for Microsoft 365/Google, SMTP modernisation | 32.5 | Partial | Basic-auth SMTP/IMAP is being retired by Microsoft; OAuth is required to keep working. |
-| 80 | UPG3 | Move from another engine without rebuilding; prove behaviour is the same | 32.2 | Partial | Mirth importer + scenario suite (55/60). Cross-compatible, not backward-compatible (D-244). |
+| 80 | UPG3 | Move from another engine without rebuilding; prove behaviour is the same | 32.2 | Partial | Mirth importer + scenario suite (65/65 on 2026-11-15). Cross-compatible, not backward-compatible (D-244). |
 | 81 | RT2 | Ordering with parallelism: FIFO, per-patient ordering, threads per channel | 31.7 | Partial | B3/N7. |
-| 83 | OPS5 | Scheduled, complete backup and restore | 30.6 | Partial | Backup/restore exists; schedule it. |
+| 83 | OPS5 | Scheduled, complete backup and restore | 30.6 | Partial | Backup/restore exists; schedule it. A restore onto a fresh server resets the script timeout (#334), and export-all skips an unreadable channel (#323). |
 | 85 | UI13 | Generate human-readable documentation of channels | 30 | Missing | Render a channel to HTML/Markdown: sources, filters, mappings, destinations. |
 | 86 | CON11 | Cloud storage and identity: S3, Azure Blob, IAM roles | 30 | Missing | S3 as a file scheme (CON6) covers most of it. |
 | 87 | CON9 | SOAP web services | 29.8 | Missing | Parity [6]. Second-largest Q&A theme by count; brownfield hospitals still run SOAP. |
-| 88 | API2 | Supported CLI covering everything | 29.7 | Partial | CLI exists; coverage and session refresh (L25) open. |
-| 89 | SEC8 | Certificate management: mTLS, CRL/OCSP, reload without restart | 28.7 | Partial | Certificates page exists. |
+| 89 | SEC8 | Certificate management: mTLS, CRL/OCSP, reload without restart | 28.7 | Partial | Certificates page exists; no alert before one expires (#204). |
 | 90 | RT1 | Duplicate message detection (MSH-10) and result floods | 28.5 | Missing | Per-channel dedupe window on a key, built on Collections. |
-| 93 | DT7 | Delimited, CSV, Excel and Parquet | 26.7 | Partial | Doc 17 S19 (rows by column name). |
-| 96 | LIC6 | License provenance of bundled code, and an SBOM | 26.2 | Missing | Generate an SBOM per release; license check in CI. |
-| 99 | REC3 | No message loss: ACK after durable store, safe shutdown, DB outage recovery | 25.9 | Partial | Soak test lost 0 of 1.08M; add a DB-outage chaos test. |
-| 100 | UI7 | Validate channel configuration before save/deploy | 25.7 | Partial | Deploy validation exists; validate on save in the editor and at server start. |
+| 93 | DT7 | Delimited, CSV, Excel and Parquet | 26.7 | Partial | Rows by column name shipped (D-257); fixed-width, Process Batch per row, Excel and Parquet open. |
+| 96 | LIC6 | License provenance of bundled code, and an SBOM | 26.2 | Missing | SBOM per release: #341. A license check in CI has no issue. |
+| 99 | REC3 | No message loss: ACK after durable store, safe shutdown, DB outage recovery | 25.9 | Partial | Soak test lost 0 of 1.08M; add a DB-outage chaos test. Accepting messages while the database is down: ideas in #307. |
+| 100 | UI7 | Validate channel configuration before save/deploy | 25.7 | Partial | Deploy validation exists; gaps in restore, Test Connection and alert patterns are in #133. Validate on save in the editor and at server start. |
 | 103 | REC2 | Queue visibility and control | 25 | Partial | Failure reason stored (D-248); per-destination queue view open. |
-| 104 | TEST4 | Live, test-driven editing: run a sample message and see values inline | 25 | Missing | Iguana Translator is the most-loved feature in its reviews. |
+| 104 | TEST4 | Live, test-driven editing: run a sample message and see values inline | 25 | Partial | One script runs against a sample in the editor (D-286); whole-channel runs are #345, inline values are not planned in an issue (doc 19). Iguana Translator is the most-loved feature in its reviews. |
 | 108 | FHIR5 | Cloud FHIR stores are not engines: need MLLP-to-cloud bridging | 24.1 | Missing | Opportunity: MLLP in, cloud healthcare API out, with OAuth (CON5). |
 | 109 | CON14 | Polling: poll now, cron windows, pre-poll scripts, run-once | 24 | Partial |  |
 | 111 | DOC4 | Community chat, roadmap visibility, suggestion box | 23.2 | Missing | GitHub Discussions + public ROADMAP. |
 | 112 | SEC10 | De-identification and PHI-safe test data | 23 | Missing | Pairs with TEST3: anonymise a production message into a test fixture. |
-| 113 | AI2 | Expose the engine to AI agents (MCP) | 22.8 | Missing | Cheap given the OpenAPI spec; respect RBAC and PHI rules. |
+| 113 | AI2 | Expose the engine to AI agents (MCP) | 22.8 | Missing | Needs the complete API description first (#347); respect RBAC and PHI rules. |
 | 115 | LIC4 | Lock-in through proprietary configuration formats | 21.2 | Partial | Publish the channel JSON schema and keep exports stable and documented. |
-| 116 | SEC9 | Secure defaults: no exposed docs/dirs, safe file permissions, FIPS | 21 | Partial | HIPAA checklist lists the open items. |
+| 116 | SEC9 | Secure defaults: no exposed docs/dirs, safe file permissions, FIPS | 21 | Partial | HIPAA checklist lists the open items; some are in #172. |
 | 117 | SCR7 | Global/shared state: persistent maps, atomic operations, shared across nodes | 20.8 | Partial | Global map persists; add atomic ops; cluster sharing comes with HA1. |
 | 120 | MON4 | Dashboard accuracy and visibility: errors stand out, stats, time series | 20.2 | Partial |  |
 | 121 | DOC3 | Library of example channels and recipes | 19.7 | Partial | 10 seeded examples; grow into a recipe gallery. Most-starred community repos. |
 | 127 | CON21 | Secure transport instead of per-partner VPNs and plain-text MLLP | 18.4 | Partial | MLLP over TLS with mTLS and HTTPS ingestion exist in part; document a VPN-free partner setup. |
-| 130 | SCR12 | Scripts that hang or loop block everything | 17 | Partial | Per-channel timeouts exist; worker threads still open (D-212). |
+| 130 | SCR12 | Scripts that hang or loop block everything | 17 | Partial | #348. Per-channel timeouts exist; worker threads still open (D-212). |
 | 134 | SCR14 | Config map keys with dots fail to resolve | 16.6 | Partial | Verify against D-246 `${category.NAME}` resolution; add a test. |
 | 135 | MSG7 | Attachments: export, reattach, object storage | 16.3 | Partial | Attachment extraction has no channel setting yet (ROADMAP). |
 | 137 | CON18 | Connectors hang and cannot be stopped | 15.6 | Partial | Halt cancels scripts and sends; add a test per connector. |
-| 142 | UI12 | Show which server and environment you are on (production banner) | 14 | Missing | Cheap; prevents production mistakes. |
+| 142 | UI12 | Show which server and environment you are on (production banner) | 14 | Missing | #132. Cheap; prevents production mistakes. |
 | 147 | REC5 | Dead-letter / holding queue to correct, re-route or reject by hand | 13 | Missing | B9. |
 | 158 | SEC12 | Trust signals for a new open engine: outside pen test, independent security review | 7.6 | Missing | Pen test is still open on ROADMAP. Needed before hospitals put it on the critical path. |
 | 159 | REC4 | Runaway retries that cannot be stopped | 7 | Partial |  |
@@ -114,7 +114,6 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 3 | LIC1 | Essential features are paywalled, and Mirth went closed-source at 4.6 | 55.4 | Every feature ships free; no editions. Keep it that way in writing (license + governance doc). |
 | 9 | UI2 | Dated look: dark mode, HiDPI, density, font size | 52.8 | Light/dark themes and tokens exist; keep shots coverage. |
 | 13 | SCR1 | Rhino is obsolete: want modern JavaScript (ES6+), no Java/JS string confusion | 50.7 | Node + TypeScript. Proprietary script languages (ObjectScript, Tcl, Lua) are a hiring complaint against rivals. |
-| 29 | CON1 | TCP/MLLP robustness: resets, keepalive, socket leaks, framing | 44.9 | Biggest Q&A theme by count. Framing configurable (D-253); keep the E2E suite growing. |
 | 54 | LIC2 | License cost, renewals and per-interface pricing | 37.2 | Free removes the complaint outright. |
 | 59 | CON3 | Custom ACK/NACK control and response mapping | 36.1 | Response modes, auto-ACK (D-255), postprocessor response (D-239). |
 | 70 | MSG5 | Backend database pain (Derby default, deadlocks, multi-DB quirks) | 34.5 | PostgreSQL only, partitioned. Multi-database backend is a non-goal. |
@@ -141,6 +140,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 55 | DT11 | Lab instruments: ASTM, serial | 37.1 | consider | Someday list. Niche but Gold-tier paid in Mirth. |
 | 78 | MON3 | One dashboard across many engine instances | 32.7 | consider | Paid in Mirth (Command Center) and BridgeLink (Fleet). A thin read-only aggregator over the API. |
 | 84 | DT6 | CDA/C-CDA parsing, generation and conversion | 30.5 | consider | High views (QA18). XML path works today; a CDA helper layer is the ask. |
+| 88 | API2 | Supported CLI covering everything | 29.7 | consider | CLI removed (D-280): scripts call the REST API. One comes back only when someone needs it. |
 | 92 | UI17 | Low-code visual mapping that analysts, not only programmers, can use | 26.7 | consider | v2.0 flow editor. InterSystems DTL and Corepoint win reviews on this; code stays the escape hatch. |
 | 94 | HA6 | Multi-tenancy: one instance for many facilities | 26.6 | consider | Rhapsody lockers are praised. Open decision in doc 14. |
 | 95 | FHIR3 | FHIR Subscriptions (rest-hook, R5 topics, websocket) and FHIRcast | 26.3 | consider | Someday list. |
@@ -165,7 +165,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 145 | HA7 | Hosted / SaaS engine for small organisations | 13.8 | consider | Not the project itself; a third party could host it (LIC7). |
 | 150 | UI14 | Visual graph of channel topology | 11.8 | consider | Channel dependency graph view; ties to MON8 lineage. |
 | 152 | RT6 | Multiple source connectors per channel | 11.2 | consider | Channel Writer covers it today. |
-| 153 | UI16 | Mobile monitoring and push notifications | 10.8 | consider | Phone-width layouts exist (shots). |
+| 153 | UI16 | Mobile monitoring and push notifications | 10.8 | consider | Phone-width layouts exist (shots). Installable app and push: #146, #147. |
 | 155 | OPS6 | Deploy without downtime | 9.6 | consider | Per-channel redeploy; zero-drop handover for listeners is the gap. |
 | 157 | OTH3 | Clinical safety process for releases | 8.2 | consider |  |
 | 160 | SEC11 | ONC Cures certification support | 7 | consider | Paid add-on in Mirth. |
@@ -248,7 +248,7 @@ Found by: MG Mirth GitHub, OB OIE/BridgeLink, QA Stack Overflow and forums, CR c
 | Rank | ID | Theme | Score | Sources | Votes/stars | Found by | Status | Call | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
 | 15 | DT1 | HL7v2 fidelity: escapes, terminators, malformed input, structures across versions | 49.6 | 220 | 265 | MG OB OS QA SB | Partial | build | [1](https://stackoverflow.com/questions/14050402/need-to-parse-hl7-message) [2](https://stackoverflow.com/questions/53387126/how-to-use-escape-character-in-hl7-message) |
-| 27 | DT5 | X12/EDI and NCPDP support | 45.5 | 49 | 17 | CR MG OB OS QA SB | Missing | build | [1](https://stackoverflow.com/questions/234909/pl-sql-for-parsing-edi-x12-ncpdp-hl7) [2](https://github.com/aaronhuggins/node-x12/issues/24) |
+| 27 | DT5 | X12/EDI and NCPDP support | 45.5 | 49 | 17 | CR MG OB OS QA SB | Partial | build | [1](https://stackoverflow.com/questions/234909/pl-sql-for-parsing-edi-x12-ncpdp-hl7) [2](https://github.com/aaronhuggins/node-x12/issues/24) |
 | 40 | DT3 | Validation: conformance profiles, strict parsing, data-quality rules, receiver-specific rules | 42.1 | 92 | 131 | OB OS QA SB | Partial | build | [1](https://stackoverflow.com/questions/12936366/how-do-i-validate-a-ccd-hl7-document) [2](https://github.com/nHapiNET/nHapi/issues/46) |
 | 43 | DT4 | JSON and XML to/from HL7 conversion is fragile | 41.2 | 148 | 111 | CR MG OS QA | Partial | build | [1](https://stackoverflow.com/questions/21903544/json-parsing-in-mirth-or-json-in-mirth-or-hl7-to-json-in-mirth) [2](https://stackoverflow.com/questions/5303623/convert-xml-to-hl7-messages-using-mirth-connect) |
 | 49 | DT8 | Binary content: PDFs, images, base64, multipart corruption | 39.3 | 125 | 81 | OB OS QA SB | Partial | build | [1](https://stackoverflow.com/questions/19922858/mirth-send-file-like-pdf-zip-or-transfer-pdf-files-using-mirth) [2](https://github.com/Innovar-Healthcare/BridgeLink/issues/117) |
@@ -276,9 +276,9 @@ Found by: MG Mirth GitHub, OB OIE/BridgeLink, QA Stack Overflow and forums, CR c
 | 2 | CON4 | HTTP connector flexibility: multipart, headers, binary, status codes, paths, gzip | 56.4 | 187 | 156 | CR MG OB OS QA SB WP | Partial | build | [1](https://stackoverflow.com/questions/15978335/how-to-send-mirth-http-connector-using-post) [2](https://github.com/nextgenhealthcare/connect/issues/1690) |
 | 17 | CON12 | DICOM: modern stack, worklist, query/retrieve, routing by AE, TLS | 48.8 | 91 | 54 | CR MG OB OS QA WP | Partial | build | [1](https://stackoverflow.com/questions/24303230/modality-for-radiology-orders-in-ormo01-message) [2](https://github.com/nextgenhealthcare/connect/discussions/4699) |
 | 26 | CON2 | TLS on MLLP and every connector without a paid plugin | 45.7 | 84 | 114 | OB OS QA SB WP | Partial | build | [1](https://stackoverflow.com/questions/940404/mirth-calling-an-ssl-soap-web-service-with-a-client-certificate) [2](https://github.com/NovaMap-Health/tls-manager-plugin) |
-| 29 | CON1 | TCP/MLLP robustness: resets, keepalive, socket leaks, framing | 44.9 | 230 | 142 | MG OS QA SB | Have | have | [1](https://stackoverflow.com/questions/3166995/mirth-how-to-send-ack-message-to-sender-host-and-port) [2](https://stackoverflow.com/questions/30208002/hl7-servers-and-hl7-listener) |
+| 29 | CON1 | TCP/MLLP robustness: resets, keepalive, socket leaks, framing | 44.9 | 230 | 142 | MG OS QA SB | Partial | build | [1](https://stackoverflow.com/questions/3166995/mirth-how-to-send-ack-message-to-sender-host-and-port) [2](https://stackoverflow.com/questions/30208002/hl7-servers-and-hl7-listener) |
 | 33 | CON6 | Remote files: SFTP/FTP/SMB/S3 reliability and schemes | 44.4 | 121 | 89 | CR MG OB QA SB | Partial | build | [1](https://forums.mirthproject.io/forum/mirth-connect/support/18315-mirth-3-7-bug-sftp-downloads-slow-down-causing-huge-backlog) [2](https://github.com/nextgenhealthcare/connect/issues/5286) |
-| 38 | CON10 | Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub | 42.8 | 72 | 42 | MG OB OS QA WP | Missing | build | [1](https://stackoverflow.com/questions/17811733/passing-java-object-to-source-from-jms-queue-in-mirth) [2](https://github.com/gibson9583/sqs-source-connector) |
+| 38 | CON10 | Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub | 42.8 | 72 | 42 | MG OB OS QA WP | Partial | build | [1](https://stackoverflow.com/questions/17811733/passing-java-object-to-source-from-jms-queue-in-mirth) [2](https://github.com/gibson9583/sqs-source-connector) |
 | 42 | CON8 | Database connector: more vendors, pooling, robustness | 41.6 | 221 | 125 | CR MG QA SB | Partial | build | [1](https://stackoverflow.com/questions/9868075/how-to-send-hl7-message-using-mirth-by-reading-data-from-my-database) [2](https://stackoverflow.com/questions/10392028/connect-to-multiple-sql-anywhere-11-servers-with-jdbc-or-odbc) |
 | 59 | CON3 | Custom ACK/NACK control and response mapping | 36.1 | 175 | 71 | MG OS QA | Have | have | [1](https://stackoverflow.com/questions/21001790/how-do-i-process-response-objects-in-the-response-transformer-for-custom-acknowl) [2](https://stackoverflow.com/questions/17357943/how-to-get-response-from-another-channel-in-mirth) |
 | 61 | CON5 | Outbound auth: OAuth2 with token refresh, SMART, digest, proxy credentials | 36 | 38 | 42 | CR MG OS QA | Missing | build | [1](https://stackoverflow.com/questions/40014575/get-token-from-destination-response-and-pass-to-new-channel-in-mirth) [2](https://github.com/nextgenhealthcare/connect/issues/5823) |
@@ -382,7 +382,7 @@ Found by: MG Mirth GitHub, OB OIE/BridgeLink, QA Stack Overflow and forums, CR c
 | Rank | ID | Theme | Score | Sources | Votes/stars | Found by | Status | Call | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
 | 14 | API1 | Complete, documented REST API, OpenAPI and client SDKs | 50.6 | 107 | 131 | CR MG OB QA SB WP | Partial | build | [1](https://stackoverflow.com/questions/53437475/how-to-create-a-mirth-channel-utilizing-rest-api) [2](https://github.com/nextgenhealthcare/connect/issues/6193) |
-| 88 | API2 | Supported CLI covering everything | 29.7 | 13 | 132 | MG OB WP | Partial | build | [1](https://github.com/OpenIntegrationEngine/engine/issues/224) [2](https://github.com/nextgenhealthcare/connect/issues/3647) |
+| 88 | API2 | Supported CLI covering everything | 29.7 | 13 | 132 | MG OB WP | Missing | consider | [1](https://github.com/OpenIntegrationEngine/engine/issues/224) [2](https://github.com/nextgenhealthcare/connect/issues/3647) |
 | 118 | API3 | Scripts that control channels and read server info | 20.8 | 13 | 17 | MG QA | Missing | consider | [1](https://stackoverflow.com/questions/47028857/access-mirth-connect-rest-api-from-javascript-transformers-mirth-3-5-1) [2](https://github.com/nextgenhealthcare/connect/discussions/5093) |
 
 ### Security, auth and audit
@@ -408,7 +408,7 @@ Found by: MG Mirth GitHub, OB OIE/BridgeLink, QA Stack Overflow and forums, CR c
 | 18 | TEST2 | Automated channel tests in CI: unit, golden files, replay-and-diff regression | 48.3 | 56 | 97 | CR OB OS QA SB WP | Missing | build | [1](https://stackoverflow.com/questions/22586428/javascript-unit-testing-with-rhino) [2](https://github.com/vibinernesto/Mirth-Jest-Framework) |
 | 66 | TEST3 | Test message generator and simulators | 35.4 | 36 | 64 | OS QA SB WP | Partial | build | [1](https://stackoverflow.com/questions/25197778/need-sample-message-for-hl7-v2-7) [2](https://www.reddit.com/r/healthIT/comments/cau7mb/) |
 | 72 | TEST1 | Step-through debugger for channel scripts | 34.2 | 31 | 75 | MG QA SB WP | Missing | build | [1](https://stackoverflow.com/questions/63799700/how-do-you-debug-javascript-code-in-mirth-connect) [2](https://github.com/nextgenhealthcare/connect/discussions/4650) |
-| 104 | TEST4 | Live, test-driven editing: run a sample message and see values inline | 25 | 9 | 9 | CR OB SB | Missing | build | [1](https://www.g2.com/products/iguana/reviews) [2](https://news.ycombinator.com/item?id=3856159) |
+| 104 | TEST4 | Live, test-driven editing: run a sample message and see values inline | 25 | 9 | 9 | CR OB SB | Partial | build | [1](https://www.g2.com/products/iguana/reviews) [2](https://news.ycombinator.com/item?id=3856159) |
 
 ### Upgrades and migration
 

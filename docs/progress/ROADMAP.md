@@ -45,9 +45,9 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 - [ ] **[5] HTTP outbound Digest auth + form controls** — Basic auth, query parameters and per-message `${}` in the URL, headers and parameters work since 2026-11-13 (D-252), as does configuration map `${}` at deploy and a destination `template` (D-246). Digest auth and the destination form fields for these remain. 🟡
 - [ ] **[6] Web Service / SOAP connector** (source + dispatcher) — 🔴 blocks brownfield SOAP hospital installs.
 - [ ] **[7] Document Writer** (PDF/RTF destination) — 🟡 no workaround for rendered clinical docs.
-- [ ] **[8] DICOM TLS** (cert/key/trust) — 🟡 secured PACS. (Assoc-rejection bug already fixed, D-181.)
+- [ ] **[8] DICOM TLS** (cert/key/trust, in #350) — 🟡 secured PACS. (Assoc-rejection bug already fixed, D-181.)
 - [x] **[9] SMTP multi-attachment** — config-driven attachments array (filename/mimeType/content, `${msg}` substitution) alongside the `attachContent` body attachment; dispatcher + registry + web form + tests.
-- [ ] **[10] Binary data type** across TCP/HTTP — 🟡 imaging/PDF/non-text feeds.
+- [ ] **[10] Binary data type** across TCP/HTTP — 🟡 imaging/PDF/non-text feeds. The HTTP source corrupts such a body today instead of refusing it (#335).
 - [ ] **[11] JMS connector** — 🟡 defer unless a customer needs it.
 - [ ] **[12] WebDAV File scheme** — 🟢 rare; do last alongside File schemes.
 
@@ -69,7 +69,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
 - [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.
 - [x] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed), shipped in #265 (#280, #281 and the Roles screen) — 🟡 "dev who can't deploy to prod".
-- [ ] **Channel-scoped permissions** (not built): the `user_permissions` table has a `scope` column, but the seed writes `'all'` and nothing reads it; `requirePermission` checks only the permission string. Every grant covers every channel, so any user with `messages:read` can read, export and download attachments from every channel's messages. Whether to build it is a separate product decision. 🟡
+- [x] **Channel-scoped permissions**, shipped in #266 as access by channel group (D-310, D-311). Scope is not a boundary for channel code; see [access control](../user/access-control.md).
 - [ ] **[N14] Export completeness** (templates/deps/groups/tags + set export) — 🟡
 - [ ] **[N15] Alert per-connector scope + error-stage granularity** — 🟡
 - [ ] **[DECIDE] Extension/plugin platform** — 🔴 strategic: Mirth's third-party plugin loader has no equivalent. Decide curated-built-in vs a modern manifest-based SPI. Not a scheduled task until decided.
@@ -97,20 +97,20 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 
 > 865 complaints, requests and wishes from Mirth, OIE, BridgeLink, commercial engines and open-source tools, in 160 ranked themes: [`docs/design/18-voice-of-the-user.md`](../design/18-voice-of-the-user.md), full ranking in [`docs/research/voice-of-user/ranking.md`](../research/voice-of-user/ranking.md). Judged against D-260. Recommended order, each line naming doc 18 theme IDs (several overlap B1 to B10 and N4 to N13 above):
 
-- [ ] **[V1]** Channel-health alerts (queue depth, error rate, schedule-aware silence), webhook alert action, error triage view (MON1, MON2, MON7)
-- [ ] **[V2]** Git and CI/CD for channels, revision diff and restore, environment promotion, env-sourced config (OPS1 to OPS4)
-- [ ] **[V3]** Channel tests in CI, live sample-message editing, step-through debugger (TEST2, TEST4, TEST1)
-- [ ] **[V4]** SSO, LDAP and MFA; custom roles; server-side password policy (SEC3, SEC2, SEC5)
-- [ ] **[V5]** Dependency/CVE process, SBOM, outside pen test (SEC1, LIC6, SEC12)
-- [ ] **[V6]** Free active-active HA (HA1, = B2)
-- [ ] **[V7]** Upgrade safety: migration tests per release, published Node LTS policy (UPG2, UPG1)
-- [ ] **[V8]** Standard helper library, repeating-segment iteration, one page on maps and the message model (SCR4, SCR5, SCR8)
-- [ ] **[V9]** Bulk and per-destination reprocess with guardrails, dead-letter queue (REC1, REC5)
-- [ ] **[V10]** HL7 round-trip corpus test, HL7 viewer with field names, conformance-profile validation (DT1, UI11, DT3)
-- [ ] **[V11]** HTTP connector flexibility, OAuth2 with token refresh (CON4, CON5)
-- [ ] **[V12]** FHIR source, bundles and validation; maintained v2-to-FHIR maps (FHIR1, FHIR2, = B7)
-- [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
-- [ ] **[V14]** Generated API clients, MCP server, AI-assisted mapping (API1, AI2, AI1)
+- [ ] **[V1]** Channel-health alerts (queue depth, error rate, schedule-aware silence), webhook alert action, error triage view (MON1, MON2, MON7): #338, #336
+- [ ] **[V2]** Git and CI/CD for channels, revision diff and restore, environment promotion, env-sourced config (OPS1 to OPS4): #337, #346, after #334. Env-sourced config has no issue
+- [ ] **[V3]** Channel tests in CI, live sample-message editing, step-through debugger (TEST2, TEST4, TEST1): #345
+- [ ] **[V4]** SSO, LDAP and MFA; configurable password policy (SEC3, SEC5): #140 to #143, #148, #209, #210. Custom roles (SEC2) shipped in #265
+- [ ] **[V5]** Dependency/CVE process, SBOM, outside pen test (SEC1, LIC6, SEC12): #341
+- [ ] **[V6]** Free active-active HA (HA1, = B2): notes in #308, with #312 a requirement
+- [ ] **[V7]** Upgrade safety: migration tests per release, published Node LTS policy (UPG2, UPG1): #340
+- [ ] **[V8]** Standard helper library, repeating-segment iteration, one page on maps and the message model (SCR4, SCR5, SCR8): #343
+- [ ] **[V9]** Bulk and per-destination reprocess with guardrails, dead-letter queue (REC1, REC5): #339
+- [ ] **[V10]** HL7 round-trip corpus test, HL7 viewer with field names, conformance-profile validation (DT1, UI11, DT3): #344, #351, #189 to #191, #194
+- [ ] **[V11]** HTTP connector flexibility, OAuth2 with token refresh (CON4, CON5): #342, after #335
+- [ ] **[V12]** FHIR source, bundles and validation; maintained v2-to-FHIR maps (FHIR1, FHIR2, = B7): #349
+- [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3): docs cleanup is #193, the rest has no issue
+- [ ] **[V14]** Complete OpenAPI and generated clients, MCP server, AI-assisted mapping (API1, AI2, AI1): #347
 - [x] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261) — shipped 2026-11-14 (D-265, D-266)
   - [x] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter — after `maxStoreAttempts` the channel stops and alerts, message kept (D-271, #86)
   - [x] Both sources decode the payload with `toString('utf8')`, which corrupts a non-UTF-8 payload — `charset` setting, invalid UTF-8 flagged (D-270, #87)
@@ -119,7 +119,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
   - [ ] An empty AMQP username connects as guest/guest (amqplib's default) instead of failing validation
   - [ ] The broker list pattern rejects bracketed IPv6 (`[::1]:9092`)
   - [x] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker — CI job `connector-integration` runs every connector `*.itest.ts` and fails on a missing service; AMQPS runs against RabbitMQ (D-274, gh-88)
-  - [ ] Kafka over TLS has not been run against a real broker (only AMQPS has)
+  - [ ] Kafka over TLS has not been run against a real broker (only AMQPS has): #151
 - [ ] **[DECIDE]** npm packages in the sandbox? (doc 18, open decisions)
 
 ### Remaining for v1.0
@@ -135,7 +135,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 - [ ] Apply row limits in the database, not after the fetch: the Database Writer and `dbQuery` read a whole result before cutting it to the limit, so a huge SELECT can still use a lot of memory (needs a cursor; review item L21)
 - [ ] Stop copying the global and configuration maps into every script run: the cost of a script grows with the size of those maps (needs lazy map access across the sandbox boundary; review item L22)
 - [ ] An overall deadline for one message across all its stages. Each script and each send has its own limit, and a halt now cancels them, but nothing bounds their sum (review item L23)
-- [ ] Run scripts off the main thread (worker threads). A tight loop in a script blocks every channel until its timeout fires (D-212)
+- [ ] Run scripts off the main thread (worker threads). A tight loop in a script blocks every channel until its timeout fires (D-212): #348
 - [ ] Mapper transformer steps. A channel with one does not deploy (D-207)
 - [ ] Attachment extraction and batch splitting: library code exists, no channel setting reaches it
 - [ ] `${originalFilename}` for file and SFTP destinations: needs the source map passed to destinations (D-219)
