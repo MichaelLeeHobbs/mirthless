@@ -94,8 +94,11 @@ const ASYNC_CASES: readonly Expected[] = [
 /** Keeps the script going until its unhandled rejection has been seen; a Test run refuses the reads. */
 const OUTLIVE = "for (let i = 0; i < 3; i++) { await getResource('x').catch(() => 0); }";
 
+/** Long enough to finish on a loaded machine, short enough that a looping case ends inside the child's deadline. */
+const UNHANDLED_TIMEOUT = 3_000;
+
 function unhandled(name: string, reason: string, error: RegExp): Expected {
-  return { case: { name, script: `${reason} void Promise.reject(evil); ${OUTLIVE}`, timeout: LOOP_TIMEOUT }, error };
+  return { case: { name, script: `${reason} void Promise.reject(evil); ${OUTLIVE}`, timeout: UNHANDLED_TIMEOUT }, error };
 }
 
 // In the worker, a value the script left unhandled is reported to the main thread.

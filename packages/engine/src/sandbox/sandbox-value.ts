@@ -21,7 +21,8 @@ export function ownString(value: unknown, key: 'message' | 'code'): string | und
 
 /** The text of a thrown or rejected value a script may have made, read without running its code. */
 export function thrownText(value: unknown, fallback: string): string {
-  return typeof value === 'string' ? value : ownString(value, 'message') ?? fallback;
+  if (value === undefined || value === null) return fallback;
+  return isObject(value) ? ownString(value, 'message') ?? fallback : String(value);
 }
 
 /**

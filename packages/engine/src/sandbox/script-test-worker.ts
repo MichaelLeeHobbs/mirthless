@@ -9,9 +9,11 @@ if (!parentPort) throw new Error('script-test-worker must run in a worker thread
 const port = parentPort;
 
 // Left to itself, Node copies a value the script threw or rejected, and nothing caught, to the
-// main thread, running the value's getters to do it.
+// main thread, running the value's getters to do it. The worker must still end at once, as it
+// does without a handler, so that nothing of the failed run carries on.
 const uncaught = (value: unknown): void => {
   port.postMessage({ type: 'failed', error: thrownText(value, UNREADABLE_ERROR) } satisfies WorkerRequest);
+  process.exit(1);
 };
 process.on('unhandledRejection', uncaught);
 process.on('uncaughtException', uncaught);

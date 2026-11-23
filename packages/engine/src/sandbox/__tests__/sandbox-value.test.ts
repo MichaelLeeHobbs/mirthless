@@ -75,7 +75,8 @@ describe('thrownText', () => {
     ['a Proxy', COUNTING_PROXY, 'fallback'],
     ['null', 'null', 'fallback'],
     ['undefined', 'undefined', 'fallback'],
-    ['a symbol', "Symbol('x')", 'fallback'],
+    ['a number', '42', '42'],
+    ['a symbol', "Symbol('x')", 'Symbol(x)'],
   ])('reads %s without running its code', (_name, source, expected) => {
     const { value, touched } = foreign(source);
 

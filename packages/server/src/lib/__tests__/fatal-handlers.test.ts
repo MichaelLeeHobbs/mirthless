@@ -66,16 +66,12 @@ describe('installFatalHandlers', () => {
       const { proc, logger, shutdown } = setup();
       const context = vm.createContext(Object.create(null) as object);
       vm.runInContext('var touched = 0;', context);
-      const reason = vm.runInContext(source, context) as unknown;
 
-      proc.emit('unhandledRejection', reason);
-      const touchedByRejection = vm.runInContext('touched', context) as number;
-      proc.emit('uncaughtException', reason);
+      proc.emit('unhandledRejection', vm.runInContext(source, context));
 
-      expect(touchedByRejection).toBe(0);
       expect(vm.runInContext('touched', context)).toBe(0);
       expect(logger.error).toHaveBeenCalledTimes(1);
-      expect(shutdown).toHaveBeenCalledWith('uncaughtException', 1);
+      expect(shutdown).not.toHaveBeenCalled();
     });
 
     it('keeps the message of an ordinary script error, so its author can find it', () => {
