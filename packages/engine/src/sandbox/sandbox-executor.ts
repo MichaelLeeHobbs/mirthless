@@ -5,12 +5,12 @@
 
 import * as vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
-import { types } from 'node:util';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
+import { ownString } from './sandbox-value.js';
 
 export interface CompiledScript {
   readonly code: string;
@@ -307,6 +307,11 @@ function buildPayload(
 
 // Runs inside the vm context, so every function it defines is sandbox-realm.
 const BOOTSTRAP_SRC = `'use strict';
+// Node assigns \`code\` to the timeout error it makes in this realm, with no time limit. This stops
+// the assignment at Error.prototype: without it, a setter the script put there or further up the
+// chain would run, and one that throws aborts the process. Writable, so that the assignment (and a
+// script's own) succeeds; not configurable, so that a script can't turn it into an accessor.
+Object.defineProperty(Error.prototype, 'code', { value: undefined, writable: true, enumerable: false, configurable: false });
 globalThis.__build = function (hostDispatch, payload) {
   // The host never throws across the boundary (a host Error would hand the script the
   // host realm's Function). It returns errToken instead; the Error is created here,
@@ -577,23 +582,14 @@ function restore(state: HostBridgeState, c: Collected): unknown {
 }
 
 /**
- * Script code runs inside sandbox-side try/catch blocks, so what reaches here was made by V8
- * (a timeout, a syntax error) or by the bootstrap. It is still a sandbox-realm object, so only
- * its own `message` data property is read: no getter, prototype lookup or `toString` a script
- * could have replaced.
+ * Script code runs inside sandbox-side try/catch blocks, but a script that replaces a built-in
+ * those blocks use (`Promise.prototype.then`, `Object.prototype.toJSON`) can throw past them, so
+ * `e` may be any value it made. Only its own `message` data property is read, and no `instanceof`:
+ * that would run a Proxy's getPrototypeOf trap with nothing to stop it.
  */
 function toHostError(e: unknown): Error {
-  if (e instanceof Error) return e;
   if (typeof e === 'string') return new Error(e);
-  const message = ownString(e, 'message');
-  return new Error(message ?? 'Script failed');
-}
-
-/** Read without running any of the object's code. */
-function ownString(e: unknown, key: string): string | undefined {
-  if (e === null || typeof e !== 'object' || types.isProxy(e)) return undefined;
-  const value = Object.getOwnPropertyDescriptor(e, key)?.value as unknown;
-  return typeof value === 'string' ? value : undefined;
+  return new Error(ownString(e, 'message') ?? 'Script failed');
 }
 
 interface TimeLimit {
@@ -612,7 +608,7 @@ function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal, aborted: () => E
     signal.addEventListener('abort', onAbort, { once: true });
     p.then(
       (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
-      (e: unknown) => { signal.removeEventListener('abort', onAbort); reject(toHostError(e)); },
+      (e: unknown) => { signal.removeEventListener('abort', onAbort); reject(e); },
     );
   });
 }
@@ -690,12 +686,16 @@ function isVmTimeout(e: unknown): boolean {
   return ownString(e, 'code') === 'ERR_SCRIPT_EXECUTION_TIMEOUT';
 }
 
-/** A timeout names the whole limit, not the few milliseconds this call had left. */
+/**
+ * A timeout names the whole limit, not the few milliseconds this call had left. With
+ * `displayErrors`, Node would read and write the `stack` of an error after the limit stopped
+ * counting, running the script's accessors for it.
+ */
 function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit): unknown {
   const left = limit.deadline - Date.now();
   if (left <= 0) throw timedOut(limit);
   try {
-    return vm.runInContext(code, contextObj, { timeout: left }) as unknown;
+    return vm.runInContext(code, contextObj, { timeout: left, displayErrors: false }) as unknown;
   } catch (e) {
     throw isVmTimeout(e) ? timedOut(limit) : toHostError(e);
   }

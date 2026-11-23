@@ -55,6 +55,9 @@ host-`globalThis`):
    never touches a sandbox object, getter or Proxy. A result JSON cannot hold is a
    script error. A thrown value is reduced to its message string in the sandbox;
    the host reads nothing from it but an own `message` data property.
+7. **No script code runs on an error outside the time limit.** Node writes `code` on the timeout error it makes in the sandbox realm, after the watchdog has stopped, so a setter for `code` on the error's prototype chain would run with nothing to stop it, and one that throws aborts the process, from a worker thread too. The bootstrap defines `Error.prototype.code` as a writable, non-configurable data property before any user code, so the write ends there. Timed calls pass `displayErrors: false`, because Node otherwise reads and writes `stack` on any other error that leaves the context. The host never uses `instanceof` on what it catches (a Proxy's `getPrototypeOf` trap), and a script's unhandled rejection reaches the server's handler, which reads only values of its own realm (`isHostValue`) and otherwise only an own `message` (`ownString`, `sandbox-value.ts`). Covered by `__tests__/hostile-error-properties.test.ts`, which runs each case in a child process (D-329).
+
+   What a script sees of this: `error.code` is `undefined` until something sets it, and setting it works as before on any error or subclass, but `'code' in error` is always true and `Error.prototype.code` can't be made a getter or setter.
 
 Result: `logger.info.constructor`, `({}).constructor.constructor`,
 `this.constructor.constructor`, `msg.get.constructor`, a caught IO error's
