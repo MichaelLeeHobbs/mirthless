@@ -5,7 +5,7 @@ import { createElement, type ReactNode } from 'react';
 import { useApiKeys } from '../use-api-keys.js';
 import { useSetAssignments } from '../use-assignments.js';
 import { useUpdateRole } from '../use-roles.js';
-import { useCreateUser, useDeleteUser, useUpdateUser } from '../use-users.js';
+import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from '../use-users.js';
 
 const getMock = vi.fn();
 const writeMock = vi.fn();
@@ -67,6 +67,26 @@ describe('access changes and the API key list', () => {
     await result.current.change();
 
     await waitFor(() => { expect(keyReads()).toBe(2); });
+  });
+
+  // The Users page shows a taken-over key's token, once, when the delete resolves.
+  it('does not hold up a delete, or reload keys before the users list has reloaded', async () => {
+    const order: string[] = [];
+    getMock.mockImplementation((path: string) => {
+      order.push(path);
+      return path === '/api-keys' && order.filter((x) => x === path).length > 1
+        ? new Promise(() => {})
+        : Promise.resolve({ success: true, data: [] });
+    });
+    writeMock.mockResolvedValue({ success: true, data: { takenOver: [{ id: 'k1' }] } });
+    const { result } = renderHook(() => ({ users: useUsers(), keys: useApiKeys(), remove: useDeleteUser() }), { wrapper });
+    await waitFor(() => { expect(result.current.keys.isSuccess && result.current.users.isSuccess).toBe(true); });
+    order.length = 0;
+    order.push('/api-keys');
+
+    expect(await result.current.remove.mutateAsync({ id: 'u1' })).toEqual([{ id: 'k1' }]);
+
+    await waitFor(() => { expect(order.slice(1)).toEqual(['/users', '/api-keys']); });
   });
 
   it('leaves API keys alone after a user is created', async () => {

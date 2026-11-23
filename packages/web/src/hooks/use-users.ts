@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateUserInput, TakenOverKey, UpdateUserInput } from '@galvanigraph/core-models';
 import { api, type UserSummary, type UserDetail } from '../api/client.js';
-import { API_KEYS_QUERY_KEY } from './use-api-keys.js';
+import { reloadApiKeys } from './use-api-keys.js';
 
 const USER_KEYS = {
   all: ['users'] as const,
@@ -69,8 +69,8 @@ export function useUpdateUser(): ReturnType<typeof useMutation<UserDetail, Error
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() }),
         queryClient.invalidateQueries({ queryKey: USER_KEYS.detail(variables.id) }),
-        queryClient.invalidateQueries({ queryKey: API_KEYS_QUERY_KEY }),
       ]);
+      reloadApiKeys(queryClient);
     },
   });
 }
@@ -94,10 +94,9 @@ export function useDeleteUser(): ReturnType<typeof useMutation<readonly TakenOve
       return result.data?.takenOver ?? [];
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() }),
-        queryClient.invalidateQueries({ queryKey: API_KEYS_QUERY_KEY }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() });
+      // Last: the Users page's offboard dialog, still open here, lists these keys.
+      reloadApiKeys(queryClient);
     },
   });
 }

@@ -1,11 +1,15 @@
 // D-313: only an issue or a replace answers a key's token, and only once.
 
-import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
 import type { ApiKeyView, ApiResponse, CreateApiKeyInput, IssuedApiKey } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 
-/** A change to a user, their access or a role can disable keys, so it invalidates this too. */
-export const API_KEYS_QUERY_KEY = ['api-keys'] as const;
+const API_KEYS_QUERY_KEY = ['api-keys'] as const;
+
+/** For a change to a user, their access or a role, which can disable keys. Not awaited: the change's own dialog must not wait for the key list. */
+export function reloadApiKeys(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: API_KEYS_QUERY_KEY });
+}
 
 /** Pass `false` when the user may not read keys. */
 export function useApiKeys(enabled = true): UseQueryResult<readonly ApiKeyView[]> {

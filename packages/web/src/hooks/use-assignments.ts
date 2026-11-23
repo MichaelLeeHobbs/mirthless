@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AssignmentInput, AssignmentView } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
-import { API_KEYS_QUERY_KEY } from './use-api-keys.js';
+import { reloadApiKeys } from './use-api-keys.js';
 
 const ASSIGNMENT_KEYS = {
   all: ['assignments'] as const,
@@ -37,8 +37,8 @@ export function useSetAssignments(): ReturnType<typeof useMutation<readonly Assi
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ASSIGNMENT_KEYS.user(variables.id) }),
         queryClient.invalidateQueries({ queryKey: ['users'] }),
-        queryClient.invalidateQueries({ queryKey: API_KEYS_QUERY_KEY }),
       ]);
+      reloadApiKeys(queryClient);
     },
   });
 }
