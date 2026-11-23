@@ -4,12 +4,13 @@ import { useMutation, useQuery, useQueryClient, type UseMutationResult, type Use
 import type { ApiKeyView, ApiResponse, CreateApiKeyInput, IssuedApiKey } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 
-const KEY_KEYS = { all: ['api-keys'] as const } as const;
+/** A change to a user, their access or a role can disable keys, so it invalidates this too. */
+export const API_KEYS_QUERY_KEY = ['api-keys'] as const;
 
 /** Pass `false` when the user may not read keys. */
 export function useApiKeys(enabled = true): UseQueryResult<readonly ApiKeyView[]> {
   return useQuery({
-    queryKey: KEY_KEYS.all,
+    queryKey: API_KEYS_QUERY_KEY,
     queryFn: async () => {
       const result = await api.get<readonly ApiKeyView[]>('/api-keys');
       if (!result.success) throw new Error(result.error.message);
@@ -28,7 +29,7 @@ function useKeyMutation<TInput, TResult>(send: (input: TInput) => Promise<TResul
   return useMutation({
     mutationFn: send,
     gcTime: 0,
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: KEY_KEYS.all }); },
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: API_KEYS_QUERY_KEY }); },
   });
 }
 
