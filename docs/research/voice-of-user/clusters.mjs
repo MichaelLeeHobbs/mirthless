@@ -40,7 +40,7 @@ export const CLUSTERS = [
   c('UI4', 'UI', 'Managing hundreds of channels: find ports, search inside scripts, bulk edit, grouping', 'MG115 MG116 OB33 OB35 QA55 WP32 OB39 WP8 OB156', 'partial', 'build', 'Groups and tags exist. Missing: listening-port column, grep across all scripts and templates, bulk edit.'),
   c('UI5', 'UI', 'Script editor lacks IDE features (autocomplete, typings, formatting)', 'MG8 OB68 QA37 WP41 OS69', 'partial', 'build', 'Monaco is bundled (D-283) and the sandbox API and msg are typed; what is left is ranked in doc 19.'),
   c('UI6', 'UI', 'Concurrent edits silently overwrite each other', 'MG112 OB41 OB40', 'have', 'have', 'Optimistic locking on channel revision. Real-time co-editing (OB40) is not planned.'),
-  c('UI7', 'UI', 'Validate channel configuration before save/deploy', 'MG113 OB37 OB139 OB150', 'partial', 'build', 'Deploy validation exists, with known gaps (#133); validate on save in the editor and at server start.'),
+  c('UI7', 'UI', 'Validate channel configuration before save/deploy', 'MG113 OB37 OB139 OB150', 'partial', 'build', 'Deploy validation exists; gaps in restore, Test Connection and alert patterns are in #133. Validate on save in the editor and at server start.'),
   c('UI8', 'UI', 'Transformer and rule editing ergonomics; mapper too limited', 'MG118 OB29 QA95 OB79 OS92 MG25', 'partial', 'build', 'Mapper steps do not deploy yet (D-207, #172). Fix before any visual mapper.'),
   c('UI9', 'UI', 'Keyboard shortcuts, copy/paste, multiple windows, deep links, tooltips', 'MG119 MG114 OB28 OB36 WP31 CR81 OB30 OB32 MG117 MG121 QA54', 'partial', 'build', 'A browser gives tabs and links for free; audit copy-from-table and deep links.'),
   c('UI10', 'UI', 'Localization and 12/24-hour formats', 'MG120 OB31 WP53 OB64 OB8', 'gap', 'consider', 'Use locale formatting now; full i18n only on demand.'),
@@ -151,7 +151,7 @@ export const CLUSTERS = [
   c('OPS2', 'OPS', 'Version history, diff and rollback', 'OB135 WP2 OS79', 'partial', 'build', '#337. Revisions stored; diff viewer and restore UI open (v1.1). Paid in Mirth.'),
   c('OPS3', 'OPS', 'Promote between environments with dependencies and environment settings', 'MG75 QA57 CR13 CR15 WP3 OS127 MG82 OB71 OB125', 'partial', 'build', '#346, B6. Export completeness (N14) and #334 (export and import lose settings) are prerequisites.'),
   c('OPS4', 'OPS', 'Environment variables and layered config for containers', 'MG77 MG78 MG79 QA58 OB138 WP65 OS19', 'partial', 'build', 'Config map `${}` (D-246). Env-var sourcing for config map values is named as a gap in #346 but not planned there.'),
-  c('OPS5', 'OPS', 'Scheduled, complete backup and restore', 'MG76 QA62 WP72 OB155', 'partial', 'build', 'Backup/restore exists; schedule it. A restore resets the script timeout (#334), and export-all skips an unreadable channel (#323).'),
+  c('OPS5', 'OPS', 'Scheduled, complete backup and restore', 'MG76 QA62 WP72 OB155', 'partial', 'build', 'Backup/restore exists; schedule it. A restore onto a fresh server resets the script timeout (#334), and export-all skips an unreadable channel (#323).'),
   c('OPS6', 'OPS', 'Deploy without downtime', 'CR14', 'partial', 'consider', 'Per-channel redeploy; zero-drop handover for listeners is the gap.'),
 
   c('API1', 'API', 'Complete, documented REST API, OpenAPI and client SDKs', 'MG83 QA60 OB151 OB152 WP93 WP95 CR83 CR84 OB153', 'partial', 'build', '#347. OpenAPI at /api-docs covers 33 paths of about 165 routes; complete it, then generate a TypeScript client.'),
@@ -175,7 +175,7 @@ export const CLUSTERS = [
   c('TEST4', 'TEST', 'Live, test-driven editing: run a sample message and see values inline', 'CR50 CR51 OB38', 'partial', 'build', 'One script runs against a sample in the editor (D-286); whole-channel runs are #345, inline values are not planned in an issue (doc 19). Iguana Translator is the most-loved feature in its reviews.'),
 
   c('UPG1', 'UPG', 'Runtime version churn (Java 8/11/17/21) breaks installs', 'MG122 OB60 QA64 OS42', 'partial', 'build', '#340. Node LTS only; publish a runtime support policy and ship in containers.'),
-  c('UPG2', 'UPG', 'Upgrades break channels, plugins and settings; no rollback', 'MG123 OB141 QA63 OB73 WP55 OS87 OS124 CR60 CR62 OB142', 'partial', 'build', 'Upgrade and rollback tests per release: #340. Deprecation notes have no issue.'),
+  c('UPG2', 'UPG', 'Upgrades break channels, plugins and settings; no rollback', 'MG123 OB141 QA63 OB73 WP55 OS87 OS124 CR60 CR62 OB142', 'partial', 'build', 'Upgrade and rollback tests per release: #340. Deprecation notes, and a check that a pre-upgrade backup was taken, are not planned in an issue.'),
   c('UPG3', 'UPG', 'Move from another engine without rebuilding; prove behaviour is the same', 'CR61 WP99', 'partial', 'build', 'Mirth importer + scenario suite (65/65 on 2026-11-15). Cross-compatible, not backward-compatible (D-244).'),
 
   c('DOC1', 'DOC', 'Accurate public documentation: user guide, API, upgrade notes', 'MG102 OB16 QA71 CR52', 'partial', 'build', 'The Mirth wiki disappeared; docs are a reason people pick an engine.'),

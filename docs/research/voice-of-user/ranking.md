@@ -12,7 +12,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 4 | SCR4 | Thin standard library: dates/timezones, hashing, base64, UUID, identifiers, PDF | 55.3 | Partial | #343, N9. Scripts have no base64, hash, UUID or date helpers. A documented, typed helper library is the most-built community workaround. |
 | 5 | PERF1 | Throughput and memory: large messages, OOM, benchmarks | 55.2 | Partial | Published soak baseline; server stalls under load (#257), worker threads (#348) and streaming large payloads (batch files: #192) open. |
 | 6 | SEC1 | Unpatched dependencies and CVEs; slow security fixes; disclosure process | 54 | Partial | #341. Dependency audit in CI, Dependabot and SECURITY.md exist; SBOM, image scan, scheduled audit and a CVE list per release open. |
-| 7 | UPG2 | Upgrades break channels, plugins and settings; no rollback | 54 | Partial | Upgrade and rollback tests per release: #340. Deprecation notes have no issue. |
+| 7 | UPG2 | Upgrades break channels, plugins and settings; no rollback | 54 | Partial | Upgrade and rollback tests per release: #340. Deprecation notes, and a check that a pre-upgrade backup was taken, are not planned in an issue. |
 | 8 | MON1 | Channel health, not server up: silent interfaces, queue depth, error rate, schedule-aware | 53.6 | Partial | #338. NO_MESSAGES exists; add queue depth, error rate and business-hours windows (B1). |
 | 10 | FHIR1 | First-class FHIR: listener, client, validation, R4/R5, bundles | 52.3 | Partial | #349. FHIR destination (R4) sends one resource. Add FHIR source, bundle/transaction support, profile validation (B7). |
 | 11 | HA1 | Free high availability: active-active, takeover, shared database | 51.5 | Missing | B2; notes in #308, with #312 a requirement. Paid Platinum in Mirth and reported buggy. |
@@ -74,7 +74,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 79 | CON13 | Email: OAuth for Microsoft 365/Google, SMTP modernisation | 32.5 | Partial | Basic-auth SMTP/IMAP is being retired by Microsoft; OAuth is required to keep working. |
 | 80 | UPG3 | Move from another engine without rebuilding; prove behaviour is the same | 32.2 | Partial | Mirth importer + scenario suite (65/65 on 2026-11-15). Cross-compatible, not backward-compatible (D-244). |
 | 81 | RT2 | Ordering with parallelism: FIFO, per-patient ordering, threads per channel | 31.7 | Partial | B3/N7. |
-| 83 | OPS5 | Scheduled, complete backup and restore | 30.6 | Partial | Backup/restore exists; schedule it. A restore resets the script timeout (#334), and export-all skips an unreadable channel (#323). |
+| 83 | OPS5 | Scheduled, complete backup and restore | 30.6 | Partial | Backup/restore exists; schedule it. A restore onto a fresh server resets the script timeout (#334), and export-all skips an unreadable channel (#323). |
 | 85 | UI13 | Generate human-readable documentation of channels | 30 | Missing | Render a channel to HTML/Markdown: sources, filters, mappings, destinations. |
 | 86 | CON11 | Cloud storage and identity: S3, Azure Blob, IAM roles | 30 | Missing | S3 as a file scheme (CON6) covers most of it. |
 | 87 | CON9 | SOAP web services | 29.8 | Missing | Parity [6]. Second-largest Q&A theme by count; brownfield hospitals still run SOAP. |
@@ -83,7 +83,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 93 | DT7 | Delimited, CSV, Excel and Parquet | 26.7 | Partial | Rows by column name shipped (D-257); fixed-width, Process Batch per row, Excel and Parquet open. |
 | 96 | LIC6 | License provenance of bundled code, and an SBOM | 26.2 | Missing | SBOM per release: #341. A license check in CI has no issue. |
 | 99 | REC3 | No message loss: ACK after durable store, safe shutdown, DB outage recovery | 25.9 | Partial | Soak test lost 0 of 1.08M; add a DB-outage chaos test. Accepting messages while the database is down: ideas in #307. |
-| 100 | UI7 | Validate channel configuration before save/deploy | 25.7 | Partial | Deploy validation exists, with known gaps (#133); validate on save in the editor and at server start. |
+| 100 | UI7 | Validate channel configuration before save/deploy | 25.7 | Partial | Deploy validation exists; gaps in restore, Test Connection and alert patterns are in #133. Validate on save in the editor and at server start. |
 | 103 | REC2 | Queue visibility and control | 25 | Partial | Failure reason stored (D-248); per-destination queue view open. |
 | 104 | TEST4 | Live, test-driven editing: run a sample message and see values inline | 25 | Partial | One script runs against a sample in the editor (D-286); whole-channel runs are #345, inline values are not planned in an issue (doc 19). Iguana Translator is the most-loved feature in its reviews. |
 | 108 | FHIR5 | Cloud FHIR stores are not engines: need MLLP-to-cloud bridging | 24.1 | Missing | Opportunity: MLLP in, cloud healthcare API out, with OAuth (CON5). |
