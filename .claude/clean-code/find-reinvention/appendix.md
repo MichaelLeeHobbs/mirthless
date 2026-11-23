@@ -1,6 +1,6 @@
 # Reinvention audit appendix
 
-Run of 2026-11-16 at commit 97b30b6, a re-run against the catalog from 7d1f6dd (2026-11-15). Every group's verdicts and the run evidence are in `verdicts.jsonl`, one line per member with its content hash. This is the first run with the catalog in `.claude/clean-code/find-reinvention/`. The vendored skill moved it there, and the old `.claude/reinvention/` folder was copied in whole and can be deleted.
+Run of 2026-11-16 at commit 97b30b6, a re-run against the catalog from 7d1f6dd (2026-11-15). Every group's verdicts and the run evidence are in `verdicts.jsonl`, one line per member with its content hash. This is the first run with the catalog in `.claude/clean-code/find-reinvention/`. The vendored skill moved it there, and the old `.claude/reinvention/` folder was copied in whole and has since been deleted; git history keeps it.
 
 ## Canaries
 

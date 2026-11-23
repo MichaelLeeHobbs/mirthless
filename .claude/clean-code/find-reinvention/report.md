@@ -4,7 +4,7 @@
 
 ```
 Reinvention audit: mirthless (GalvaniFlow) whole repo  commit 97b30b6  2026-11-16
-Catalog: .claude/clean-code/find-reinvention/ (copied from .claude/reinvention/, which can be deleted)   Work folder: C:\Users\mhobb\AppData\Local\Temp\claude\01cabae8bc8fad5d\91848fd1-f250-41cc-bd37-ddb61bb8edba\scratchpad\fr
+Catalog: .claude/clean-code/find-reinvention/ (copied from .claude/reinvention/, since deleted)   Work folder: C:\Users\mhobb\AppData\Local\Temp\claude\01cabae8bc8fad5d\91848fd1-f250-41cc-bd37-ddb61bb8edba\scratchpad\fr
 Since last run: 1796 reused, 215 changed, 333 added, 64 removed
 Coverage: 0.9974 over 609 files (0 adjusted)   PASS
 Rows: 2344 (utility 1005, method 468, framework-bound 303, handler 218, component 184, override 166; 741 private)   Excluded: 4105 (anonymous callback 2192, test 1368, object-literal property 499, constructor 46)
