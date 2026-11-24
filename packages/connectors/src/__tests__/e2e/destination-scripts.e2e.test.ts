@@ -29,7 +29,6 @@ function makeScript(code: string): CompiledScript {
   return { code };
 }
 
-// Unique across e2e files: vitest runs them in parallel.
 const SOURCE_PORT = await freePort();
 const DEST_PORT = await freePort();
 const CHANNEL_ID = '00000000-0000-0000-0000-e2e000000042';

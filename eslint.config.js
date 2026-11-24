@@ -40,14 +40,15 @@ const SHARED_HELPERS = [
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
   { names: 'createSlots|withSlot|withHashSlot', home: '@galvanigraph/core-util (slots.ts)' },
   { names: 'settleWithin', home: '@galvanigraph/core-util (settle-within.ts)' },
-  { names: 'freePort|closedPort|getFreePort', home: 'packages/connectors/src/__fixtures__/free-port.ts' },
 ];
 // A run of the same test in another checkout holds a fixed port at the same time (#376).
 const FIXED_PORT = 'Listen on port 0 and read the port back, or take one from freePort (packages/connectors/src/__fixtures__/free-port.ts).';
 const fixedPortSelectors = [
-  { selector: 'VariableDeclarator[id.name=/PORT/i] > Literal[value>0]', message: FIXED_PORT },
-  { selector: 'CallExpression[callee.property.name="listen"] > Literal[value>0]', message: FIXED_PORT },
-  { selector: 'CallExpression[callee.name=/Mllp|^mllp/] > Literal[value>0]:first-child', message: FIXED_PORT },
+  { selector: 'VariableDeclarator[id.name=/(^|_)PORT(_|$)|^port$|[a-z]Port$/]:not([id.name=/^(MAX|MIN|INVALID|DEFAULT)_/]) > Literal[raw=/^[1-9][0-9_]*$/]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.property.name="listen"] > Literal[raw=/^[1-9][0-9_]*$/]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.property.name="listen"] > ObjectExpression > Property[key.name="port"] > Literal[raw=/^[1-9][0-9_]*$/]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.name=/^(mllpSource|mllpDestination|sendMllp)$/] > Literal[raw=/^[1-9][0-9_]*$/]:first-child', message: FIXED_PORT },
+  { selector: ':matches(FunctionDeclaration, VariableDeclarator[init.type=/FunctionExpression$/])[id.name=/^(freePort|closedPort|getFreePort)$/]', message: FIXED_PORT },
 ];
 // A permission check goes through holdsPermission or can (@galvanigraph/core-models
 // authz, D-310), so the move to scoped grants changes one place, not every caller.
