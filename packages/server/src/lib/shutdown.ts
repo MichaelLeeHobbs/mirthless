@@ -36,6 +36,12 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
     }, DRAIN_TIMEOUT_MS);
     forceTimer.unref();
 
+    // Nothing is left that could finish the step shutdown is at, so it would end here as if it had been a success.
+    process.once('beforeExit', () => {
+      deps.logger.error({ phase: 'shutdown', errMsg: 'A step can never finish' }, 'Graceful shutdown cannot finish, forcing exit');
+      process.exit(1);
+    });
+
     void (async (): Promise<void> => {
       try {
         deps.logger.info({ phase: 'shutdown', step: 'socketio' }, 'Shutting down Socket.IO');
