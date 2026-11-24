@@ -1,5 +1,5 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { UpsertSettingInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -42,6 +42,15 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const SMTP_HOST = 'smtp.host';
 const SMTP_PASSWORD = 'smtp.auth_pass';
 
+/**
+ * One at a time, taken before either row: a host row that does not exist cannot be locked, so
+ * a host saved beside a password being saved would keep it (D-332).
+ */
+async function lockSmtp(tx: Tx, keys: readonly string[]): Promise<void> {
+  if (!keys.includes(SMTP_HOST) && !keys.includes(SMTP_PASSWORD)) return;
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('settings.smtp_password'))`);
+}
+
 /** True when there was one. */
 async function clearPassword(tx: Tx): Promise<boolean> {
   const cleared = await tx.update(systemSettings).set({ value: '', updatedAt: new Date() })
@@ -57,7 +66,7 @@ async function clearPassword(tx: Tx): Promise<boolean> {
 async function clearPasswordOfChangedHost(tx: Tx, inputs: readonly UpsertSettingInput[]): Promise<boolean> {
   const hosts = inputs.filter((i) => i.key === SMTP_HOST);
   if (hosts.length === 0 || inputs.some((i) => i.key === SMTP_PASSWORD)) return false;
-  const [stored] = await tx.select({ value: systemSettings.value }).from(systemSettings).where(eq(systemSettings.key, SMTP_HOST)).for('update');
+  const [stored] = await tx.select({ value: systemSettings.value }).from(systemSettings).where(eq(systemSettings.key, SMTP_HOST));
   if (hosts.every((h) => (h.value ?? '') === (stored?.value ?? ''))) return false;
   return clearPassword(tx);
 }
@@ -70,6 +79,16 @@ async function upsertRow(tx: Tx, input: UpsertSettingInput): Promise<SettingDeta
     .onConflictDoUpdate({ target: systemSettings.key, set: { value, type, description, category, updatedAt: new Date() } })
     .returning();
   return toDetail(row!);
+}
+
+function saveAll(inputs: readonly UpsertSettingInput[]): Promise<{ readonly detail: readonly SettingDetail[]; readonly cleared: boolean }> {
+  return db.transaction(async (tx) => {
+    await lockSmtp(tx, inputs.map((i) => i.key));
+    const cleared = await clearPasswordOfChangedHost(tx, inputs);
+    const detail: SettingDetail[] = [];
+    for (const input of inputs) detail.push(await upsertRow(tx, input));
+    return { detail, cleared };
+  });
 }
 
 function clearedAttribute(cleared: boolean): { readonly cleared?: string } {
@@ -126,24 +145,17 @@ export class SettingsService {
 
   static async upsert(input: UpsertSettingInput, context?: AuditContext): Promise<Result<SettingDetail>> {
     return tryCatch(async () => {
-      const { detail, cleared } = await db.transaction(async (tx) => ({
-        cleared: await clearPasswordOfChangedHost(tx, [input]), detail: await upsertRow(tx, input),
-      }));
+      const { detail, cleared } = await saveAll([input]);
       recordChange({ key: input.key, ...clearedAttribute(cleared) }, context);
-      return detail;
+      return detail[0]!;
     });
   }
 
   static async bulkUpsert(inputs: readonly UpsertSettingInput[], context?: AuditContext): Promise<Result<readonly SettingDetail[]>> {
     return tryCatch(async () => {
-      const results: SettingDetail[] = [];
-      const cleared = await db.transaction(async (tx) => {
-        const clears = await clearPasswordOfChangedHost(tx, inputs);
-        for (const input of inputs) results.push(await upsertRow(tx, input));
-        return clears;
-      });
+      const { detail, cleared } = await saveAll(inputs);
       recordChange({ keys: inputs.map((i) => i.key), ...clearedAttribute(cleared) }, context);
-      return results;
+      return detail;
     });
   }
 
@@ -159,6 +171,7 @@ export class SettingsService {
       }
 
       const cleared = await db.transaction(async (tx) => {
+        await lockSmtp(tx, [key]);
         const clears = key === SMTP_HOST && await clearPassword(tx);
         await tx.delete(systemSettings).where(eq(systemSettings.key, key));
         return clears;
