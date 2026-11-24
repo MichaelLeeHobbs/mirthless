@@ -92,14 +92,18 @@ export const subscribeKafka: KafkaSubscribe = async (options) => {
     autocommit: false,
   });
   // The consumer emits 'error' when it cannot rejoin the group after a failed heartbeat,
-  // even between records; unheard, it ends the process. Ending the stream with it makes
-  // the iteration throw and the receiver rejoin.
+  // even between records; unheard, it ends the process. A rejoin that a commit started and
+  // that fails is reported only by 'consumer:group:lost': the heartbeat is already cancelled,
+  // so nothing else would notice until the next record. Ending the stream makes the iteration
+  // throw and the receiver rejoin.
   let stream: Awaited<ReturnType<typeof consumer.consume>> | null = null;
   let consumerError: Error | null = null;
-  consumer.on('error', (err: unknown) => {
+  const endStream = (err: unknown): void => {
     consumerError = describeKafkaError(err);
     stream?.destroy(consumerError);
-  });
+  };
+  consumer.on('error', endStream);
+  consumer.on('consumer:group:lost', ({ error }) => { endStream(error); });
   try {
     stream = await consumer.consume({
       topics: [options.topic],
