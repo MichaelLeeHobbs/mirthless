@@ -202,6 +202,7 @@ export class UserService {
           });
         }
         const target = await lockTarget(tx, id);
+        if (input.enabled === true && !target.enabled) await GrantService.assertCanManageToTheEnd(tx, actorId, id);
         await tx.update(users).set(userUpdates(input)).where(eq(users.id, id));
         // Who could act is replayed from the audit log (grant.service channelAccessAsOf).
         if (input.enabled !== undefined && input.enabled !== target.enabled) {
@@ -315,6 +316,7 @@ export class UserService {
           // Again, now that neither can change: hashing takes long enough for the target to gain access.
           await lockAccess(tx);
           await GrantService.assertCanManage(tx, actorId, id);
+          await GrantService.assertCanManageToTheEnd(tx, actorId, id);
         }
         await tx
           .update(users)

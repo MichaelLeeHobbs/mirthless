@@ -154,6 +154,7 @@ All of these rules live in `services/grant.service.ts`. It is the only writer of
   - A permission added to an assigned role, a single role given to a user, and an existing channel added to a group have no end, so they need access with no end. Placing a new channel is not a grant (section 2).
   - A channel joining a group is judged on the group's expired assignments too, since renewing one restores it. An ended API key's do not count: nothing renews it (D-331).
   - Taking a channel out of a library's links, or linking a library on every channel or on none to chosen ones, needs `code_templates:write` with no end on every channel it linked to: it lets people change the library who could not before (D-331).
+  - Resetting another user's password, or enabling a user, needs the target rule and `users:write` until each of that user's assignments ends (D-331).
 - **Target rule:** acting on a user needs their grants, and the grants of keys they own, to be within the actor's own. Each user row carries `canManage` with a reason.
 - **Keys:**
   - Every key action needs the key's grants within the actor's: Replace, enable, edit and owner change.

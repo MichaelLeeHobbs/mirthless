@@ -185,7 +185,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     },
     ...(['deleting', 'resetting the password of', 'enabling'] as const).map((verb): Action => ({
-      name: `${verb} a user`, needs: 'channels:read', lasting: false,
+      name: `${verb} a user`, needs: 'channels:read', lasting: verb !== 'deleting',
       prepare: async (who) => {
         const target = await userWithRole(mods.pool, (await customRole(['channels:read'])).name, null);
         users.push(target.id);

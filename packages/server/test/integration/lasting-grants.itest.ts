@@ -379,6 +379,57 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     }
   });
 
+  it.each(['resetting the password of', 'enabling'] as const)('refuses %s a user whose access outlasts the manager\'s, or whom they manage only until a time', async (action) => {
+    const reader = await customRole(['channels:read']);
+    const manage = await customRole(['users:read', 'users:write']);
+    const until = inAnHour();
+    const manager = async (readerUntil: Date | null, manageUntil: Date | null): Promise<TestUser> => {
+      const made = await user();
+      await assign(made, reader.id, readerUntil === null ? {} : { until: readerUntil });
+      await assign(made, manage.id, manageUntil === null ? {} : { until: manageUntil });
+      return made;
+    };
+    const target = async (access: readonly { groupId?: string; until?: Date }[]): Promise<TestUser> => {
+      const made = await user();
+      for (const a of access) await assign(made, reader.id, a);
+      await mods.pool.query('UPDATE users SET enabled = $2 WHERE id = $1', [made.id, action !== 'enabling']);
+      return made;
+    };
+    const act = (who: TestUser, on: TestUser): Promise<ApiAnswer<unknown>> => (action !== 'enabling'
+      ? call(who, 'POST', `/users/${on.id}/password`, { newPassword: 'Itest-password-2!' })
+      : call(who, 'PUT', `/users/${on.id}`, { enabled: true }));
+    const before = new Date(until.getTime() - 60_000);
+    const after = new Date(until.getTime() + 60_000);
+
+    for (const access of [[{}], [{ until: after }], [{ until: before }, { groupId: await group() }]]) {
+      const refused = await act(await manager(until, null), await target(access));
+      expect(refused.status).toBe(403);
+      expect(refused.json.error?.message).toMatch(/Missing until it does: channels:read$/);
+    }
+    const brief = await act(await manager(null, until), await target([{}]));
+    expect(brief.status).toBe(403);
+    expect(brief.json.error?.message).toMatch(/Missing until it does: users:write$/);
+
+    for (const access of [[], [{ until }], [{ until: before }], [{ until: before }, { until: new Date(Date.now() - HOUR_MS) }]]) {
+      expect([200, 204]).toContain((await act(await manager(until, until), await target(access))).status);
+    }
+    expect([200, 204]).toContain((await act(await manager(null, null), await target([{}]))).status);
+  });
+
+  it('lets a manager whose access ends disable, or save unchanged as enabled, a user whose access does not', async () => {
+    const reader = await customRole(['channels:read']);
+    const manager = await user();
+    await assign(manager, reader.id, { until: inAnHour() });
+    await assign(manager, (await customRole(['users:read', 'users:write'])).id, { until: inAnHour() });
+    const target = await user();
+    await assign(target, reader.id);
+    const save = async (enabled: boolean): Promise<number> => (await call(manager, 'PUT', `/users/${target.id}`, { enabled })).status;
+
+    expect(await save(true)).toBe(200);
+    expect(await save(false)).toBe(200);
+    expect(await save(true)).toBe(403);
+  });
+
   it.each([
     ['every channel', null],
     ['no channel', []],

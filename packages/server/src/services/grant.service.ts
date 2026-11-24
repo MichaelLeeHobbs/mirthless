@@ -233,14 +233,24 @@ async function keyStillCovered(tx: AuditTransaction, key: { keyUserId: string; i
 /** The latest time a Date holds: only assignments with no end are live then. */
 const NO_END = new Date(8.64e15);
 
+function justBefore(end: Date | null): Date {
+  return end === null ? NO_END : new Date(end.getTime() - 1);
+}
+
+/** What `target` covers and `grants` do not, scope by scope. */
+function missingFrom(grants: FoldedGrants, target: FoldedGrants): Permission[] {
+  return [...target.entries()]
+    .filter(([p, scope]) => !holdsOver(grants, p, scope === ALL_CHANNELS ? null : [...scope]))
+    .map(([p]) => p).sort();
+}
+
 /**
  * The actor's grants, or none for a disabled one. With `until` (null: no end), only those
  * that last until then; they are a subset of the grants held now (D-330).
  */
 export async function actorGrants(reader: Reader, actorId: string | null, until?: Date | null): Promise<FoldedGrants> {
   if (actorId === null) throw new ServiceError('FORBIDDEN', 'A change to access needs a signed-in actor');
-  const at = until === undefined ? new Date() : until === null ? NO_END : new Date(until.getTime() - 1);
-  const standing = await queryUserStanding(reader, actorId, at);
+  const standing = await queryUserStanding(reader, actorId, until === undefined ? new Date() : justBefore(until));
   return standing?.enabled === true ? standing.grants : new Map();
 }
 
@@ -776,11 +786,29 @@ export class GrantService {
     // Scope-aware: each permission over the target's scope for it, so holding
     // a permission on one group does not reach someone who holds it on all.
     const grants = await actorGrants(reader, actorId);
-    const missing = [...target.grants.entries()]
-      .filter(([p, scope]) => !holdsOver(grants, p, scope === ALL_CHANNELS ? null : [...scope]))
-      .map(([p]) => p).sort();
+    const missing = missingFrom(grants, target.grants);
     if (missing.length > 0) {
       throw new ServiceError('FORBIDDEN', `You can only manage users whose access is within your own. Missing: ${missing.join(', ')}`, { missing });
+    }
+  }
+
+  /**
+   * The target rule until the target's access ends, `users:write` included: whoever sets a
+   * password, or enables a user whose password they know, can sign in as them for that long
+   * (D-331). The caller holds the access lock.
+   */
+  static async assertCanManageToTheEnd(tx: AuditTransaction, actorId: string, targetId: string): Promise<void> {
+    const ends = new Set((await assignmentsOf(tx, targetId)).filter((a) => a.live).map((a) => a.expiresAt));
+    const missing = new Set<Permission>();
+    for (const end of ends) {
+      const until = end === null ? null : new Date(end);
+      const target = await queryUserStanding(tx, targetId, justBefore(until));
+      const needed: FoldedGrants = new Map([...target?.grants ?? [], [PERMISSIONS.USERS_WRITE, ALL_CHANNELS]]);
+      for (const p of missingFrom(await actorGrants(tx, actorId, until), needed)) missing.add(p);
+    }
+    if (missing.size > 0) {
+      const names = [...missing].sort();
+      throw new ServiceError('FORBIDDEN', `You can only reset the password of, or enable, a user whose access ends no later than your own. Missing until it does: ${names.join(', ')}`, { missing: names });
     }
   }
 
