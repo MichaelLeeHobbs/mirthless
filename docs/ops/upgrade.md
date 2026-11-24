@@ -103,7 +103,7 @@ An HTTP source used to decode every request body without checking it, so text in
 - A body that is not valid UTF-8 and whose Content-Type declares no charset gets 415 and is not stored. A sender of ISO-8859-1 or Windows-1252 text must declare it (`Content-Type: text/plain; charset=ISO-8859-1`), or the source's Body Charset (`bodyCharset`) must be set to `latin1` or `windows-1252` and the channel deployed again. A body that is not valid in the charset it declares gets 415 as well.
 - A binary body (a PDF, an image, a form with a file in it) is not valid UTF-8, so it gets 415. To keep it, set `bodyCharset` to `base64`; every message of that channel is then base64 text, so its scripts and destinations must expect that.
 - A body with `Content-Encoding` `gzip`, `deflate` or `br` is decompressed, and `maxBodyBytes` also limits its decompressed size. Any other coding gets 415, a `Transfer-Encoding` other than `chunked` gets 501, and a body that does not decompress gets 400.
-- Text that holds U+0000 gets 415. Before, PostgreSQL refused it, the sender got `errorStatusCode` and tried again.
+- Text that holds U+0000 is taken, as before. PostgreSQL cannot store it in plain, so a channel that stores its content without encryption still answers `errorStatusCode` to it; a binary body needs `base64`, not `latin1` or `windows-1252`.
 
 A channel whose stored messages contain U+FFFD likely has such a sender. A refused sender gets the reason in the response, and the server logs a warning that starts `Refused a request body` with its address and Content-Type. A `charset` saved by an older editor is still ignored.
 

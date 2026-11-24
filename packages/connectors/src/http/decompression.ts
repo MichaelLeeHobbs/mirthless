@@ -1,22 +1,30 @@
 // A hundred bytes can decompress to maxBodyBytes, so what a receiver spends on its
 // compressed bodies is limited across requests (D-334).
 
-import { brotliDecompress, gunzip, inflate, type CompressCallback, type ZlibOptions } from 'node:zlib';
+import type { Transform } from 'node:stream';
+import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
+import { createSlots } from '@galvanigraph/core-util';
 import { RefusedBodyError, tooLarge } from './refused-body.js';
 
 const MAX_RUNNING = 2;
 
 /** Times maxBodyBytes, over the requests not answered yet. */
-const MAX_HELD = 4;
+const MAX_HELD_BODIES = 4;
 
-/** Node's 16 KiB makes a 50 MB body several times slower. A small body holds one chunk until it is decoded. */
+/** Under a small maxBodyBytes, four bodies' worth is less than an ordinary busy minute holds. */
+const MIN_HELD_LIMIT = 64 * 1024 * 1024;
+
+/** Node's 16 KiB makes a 50 MB body several times slower. */
 const CHUNK_SIZE = 128 * 1024;
 
-type Decompress = (bytes: Buffer, options: ZlibOptions, callback: CompressCallback) => void;
+interface Engine extends Transform {
+  /** Compressed bytes the engine has used. */
+  readonly bytesWritten: number;
+}
 
 export interface ContentCoding {
   readonly name: string;
-  readonly decompress: Decompress;
+  readonly createEngine: (options: { readonly chunkSize: number }) => Engine;
 }
 
 export interface DecompressedBody {
@@ -25,71 +33,56 @@ export interface DecompressedBody {
   readonly release: () => void;
 }
 
-const DECOMPRESSORS: ReadonlyMap<string, Decompress> = new Map<string, Decompress>([
-  ['gzip', gunzip],
-  ['x-gzip', gunzip],
-  ['deflate', inflate],
-  ['br', brotliDecompress],
+const ENGINES: ReadonlyMap<string, ContentCoding['createEngine']> = new Map<string, ContentCoding['createEngine']>([
+  ['gzip', createGunzip],
+  ['x-gzip', createGunzip],
+  ['deflate', createInflate],
+  ['br', createBrotliDecompress],
 ]);
 
 /** Undefined for a body that is not compressed. Two codings are one unknown name here, so they are refused. */
 export function contentCoding(header: string | undefined): ContentCoding | undefined {
   const name = (header ?? '').trim().toLowerCase();
   if (name === '' || name === 'identity') return undefined;
-  const decompress = DECOMPRESSORS.get(name);
-  if (!decompress) throw new RefusedBodyError(415, `Unsupported Content-Encoding: ${name}`, { 'Accept-Encoding': 'gzip, deflate, br' });
-  return { name, decompress };
+  const createEngine = ENGINES.get(name);
+  if (!createEngine) throw new RefusedBodyError(415, `Unsupported Content-Encoding: ${name}`, { 'Accept-Encoding': 'gzip, deflate, br' });
+  return { name, createEngine };
 }
 
 export class Decompressor {
   private readonly maxBodyBytes: number;
-  private readonly waiting: (() => void)[] = [];
-  private running = 0;
-  /** The decompressed bytes of unanswered requests, and the limits of the ones being decompressed. */
+  private readonly maxHeld: number;
+  private readonly inTurn = createSlots(MAX_RUNNING);
+  /** Decompressed so far by the bodies being decompressed, and by those whose request is not answered. */
   private held = 0;
 
   constructor(maxBodyBytes: number) {
     this.maxBodyBytes = maxBodyBytes;
+    this.maxHeld = Math.max(MAX_HELD_BODIES * maxBodyBytes, MIN_HELD_LIMIT);
   }
 
   /** `isGone`: the sender left while the body waited its turn, so nothing is spent on it. */
-  async run(coding: ContentCoding, bytes: Buffer, isGone: () => boolean): Promise<DecompressedBody> {
-    await this.turn();
-    try {
+  run(coding: ContentCoding, bytes: Buffer, isGone: () => boolean): Promise<DecompressedBody> {
+    return this.inTurn(async () => {
       if (isGone()) throw new RefusedBodyError(503, 'The connection closed before the body was decompressed');
-      return await this.withinLimit(coding, bytes);
-    } finally {
-      this.endTurn();
-    }
+      return this.hold(coding, bytes);
+    });
   }
 
-  private async turn(): Promise<void> {
-    if (this.running < MAX_RUNNING) {
-      this.running += 1;
-      return;
-    }
-    await new Promise<void>((resolve) => { this.waiting.push(resolve); });
-  }
-
-  private endTurn(): void {
-    const next = this.waiting.shift();
-    if (next) next();
-    else this.running -= 1;
-  }
-
-  private async withinLimit(coding: ContentCoding, bytes: Buffer): Promise<DecompressedBody> {
-    const limit = Math.min(this.maxBodyBytes, MAX_HELD * this.maxBodyBytes - this.held);
-    if (limit < 1) throw busy();
-    this.held += limit;
+  private async hold(coding: ContentCoding, bytes: Buffer): Promise<DecompressedBody> {
+    let size = 0;
+    const release = (): void => { this.held -= size; };
+    const grow = (by: number): RefusedBodyError | null => {
+      size += by;
+      this.held += by;
+      if (size > this.maxBodyBytes) return tooLarge();
+      return this.held > this.maxHeld ? busy() : null;
+    };
     try {
-      const decompressed = await decompress(coding, bytes, limit);
-      // Not read off the buffer in `release`, which would keep it until the answer, beside its text.
-      const size = decompressed.length;
-      this.held -= limit - size;
-      return { bytes: decompressed, release: () => { this.held -= size; } };
+      return { bytes: await decompress(coding, bytes, grow), release };
     } catch (err) {
-      this.held -= limit;
-      throw limit < this.maxBodyBytes && err instanceof RefusedBodyError && err.status === 413 ? busy() : err;
+      release();
+      throw err;
     }
   }
 }
@@ -99,21 +92,31 @@ function busy(): RefusedBodyError {
 }
 
 /**
- * Every byte must belong to the compressed data: past the end of a deflate or brotli
- * stream Node reports no error and drops what follows.
+ * `grow` is told of each piece, and stops the rest by refusing it. Every byte given must
+ * belong to the compressed data: past the end of a deflate or brotli stream Node reports no
+ * error and drops what follows.
  */
-function decompress(coding: ContentCoding, bytes: Buffer, maxOutputLength: number): Promise<Buffer> {
-  const invalid = (): RefusedBodyError => new RefusedBodyError(400, `Request body is not valid ${coding.name}`);
+function decompress(coding: ContentCoding, bytes: Buffer, grow: (by: number) => RefusedBodyError | null): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    coding.decompress(bytes, { maxOutputLength, chunkSize: CHUNK_SIZE, info: true }, (err, result) => {
-      if (err) {
-        reject((err as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE' ? tooLarge() : invalid());
+    const engine = coding.createEngine({ chunkSize: CHUNK_SIZE });
+    const invalid = (): void => { reject(new RefusedBodyError(400, `Request body is not valid ${coding.name}`)); };
+    const pieces: Buffer[] = [];
+    const take = (piece: Buffer): void => {
+      const refusal = grow(piece.length);
+      if (refusal === null) {
+        pieces.push(piece);
         return;
       }
-      // What `info` makes of the result, which Node's types leave out.
-      const { buffer, engine } = result as unknown as { readonly buffer: Buffer; readonly engine: { readonly bytesWritten: number } };
-      if (engine.bytesWritten === bytes.length) resolve(buffer);
-      else reject(invalid());
+      engine.off('data', take);
+      engine.destroy();
+      reject(refusal);
+    };
+    engine.on('data', take);
+    engine.on('error', invalid);
+    engine.on('end', () => {
+      if (engine.bytesWritten === bytes.length) resolve(Buffer.concat(pieces));
+      else invalid();
     });
+    engine.end(bytes);
   });
 }
