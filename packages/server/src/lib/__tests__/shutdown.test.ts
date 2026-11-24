@@ -89,16 +89,17 @@ describe('createShutdownHandler', () => {
     handler('SIGINT');
     await vi.advanceTimersByTimeAsync(0);
 
-    const infoCalls = (deps.logger.info as ReturnType<typeof vi.fn>).mock.calls;
-    const messages = infoCalls.map((c: unknown[]) => (typeof c[0] === 'string' ? c[0] : c[1]));
-
-    expect(messages).toContain('Closing HTTP server');
-    expect(messages).toContain('Stopping engine');
-    expect(messages).toContain('Shutting down Socket.IO');
-    expect(messages).toContain('Stopping pruner scheduler');
-    expect(messages).toContain('Stopping job queue');
-    expect(messages).toContain('Closing database pool');
-    expect(messages).toContain('Graceful shutdown complete');
+    expect(vi.mocked(deps.logger.info).mock.calls).toEqual([
+      [{ signal: 'SIGINT' }, 'Received signal, starting graceful shutdown'],
+      [{ phase: 'shutdown', step: 'socketio' }, 'Shutting down Socket.IO'],
+      [{ phase: 'shutdown', step: 'http' }, 'Closing HTTP server'],
+      [{ phase: 'shutdown', step: 'engine' }, 'Stopping engine'],
+      [{ phase: 'shutdown', step: 'pruner' }, 'Stopping pruner scheduler'],
+      [{ phase: 'shutdown', step: 'queue' }, 'Stopping job queue'],
+      [{ phase: 'shutdown', step: 'datasource-pools' }, 'Closing data source pools'],
+      [{ phase: 'shutdown', step: 'database' }, 'Closing database pool'],
+      [{ phase: 'shutdown' }, 'Graceful shutdown complete'],
+    ]);
   });
 
   it('exits with the given code after a clean shutdown that followed a fatal error', async () => {
@@ -203,6 +204,7 @@ describe('createShutdownHandler', () => {
     expect(deps.stopAccepting).toHaveBeenCalledTimes(1);
     expect(deps.stopPrunerScheduler).not.toHaveBeenCalled();
     expect(deps.stopQueue).not.toHaveBeenCalled();
+    expect(deps.stopDataSourcePools).not.toHaveBeenCalled();
     expect(deps.closePool).not.toHaveBeenCalled();
   });
 
@@ -214,6 +216,7 @@ describe('createShutdownHandler', () => {
       stopSocketIO: vi.fn().mockImplementation(async () => { callOrder.push('stopSocketIO'); }),
       stopPrunerScheduler: vi.fn().mockImplementation(async () => { callOrder.push('stopPrunerScheduler'); }),
       stopQueue: vi.fn().mockImplementation(async () => { callOrder.push('stopQueue'); }),
+      stopDataSourcePools: vi.fn().mockImplementation(async () => { callOrder.push('stopDataSourcePools'); }),
       closePool: vi.fn().mockImplementation(async () => { callOrder.push('closePool'); }),
     });
 
