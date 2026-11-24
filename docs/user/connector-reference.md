@@ -106,6 +106,7 @@ The source runs an HTTP or HTTPS server on its own port and accepts requests on 
 The source keeps a body whole or refuses it, and a refused body is never stored (D-334 in [DECISIONS.md](../progress/DECISIONS.md)):
 
 - A body with `Content-Encoding` `gzip` (or `x-gzip`), `deflate` (the zlib format) or `br` is decompressed. Any other coding, or two codings, gets 415. A body that does not decompress, or has bytes after the compressed data, gets 400.
+- A few bytes can decompress to a large body, so the source decompresses at most two at once, the rest waiting in order. When the decompressed bytes of the requests not answered yet reach four times `maxBodyBytes`, a compressed body gets 503 with `Retry-After: 1`. Uncompressed bodies are not affected, and there is no setting for either limit.
 - Text is read in the charset the Content-Type declares, or in `bodyCharset` when it declares none. A body that is not valid in that charset, and a declared charset the server cannot decode, get 415. The response names the charset, and the server logs a warning with the sender's address and Content-Type, never the body. ISO-8859-1 and Windows-1252 have a character for every byte, so a body read in them is never refused.
 - A binary body (a PDF, an image, a form with a file in it) is not valid UTF-8, so it gets 415. Set `bodyCharset` to `base64` to keep it: the message is then the base64 of the decompressed bytes, which a File destination with `binary` on writes back as they were.
 

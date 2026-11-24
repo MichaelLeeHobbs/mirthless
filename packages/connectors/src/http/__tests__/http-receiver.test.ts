@@ -726,6 +726,142 @@ describe('HttpReceiver compressed bodies', () => {
   });
 });
 
+describe('HttpReceiver limits what compressed bodies can hold', () => {
+  const LIMIT = 64 * 1024;
+  const GZIP = { 'content-encoding': 'gzip' };
+  /** Under a hundred bytes that decompress to exactly the limit. */
+  const FULL = zlib.brotliCompressSync(Buffer.alloc(LIMIT, 0x41));
+  const BR = { 'content-encoding': 'br' };
+
+  /** A dispatcher that answers only when told to, so the messages it holds stay unanswered. */
+  async function startHolding(config: Partial<HttpReceiverConfig>): Promise<{ readonly held: number[]; readonly letGo: () => void }> {
+    const held: number[] = [];
+    let letGo = (): void => undefined;
+    const gone = new Promise<void>((resolve) => { letGo = resolve; });
+    receiver = new HttpReceiver(makeConfig(config));
+    receiver.setDispatcher(async (raw) => {
+      held.push(raw.content.length);
+      await gone;
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+    expect((await receiver.onStart()).ok).toBe(true);
+    return { held, letGo };
+  }
+
+  it('answers 503 with Retry-After once unanswered bodies fill four times maxBodyBytes, and takes bodies again after', async () => {
+    const { held, letGo } = await startHolding({ maxBodyBytes: LIMIT });
+    expect(FULL.length).toBeLessThan(100);
+    const refused: PostResult[] = [];
+    const answers = Array.from({ length: 12 }, () => post(FULL, BR).then((answer) => {
+      if (answer.status === 503) refused.push(answer);
+      return answer.status;
+    }));
+
+    await vi.waitFor(() => { expect(refused.length + held.length).toBe(12); });
+    expect(held).toEqual([LIMIT, LIMIT, LIMIT, LIMIT]);
+    expect(refused.every((answer) => answer.headers['retry-after'] === '1')).toBe(true);
+
+    letGo();
+    expect((await Promise.all(answers)).sort()).toEqual([...Array<number>(4).fill(200), ...Array<number>(8).fill(503)]);
+    expect((await post(FULL, BR)).status).toBe(200);
+  });
+
+  it('answers 503, not 413, to a body that would fit but for the ones already held, and takes a smaller one', async () => {
+    const { held, letGo } = await startHolding({ maxBodyBytes: LIMIT });
+    const half = zlib.gzipSync(Buffer.alloc(LIMIT / 2, 0x41));
+    const answers = [post(FULL, BR), post(FULL, BR), post(FULL, BR), post(half, GZIP)];
+    await vi.waitFor(() => { expect(held).toHaveLength(4); });
+
+    expect((await post(FULL, BR)).status).toBe(503);
+    answers.push(post(half, GZIP));
+    await vi.waitFor(() => { expect(held).toHaveLength(5); });
+
+    letGo();
+    expect((await Promise.all(answers)).map((answer) => answer.status)).toEqual([200, 200, 200, 200, 200]);
+  });
+
+  it('answers 413 to every one of a burst of bombs, and holds nothing for them after', async () => {
+    const { seen } = await startRecording({ maxBodyBytes: LIMIT });
+    const bomb = zlib.brotliCompressSync(Buffer.alloc(LIMIT * 16, 0x41));
+
+    const statuses = await Promise.all(Array.from({ length: 12 }, () => post(bomb, BR).then((answer) => answer.status)));
+
+    expect(statuses).toEqual(Array<number>(12).fill(413));
+    expect(seen).toEqual([]);
+    expect((await post(FULL, BR)).status).toBe(200);
+  });
+
+  it('decompresses at most two bodies at once, and then the rest', async () => {
+    const { seen } = await startRecording();
+    closeGunzipGate();
+    const answers = Array.from({ length: 6 }, (_, i) => post(zlib.gzipSync(`MSH|${String(i)}`), GZIP));
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(2); });
+
+    await finishGunzip();
+
+    expect((await Promise.all(answers)).map((answer) => answer.status)).toEqual(Array<number>(6).fill(200));
+    expect(gunzipGate.mostRunning).toBe(2);
+    expect(seen.map((raw) => raw.content).sort()).toEqual(['MSH|0', 'MSH|1', 'MSH|2', 'MSH|3', 'MSH|4', 'MSH|5']);
+  });
+
+  it('answers 200 to fifty small gzip messages held at once', async () => {
+    const { held, letGo } = await startHolding({});
+    const answers = Array.from({ length: 50 }, () => post(zlib.gzipSync(HL7), GZIP).then((answer) => answer.status));
+
+    await vi.waitFor(() => { expect(held).toHaveLength(50); }, { timeout: 10_000 });
+    letGo();
+
+    expect(await Promise.all(answers)).toEqual(Array<number>(50).fill(200));
+  });
+
+  it.each([
+    ['a body that is not valid text', 415, undefined],
+    ['a dispatcher that throws', 500, (): never => { throw new Error('pipeline gone'); }],
+  ])('holds nothing after %s', async (_what, status, dispatcher) => {
+    await startRecording({ maxBodyBytes: LIMIT });
+    if (dispatcher) receiver!.setDispatcher(dispatcher);
+    const body = zlib.gzipSync(Buffer.alloc(LIMIT, dispatcher ? 0x41 : 0xff));
+
+    // Four would fill the limit if any were kept.
+    for (let i = 0; i < 6; i++) expect((await post(body, GZIP)).status).toBe(status);
+  });
+
+  it('holds nothing after a halt while bodies were being decompressed or waited their turn', async () => {
+    await startRecording({ maxBodyBytes: LIMIT });
+    const body = zlib.gzipSync(Buffer.alloc(LIMIT, 0x41));
+    for (let i = 0; i < 3; i++) {
+      closeGunzipGate();
+      const answers = Promise.allSettled(Array.from({ length: 4 }, () => post(body, GZIP)));
+      await vi.waitFor(() => { expect(gunzipGate.started).toBe(2); });
+      await receiver!.onHalt();
+      await answers;
+      await finishGunzip();
+      // The two that waited were not decompressed for nobody.
+      expect(gunzipGate.started).toBe(2);
+      expect((await receiver!.onStart()).ok).toBe(true);
+    }
+
+    expect((await post(body, GZIP)).status).toBe(200);
+  });
+
+  it('holds nothing after a sender goes away while its message is being processed', async () => {
+    const { held, letGo } = await startHolding({ maxBodyBytes: LIMIT });
+    for (let i = 1; i <= 4; i++) {
+      const socket = net.connect(TEST_PORT, '127.0.0.1', () => {
+        socket.write(`POST / HTTP/1.1\r\nHost: localhost\r\nContent-Encoding: br\r\nContent-Length: ${String(FULL.length)}\r\n\r\n`);
+        socket.write(FULL);
+      });
+      await vi.waitFor(() => { expect(held).toHaveLength(i); });
+      socket.destroy();
+    }
+    // Still in the pipeline, so still held.
+    expect((await post(FULL, BR)).status).toBe(503);
+
+    letGo();
+    await vi.waitFor(async () => { expect((await post(FULL, BR)).status).toBe(200); });
+  });
+});
+
 describe('HttpReceiver refusals reach the sender', () => {
   const LARGE = Buffer.alloc(20 * 1024 * 1024, 0x41);
 

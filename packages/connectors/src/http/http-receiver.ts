@@ -8,7 +8,9 @@ import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { assertCharsetAvailable } from '../encoding.js';
-import { readRequestBody, RefusedBodyError } from './request-body.js';
+import { Decompressor } from './decompression.js';
+import { RefusedBodyError } from './refused-body.js';
+import { readRequestBody, type RequestBody } from './request-body.js';
 
 /** Hashing first keeps the length from leaking and meets timingSafeEqual's equal-length rule. */
 function constantTimeEqual(a: string, b: string): boolean {
@@ -71,12 +73,14 @@ function withoutCredentials(headers: http.IncomingHttpHeaders): Record<string, s
 export class HttpReceiver implements SourceConnectorRuntime {
   private readonly config: HttpReceiverConfig;
   private readonly logger: ConnectorLogger;
+  private readonly decompressor: Decompressor;
   private server: http.Server | null = null;
   private dispatcher: MessageDispatcher | null = null;
 
   constructor(config: HttpReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
     this.logger = logger ?? createConnectorLogger('HTTP');
+    this.decompressor = new Decompressor(config.maxBodyBytes);
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -208,27 +212,34 @@ export class HttpReceiver implements SourceConnectorRuntime {
   ): Promise<void> {
     // Undefined once the connection has closed.
     const { remoteAddress } = req.socket;
-    let body: string;
+    let body: RequestBody;
     try {
-      body = await readRequestBody(req, this.config);
+      body = await readRequestBody(req, this.config, this.decompressor);
     } catch (err) {
       this.refuseBody(req, res, err);
       return;
     }
 
-    // A halt destroys every connection, so this covers one too. The sender got no answer and
-    // sends again: dispatching now would take the message twice.
-    if (req.socket.destroyed) {
-      this.logger.warn({ remoteAddress }, 'Request not dispatched: its connection closed while the body was being read');
-      return;
+    try {
+      // A halt destroys every connection, so this covers one too. The sender got no answer and
+      // sends again: dispatching now would take the message twice.
+      if (req.socket.destroyed) {
+        this.logger.warn({ remoteAddress }, 'Request not dispatched: its connection closed while the body was being read');
+        return;
+      }
+      await this.dispatchAndAnswer(res, this.buildRawMessage(req, body.text, reqPath));
+    } finally {
+      body.release();
     }
+  }
+
+  private async dispatchAndAnswer(res: http.ServerResponse, raw: RawMessage): Promise<void> {
     const { dispatcher } = this;
     if (!dispatcher) {
       this.writePlain(res, 503, 'Service Unavailable');
       return;
     }
 
-    const raw = this.buildRawMessage(req, body, reqPath);
     const result = await dispatcher(raw);
 
     const failure = dispatchFailure(result);

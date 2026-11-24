@@ -3,59 +3,58 @@
 
 import type { IncomingMessage } from 'node:http';
 import { TextDecoder } from 'node:util';
-import { brotliDecompress, gunzip, inflate, type CompressCallback, type ZlibOptions } from 'node:zlib';
 import type { QueueCharset } from '@galvanigraph/core-models';
 import { decodePayload } from '../encoding.js';
+import { contentCoding, type Decompressor } from './decompression.js';
+import { RefusedBodyError, tooLarge } from './refused-body.js';
 
 export interface RequestBodyConfig {
   readonly maxBodyBytes: number;
   readonly bodyCharset: QueueCharset;
 }
 
-/** The message goes to the sender and to the log, so it holds nothing of the body. */
-export class RefusedBodyError extends Error {
-  constructor(
-    readonly status: 400 | 413 | 415,
-    message: string,
-    readonly headers: Readonly<Record<string, string>> = {},
-  ) {
-    super(message);
-  }
+export interface RequestBody {
+  readonly text: string;
+  /** Call once, when the request has been answered. */
+  readonly release: () => void;
 }
 
-type Decompress = (bytes: Buffer, options: ZlibOptions, callback: CompressCallback) => void;
 type BodyDecoder = (bytes: Buffer) => string;
-
-interface ContentCoding {
-  readonly name: string;
-  readonly decompress: Decompress;
-}
-
-const DECOMPRESSORS: ReadonlyMap<string, Decompress> = new Map<string, Decompress>([
-  ['gzip', gunzip],
-  ['x-gzip', gunzip],
-  ['deflate', inflate],
-  ['br', brotliDecompress],
-]);
 
 /**
  * The whole body is read before any of it is judged: an answer sent with bytes unread
  * reaches the sender as a reset connection, or leaves a kept-alive one stuck on them.
  */
-export async function readRequestBody(req: IncomingMessage, config: RequestBodyConfig): Promise<string> {
+export async function readRequestBody(req: IncomingMessage, config: RequestBodyConfig, decompressor: Decompressor): Promise<RequestBody> {
   const received = await readBytes(req, config.maxBodyBytes);
   const coding = contentCoding(req.headers['content-encoding']);
   const decode = bodyDecoder(req.headers['content-type'], config.bodyCharset);
-  return decode(coding ? await decompressed(coding, received, config.maxBodyBytes) : received);
+  if (!coding) return { text: decode(received), release: () => undefined };
+  const { bytes, release } = await decompressor.run(coding, received, () => req.socket.destroyed);
+  try {
+    return { text: decode(bytes), release };
+  } catch (err) {
+    release();
+    throw err;
+  }
 }
 
-/** Undefined for a body that is not compressed. Two codings are one unknown name here, so they are refused. */
-function contentCoding(header: string | undefined): ContentCoding | undefined {
-  const name = (header ?? '').trim().toLowerCase();
-  if (name === '' || name === 'identity') return undefined;
-  const decompress = DECOMPRESSORS.get(name);
-  if (!decompress) throw new RefusedBodyError(415, `Unsupported Content-Encoding: ${name}`, { 'Accept-Encoding': 'gzip, deflate, br' });
-  return { name, decompress };
+/** Past the limit the chunks are dropped; the server's request timeout ends a body that never does. */
+function readBytes(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) chunks.length = 0;
+      else chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (size > maxBytes) reject(tooLarge());
+      else resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
 }
 
 /**
@@ -93,46 +92,4 @@ function strictDecoder(charset: string): TextDecoder | null {
 
 function invalidText(charset: string): RefusedBodyError {
   return new RefusedBodyError(415, `Request body is not valid ${charset}. Declare the character set it is in (charset in Content-Type), or set bodyCharset on the HTTP source: the character set of a body that declares none, or base64 to keep binary bodies.`);
-}
-
-function tooLarge(): RefusedBodyError {
-  return new RefusedBodyError(413, 'Payload Too Large');
-}
-
-/** Past the limit the chunks are dropped; the server's request timeout ends a body that never does. */
-function readBytes(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > maxBytes) chunks.length = 0;
-      else chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (size > maxBytes) reject(tooLarge());
-      else resolve(Buffer.concat(chunks));
-    });
-    req.on('error', reject);
-  });
-}
-
-/**
- * Every byte must belong to the compressed data: past the end of a deflate or brotli
- * stream Node reports no error and drops what follows.
- */
-function decompressed(coding: ContentCoding, bytes: Buffer, maxOutputLength: number): Promise<Buffer> {
-  const invalid = (): RefusedBodyError => new RefusedBodyError(400, `Request body is not valid ${coding.name}`);
-  return new Promise((resolve, reject) => {
-    coding.decompress(bytes, { maxOutputLength, info: true }, (err, result) => {
-      if (err) {
-        reject((err as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE' ? tooLarge() : invalid());
-        return;
-      }
-      // What `info` makes of the result, which Node's types leave out.
-      const { buffer, engine } = result as unknown as { readonly buffer: Buffer; readonly engine: { readonly bytesWritten: number } };
-      if (engine.bytesWritten === bytes.length) resolve(buffer);
-      else reject(invalid());
-    });
-  });
 }
