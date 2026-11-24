@@ -149,6 +149,9 @@ All of these rules live in `services/grant.service.ts`. It is the only writer of
   - An assignment needs the actor to hold its role's permissions on its scope, compared by group id.
   - A role edit needs every added permission on the union of its assignments' scopes, expired ones included.
   - Renewing an assignment counts as a new write and passes the same checks.
+- **Lasting rule (D-330, #355):** what an actor gives, they must hold for as long as it lasts.
+  - An assignment needs the actor's access until its own end. One the user already has, on the same role and scope and at least as long, can be resent or shortened.
+  - A permission added to an assigned role, a single role given to a user, and a channel added to a group have no end, so they need access with no end.
 - **Target rule:** acting on a user needs their grants, and the grants of keys they own, to be within the actor's own. Each user row carries `canManage` with a reason.
 - **Keys:**
   - Every key action needs the key's grants within the actor's: Replace, enable, edit and owner change.

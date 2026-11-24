@@ -14,7 +14,11 @@ import type { ApiRoute, WalkedRoute } from '../../src/routes/__tests__/api-route
 
 const ID = '3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c';
 const NOT_AN_ID = 'route-walk-not-an-id';
-const ROLES = defaultRoles.map((r) => r.name);
+/** One permission from each of several areas, so the walk proves a role an admin made is judged by its rows. */
+const CUSTOM_ROLE = `itest-walk-${randomUUID().slice(0, 8)}`;
+const CUSTOM_PERMISSIONS: readonly string[] = ['channels:read', 'messages:read', 'alerts:write', 'roles:read'];
+const ROLES = [...defaultRoles.map((r) => r.name), CUSTOM_ROLE];
+const permissionsOf = (role: string): readonly string[] => (role === CUSTOM_ROLE ? CUSTOM_PERMISSIONS : builtInRolePermissions(role));
 const PASSWORD_CHANGE_EXEMPT: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/v1/users/me/password' },
   { method: 'POST', path: '/api/v1/auth/logout' },
@@ -86,6 +90,8 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     routes = (await walkApiRoutes((await import('../../src/routes/index.js')).default)).filter((r) => !isPublic(r));
     // Session-only routes act on the caller's own session; logout would end the walk's.
     routes = routes.filter((r) => !SESSION_ONLY_ROUTES.some(same(r)) || permissionsOfGuard(r.handlers[0]) !== undefined);
+    const custom = await pool.query<{ id: string }>('INSERT INTO roles (name) VALUES ($1) RETURNING id', [CUSTOM_ROLE]);
+    for (const p of CUSTOM_PERMISSIONS) await pool.query('INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2)', [custom.rows[0]!.id, p]);
     for (const role of ROLES) await createCaller(role, role);
     await createCaller('disabled', USER_ROLE.ADMIN, { enabled: false });
     await createCaller('must-change', USER_ROLE.ADMIN, { mustChange: true });
@@ -103,6 +109,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
       // Their ACCESS_DENIED rows stay: audit_log refuses deletes, and has no key to users.
       await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [ids]);
     }
+    await pool?.query('DELETE FROM roles WHERE name = $1', [CUSTOM_ROLE]);
     await pool?.end();
   }, 120_000); // as long as the setup's: closing the server and deleting the callers slow down on a loaded machine (#294)
 
@@ -123,7 +130,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
   }
 
   const guardOf = (r: WalkedRoute): readonly string[] => permissionsOfGuard(r.handlers[0]) ?? [];
-  const holds = (role: string, r: WalkedRoute): boolean => guardOf(r).some((p) => (builtInRolePermissions(role) as readonly string[]).includes(p));
+  const holds = (role: string, r: WalkedRoute): boolean => guardOf(r).some((p) => permissionsOf(role).some((held) => held === p));
   /** A non-GET route the walk may call as a role that passes its guard: one whose validator refuses the walk's input first. */
   const safeToPass = (r: WalkedRoute): boolean =>
     r.method === 'GET' || (r.handlers.some((h) => isValidator(h)) && !NOT_CALLED_WHEN_ALLOWED.some(same(r)));

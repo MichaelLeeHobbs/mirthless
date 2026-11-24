@@ -109,6 +109,59 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     expect((await give(until.toISOString())).status).toBe(200);
   });
 
+  it('leaves an assignment it did not give as it was, or shorter, but not longer', async () => {
+    const manager = await user();
+    const until = inAnHour();
+    const reader = await customRole(['channels:read']);
+    await assign(manager, (await customRole(['users:read', 'users:write'])).id);
+    await assign(manager, reader.id, { until });
+    const target = await user();
+    const later = new Date(until.getTime() + HOUR_MS);
+    await assign(target, reader.id, { until: later });
+    const resend = (expiresAt: Date | null): Promise<ApiAnswer<unknown>> => call(manager, 'PUT', `/users/${target.id}/assignments`, {
+      assignments: [{ roleId: reader.id, groupIds: null, ...(expiresAt === null ? {} : { expiresAt: expiresAt.toISOString() }) }],
+    });
+
+    expect((await resend(null)).status).toBe(403);
+    expect((await resend(new Date(later.getTime() + HOUR_MS))).status).toBe(403);
+    expect((await resend(later)).status).toBe(200);
+    expect((await resend(new Date(later.getTime() - 60_000))).status).toBe(200);
+    // Shortened to a minute less, so the time taken off is not theirs to give back.
+    expect((await resend(later)).status).toBe(403);
+  });
+
+  it('counts an unchanged assignment only on the scope it has', async () => {
+    const manager = await user();
+    const one = await group();
+    const two = await group();
+    const reader = await customRole(['channels:read']);
+    await assign(manager, (await customRole(['users:read', 'users:write'])).id);
+    await assign(manager, reader.id, { until: inAnHour() });
+    const target = await user();
+    await assign(target, reader.id, { groupId: one });
+    const resend = (groupIds: readonly string[]): Promise<ApiAnswer<unknown>> =>
+      call(manager, 'PUT', `/users/${target.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds }] });
+
+    expect((await resend([one, two])).status).toBe(403);
+    expect((await resend([two])).status).toBe(403);
+    expect((await resend([one])).status).toBe(200);
+  });
+
+  it('lets someone put a permission held until a time in a role nobody holds, but not assign that role past it', async () => {
+    const editor = await user();
+    const until = inAnHour();
+    await assign(editor, (await customRole(['roles:read', 'roles:write', 'users:read', 'users:write'])).id);
+    await assign(editor, (await customRole(['channels:deploy'])).id, { until });
+    const unassigned = await customRole([]);
+
+    expect((await call(editor, 'PUT', `/roles/${unassigned.id}`, { permissions: ['channels:deploy'] })).status).toBe(200);
+
+    const target = await user();
+    const answer = await call(editor, 'PUT', `/users/${target.id}/assignments`, { assignments: [{ roleId: unassigned.id, groupIds: null }] });
+    expect(answer.status).toBe(403);
+    expect(answer.json.error?.details?.missing).toEqual(['channels:deploy']);
+  });
+
   it('refuses giving a role with no end through the single-role paths', async () => {
     const manager = await user();
     const reader = await customRole(['channels:read']);
