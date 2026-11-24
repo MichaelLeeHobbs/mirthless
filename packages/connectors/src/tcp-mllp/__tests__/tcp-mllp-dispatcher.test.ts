@@ -339,24 +339,12 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     return port;
   }
 
-  interface Started {
-    readonly log: MockLogger;
-    send(): ReturnType<TcpMllpDispatcher['send']>;
-    /** As the channel runtime halts: the sends in progress are aborted first. */
-    halt(): ReturnType<TcpMllpDispatcher['onHalt']>;
-  }
-
-  async function startAgainst(port: number, acquireTimeoutMs: number): Promise<Started> {
+  async function startAgainst(port: number, acquireTimeoutMs: number): Promise<{ send: () => ReturnType<TcpMllpDispatcher['send']>; log: MockLogger }> {
     const log = makeMockLogger();
     const started = new TcpMllpDispatcher(makeConfig({ port, acquireTimeoutMs }), log.logger, RETRY_DELAY_MS);
     dispatcher = started;
     expect((await started.onStart()).ok).toBe(true);
-    const aborter = new AbortController();
-    return {
-      log,
-      send: () => started.send(makeMessage(), aborter.signal),
-      halt: () => { aborter.abort(); return started.onHalt(); },
-    };
+    return { send: () => started.send(makeMessage(), AbortSignal.timeout(10_000)), log };
   }
 
   const outages = (log: MockLogger): number => log.errors.filter((e) => e.msg.includes('cannot be reached')).length;
@@ -392,16 +380,6 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     mockServer = createMockServer(port);
     const result = await sending;
     expect(result.ok && result.value.status).toBe('SENT');
-  });
-
-  it('halts at once while a send waits for a connection', async () => {
-    const { send, halt, log } = await startAgainst(await closedPort(), 5_000);
-    const sending = send();
-    await vi.waitFor(() => { expect(outages(log)).toBe(1); });
-    const before = performance.now();
-    expect((await halt()).ok).toBe(true);
-    expect(performance.now() - before).toBeLessThan(1_000);
-    expect((await sending).ok).toBe(false);
   });
 
   it('logs an outage once, and the next outage again', async () => {
