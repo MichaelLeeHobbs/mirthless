@@ -401,7 +401,7 @@ The editor no longer shows the Listener's pool sizes or the Sender's mode and ma
 
 ## Backups taken with `docker exec -t` can't be restored (#361)
 
-Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that `pg_restore` can't read. Take a new backup with `docker/backup.sh`, change any cron job or script that runs `pg_dump` through `docker exec -t`, and [repair the dumps you still need](backup-restore.md#dumps-taken-with-docker-exec--t).
+Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that can't be restored. Take a new backup with `docker/backup.sh`, change any cron job or script that runs `pg_dump` through `docker exec -t`, and [repair the dumps you still need](backup-restore.md#dumps-taken-with-docker-exec--t).
 
 ## Standard upgrade (Docker)
 
@@ -411,10 +411,10 @@ Until 2026-11-23 the backup commands on this page and in [Backup & restore](back
    git pull
    ```
 
-2. **Back up** into a directory outside the checkout, and note the file's name. Go on only if it prints `dump OK`. On the first upgrade after a rename, the container, database and user still have the old name, so set them as [Backup & restore](backup-restore.md#logical-backup-with-pg_dump-recommended) shows (see also [Renamed from Mirthless or GalvaniFlow](#renamed-from-mirthless-or-galvaniflow)).
+2. **Back up** into a directory outside the checkout that no nightly job cleans up, and note the file's name. Create the directory once. Go on only if it prints `dump OK`. An install [created as Mirthless or GalvaniFlow](#renamed-from-mirthless-or-galvaniflow) sets its names as [Backup & restore](backup-restore.md#logical-backup-with-pg_dump-recommended) shows.
 
    ```bash
-   sh docker/backup.sh /backups
+   sh docker/backup.sh /backups/pre-upgrade
    ```
 
 3. Rebuild and restart. The server container migrates when it starts.
@@ -519,7 +519,7 @@ a bad upgrade:
    which would start the new version and migrate it again. This is the only safe
    way to undo a schema migration — reverting just the code while leaving a newer schema
    in place is unsupported and can corrupt data.
-3. Redeploy the **previous** image/code version.
+3. Redeploy the **previous** image/code version. A version from before 2026-11-23 has no `docker/backup.sh`, so a nightly job that calls it fails until you upgrade again: copy `docker/backup.sh` and `docker/check-dump.sh` elsewhere first and point the job there.
 4. Start the old server; it will see its own schema already migrated and boot normally.
 
 Because rollback means a database restore, **the pre-upgrade `pg_dump` is mandatory** —

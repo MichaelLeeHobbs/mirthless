@@ -5,7 +5,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,10 +31,10 @@ const IMAGE = /postgres:[\w.-]+/;
 describe('the backup pages and scripts', () => {
   it('leave pg_dump to docker/backup.sh, so nobody pastes a command that gives it a TTY', () => {
     const pages = readdirSync(join(REPO_ROOT, 'docs/ops')).filter((f) => f.endsWith('.md')).map((f) => `docs/ops/${f}`);
-    const blocks = pages.flatMap((page) => fences(page).map((block) => ({ page, block })));
+    const commands = pages.flatMap((page) => readRepoFile(page).split('\n').filter((line) => /\bpg_dump\s+-/.test(line)));
 
-    expect(blocks.some((b) => b.block.includes('docker/backup.sh'))).toBe(true);
-    expect(blocks.filter((b) => b.block.includes('pg_dump'))).toEqual([]);
+    expect(commands).toEqual([]);
+    expect(readRepoFile('docker/backup.sh')).toMatch(/^docker exec "\$container" pg_dump /m);
   });
 
   it('check a dump with the version of Postgres that wrote it', () => {
@@ -45,7 +45,7 @@ describe('the backup pages and scripts', () => {
   });
 
   it('keep the backup before an upgrade in a block of its own, apart from the commands that migrate', () => {
-    expect(fenceWith(UPGRADE_PAGE, 'docker/backup.sh').trim()).toBe('sh docker/backup.sh /backups');
+    expect(fenceWith(UPGRADE_PAGE, 'docker/backup.sh').trim()).toBe('sh docker/backup.sh /backups/pre-upgrade');
   });
 
   it('schedule the backup with a line cron runs whole', () => {
@@ -89,7 +89,9 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
       .replaceAll('galvanigraph-db-prod', container)
       .replaceAll(/docker compose [^&\n]*/g, 'true ');
     const rest = aimed.replaceAll(`docker exec ${container} `, '').replaceAll(`docker exec -i ${container} `, '');
-    if (/\bdocker\s/.test(rest)) throw new Error(`A docker command outside the throwaway container:\n${aimed}`);
+    if (/\bdocker(?:-compose)?\s|DB_CONTAINER=/.test(rest)) throw new Error(`A docker command outside the throwaway container:\n${aimed}`);
+    const paths = rest.replaceAll(backups, '<backups>').replaceAll(REPO_ROOT.replaceAll('\\', '/'), '<checkout>');
+    if (/(?:^|[\s"'=])\/\w/.test(paths)) throw new Error(`A path outside the test's directory:\n${aimed}`);
     return aimed;
   }
 
@@ -103,11 +105,12 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
 
   const path = (file: string): string => join(backups, file);
   const age = (file: string, days: number): void => { utimesSync(path(file), new Date(), new Date(Date.now() - days * 86_400_000)); };
+  const repairExample = (): Run => sh(documented(fenceWith(BACKUP_PAGE, 'docker/repair-dump.sh')));
   const check = (file: string): Run => sh(`sh docker/check-dump.sh "${backups}/${file}"`);
   const cron = (): string => documented(fenceWith(BACKUP_PAGE, '* * *').trim().replace(/^(?:\S+ ){5}/, ''));
 
-  function newDump(): string {
-    const files = readdirSync(backups).filter((f) => /^galvanigraph-\d{8}-\d{6}\.dump$/.test(f));
+  function newDump(folder = ''): string {
+    const files = readdirSync(path(folder)).filter((f) => /^galvanigraph-\d{8}-\d{6}\.dump$/.test(f));
     expect(files).toHaveLength(1);
     return files[0] ?? '';
   }
@@ -180,13 +183,21 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
   it('the recommended backup restores every row', () => {
     const before = fingerprint();
 
+    mkdirSync(path('pre-upgrade'));
+
     expect(ok(documented(fenceWith(UPGRADE_PAGE, 'docker/backup.sh')))).toContain('dump OK');
-    writeFileSync(path('example.dump'), readFileSync(path(newDump())));
+    writeFileSync(path('example.dump'), readFileSync(path(`pre-upgrade/${newDump('pre-upgrade')}`)));
     sql('TRUNCATE channels');
     restoreExample();
 
     expect(before).toMatch(/^5000\|/);
     expect(fingerprint()).toBe(before);
+  });
+
+  it.skipIf(process.platform === 'win32')('only the user who ran the backup can read it', () => {
+    ok(`sh docker/backup.sh "${backups}"`);
+
+    expect(statSync(path(newDump())).mode & 0o777).toBe(0o600);
   });
 
   it('a backup that fails leaves no file and prints no go-ahead', () => {
@@ -206,8 +217,8 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
   });
 
   it('the cron job deletes only dumps past their age, and none when the backup fails', () => {
-    const kept = ['galvanigraph-recent.dump', 'galvanigraph-old.dump.gpg', 'galvanigraph-old.dump.repaired', 'yearly/galvanigraph-old.dump'];
-    mkdirSync(path('yearly'));
+    const kept = ['galvanigraph-recent.dump', 'galvanigraph-old.dump.gpg', 'galvanigraph-old.dump.repaired', 'pre-upgrade/galvanigraph-old.dump'];
+    mkdirSync(path('pre-upgrade'));
     for (const file of [...kept, 'galvanigraph-old.dump']) {
       writeFileSync(path(file), 'x');
       age(file, file.includes('recent') ? 10 : 30);
@@ -254,11 +265,23 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
     expect(run.output).toContain('NOT OK');
   });
 
+  it('the check does not call a dump damaged when Docker could not run it', () => {
+    goodDump();
+    mkdirSync(path('bin'));
+    writeFileSync(path('bin/docker'), '#!/bin/sh\nexit 125\n', { mode: 0o755 });
+
+    const run = sh(`bin=$(cd "${backups}/bin" && pwd) && PATH="$bin:$PATH" sh docker/check-dump.sh "${backups}/good.dump"`);
+
+    expect(run.status).toBe(2);
+    expect(run.output).toContain('says nothing about');
+    expect(run.output).not.toMatch(/OK/);
+  });
+
   it.each([['July', JULY], ['November', NOVEMBER]])('the documented repair undoes the damage to a dump taken in %s exactly', (_name, month) => {
     const original = dumpedIn(goodDump(), month);
     writeFileSync(path('example.dump'), throughTty(original));
 
-    expect(ok(documented(fenceWith(BACKUP_PAGE, 'perl')))).toContain('dump OK');
+    expect(repairExample()).toMatchObject({ status: 0, output: expect.stringContaining('dump OK') as string });
 
     expect(readFileSync(path('example.dump.repaired')).equals(original)).toBe(true);
     expect(readFileSync(path('example.dump')).equals(throughTty(original))).toBe(true);
@@ -267,19 +290,41 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
   it('the damage the repair undoes is the one a TTY does', () => {
     ok(`docker exec -t ${container} pg_dump -U galvanigraph -d galvanigraph -F c > "${backups}/example.dump"`);
 
-    expect(ok(documented(fenceWith(BACKUP_PAGE, 'perl')))).toContain('dump OK');
+    expect(repairExample()).toMatchObject({ status: 0, output: expect.stringContaining('dump OK') as string });
   });
 
   it('the documented repair leaves a good dump alone', () => {
     const dump = goodDump();
     writeFileSync(path('example.dump'), dump);
 
-    const run = sh(documented(fenceWith(BACKUP_PAGE, 'perl')));
+    const run = repairExample();
 
+    expect(run.status).not.toBe(0);
     expect(run.output).toContain('leave it as it is');
     expect(run.output).not.toContain('dump OK');
-    expect(existsSync(path('example.dump.repaired'))).toBe(false);
+    expect(readdirSync(backups).filter((f) => f.startsWith('example'))).toEqual(['example.dump']);
     expect(readFileSync(path('example.dump')).equals(dump)).toBe(true);
+  });
+
+  it('a repair run again, or without its original, leaves the repaired dump alone', () => {
+    writeFileSync(path('example.dump'), throughTty(goodDump()));
+    expect(repairExample().status).toBe(0);
+    const repaired = readFileSync(path('example.dump.repaired'));
+
+    expect(repairExample().status).not.toBe(0);
+    rmSync(path('example.dump'));
+    expect(repairExample().status).not.toBe(0);
+
+    expect(readFileSync(path('example.dump.repaired')).equals(repaired)).toBe(true);
+  });
+
+  it('a repair that does not give a readable dump leaves only the original', () => {
+    const dump = goodDump();
+    writeFileSync(path('example.dump'), throughTty(dump.subarray(0, Math.floor(dump.length * 0.9))));
+
+    expect(repairExample().status).not.toBe(0);
+
+    expect(readdirSync(backups).filter((f) => f.startsWith('example'))).toEqual(['example.dump']);
   });
 
   it('the documented restore drops nothing when the dump is damaged', () => {
