@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { createServer, type AddressInfo, type Server, type Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // The database is faked, not SettingsService: a faked getByKey hid that it masks smtp.auth_pass.
@@ -70,7 +71,7 @@ afterEach(() => {
 
 describe('EmailService', () => {
   describe('getSmtpConfig', () => {
-    it('reads all 6 settings', async () => {
+    it('reads all 7 settings', async () => {
       mockSmtpSettings();
 
       const result = await EmailService.getSmtpConfig();
@@ -83,7 +84,8 @@ describe('EmailService', () => {
       expect(result.value.from).toBe('alerts@example.com');
       expect(result.value.authUser).toBe('user@example.com');
       expect(result.value.authPass).toBe('secret123');
-      expect(mockReadSetting).toHaveBeenCalledTimes(6);
+      expect(result.value.requireTls).toBe(false);
+      expect(mockReadSetting).toHaveBeenCalledTimes(7);
     });
 
     it('returns error when SMTP host is empty', async () => {
@@ -106,7 +108,7 @@ describe('EmailService', () => {
       expect(result.error.message).toContain('SMTP host is not configured');
     });
 
-    it.each(['smtp.host', 'smtp.port', 'smtp.secure', 'smtp.from', 'smtp.auth_user', 'smtp.auth_pass'])(
+    it.each(['smtp.host', 'smtp.port', 'smtp.secure', 'smtp.require_tls', 'smtp.from', 'smtp.auth_user', 'smtp.auth_pass'])(
       'returns the read error when %s cannot be read, instead of treating it as unset',
       async (failing) => {
         mockSmtpSettings();
@@ -132,6 +134,24 @@ describe('EmailService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.port).toBe(587);
+    });
+
+    it('parses require_tls as true', async () => {
+      mockSmtpSettings({ 'smtp.require_tls': 'true' });
+
+      const result = await EmailService.getSmtpConfig();
+
+      expect(result).toMatchObject({ ok: true, value: { requireTls: true } });
+    });
+
+    it.each(['smtp.secure', 'smtp.require_tls'])('refuses a %s that is neither true nor false, instead of sending without TLS', async (key) => {
+      mockSmtpSettings({ [key]: 'TRUE' });
+
+      const result = await EmailService.getSmtpConfig();
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toBe(`${key} must be true or false`);
     });
 
     it('parses secure as true', async () => {
@@ -256,6 +276,7 @@ describe('EmailService', () => {
         host: 'smtp.example.com',
         port: 465,
         secure: true,
+        requireTls: false,
         from: 'alerts@example.com',
         authUser: 'user@example.com',
         authPass: 'secret123',
@@ -284,24 +305,19 @@ describe('EmailService', () => {
       return spy.mock.calls[0]![0];
     }
 
-    function expectRequireTlsOff(opts: Record<string, unknown>): void {
-      expect(opts['requireTLS'] === undefined || opts['requireTLS'] === false).toBe(true);
-    }
-
     it('hands nodemailer host, port, secure and auth when a user is set', async () => {
       mockSmtpSettings({ 'smtp.secure': 'true', 'smtp.port': '465' });
 
       const result = await EmailService.sendMail(['admin@example.com'], 'Subj', 'Body');
 
       expect(result.ok).toBe(true);
-      const { requireTLS: _requireTLS, ...rest } = transportOptions();
-      expect(rest).toEqual({
+      expect(transportOptions()).toEqual({
         host: 'smtp.example.com',
         port: 465,
         secure: true,
+        requireTLS: false,
         auth: { user: 'user@example.com', pass: 'secret123' },
       });
-      expectRequireTlsOff(transportOptions());
       expect(realSendMail).toHaveBeenCalledWith({
         from: 'alerts@example.com',
         to: 'admin@example.com',
@@ -317,9 +333,67 @@ describe('EmailService', () => {
       const result = await EmailService.sendMail(['admin@example.com'], 'Subj', 'Body');
 
       expect(result.ok).toBe(true);
-      const { requireTLS: _requireTLS, ...rest } = transportOptions();
-      expect(rest).toEqual({ host: 'smtp.example.com', port: 587, secure: false });
-      expectRequireTlsOff(transportOptions());
+      expect(transportOptions()).toEqual({ host: 'smtp.example.com', port: 587, secure: false, requireTLS: false });
+    });
+  });
+
+  // A mail server that offers no STARTTLS, as one whose offer an attacker strips looks.
+  describe('a server without STARTTLS', () => {
+    let server: Server;
+    const sockets = new Set<Socket>();
+    let seen: string[];
+
+    function answer(socket: Socket, line: string): void {
+      seen.push(line);
+      if (line.startsWith('EHLO')) socket.write('250-plain\r\n250 AUTH PLAIN LOGIN\r\n');
+      else if (line.startsWith('AUTH')) socket.write('235 ok\r\n');
+      else if (line === 'STARTTLS') socket.write('502 not supported\r\n');
+      else if (line === 'DATA') socket.write('354 go\r\n');
+      else if (line === 'QUIT') socket.end('221 bye\r\n');
+      else if (/^(MAIL|RCPT|\.$)/.test(line)) socket.write('250 ok\r\n');
+    }
+
+    beforeEach(async () => {
+      resetTransportFactory();
+      seen = [];
+      server = createServer((socket) => {
+        sockets.add(socket);
+        socket.on('error', () => { sockets.delete(socket); });
+        socket.write('220 plain ESMTP\r\n');
+        socket.on('data', (data) => {
+          for (const line of data.toString('utf8').split('\r\n')) if (line !== '') answer(socket, line);
+        });
+      });
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+    });
+
+    afterEach(async () => {
+      for (const socket of sockets) socket.destroy();
+      sockets.clear();
+      await new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
+    });
+
+    function settings(requireTls: string): Record<string, string> {
+      return { 'smtp.host': '127.0.0.1', 'smtp.port': String((server.address() as AddressInfo).port), 'smtp.require_tls': requireTls };
+    }
+
+    it('never gets the password or the message when require_tls is on', async () => {
+      mockSmtpSettings(settings('true'));
+
+      const result = await EmailService.sendMail(['admin@example.com'], 'Subj', 'Body');
+
+      expect(result.ok).toBe(false);
+      expect(seen[0]).toMatch(/^EHLO/);
+      expect(seen.filter((line) => /^(AUTH|MAIL|DATA)/.test(line))).toEqual([]);
+    });
+
+    it('gets the email when require_tls is off', async () => {
+      mockSmtpSettings(settings('false'));
+
+      const result = await EmailService.sendMail(['admin@example.com'], 'Subj', 'Body');
+
+      expect(result.ok).toBe(true);
+      expect(seen.some((line) => line.startsWith('AUTH PLAIN'))).toBe(true);
     });
   });
 });

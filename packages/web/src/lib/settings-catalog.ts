@@ -47,6 +47,7 @@ export const SETTING_SECTIONS: readonly SettingSection[] = [
       { key: 'smtp.host', label: 'SMTP server', help: 'Host name of the outgoing mail server. Email alerts fail while this is empty.', placeholder: 'smtp.hospital.example' },
       { key: 'smtp.port', label: 'Port', help: 'Usually 587 for STARTTLS, 465 for TLS, or 25 for plain SMTP.', check: 'port' },
       { key: 'smtp.secure', label: 'Use TLS', help: 'Connect with TLS from the start. Turn on for port 465.' },
+      { key: 'smtp.require_tls', label: 'Require STARTTLS', help: 'Send nothing, the password included, until the server upgrades the connection to TLS. Turn on for port 587. Not needed when Use TLS is on.' },
       { key: 'smtp.from', label: 'From address', help: 'The sender address on every email.', check: 'email', placeholder: 'galvanigraph@hospital.example' },
       { key: 'smtp.auth_user', label: 'Username', help: 'Leave empty if the server does not need a sign-in.' },
       { key: 'smtp.auth_pass', label: 'Password', help: 'Write-only: once saved it is never shown again. Type a new one to replace it.' },

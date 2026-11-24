@@ -7,6 +7,7 @@ export interface SmtpConfig {
   readonly host: string;
   readonly port: number;
   readonly secure: boolean;
+  readonly requireTls: boolean;
   readonly from: string;
   readonly authUser: string;
   readonly authPass: string;
@@ -22,7 +23,7 @@ function defaultTransportFactory(config: SmtpConfig): SmtpTransport {
     host: config.host,
     port: config.port,
     secure: config.secure,
-    requireTLS: false,
+    requireTLS: config.requireTls,
     auth: { user: config.authUser, pass: config.authPass },
   });
 }
@@ -45,13 +46,21 @@ async function readSetting(key: string): Promise<string> {
   return result.value ?? '';
 }
 
+/** Any other text fails the email: read as off, it would send without TLS. */
+async function readSwitch(key: string): Promise<boolean> {
+  const value = await readSetting(key);
+  if (value !== '' && value !== 'true' && value !== 'false') throw new Error(`${key} must be true or false`);
+  return value === 'true';
+}
+
 export class EmailService {
   static async getSmtpConfig(): Promise<Result<SmtpConfig>> {
     return tryCatch(async () => {
-      const [host, port, secure, from, authUser, authPass] = await Promise.all([
+      const [host, port, secure, requireTls, from, authUser, authPass] = await Promise.all([
         readSetting('smtp.host'),
         readSetting('smtp.port'),
-        readSetting('smtp.secure'),
+        readSwitch('smtp.secure'),
+        readSwitch('smtp.require_tls'),
         readSetting('smtp.from'),
         readSetting('smtp.auth_user'),
         readSetting('smtp.auth_pass'),
@@ -62,7 +71,8 @@ export class EmailService {
       return {
         host,
         port: port ? Number(port) : 587,
-        secure: secure === 'true',
+        secure,
+        requireTls,
         from,
         authUser,
         authPass,
