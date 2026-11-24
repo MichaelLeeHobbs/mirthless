@@ -22,6 +22,7 @@ import {
   type InMemoryStore,
 } from '../support/e2e-harness.js';
 import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
+import { nestedTables, nestedTablesJson } from '../../../__fixtures__/nested-headers.js';
 import { describeKafka, requireKafka, describeAmqp, requireAmqp, describeAmqpTls, requireAmqpTls } from './gates.js';
 
 const RUN = randomUUID().slice(0, 8);
@@ -230,9 +231,9 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await admin.close();
   });
 
-  const publishDirect = async (body: string): Promise<void> => {
+  const publishDirect = async (body: string, headers: Record<string, unknown> = { site: 'north' }): Promise<void> => {
     const ch = await admin.createConfirmChannel();
-    ch.publish(names.exchange, 'adt.a01', Buffer.from(body), { headers: { site: 'north' } });
+    ch.publish(names.exchange, 'adt.a01', Buffer.from(body), { headers });
     await ch.waitForConfirms();
     await ch.close();
   };
@@ -356,6 +357,33 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
       }, WAIT);
     } finally {
       await ch.close();
+    }
+  }, TEST_TIMEOUT);
+
+  it('delivers a message whose headers are nested 5,000 deep, once and whole, and the message behind it', async () => {
+    const sink = new CaptureDestination();
+    const store = createInMemoryStore();
+    deployed.push(await deployChannel({
+      channelId: '00000000-0000-0000-0000-amqpe2e00011',
+      dataType: 'RAW',
+      store,
+      source: source(),
+      transformer: ECHO_SOURCE_MAP,
+      destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
+    }));
+
+    await publishDirect('deep', { site: 'north', x: nestedTables(5_000) });
+    await publishDirect('behind');
+
+    await vi.waitFor(() => { expect(sink.received).toHaveLength(2); }, WAIT);
+    expect(parsed(sink, 0)).toMatchObject({ body: 'deep', redelivered: false, headers: { site: 'north', x: nestedTablesJson(5_000) } });
+    expect(parsed(sink, 1)).toMatchObject({ body: 'behind', redelivered: false, headers: { site: 'north' } });
+    expect(store.messageCount()).toBe(2);
+    const left = await admin.createChannel();
+    try {
+      await vi.waitFor(async () => { expect((await left.checkQueue(names.queue)).messageCount).toBe(0); }, WAIT);
+    } finally {
+      await left.close();
     }
   }, TEST_TIMEOUT);
 
