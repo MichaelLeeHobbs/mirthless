@@ -6,19 +6,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   runScriptTestIsolated, MAX_TEST_READS, WORKER_START_LIMIT_MS, tooManyReads, type IsolatedTestInput, type IsolationLimits,
 } from '../script-test-isolated.js';
-import type { ScriptTestResult } from '../script-test-run.js';
+import { runScriptTest, type ScriptTestResult } from '../script-test-run.js';
 
 vi.setConfig({ testTimeout: 30_000 });
 
 const ADT = ['MSH|^~\\&|EPIC|HOSP|GF|HOSP|20261115093000||ADT^A01|MSG1|P|2.5.1', 'PID|1||4821193^^^HOSP^MR||NGUYEN^AVERY'].join('\r');
 
+function inputOf(overrides: Partial<IsolatedTestInput>): IsolatedTestInput {
+  return {
+    script: 'return true;', kind: 'filter', sample: ADT, templates: [],
+    surface: { dataType: 'HL7V2', templateContext: 'SOURCE_FILTER_TRANSFORMER' },
+    ...overrides,
+  };
+}
+
 async function run(overrides: Partial<IsolatedTestInput>, readers = {}, limits: Partial<IsolationLimits> = {}): Promise<ScriptTestResult> {
   return runScriptTestIsolated(
-    {
-      script: 'return true;', kind: 'filter', sample: ADT, templates: [],
-      surface: { dataType: 'HL7V2', templateContext: 'SOURCE_FILTER_TRANSFORMER' },
-      ...overrides,
-    },
+    inputOf(overrides),
     readers,
     // Scripts meant to finish get a generous limit, so only the time-limit tests
     // depend on the clock (D-290, #188).
@@ -28,11 +32,13 @@ async function run(overrides: Partial<IsolatedTestInput>, readers = {}, limits: 
 
 describe('runScriptTestIsolated', () => {
   it('returns the same result as a test run on the main thread', async () => {
-    const result = await run({ kind: 'transformer', script: "msg.set('PID.5.1', 'SMITH'); logger.info('done');" });
-    expect(result.error).toBeNull();
+    const input = { kind: 'transformer', script: "msg.set('PID.5.1', 'SMITH'); channelMap.seen = 1; logger.info('done');" } as const;
+    const result = await run(input);
+    const onMain = await runScriptTest({ ...inputOf(input), readers: {}, timeoutMs: 10_000 });
+
     expect(result.outcome).toBe('completed');
     expect(result.output?.split('\r')[1]).toBe('PID|1||4821193^^^HOSP^MR||SMITH^AVERY');
-    expect(result.logs).toEqual([{ level: 'INFO', message: 'done' }]);
+    expect({ ...result, durationMs: 0 }).toEqual({ ...onMain.value, durationMs: 0 });
   });
 
   it('stops an endless loop without blocking the main thread', async () => {
