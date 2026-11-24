@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
-import { delimitedOptionsSchema } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, delimitedOptionsSchema } from '@galvanigraph/core-models';
 import { MessageProcessor, groupDestinationChains } from '../message-processor.js';
 import type {
   MessageStore,
@@ -1074,40 +1074,11 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // CT_SOURCE_MAP = 9
-    expect(store.storeContent).toHaveBeenCalledWith(
-      expect.any(String), 1, 0, 9, expect.any(String), 'JSON',
-    );
-  });
-
-  it('stores sourceMap with contentType=9', async () => {
-    const store = makeStore();
-    const sendFn = makeSendFn();
-    const processor = new MessageProcessor(
-      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
-    );
-
-    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
-
-    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
-    const sourceMapCall = calls.find((c) => c[3] === 9);
-    expect(sourceMapCall).toBeDefined();
-    expect(sourceMapCall![3]).toBe(9);
-  });
-
-  it('stores sourceMap with dataType=JSON', async () => {
-    const store = makeStore();
-    const sendFn = makeSendFn();
-    const processor = new MessageProcessor(
-      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
-    );
-
-    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
-
-    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
-    const sourceMapCall = calls.find((c) => c[3] === 9);
-    expect(sourceMapCall).toBeDefined();
-    expect(sourceMapCall![5]).toBe('JSON');
+    const stored = vi.mocked(store.storeContent).mock.calls.map(([, , , contentType, content, dataType]) => [contentType, content, dataType]);
+    expect(stored.slice(0, 2)).toEqual([
+      [CONTENT_TYPE.RAW, 'MSH|^~\\&|SENDER', 'RAW'],
+      [CONTENT_TYPE.SOURCE_MAP, '{"remoteAddress":"127.0.0.1"}', 'JSON'],
+    ]);
   });
 
   it('stores empty sourceMap {} as JSON', async () => {
@@ -1283,11 +1254,7 @@ describe('MessageProcessor reports where an error happened', () => {
 
       await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-      const transformedAt = order.indexOf('status:0:TRANSFORMED');
-      const firstSend = order.indexOf('send:1');
-      expect(order.indexOf('row:1')).toBeLessThan(transformedAt);
-      expect(order.indexOf('row:2')).toBeLessThan(transformedAt);
-      expect(transformedAt).toBeLessThan(firstSend);
+      expect(order.slice(0, 5)).toEqual(['row:0', 'row:1', 'row:2', 'status:0:TRANSFORMED', 'send:1']);
     });
 
     it('errors the message and sends nothing when a destination row cannot be created', async () => {
