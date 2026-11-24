@@ -57,6 +57,19 @@ describe('AlertManager.loadAlerts', () => {
     expect(manager.getAlerts()).toHaveLength(1);
     expect(manager.getAlerts()[0]?.id).toBe('a2');
   });
+
+  it('warns of an alert whose regex does not compile, since it can never match', () => {
+    const withRegex = (id: string, regex: string | null, enabled = true): LoadedAlert =>
+      makeAlert({ id, enabled, trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex } });
+    manager.loadAlerts([
+      withRegex('bad', '[unclosed'), withRegex('good', 'timeout|refused'), withRegex('none', null), withRegex('off', '(', false),
+    ]);
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ alertId: 'bad', alertName: 'Test Alert', errMsg: expect.stringContaining('Unterminated character class') as string }),
+      expect.stringContaining('never fires'),
+    );
+  });
 });
 
 describe('AlertManager.handleEvent', () => {

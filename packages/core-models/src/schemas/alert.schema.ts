@@ -18,10 +18,26 @@ export const ERROR_EVENT_TYPES = [
 
 export const ALERT_ACTION_TYPES = ['EMAIL', 'CHANNEL'] as const;
 
+/** Why the pattern does not compile, or null when it does. */
+export function alertRegexError(pattern: string): string | null {
+  try {
+    new RegExp(pattern);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+/** Refused at save, because a pattern that does not compile never matches and its alert never fires. */
+const alertRegexSchema = z.string().superRefine((pattern, ctx) => {
+  const message = alertRegexError(pattern);
+  if (message !== null) ctx.addIssue({ code: 'custom', message });
+});
+
 export const channelErrorTriggerSchema = z.object({
   type: z.literal('CHANNEL_ERROR'),
   errorTypes: z.array(z.enum(ERROR_EVENT_TYPES)).min(1),
-  regex: z.string().nullable().default(null),
+  regex: alertRegexSchema.nullable().default(null),
 });
 
 export const noMessagesTriggerSchema = z.object({
