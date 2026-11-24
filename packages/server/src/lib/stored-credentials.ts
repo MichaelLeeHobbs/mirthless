@@ -48,7 +48,7 @@ const SOURCE_KEYS: Readonly<Record<SourceConnectorType, ConnectorKeys>> = {
   },
   HTTP: {
     deciding: ['host', 'port', 'path', 'matchSubpaths', 'auth', 'scheme', 'tls'],
-    free: ['method', 'responseContentType', 'responseStatusCode', 'errorStatusCode', 'maxBodyBytes', ...SOURCE_COMMON],
+    free: ['method', 'responseContentType', 'responseStatusCode', 'errorStatusCode', 'maxBodyBytes', 'bodyCharset', ...SOURCE_COMMON],
     credentials: [],
   },
   FILE: withoutCredentials(
@@ -66,7 +66,7 @@ const SOURCE_KEYS: Readonly<Record<SourceConnectorType, ConnectorKeys>> = {
   ),
   EMAIL: {
     deciding: ['host', 'port', 'secure', 'username', 'protocol'],
-    free: ['folder', 'pollingIntervalMs', 'postAction', 'moveToFolder', 'subjectFilter', 'includeAttachments', ...SOURCE_COMMON],
+    free: ['folder', 'pollingIntervalMs', 'postAction', 'moveToFolder', 'subjectFilter', ...SOURCE_COMMON],
     credentials: ['password'],
   },
   SFTP: {
