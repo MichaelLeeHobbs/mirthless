@@ -4,9 +4,10 @@ import * as https from 'node:https';
 import { HttpDispatcher, type HttpDispatcherConfig } from '../http-dispatcher.js';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import type { ConnectorMessage } from '../../base.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
-const DEST_PORT = 18662;
-const DEST_HTTPS_PORT = 18663;
+const DEST_PORT = await freePort();
+const DEST_HTTPS_PORT = await freePort();
 
 function makeConfig(overrides?: Partial<HttpDispatcherConfig>): HttpDispatcherConfig {
   return {
@@ -398,8 +399,6 @@ describe('HttpDispatcher per-message values, parameters and Basic auth', () => {
 });
 
 describe('HttpDispatcher redirects', () => {
-  const REDIRECT_PORT = 18664;
-
   function createRedirectingServer(port: number, status: number): MockServer {
     const requests: MockServer['requests'] = [];
     const server = http.createServer((req, res) => {
@@ -417,8 +416,8 @@ describe('HttpDispatcher redirects', () => {
   }
 
   it.each([301, 302, 303, 307, 308])('reports a %i redirect as an error and does not follow it', async (status) => {
-    mockServer = createRedirectingServer(REDIRECT_PORT, status);
-    dispatcher = new HttpDispatcher(makeConfig({ url: `http://127.0.0.1:${String(REDIRECT_PORT)}/receive` }));
+    mockServer = createRedirectingServer(DEST_PORT, status);
+    dispatcher = new HttpDispatcher(makeConfig({ url: `http://127.0.0.1:${String(DEST_PORT)}/receive` }));
     await dispatcher.onDeploy();
     await dispatcher.onStart();
 

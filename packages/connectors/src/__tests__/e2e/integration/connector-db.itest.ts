@@ -3,9 +3,10 @@ import { ConnectionPool, DatabaseDispatcher, clearChannelRegistry } from '../../
 import { deployChannel, teardownAll } from '../support/e2e-harness.js';
 import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeDb, requireDb } from './gates.js';
+import { freePort } from '../../../__fixtures__/free-port.js';
 
 const TABLE = 'e2e_db_dest';
-const PORT = 17731;
+const PORT = await freePort();
 
 describeDb('Database destination connector (real Postgres)', () => {
   const pool = new ConnectionPool();

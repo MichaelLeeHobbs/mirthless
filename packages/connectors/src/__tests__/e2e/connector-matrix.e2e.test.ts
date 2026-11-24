@@ -19,6 +19,7 @@ import {
 } from '../../index.js';
 import { deployChannel, teardownAll, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
 /** Inside each test's 15 s budget, so a miss names the wait. */
 const DELIVERY_WAIT = { timeout: 10_000, interval: 10 } as const;
@@ -205,10 +206,10 @@ describe('FHIR connector (POST a resource in → transform to FHIR → POST to a
   });
 });
 
-const HTTP_SRC_PORT = 17701;
-const DOWNSTREAM_PORT = 17702;
-const FHIR_PORT = 17703;
-const FHIR_SRC_PORT = 17704;
+const HTTP_SRC_PORT = await freePort();
+const DOWNSTREAM_PORT = await freePort();
+const FHIR_PORT = await freePort();
+const FHIR_SRC_PORT = await freePort();
 
 async function listen(server: http.Server, port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {

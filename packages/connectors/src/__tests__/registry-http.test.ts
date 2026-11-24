@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
+import { freePort } from '../__fixtures__/free-port.js';
 
-const SOURCE_PORT = 18665;
+const SOURCE_PORT = await freePort();
 const PEM = { cert: '-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----', key: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----' };
 
 describe('registry HTTP factories', () => {

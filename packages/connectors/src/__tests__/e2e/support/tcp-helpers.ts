@@ -23,10 +23,7 @@ export interface MllpCaptureServer {
   close(): void;
 }
 
-export async function startMllpCaptureServer(
-  port: number,
-  ackFor?: (message: string) => string,
-): Promise<MllpCaptureServer> {
+export async function startMllpCaptureServer(ackFor?: (message: string) => string): Promise<MllpCaptureServer> {
   const received: string[] = [];
   const server = net.createServer((socket) => {
     const parser = new MllpParser();
@@ -41,10 +38,10 @@ export async function startMllpCaptureServer(
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', () => { resolve(); });
+    server.listen(0, '127.0.0.1', () => { resolve(); });
   });
 
-  return { received, port, close: () => { server.close(); } };
+  return { received, port: (server.address() as net.AddressInfo).port, close: () => { server.close(); } };
 }
 
 export async function sendMllp(port: number, message: string, timeoutMs = 10_000): Promise<string> {

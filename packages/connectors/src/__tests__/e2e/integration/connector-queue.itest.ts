@@ -24,6 +24,7 @@ import {
 import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { nestedTables, nestedTablesJson } from '../../../__fixtures__/nested-headers.js';
 import { describeKafka, requireKafka, describeAmqp, requireAmqp, describeAmqpTls, requireAmqpTls } from './gates.js';
+import { freePort } from '../../../__fixtures__/free-port.js';
 
 const RUN = randomUUID().slice(0, 8);
 const WAIT = { timeout: 30_000, interval: 100 };
@@ -90,10 +91,11 @@ describeKafka('Kafka connectors (real broker)', () => {
       transformer: ECHO_SOURCE_MAP,
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
+    const port = await freePort();
     const producer = await deployChannel({
       channelId: '00000000-0000-0000-0000-kafkae2e000a',
       dataType: 'RAW',
-      source: mllpSource(17761, { maxConnections: 5 }),
+      source: mllpSource(port, { maxConnections: 5 }),
       transformer: "$c('site', 'north'); $c('patientId', 'P42'); return msg;",
       destinations: [{
         metaDataId: 1,
@@ -108,7 +110,7 @@ describeKafka('Kafka connectors (real broker)', () => {
     });
     deployed.push(producer, consumer);
 
-    await sendMllp(17761, 'MSH|^~\\&|KAFKA');
+    await sendMllp(port, 'MSH|^~\\&|KAFKA');
 
     // Headers matter here: a record with headers once failed to encode (string header names).
     await vi.waitFor(() => { expect(sink.received).toHaveLength(1); }, WAIT);
@@ -249,10 +251,11 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
       transformer: ECHO_SOURCE_MAP,
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
+    const port = await freePort();
     const producer = await deployChannel({
       channelId: '00000000-0000-0000-0000-amqpe2e0000a',
       dataType: 'RAW',
-      source: mllpSource(17762, { maxConnections: 5 }),
+      source: mllpSource(port, { maxConnections: 5 }),
       transformer: "$c('event', 'a01'); $c('patientId', 'P42'); return msg;",
       destinations: [{
         metaDataId: 1,
@@ -268,7 +271,7 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     });
     deployed.push(producer, consumer);
 
-    await sendMllp(17762, 'MSH|^~\\&|AMQP');
+    await sendMllp(port, 'MSH|^~\\&|AMQP');
 
     await vi.waitFor(() => { expect(sink.received).toHaveLength(1); }, WAIT);
     expect(parsed(sink)).toMatchObject({

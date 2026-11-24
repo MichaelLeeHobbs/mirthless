@@ -10,8 +10,9 @@ import {
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
 import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeSftp, requireSftp } from './gates.js';
+import { freePort } from '../../../__fixtures__/free-port.js';
 
-const TCP_PORT = 17741;
+const TCP_PORT = await freePort();
 
 interface RawSession {
   readonly sftp: { symlink(targetPath: string, linkPath: string, cb: (err: Error | null | undefined) => void): void };

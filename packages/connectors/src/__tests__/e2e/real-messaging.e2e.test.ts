@@ -13,6 +13,7 @@ import {
   type DeployedChannel,
 } from './support/e2e-harness.js';
 import { mllpSource, mllpDestination, startMllpCaptureServer, sendMllp, type MllpCaptureServer } from './support/tcp-helpers.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
 const HL7_ADT = [
   'MSH|^~\\&|SENDER|FACILITY|RECEIVER|FACILITY|20260228120000||ADT^A01|12345|P|2.5',
@@ -32,9 +33,8 @@ const REDACT_TEMPLATE: CodeTemplateData = {
   ].join('\n'),
 };
 
-const SRC_PORT_1 = 17681;
-const DEST_PORT_1 = 17682;
-const SRC_PORT_2 = 17683;
+const SRC_PORT_1 = await freePort();
+const SRC_PORT_2 = await freePort();
 
 // Delivery runs compiled scripts and crosses real sockets, which takes seconds on a
 // loaded machine (#213). The wait stays inside the 30 s test budget so a miss names it.
@@ -52,7 +52,7 @@ afterEach(async () => {
 
 describe('real message through a single channel (TCP → transform → TCP)', () => {
   it('applies a TS transformer using a code template and delivers to a real TCP destination', async () => {
-    captureServer = await startMllpCaptureServer(DEST_PORT_1);
+    captureServer = await startMllpCaptureServer();
 
     const channel = await deployChannel({
       channelId: '00000000-0000-0000-0000-realmsg00001',
@@ -66,7 +66,7 @@ describe('real message through a single channel (TCP → transform → TCP)', ()
       destinations: [{
         metaDataId: 1,
         name: 'TCP Out',
-        connector: mllpDestination(DEST_PORT_1, { maxConnections: 5, responseTimeout: 5_000 }),
+        connector: mllpDestination(captureServer.port, { maxConnections: 5, responseTimeout: 5_000 }),
       }],
     });
     deployed.push(channel);

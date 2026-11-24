@@ -8,8 +8,9 @@ import {
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
 import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeMail, requireMail } from './gates.js';
+import { freePort } from '../../../__fixtures__/free-port.js';
 
-const TCP_PORT = 17751;
+const TCP_PORT = await freePort();
 
 let deployed: DeployedChannel[] = [];
 afterEach(async () => {

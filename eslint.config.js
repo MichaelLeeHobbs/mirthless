@@ -41,6 +41,15 @@ const SHARED_HELPERS = [
   { names: 'createSlots|withSlot|withHashSlot', home: '@galvanigraph/core-util (slots.ts)' },
   { names: 'settleWithin', home: '@galvanigraph/core-util (settle-within.ts)' },
 ];
+// A run of the same test in another checkout holds a fixed port at the same time (#376).
+const FIXED_PORT = 'Listen on port 0 and read the port back, or take one from freePort (packages/connectors/src/__fixtures__/free-port.ts).';
+const fixedPortSelectors = [
+  { selector: 'VariableDeclarator[id.name=/(^|_)PORT(_|$)|^port$|[a-z]Port$/]:not([id.name=/^(MAX|MIN|INVALID|DEFAULT)_/]) > Literal[raw=/^[1-9][0-9_]*$/]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.property.name="listen"] > Literal[raw=/^[1-9][0-9_]*$/]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.property.name="listen"] > ObjectExpression > Property[key.name="port"] > Literal[raw=/^[1-9][0-9_]*$/]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.name=/^(mllpSource|mllpDestination|sendMllp)$/] > Literal[raw=/^[1-9][0-9_]*$/]:first-child', message: FIXED_PORT },
+  { selector: ':matches(FunctionDeclaration, VariableDeclarator[init.type=/FunctionExpression$/])[id.name=/^(freePort|closedPort|getFreePort)$/]', message: FIXED_PORT },
+];
 // A permission check goes through holdsPermission or can (@galvanigraph/core-models
 // authz, D-310), so the move to scoped grants changes one place, not every caller.
 const permissionCheckSelectors = [
@@ -70,6 +79,10 @@ export default tseslint.config(
       'no-console': 'warn',
       'no-restricted-syntax': ['error', ...sharedHelperSelectors],
     },
+  },
+  {
+    files: ['packages/connectors/src/**/__tests__/**/*.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...sharedHelperSelectors, ...fixedPortSelectors] },
   },
   {
     files: ['packages/web/**/*.{ts,tsx}'],

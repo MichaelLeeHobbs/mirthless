@@ -49,6 +49,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `wrapScriptBody` and `scriptBodyPosition` in `core-models/src/scripting/script-check.ts`: a script as the body of the function the engine runs it in, and a position in that wrapped text back on the script's own lines. The compiler, the deploy type check and the editor's type check use both (D-297).
   - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
   - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage. The ledger file names, current and pre-rename, are `QUARANTINE_LEDGER_NAMES` and `isQuarantineLedgerName` in the same file.
+  - `freePort` in `connectors/src/__fixtures__/free-port.ts`: a port for a connector test's config that needs one before it listens. A server the test owns can listen on port 0 instead. Lint fails the usual shapes of a fixed port in a connector test (#376).
   - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
   - `redirectMessage` in `connectors/src/redirect.ts`: the ERROR text for a 3xx answer, which the HTTP and FHIR destinations never follow.
   - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvanigraph/connectors`): builds a nodemailer transport for the SMTP connector and the server's own mail. SMTP Test Connection (`connection-test.service.ts`) builds its options with `buildNodemailerOptions` from the same file, so it logs in as the connector does.
@@ -149,9 +150,9 @@ Tests are mandatory, not optional. This is healthcare software.
 
 | Package | Statements | Branches | Functions | Lines |
 |---|---|---|---|---|
-| engine | 93 | 89 | 96 | 96 |
-| core-util | 93 | 83 | 92 | 96 |
-| connectors | 89 | 78 | 85 | 91 |
+| engine | 94 | 89 | 96 | 96 |
+| core-util | 95 | 89 | 96 | 97 |
+| connectors | 92 | 89 | 90 | 94 |
 | server | 57 | 58 | 71 | 57 |
 | core-models | 79 | 87 | 90 | 79 |
 | web | 26 | 29 | 23 | 26 |

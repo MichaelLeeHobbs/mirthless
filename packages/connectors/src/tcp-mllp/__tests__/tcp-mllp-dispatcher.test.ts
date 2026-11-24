@@ -11,8 +11,9 @@ import type { ConnectorMessage } from '../../base.js';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
 import { withTimeout } from '../../timeout.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
-const DEST_PORT = 16662;
+const DEST_PORT = await freePort();
 
 function ackFrame(code: string): string {
   return `MSH|^~\\&|R|F|S|SF|20240101||ACK|1|P|2.5.1\rMSA|${code}|MSGID`;
@@ -164,12 +165,12 @@ describe('TcpMllpDispatcher', () => {
     const silentServer = net.createServer(() => {
       // Accept connection but never send data
     });
-    silentServer.listen(16699, '127.0.0.1');
+    silentServer.listen(0, '127.0.0.1');
     await new Promise<void>((resolve) => {
       silentServer.once('listening', resolve);
     });
 
-    dispatcher = new TcpMllpDispatcher(makeConfig({ port: 16699, responseTimeout: 30_000 }));
+    dispatcher = new TcpMllpDispatcher(makeConfig({ port: (silentServer.address() as net.AddressInfo).port, responseTimeout: 30_000 }));
     await dispatcher.onDeploy();
     await dispatcher.onStart();
 
@@ -335,15 +336,6 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   /** A quarter of this is the pause between connection attempts. */
   const ACQUIRE_MS = 400;
 
-  /** A port nothing listens on. */
-  async function closedPort(): Promise<number> {
-    const server = net.createServer();
-    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
-    const { port } = server.address() as net.AddressInfo;
-    await new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
-    return port;
-  }
-
   interface Remote {
     /** Stops accepting connections; the open ones keep working. */
     stopListening(): void;
@@ -386,7 +378,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   it('waits between connection attempts', async () => {
     let attempts = 0;
     const count = (): void => { attempts += 1; };
-    const { send } = await startAgainst(await closedPort());
+    const { send } = await startAgainst(await freePort());
     diagnostics.subscribe('net.client.socket', count);
     try {
       expect((await send()).ok).toBe(false);
@@ -398,7 +390,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('fails with what it waited for and why it did not come', async () => {
-    const port = await closedPort();
+    const port = await freePort();
     const { send } = await startAgainst(port);
     const result = await send();
     expect(result.error?.message).toMatch(new RegExp(`^No connection to 127\\.0\\.0\\.1:${String(port)} within 400ms: .*ECONNREFUSED`));
@@ -410,7 +402,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
       done(null, addresses);
     }) as unknown as typeof dns.lookup);
     try {
-      const port = await closedPort();
+      const port = await freePort();
       const { send, log, dispatcher: started } = await startAgainst(port, { host: 'partner.example', acquireTimeoutMs: 5_000 });
       const aborter = new AbortController();
       const sending = send(aborter.signal);
@@ -428,7 +420,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('gives the reason when the send is aborted before its acquire timeout, as a queued one is', async () => {
-    const port = await closedPort();
+    const port = await freePort();
     const { send, log } = await startAgainst(port, { acquireTimeoutMs: 5_000 });
     const aborter = new AbortController();
     const sending = send(aborter.signal);
@@ -439,7 +431,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('delivers a waiting message once the remote comes back, within seconds however long it may wait', async () => {
-    const port = await closedPort();
+    const port = await freePort();
     const { send, log } = await startAgainst(port, { acquireTimeoutMs: 30_000 });
     const sending = send();
     await vi.waitFor(() => { expect(outages(log)).toBe(1); }, { timeout: 4_000 });
@@ -451,7 +443,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('tries again for a send that comes during the pause, however short its wait', async () => {
-    const port = await closedPort();
+    const port = await freePort();
     const { send, log } = await startAgainst(port);
     const aborter = new AbortController();
     const first = send(aborter.signal);
@@ -463,7 +455,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('logs an outage once, and the next outage again', async () => {
-    const port = await closedPort();
+    const port = await freePort();
     const { send, log } = await startAgainst(port);
     expect((await send()).ok).toBe(false);
     expect((await send()).ok).toBe(false);
@@ -482,7 +474,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('does not take a refused extra connection for an outage, and logs the outage that follows', async () => {
-    const port = await closedPort();
+    const port = await freePort();
     const { send, log } = await startAgainst(port, { acquireTimeoutMs: 1_000 });
     const remote = await listenOn(port);
     expect((await send()).ok).toBe(true);
@@ -523,14 +515,14 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('keeps the pool\'s own error for a send during a stop', async () => {
-    const { send, dispatcher: started } = await startAgainst(await closedPort());
+    const { send, dispatcher: started } = await startAgainst(await freePort());
     const stopping = started.onStop();
     expect((await send()).error?.message).toContain('draining');
     expect((await stopping).ok).toBe(true);
   });
 
   it('takes a connection as reaching the remote, even when the send then fails', async () => {
-    const port = await closedPort();
+    const port = await freePort();
     const { send, log } = await startAgainst(port);
     expect((await send()).ok).toBe(false);
 
@@ -568,7 +560,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     }
 
     it('ends at once, with every send that waits, whoever asked for it', async () => {
-      const { send, log, dispatcher: started } = await startAgainst(await closedPort(), { ...LONG_WAIT, maxConnections: 2 });
+      const { send, log, dispatcher: started } = await startAgainst(await freePort(), { ...LONG_WAIT, maxConnections: 2 });
       const waiting = [send(), send(), send(), send()];
       await vi.waitFor(() => { expect(outages(log)).toBe(1); });
 
@@ -579,7 +571,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     });
 
     it('makes no connection after it', async () => {
-      const { send, log, dispatcher: started } = await startAgainst(await closedPort());
+      const { send, log, dispatcher: started } = await startAgainst(await freePort());
       const waiting = send();
       await vi.waitFor(() => { expect(outages(log)).toBe(1); });
       await halt(started);
@@ -597,7 +589,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     });
 
     it('gives up a connect in progress, which is no outage', async () => {
-      const port = await closedPort();
+      const port = await freePort();
       const connecting: net.Socket[] = [];
       const watch = (message: unknown): void => { connecting.push((message as { socket: net.Socket }).socket); };
       diagnostics.subscribe('net.client.socket', watch);
@@ -628,7 +620,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
         sockets[0]?.write(wrapMllp(ackFrame('AA')));
         expect((await sending).ok).toBe(true);
         expect((await taken.dispatcher.onStop()).ok).toBe(true);
-        const refused = await startAgainst(await closedPort());
+        const refused = await startAgainst(await freePort());
         expect((await refused.send()).ok).toBe(false);
         // Which also waits for a connect that is being tried now.
         expect((await refused.dispatcher.onStop()).ok).toBe(true);
@@ -695,7 +687,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     });
 
     it('ends a stop in progress, which leaves the next start alone', async () => {
-      const port = await closedPort();
+      const port = await freePort();
       const { send, log, dispatcher: started } = await startAgainst(port, LONG_WAIT);
       const waiting = send();
       await vi.waitFor(() => { expect(outages(log)).toBe(1); });
@@ -711,7 +703,7 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
   });
 
   it('logs an outage again after a restart', async () => {
-    const { send, log, dispatcher: started } = await startAgainst(await closedPort());
+    const { send, log, dispatcher: started } = await startAgainst(await freePort());
     expect((await send()).ok).toBe(false);
     expect((await started.onStop()).ok).toBe(true);
     expect((await started.onStart()).ok).toBe(true);
