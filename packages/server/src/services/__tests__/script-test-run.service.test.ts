@@ -102,7 +102,8 @@ describe('ScriptTestRunService.run', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.outcome).toBe('error');
-    expect(result.value.error).toMatch(new RegExp(` after ${String(TEST_RUN_TIMEOUT_MS)} ?ms`));
+    // The sandbox's own words. The worker's backstop, 2 x the limit + 5 s, says "was stopped after" the same limit.
+    expect(result.value.error).toBe(`Script execution timed out after ${String(TEST_RUN_TIMEOUT_MS)}ms`);
   });
 
   it('runs one test at a time per server, refusing the second instead of queueing it', async () => {

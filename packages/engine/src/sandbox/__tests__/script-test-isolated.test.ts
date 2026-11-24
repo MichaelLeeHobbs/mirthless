@@ -41,8 +41,8 @@ describe('runScriptTestIsolated', () => {
     const result = await run({ kind: 'script', script: 'while (true) {}' }, {}, { timeoutMs: 1_000 });
     clearInterval(timer);
     expect(result.outcome).toBe('error');
-    // The sandbox's own timeout usually stops it inside the worker; the worker is killed if not.
-    expect(result.error).toMatch(/timed out after 1000 ?ms|stopped after 1000 ms/);
+    // The sandbox's own words: the backstop that kills the worker 6 s later says "was stopped after 1000 ms".
+    expect(result.error).toBe('Script execution timed out after 1000ms');
     // The loop ran for about a second; the main thread kept running meanwhile.
     expect(ticks).toBeGreaterThan(5);
   });
