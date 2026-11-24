@@ -2,6 +2,7 @@
 // compressed bodies is limited across requests (D-334).
 
 import { brotliDecompress, gunzip, inflate, type CompressCallback, type ZlibOptions } from 'node:zlib';
+import { createSlots } from '@galvanigraph/core-util';
 import { RefusedBodyError, tooLarge } from './refused-body.js';
 
 const MAX_RUNNING = 2;
@@ -43,8 +44,7 @@ export function contentCoding(header: string | undefined): ContentCoding | undef
 
 export class Decompressor {
   private readonly maxBodyBytes: number;
-  private readonly waiting: (() => void)[] = [];
-  private running = 0;
+  private readonly inTurn = createSlots(MAX_RUNNING);
   /** The decompressed bytes of unanswered requests, and the limits of the ones being decompressed. */
   private held = 0;
 
@@ -53,28 +53,11 @@ export class Decompressor {
   }
 
   /** `isGone`: the sender left while the body waited its turn, so nothing is spent on it. */
-  async run(coding: ContentCoding, bytes: Buffer, isGone: () => boolean): Promise<DecompressedBody> {
-    await this.turn();
-    try {
+  run(coding: ContentCoding, bytes: Buffer, isGone: () => boolean): Promise<DecompressedBody> {
+    return this.inTurn(async () => {
       if (isGone()) throw new RefusedBodyError(503, 'The connection closed before the body was decompressed');
-      return await this.withinLimit(coding, bytes);
-    } finally {
-      this.endTurn();
-    }
-  }
-
-  private async turn(): Promise<void> {
-    if (this.running < MAX_RUNNING) {
-      this.running += 1;
-      return;
-    }
-    await new Promise<void>((resolve) => { this.waiting.push(resolve); });
-  }
-
-  private endTurn(): void {
-    const next = this.waiting.shift();
-    if (next) next();
-    else this.running -= 1;
+      return this.withinLimit(coding, bytes);
+    });
   }
 
   private async withinLimit(coding: ContentCoding, bytes: Buffer): Promise<DecompressedBody> {
