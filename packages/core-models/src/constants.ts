@@ -111,6 +111,7 @@ export const MESSAGE_STATUS = {
 } as const;
 export type MessageStatus = (typeof MESSAGE_STATUS)[keyof typeof MESSAGE_STATUS];
 
+/** Every stored message's content is keyed by these numbers, so one never changes. */
 export const CONTENT_TYPE = {
   RAW: 1,
   PROCESSED: 2,
@@ -121,6 +122,7 @@ export const CONTENT_TYPE = {
   RESPONSE_TRANSFORMED: 7,
   RESPONSE_SENT: 8,
   SOURCE_MAP: 9,
+  /** A destination's merged map variables, not only its channel map. */
   CHANNEL_MAP: 10,
   ERROR: 11,
   RESPONSE_ERROR: 12,

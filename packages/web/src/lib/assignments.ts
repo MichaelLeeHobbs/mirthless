@@ -1,4 +1,5 @@
 import { PERMISSION_CATALOG, allChannelsOnly, type AssignmentInput, type AssignmentView, type Permission } from '@galvanigraph/core-models';
+import { fromDateTimeLocal, toDateTimeLocal } from './datetime-local.js';
 
 export interface AssignmentDraft {
   readonly key: string;
@@ -16,14 +17,6 @@ export interface AssignmentDraft {
   readonly expired: boolean;
 }
 
-export function toLocalInput(iso: string | null): string {
-  if (iso === null) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
 export function toSend(drafts: readonly AssignmentDraft[]): AssignmentInput[] {
   return drafts.filter((d) => !d.expired).map(toInput);
 }
@@ -31,16 +24,15 @@ export function toSend(drafts: readonly AssignmentDraft[]): AssignmentInput[] {
 export function toDraft(view: AssignmentView): AssignmentDraft {
   return {
     key: view.id, roleId: view.roleId, groupIds: view.groupIds,
-    expiresAt: toLocalInput(view.expiresAt), reason: view.reason ?? '', expired: !view.live,
+    expiresAt: toDateTimeLocal(view.expiresAt), reason: view.reason ?? '', expired: !view.live,
   };
 }
 
 export function toInput(draft: AssignmentDraft): AssignmentInput {
-  const expires = draft.expiresAt === '' ? null : new Date(draft.expiresAt);
   return {
     roleId: draft.roleId,
     groupIds: draft.groupIds === null ? null : [...draft.groupIds],
-    expiresAt: expires === null || Number.isNaN(expires.getTime()) ? null : expires.toISOString(),
+    expiresAt: fromDateTimeLocal(draft.expiresAt) ?? null,
     reason: draft.reason.trim() === '' ? null : draft.reason.trim(),
   };
 }

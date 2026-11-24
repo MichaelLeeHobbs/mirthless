@@ -4,7 +4,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { messageContent, messages, connectorMessages } from '../db/schema/index.js';
-import { CONTENT_TYPE } from '../db/schema/message-content.js';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { deleteMessagesByIds } from './message-delete-helper.js';
 import { getEngine } from '../engine.js';

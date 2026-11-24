@@ -3,7 +3,8 @@ import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { checkAccess } from '../../api/client.js';
-import { MAX_TIMER_MS, expiryState, nextTimerDelay } from '../../lib/access-expiry.js';
+import { MAX_TIMER_DELAY_MS } from '@galvanigraph/core-models';
+import { expiryState, nextTimerDelay } from '../../lib/access-expiry.js';
 import { formatTimestamp } from '../../lib/format.js';
 
 /** The refresh at the end is spread over this long, so open tabs do not rotate the shared session together. */
@@ -29,7 +30,7 @@ function useRefreshAtExpiry(nextExpiryAt: string | null | undefined): void {
     if (Number.isNaN(endsAt)) return undefined;
     const delay = Math.max(endsAt - Date.now(), 0) + Math.random() * EXPIRY_JITTER_MS;
     // A grant weeks away is checked again at the next sign-in or reload.
-    if (delay > MAX_TIMER_MS) return undefined;
+    if (delay > MAX_TIMER_DELAY_MS) return undefined;
     let attempts = 0;
     let timer: ReturnType<typeof setTimeout>;
     const attempt = (): void => {

@@ -26,20 +26,6 @@ export function nextSort(
   return { sort: column, order: isDate ? 'desc' : 'asc' };
 }
 
-export function toDateTimeLocal(iso: string | null): string {
-  if (iso === null) return '';
-  const date = new Date(iso);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-/** null when blank, undefined when unreadable. */
-export function fromDateTimeLocal(value: string): string | null | undefined {
-  if (value.trim() === '') return null;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? undefined : new Date(time).toISOString();
-}
-
 export function filledFields(values: Readonly<Record<string, string>>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) {

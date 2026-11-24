@@ -624,7 +624,7 @@ describe('MessageProcessor', () => {
 
   it('errors the destination when the SENT content write fails (before send)', async () => {
     const store = makeStore();
-    // Fail only the CT_SENT (5) write; other content writes succeed.
+    // Fail only the CONTENT_TYPE.SENT (5) write; other content writes succeed.
     (store.storeContent as ReturnType<typeof vi.fn>).mockImplementation(
       (_c: string, _m: number, _md: number, contentType: number) =>
         contentType === 5
@@ -1075,7 +1075,7 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // CT_SOURCE_MAP = 9
+    // CONTENT_TYPE.SOURCE_MAP = 9
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 9, expect.any(String), 'JSON',
     );

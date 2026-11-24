@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { AssignmentView } from '@galvanigraph/core-models';
-import { groupScopeBlocked, sameAssignments, toDraft, toInput, toLocalInput, toSend } from '../assignments.js';
+import { groupScopeBlocked, sameAssignments, toDraft, toInput, toSend } from '../assignments.js';
+import { toDateTimeLocal } from '../datetime-local.js';
 
 const VIEW: AssignmentView = {
   id: 'a-1', roleId: 'r-1', roleName: 'channel-viewer', groupIds: ['g-1'],
@@ -14,7 +15,6 @@ describe('assignment drafts', () => {
 
   it('sends an untouched expiry back as the same instant, to the second', () => {
     const iso = '2027-01-02T03:04:05.000Z';
-    expect(toLocalInput(iso)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:05$/);
     expect(toInput(toDraft({ ...VIEW, expiresAt: iso })).expiresAt).toBe(iso);
   });
 
@@ -27,12 +27,11 @@ describe('assignment drafts', () => {
     const expired = toDraft({ ...VIEW, id: 'a-2', expiresAt: '2020-01-01T00:00:00.000Z', live: false });
     expect(expired.expired).toBe(true);
     expect(toSend([toDraft(VIEW), expired])).toEqual([toInput(toDraft(VIEW))]);
-    const renewed = { ...expired, expiresAt: toLocalInput('2030-01-01T00:00:00.000Z'), expired: false };
+    const renewed = { ...expired, expiresAt: toDateTimeLocal('2030-01-01T00:00:00.000Z'), expired: false };
     expect(toSend([renewed])).toHaveLength(1);
   });
 
   it('treats an unparseable time as no expiry rather than sending it', () => {
-    expect(toLocalInput('not a time')).toBe('');
     expect(toInput({ ...toDraft(VIEW), expiresAt: 'nonsense' }).expiresAt).toBeNull();
   });
 

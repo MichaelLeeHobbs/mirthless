@@ -7,7 +7,7 @@ import type { MessageExportQuery } from '@galvanigraph/core-models';
 import { db } from '../lib/db.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { escapeCsvField } from '../lib/csv.js';
-import { CONTENT_TYPE } from '../db/schema/message-content.js';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 
 export interface MessageExportRow {
   readonly messageId: number;
