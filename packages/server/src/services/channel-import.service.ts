@@ -1,6 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
-import { eq, isNull, and, sql } from 'drizzle-orm';
+import { DrizzleQueryError, eq, isNull, and, sql } from 'drizzle-orm';
 import {
   PERMISSIONS,
   can,
@@ -19,6 +19,7 @@ import { GrantService } from './grant.service.js';
 import { assertCertificatesInScope } from './connector-tls-resolver.js';
 import { queryUserStanding } from '../lib/principal.js';
 import { stripRedactedProperties } from '../lib/secret-redaction.js';
+import { overwriteProperties } from '../lib/stored-credentials.js';
 import {
   channels,
   channelScripts,
@@ -126,9 +127,14 @@ async function importSingleChannel(
 
     return await createChannel(entry, run);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return `Error importing "${entry.name}": ${msg}`;
+    return `Error importing "${entry.name}": ${importErrorText(err)}`;
   }
+}
+
+/** Drizzle's message lists the statement's parameters, which can hold stored credentials. Its cause is the database's own error. */
+function importErrorText(err: unknown): string {
+  const reported = err instanceof DrizzleQueryError ? err.cause ?? 'a database statement failed' : err;
+  return reported instanceof Error ? reported.message : String(reported);
 }
 
 type ImportedColumns = Omit<typeof channels.$inferInsert, 'id' | 'enabled' | 'revision' | 'createdAt' | 'updatedAt'>;
@@ -208,13 +214,31 @@ async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Pr
   return can(standing.grants, PERMISSIONS.CHANNELS_WRITE, { groupIds });
 }
 
-async function overwriteChannel(entry: ChannelExportEntry, run: ImportRun): Promise<ImportOutcome> {
+/** The entry with the stored credentials it may keep (D-335). Needs the lock mayOverwrite takes, or a save under way would be undone. */
+async function withStoredCredentials(tx: ImportTx, entry: ChannelExportEntry): Promise<ChannelExportEntry> {
+  const [source] = await tx
+    .select({ connectorType: channels.sourceConnectorType, properties: channels.sourceConnectorProperties })
+    .from(channels).where(eq(channels.id, entry.id));
+  const destinations = await tx
+    .select({ metaDataId: channelConnectors.metaDataId, connectorType: channelConnectors.connectorType, properties: channelConnectors.properties })
+    .from(channelConnectors).where(eq(channelConnectors.channelId, entry.id));
+  const stored = new Map(destinations.map((d) => [d.metaDataId, d]));
+  const importedSource = { connectorType: entry.sourceConnectorType, properties: entry.sourceConnectorProperties };
+  return {
+    ...entry,
+    sourceConnectorProperties: overwriteProperties('source', importedSource, source),
+    destinations: entry.destinations.map((d) => ({ ...d, properties: overwriteProperties('destination', d, stored.get(d.metaDataId)) })),
+  };
+}
+
+async function overwriteChannel(file: ChannelExportEntry, run: ImportRun): Promise<ImportOutcome> {
   const now = new Date();
 
   return db.transaction(async (tx) => {
-    if (!(await mayOverwrite(tx, entry.id, run))) {
-      return `Channel "${entry.name}": not imported; it would replace a channel you cannot change`;
+    if (!(await mayOverwrite(tx, file.id, run))) {
+      return `Channel "${file.name}": not imported; it would replace a channel you cannot change`;
     }
+    const entry = await withStoredCredentials(tx, file);
     // An import keeps the stored enabled flag, which is deploy control (#225);
     // a restore sets it. The revision goes up so an editor opened before gets a conflict.
     await tx.update(channels).set({

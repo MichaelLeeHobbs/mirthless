@@ -7,9 +7,7 @@
 import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createChannelSchema } from '@galvanigraph/core-models';
-import { adminActor, describeIntegration, unwrap, type TestActor } from './_setup.js';
-
-const LOCK_WAIT_TIMEOUT_MS = 10_000;
+import { adminActor, describeIntegration, unwrap, waitForBlocked, type TestActor } from './_setup.js';
 
 describeIntegration('ChannelGroupService (real Postgres)', () => {
   let ChannelGroupService: typeof import('../../src/services/channel-group.service.js').ChannelGroupService;
@@ -39,22 +37,6 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
   afterAll(async () => {
     await pool?.end();
   });
-
-  /** A blocked statement shows in pg_stat_activity as a Lock wait with the statement as its query. */
-  async function waitForBlocked(queryPrefix: string): Promise<void> {
-    const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const { rows } = await pool.query<{ waiting: string }>(
-        `SELECT count(*) AS waiting FROM pg_stat_activity
-          WHERE datname = current_database() AND wait_event_type = 'Lock'
-            AND query ILIKE $1`,
-        [`${queryPrefix}%`],
-      );
-      if (Number(rows[0]?.waiting ?? 0) > 0) return;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    throw new Error(`No statement starting "${queryPrefix}" ever blocked on the locked row`);
-  }
 
   async function makeGroup(name: string): Promise<string> {
     const group = unwrap(await ChannelGroupService.create({ name: `itest-${name}-${randomUUID().slice(0, 8)}`, description: '' }));
@@ -87,7 +69,7 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
         await locker.query('SELECT id FROM channel_groups WHERE id = $1 FOR UPDATE', [group.id]);
 
         const pending = ChannelGroupService.update(group.id, { revision: group.revision, description: 'from service' });
-        await waitForBlocked('update "channel_groups"');
+        await waitForBlocked(pool, 'update "channel_groups"');
 
         await locker.query(
           'UPDATE channel_groups SET revision = revision + 1, description = $2 WHERE id = $1',
@@ -175,7 +157,7 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
         await locker.query('DELETE FROM channel_groups WHERE id = $1', [to]);
 
         const pending = ChannelGroupService.setChannelGroups(channelId, [to]);
-        await waitForBlocked('select "id" from "channel_groups"');
+        await waitForBlocked(pool, 'select "id" from "channel_groups"');
         await locker.query('COMMIT');
 
         const result = await pending;
@@ -203,7 +185,7 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
         await locker.query('INSERT INTO channel_group_members (channel_group_id, channel_id) VALUES ($1, $2)', [to, channelId]);
 
         const pending = ChannelGroupService.setChannelGroups(channelId, [to]);
-        await waitForBlocked('insert into "channel_group_members"');
+        await waitForBlocked(pool, 'insert into "channel_group_members"');
         await locker.query('COMMIT');
 
         const result = await pending;
