@@ -10,6 +10,7 @@ vi.mock('../settings.service.js', () => ({
 
 import { ExtensionService } from '../extension.service.js';
 import { SettingsService } from '../settings.service.js';
+import { ServiceError } from '../../lib/service-error.js';
 
 const mockList = vi.mocked(SettingsService.list);
 const mockGetByKey = vi.mocked(SettingsService.getByKey);
@@ -68,15 +69,38 @@ describe('ExtensionService.list', () => {
   });
 });
 
+describe('ExtensionService when the settings cannot be read', () => {
+  const failed = { ok: false, value: null, error: new Error('connection refused') } as never;
+
+  it('fails the list instead of showing every extension as enabled', async () => {
+    mockList.mockResolvedValue(failed);
+
+    const result = await ExtensionService.list();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe('connection refused');
+  });
+
+  it('fails one extension instead of showing it as enabled', async () => {
+    mockGetByKey.mockResolvedValue(failed);
+
+    const result = await ExtensionService.getById('tcp-mllp');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe('connection refused');
+  });
+});
+
 describe('ExtensionService.getById', () => {
   it('returns extension by ID', async () => {
-    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: { code: 'NOT_FOUND', message: 'Not found' } as never });
+    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Not found') } as never);
 
     const result = await ExtensionService.getById('tcp-mllp');
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.id).toBe('tcp-mllp');
+      expect(result.value.enabled).toBe(true);
       expect(result.value.name).toBe('TCP/MLLP');
       expect(result.value.type).toBe('CONNECTOR');
     }
@@ -92,7 +116,7 @@ describe('ExtensionService.getById', () => {
   });
 
   it('returns data type extension by ID', async () => {
-    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: { code: 'NOT_FOUND', message: 'Not found' } as never });
+    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Not found') } as never);
 
     const result = await ExtensionService.getById('dt-hl7v2');
 
@@ -170,7 +194,7 @@ describe('ExtensionService.setEnabled', () => {
 
 describe('ExtensionService — capabilities', () => {
   it('SMTP connector has only destination capability', async () => {
-    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: { code: 'NOT_FOUND', message: 'Not found' } as never });
+    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Not found') } as never);
 
     const result = await ExtensionService.getById('smtp');
 
@@ -181,7 +205,7 @@ describe('ExtensionService — capabilities', () => {
   });
 
   it('HTTP connector has source and destination capabilities', async () => {
-    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: { code: 'NOT_FOUND', message: 'Not found' } as never });
+    mockGetByKey.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Not found') } as never);
 
     const result = await ExtensionService.getById('http');
 

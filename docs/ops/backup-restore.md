@@ -153,6 +153,7 @@ A backup is complete or it fails: if a channel or a resource cannot be read, or 
   newly-created users have no usable password and must have one set (or the user
   re-created) out of band. This is intentional: config backups should be safe to store
   and diff without leaking secrets.
+- **Secret settings** (the alert email password) — exported as `__REDACTED__`. A restore keeps the value the server has, except that restoring another `smtp.host` clears the alert email password (the section counts it as skipped): type it again on the Settings page.
 - **JWT secret, database credentials, and other environment secrets** — these live in
   `.env` / your secrets manager, never in the backup.
 

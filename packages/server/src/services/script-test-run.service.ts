@@ -32,7 +32,7 @@ async function channelScope(channelId: string | undefined): Promise<ChannelScope
     ChannelService.getById(channelId),
     CodeTemplateService.listTemplatesForChannel(channelId),
   ]);
-  if (!channel.ok) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
+  if (!channel.ok) throw channel.error;
   if (!templates.ok) throw templates.error;
   return {
     templates: templates.value,
