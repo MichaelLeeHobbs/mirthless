@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as diagnostics from 'node:diagnostics_channel';
 import dns from 'node:dns';
+import { getEventListeners } from 'node:events';
 import * as net from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 import * as tls from 'node:tls';
 import { TcpMllpDispatcher, type TcpMllpDispatcherConfig } from '../tcp-mllp-dispatcher.js';
 import { wrapMllp, MllpParser } from '../../transmission/mllp-mode.js';
 import type { ConnectorMessage } from '../../base.js';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
+import { withTimeout } from '../../timeout.js';
 
 const DEST_PORT = 16662;
 
@@ -539,6 +542,172 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
 
     expect((await send()).ok).toBe(false);
     expect(outages(log)).toBe(2);
+  });
+
+  describe('and is halted', () => {
+    /** What a halt took before: the longest a send may wait. */
+    const LONG_WAIT = { acquireTimeoutMs: 20_000 };
+
+    /** With nothing to wait for it ends before any timer can fire, however busy the machine. */
+    async function halt(started: TcpMllpDispatcher): Promise<void> {
+      expect(await Promise.race([started.onHalt().then((result) => result.ok), delay(100, 'still waiting')])).toBe(true);
+    }
+
+    /** Takes connections and what is sent on them, and answers nothing. */
+    async function silentRemote(): Promise<{ readonly port: number; readonly sockets: net.Socket[]; readonly received: () => number }> {
+      const sockets: net.Socket[] = [];
+      let bytes = 0;
+      const server = net.createServer((socket) => {
+        sockets.push(socket);
+        socket.on('data', (chunk: Buffer) => { bytes += chunk.length; });
+        socket.on('error', () => undefined);
+      });
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+      mockServer = { server, close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }) };
+      return { port: (server.address() as net.AddressInfo).port, sockets, received: () => bytes };
+    }
+
+    it('ends at once, with every send that waits, whoever asked for it', async () => {
+      const { send, log, dispatcher: started } = await startAgainst(await closedPort(), { ...LONG_WAIT, maxConnections: 2 });
+      const waiting = [send(), send(), send(), send()];
+      await vi.waitFor(() => { expect(outages(log)).toBe(1); });
+
+      await halt(started);
+
+      expect((await Promise.all(waiting)).map((result) => result.ok)).toEqual([false, false, false, false]);
+      expect((await send()).error?.message).toBe('Dispatcher not started');
+    });
+
+    it('makes no connection after it', async () => {
+      const { send, log, dispatcher: started } = await startAgainst(await closedPort());
+      const waiting = send();
+      await vi.waitFor(() => { expect(outages(log)).toBe(1); });
+      await halt(started);
+      let attempts = 0;
+      const count = (): void => { attempts += 1; };
+      diagnostics.subscribe('net.client.socket', count);
+      try {
+        // Two pauses between attempts, within the time the send had to wait.
+        await delay(ACQUIRE_MS / 2);
+      } finally {
+        diagnostics.unsubscribe('net.client.socket', count);
+      }
+      expect((await waiting).ok).toBe(false);
+      expect(attempts).toBe(0);
+    });
+
+    it('gives up a connect in progress, which is no outage', async () => {
+      const port = await closedPort();
+      const connecting: net.Socket[] = [];
+      const watch = (message: unknown): void => { connecting.push((message as { socket: net.Socket }).socket); };
+      diagnostics.subscribe('net.client.socket', watch);
+      const lookup = vi.spyOn(dns, 'lookup').mockImplementation((() => undefined) as unknown as typeof dns.lookup);
+      try {
+        const { send, log, dispatcher: started } = await startAgainst(port, { ...LONG_WAIT, host: 'partner.example' });
+        const waiting = send();
+        await vi.waitFor(() => { expect(lookup).toHaveBeenCalled(); });
+
+        await halt(started);
+
+        expect((await waiting).ok).toBe(false);
+        expect(log.errors).toEqual([]);
+        expect(connecting.map((socket) => socket.destroyed)).toEqual([true]);
+      } finally {
+        lookup.mockRestore();
+        diagnostics.unsubscribe('net.client.socket', watch);
+      }
+    });
+
+    it('leaves nothing on its signal for a connect that succeeded or failed', async () => {
+      const added = vi.spyOn(EventTarget.prototype, 'addEventListener');
+      try {
+        const { port, sockets } = await silentRemote();
+        const taken = await startAgainst(port, LONG_WAIT);
+        const sending = taken.send();
+        await vi.waitFor(() => { expect(sockets).toHaveLength(1); });
+        sockets[0]?.write(wrapMllp(ackFrame('AA')));
+        expect((await sending).ok).toBe(true);
+        expect((await taken.dispatcher.onStop()).ok).toBe(true);
+        const refused = await startAgainst(await closedPort());
+        expect((await refused.send()).ok).toBe(false);
+        // Which also waits for a connect that is being tried now.
+        expect((await refused.dispatcher.onStop()).ok).toBe(true);
+
+        const signals = added.mock.calls.flatMap(([, listener], i) =>
+          (typeof listener === 'function' && listener.name === 'onHalt' ? [added.mock.contexts[i] as EventTarget] : []));
+        expect(signals.length).toBeGreaterThanOrEqual(2);
+        for (const signal of signals) expect(getEventListeners(signal, 'abort')).toEqual([]);
+      } finally {
+        added.mockRestore();
+      }
+    });
+
+    it('ends a send that waits for its acknowledgement, and closes its connection', async () => {
+      const { port, sockets, received } = await silentRemote();
+      const { send, dispatcher: started } = await startAgainst(port, { ...LONG_WAIT, maxConnections: 1, responseTimeout: 20_000 });
+      const sending = send();
+      const behind = send();
+      await vi.waitFor(() => { expect(received()).toBeGreaterThan(0); });
+      const closed = new Promise<void>((resolve) => { sockets[0]?.once('close', () => { resolve(); }); });
+      const once = received();
+
+      await halt(started);
+
+      expect((await Promise.all([sending, behind])).map((result) => result.ok)).toEqual([false, false]);
+      await withTimeout(closed, 2_000, 'Connection close');
+      expect(received()).toBe(once);
+      expect(sockets).toHaveLength(1);
+    });
+
+    it('closes a connection no send is using', async () => {
+      const { port, sockets } = await silentRemote();
+      const { send, dispatcher: started } = await startAgainst(port, LONG_WAIT);
+      const sending = send();
+      await vi.waitFor(() => { expect(sockets).toHaveLength(1); });
+      sockets[0]?.write(wrapMllp(ackFrame('AA')));
+      expect((await sending).ok).toBe(true);
+      const closed = new Promise<void>((resolve) => { sockets[0]?.once('close', () => { resolve(); }); });
+
+      await halt(started);
+
+      await withTimeout(closed, 2_000, 'Connection close');
+    });
+
+    it('sends nothing when it comes between the connection and the send', async () => {
+      const { port, sockets, received } = await silentRemote();
+      const { send, dispatcher: started } = await startAgainst(port, { ...LONG_WAIT, responseTimeout: 20_000 });
+      const original = EventTarget.prototype.removeEventListener;
+      const aborter = new AbortController();
+      const spy = vi.spyOn(EventTarget.prototype, 'removeEventListener').mockImplementation(function (this: EventTarget, ...args: Parameters<EventTarget['removeEventListener']>): void {
+        original.apply(this, args);
+        // The send has its socket, and goes on a few microtasks from here.
+        if (typeof args[1] === 'function' && args[1].name === 'onAbort') queueMicrotask(() => { aborter.abort(); });
+      });
+      try {
+        const result = await withTimeout(send(aborter.signal), 2_000, 'Send');
+        expect(result.error?.message).toBe('Send aborted');
+      } finally {
+        spy.mockRestore();
+      }
+      await vi.waitFor(() => { expect(sockets[0]?.destroyed || sockets[0]?.readableEnded).toBe(true); });
+      expect(received()).toBe(0);
+      await halt(started);
+    });
+
+    it('ends a stop in progress, which leaves the next start alone', async () => {
+      const port = await closedPort();
+      const { send, log, dispatcher: started } = await startAgainst(port, LONG_WAIT);
+      const waiting = send();
+      await vi.waitFor(() => { expect(outages(log)).toBe(1); });
+      const stopped = started.onStop();
+      const halted = started.onHalt();
+      expect((await started.onStart()).ok).toBe(true);
+
+      expect((await withTimeout(Promise.all([stopped, halted]), 2_000, 'Stop and halt')).map((result) => result.ok)).toEqual([true, true]);
+      expect((await waiting).ok).toBe(false);
+      await listenOn(port);
+      expect((await send()).ok).toBe(true);
+    });
   });
 
   it('logs an outage again after a restart', async () => {

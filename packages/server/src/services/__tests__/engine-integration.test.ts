@@ -21,6 +21,7 @@ const mockChannelRuntime = {
   stop: mockRuntimeStop,
   halt: mockRuntimeHalt,
   getState: mockRuntimeGetState,
+  backgroundEnds: vi.fn().mockResolvedValue(true),
 };
 const MockChannelRuntime = vi.fn().mockImplementation(function () { return mockChannelRuntime; });
 
@@ -664,7 +665,7 @@ describe('EngineManager', () => {
     it('stops a STARTED channel before undeploying it (graceful shutdown safety)', async () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(makeChannel() as never));
-      mockRuntimeGetState.mockReturnValue('STARTED');
+      mockRuntimeGetState.mockReturnValueOnce('STARTED');
 
       await engine.undeploy(CHANNEL_ID);
 
@@ -677,7 +678,7 @@ describe('EngineManager', () => {
     it('force-halts a STARTED channel when a graceful stop fails', async () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(makeChannel() as never));
-      mockRuntimeGetState.mockReturnValue('STARTED');
+      mockRuntimeGetState.mockReturnValueOnce('STARTED');
       mockRuntimeStop.mockResolvedValue({ ok: false, value: null, error: new Error('stop boom') });
 
       await engine.undeploy(CHANNEL_ID);
