@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { IssuedApiKey } from '@galvanigraph/core-models';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
   apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
   type ApiAnswer, type ServerModules, type TestUser,
@@ -19,7 +19,9 @@ describeIntegration('access given by someone who holds it for a time (real Postg
   const users: string[] = [];
   const groups: string[] = [];
   const roleIds: string[] = [];
+  const libraries: string[] = [];
   const CHANNEL = randomUUID();
+  const OTHER_CHANNEL = randomUUID();
 
   async function user(role: string | null = null): Promise<TestUser> {
     const made = await userWithRole(mods.pool, role, null);
@@ -55,10 +57,32 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     return id;
   }
 
+  async function library(channelIds: readonly string[] | null): Promise<{ id: string; name: string }> {
+    const name = `itest-lib-${randomUUID().slice(0, 8)}`;
+    const { rows } = await mods.pool.query<{ id: string }>(
+      'INSERT INTO code_template_libraries (name, channel_ids) VALUES ($1, $2::jsonb) RETURNING id', [name, channelIds === null ? null : JSON.stringify(channelIds)],
+    );
+    libraries.push(rows[0]!.id);
+    return { id: rows[0]!.id, name };
+  }
+
+  /** Writes templates everywhere for an hour, and for good only on CHANNEL's group. */
+  async function briefTemplateWriter(): Promise<TestUser> {
+    const writer = await user();
+    const lab = await group();
+    await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
+    await mods.pool.query('INSERT INTO channel_group_members (channel_group_id, channel_id) VALUES ($1, $2)', [lab, CHANNEL]);
+    const templates = await customRole(['code_templates:read', 'code_templates:write']);
+    await assign(writer, templates.id, { until: inAnHour() });
+    await assign(writer, templates.id, { groupId: lab });
+    return writer;
+  }
+
   beforeAll(async () => {
     process.env['API_RATE_LIMIT_MAX'] = '1000000';
     mods = await loadServerModules();
     await insertTestChannel(mods, CHANNEL);
+    await insertTestChannel(mods, OTHER_CHANNEL);
     const app = (await import('../../src/app.js')).default;
     await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
     base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
@@ -73,6 +97,8 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     if (roleIds.length > 0) await mods.pool.query('DELETE FROM roles WHERE id = ANY($1::uuid[])', [roleIds]);
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
     await deleteTestChannel(mods, CHANNEL);
+    await deleteTestChannel(mods, OTHER_CHANNEL);
+    if (libraries.length > 0) await mods.pool.query('DELETE FROM code_template_libraries WHERE id = ANY($1::uuid[])', [libraries]);
     if (groups.length > 0) await mods.pool.query('DELETE FROM channel_groups WHERE id = ANY($1::uuid[])', [groups]);
     await mods.pool.end();
   });
@@ -299,5 +325,112 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     const restored = await mods.pool.query<{ id: string }>('SELECT channel_group_id AS id FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
     expect(restored.rows.map((r) => r.id).sort()).toEqual([open, used].sort());
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
+  });
+
+  it('reports the refusal as an error of the membership section when a restore through the API needs access with no end', async () => {
+    const restorer = await user();
+    const adminRole = await mods.pool.query<{ id: string }>('SELECT id FROM roles WHERE admin');
+    await assign(restorer, adminRole.rows[0]!.id, { until: inAnHour() });
+    const used = await group();
+    await assign(await user(), (await customRole(['channels:read'])).id, { groupId: used });
+    const empty = {
+      channels: [], codeTemplateLibraries: [], codeTemplates: [], alerts: [], globalScripts: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }, users: [], settings: [], resources: [],
+      channelGroups: [], tags: [], globalMap: [], configMap: [], tagAssignments: [], channelDependencies: [],
+    };
+
+    const answer = await call<{ sections: Array<{ section: string; created: number; errors: string[] }> }>(restorer, 'POST', '/system/backup', {
+      backup: { version: 1, exportedAt: new Date().toISOString(), ...empty, groupMemberships: [{ channelGroupId: used, channelId: CHANNEL }] }, collisionMode: 'SKIP',
+    });
+
+    expect(answer.status).toBe(200);
+    const section = answer.json.data!.sections.find((s) => s.section === 'groupMemberships')!;
+    expect(section).toMatchObject({ created: 0 });
+    expect(section.errors).toEqual([expect.stringContaining('needs system:restore with no end time')]);
+    expect((await mods.pool.query('SELECT 1 FROM channel_group_members WHERE channel_id = $1', [CHANNEL])).rowCount).toBe(0);
+  });
+
+  it('makes a restore wait for an assignment being made on the group, and judges the group with it', async () => {
+    const { GrantService } = await import('../../src/services/grant.service.js');
+    const restorer = await user();
+    const adminRole = await mods.pool.query<{ id: string }>('SELECT id FROM roles WHERE admin');
+    await assign(restorer, adminRole.rows[0]!.id, { until: inAnHour() });
+    const used = await group();
+    const reader = await customRole(['channels:read']);
+    const holder = await user();
+    const client = await mods.pool.connect();
+    try {
+      // Without the access lock, so only the group row orders the two.
+      await client.query('BEGIN');
+      const { rows: [me] } = await client.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+      await client.query('SELECT 1 FROM channel_groups WHERE id = $1 FOR NO KEY UPDATE', [used]);
+      const { rows } = await client.query<{ id: string }>('INSERT INTO assignments (user_id, role_id, all_channels) VALUES ($1, $2, false) RETURNING id', [holder.id, reader.id]);
+      await client.query('INSERT INTO assignment_groups (assignment_id, channel_group_id) VALUES ($1, $2)', [rows[0]!.id, used]);
+      const restoring = GrantService.restoreMembership(CHANNEL, used, { userId: restorer.id });
+      restoring.catch(() => undefined);
+      await vi.waitFor(async () => {
+        const { rows: [waiting] } = await mods.pool.query<{ n: string }>('SELECT count(*) AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [me!.pid]);
+        expect(Number(waiting!.n)).toBeGreaterThan(0);
+      }, { timeout: 5_000, interval: 20 });
+      await client.query('COMMIT');
+      await expect(restoring).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  it.each([
+    ['every channel', null],
+    ['no channel', []],
+    ['more channels', [CHANNEL, OTHER_CHANNEL]],
+    ['another channel', [OTHER_CHANNEL]],
+  ] as const)('refuses linking a library on %s to a channel where the writer keeps it, when they write everywhere only until a time', async (_name, before) => {
+    const writer = await briefTemplateWriter();
+    const shared = await library(before);
+
+    const answer = await call(writer, 'PUT', `/code-templates/libraries/${shared.id}`, { channelIds: [CHANNEL], revision: 1 });
+
+    expect(answer.status).toBe(403);
+    expect(answer.json.error?.message).toContain('with no end time');
+    const { rows } = await mods.pool.query<{ channel_ids: string[] | null }>('SELECT channel_ids FROM code_template_libraries WHERE id = $1', [shared.id]);
+    expect(rows[0]!.channel_ids).toEqual(before);
+  });
+
+  it('lets someone who writes everywhere until a time keep or add library links, or change the rest', async () => {
+    const writer = await briefTemplateWriter();
+    const shared = await library([CHANNEL, OTHER_CHANNEL]);
+    const put = async (body: Record<string, unknown>): Promise<number> => (await call(writer, 'PUT', `/code-templates/libraries/${shared.id}`, body)).status;
+
+    expect(await put({ description: 'changed', revision: 1 })).toBe(200);
+    expect(await put({ channelIds: [OTHER_CHANNEL, CHANNEL], revision: 2 })).toBe(200);
+    expect(await put({ channelIds: null, revision: 3 })).toBe(200);
+    // From every channel to none: still only someone holding it everywhere.
+    expect(await put({ channelIds: [], revision: 4 })).toBe(200);
+
+    const mine = await library([CHANNEL]);
+    expect((await call(writer, 'PUT', `/code-templates/libraries/${mine.id}`, { channelIds: [CHANNEL, OTHER_CHANNEL], revision: 1 })).status).toBe(200);
+  });
+
+  it('lets someone who writes everywhere with no end take links out of a library', async () => {
+    const writer = await user();
+    await assign(writer, (await customRole(['code_templates:read', 'code_templates:write'])).id);
+    const shared = await library(null);
+
+    expect((await call(writer, 'PUT', `/code-templates/libraries/${shared.id}`, { channelIds: [CHANNEL], revision: 1 })).status).toBe(200);
+  });
+
+  it('refuses a Mirth import that would narrow a library for good before writing any library', async () => {
+    const { importCodeTemplateLibraries } = await import('../../src/services/mirth-code-templates.js');
+    const writer = await briefTemplateWriter();
+    const shared = await library(null);
+    const fresh = `itest-lib-${randomUUID().slice(0, 8)}`;
+
+    const result = await importCodeTemplateLibraries([
+      { name: fresh, description: '', channelIds: [CHANNEL], templates: [] },
+      { name: shared.name, description: '', channelIds: [CHANNEL], templates: [] },
+    ], true, { userId: writer.id, ipAddress: null });
+
+    expect(result.ok).toBe(false);
+    expect((await mods.pool.query('SELECT 1 FROM code_template_libraries WHERE name = $1', [fresh])).rowCount).toBe(0);
   });
 });

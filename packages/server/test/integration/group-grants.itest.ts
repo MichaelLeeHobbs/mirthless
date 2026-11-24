@@ -43,6 +43,8 @@ describeIntegration('group membership and group rules (real Postgres)', () => {
 
   afterAll(async () => {
     await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await mods.pool.query('DELETE FROM users WHERE id IN (SELECT user_id FROM api_keys WHERE issued_by = ANY($1::uuid[]))', [users]);
+    await mods.pool.query('DELETE FROM roles WHERE key_role AND NOT EXISTS (SELECT 1 FROM assignments a WHERE a.role_id = roles.id)');
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
     if (groups.length > 0) await mods.pool.query('DELETE FROM channel_groups WHERE id = ANY($1::uuid[])', [groups]);
@@ -90,13 +92,34 @@ describeIntegration('group membership and group rules (real Postgres)', () => {
     expect((await call(actor.token, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [rad] })).status).toBe(403);
   });
 
-  it('lets a channel join a group whose only assignment has expired', async () => {
+  it('counts a group\'s expired assignments when a channel joins it, since renewing one gives that channel too', async () => {
     const old = await group();
     const lapsed = await userWith('channel-deployer', old);
     await mods.pool.query(`UPDATE assignments SET expires_at = now() - interval '1 day' WHERE user_id = $1`, [lapsed.id]);
     const developer = await userWith('developer', null);
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
-    expect((await call(developer.token, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [old] })).status).toBe(200);
+    const refused = await call(developer.token, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [old] });
+    expect(refused.status).toBe(403);
+    expect(refused.json.error?.details?.missing).toContain('channels:deploy');
+
+    const admin = await userWith('admin', null);
+    expect((await call(admin.token, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [old] })).status).toBe(200);
+  });
+
+  it('does not count an ended API key, which nothing renews', async () => {
+    const old = await group();
+    const admin = await userWith('admin', null);
+    const issued = await call(admin.token, 'POST', '/api-keys', {
+      name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:deploy'], groupIds: [old], expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    expect(issued.status).toBe(201);
+    const developer = await userWith('developer', null);
+    const join = async (): Promise<number> => (await call(developer.token, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [old] })).status;
+    await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
+
+    expect(await join()).toBe(403);
+    await mods.pool.query(`UPDATE assignments SET expires_at = now() - interval '1 day' WHERE user_id IN (SELECT user_id FROM api_keys WHERE issued_by = $1)`, [admin.id]);
+    expect(await join()).toBe(200);
   });
 
   it('lets only an all-channel channels:write holder create, rename or delete a group', async () => {

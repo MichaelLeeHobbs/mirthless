@@ -23,7 +23,7 @@ import { hashToken, matchesTokenHash } from '../lib/token-hash.js';
 import { apiKeys, assignmentGroups, assignments, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 import {
-  GrantService, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, lockScopeGroups,
+  GrantService, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, lockAccess, lockScopeGroups,
   type GrantActor, type Reader, type ScopeIds,
 } from './grant.service.js';
 
@@ -84,26 +84,13 @@ async function assertActorCovers(tx: AuditTransaction, actorId: string | null, p
   }
 }
 
-/**
- * Lock the actor's user row and the rows of the roles they hold, FOR SHARE,
- * before checking that they cover a key: a narrowing of the actor (their
- * assignments lock their row; a role edit locks the role) then waits for
- * this transaction, or this one sees it, and never misses the key it makes.
- * Taken before any group lock (plan section 5: user, roles, then groups).
- */
-async function lockActor(tx: AuditTransaction, actorId: string): Promise<void> {
-  await tx.select({ id: users.id }).from(users).where(eq(users.id, actorId)).for('share');
-  const held = await tx.selectDistinct({ roleId: assignments.roleId }).from(assignments).where(eq(assignments.userId, actorId));
-  if (held.length === 0) return;
-  await tx.select({ id: roles.id }).from(roles).where(inArray(roles.id, held.map((h) => h.roleId))).orderBy(asc(roles.id)).for('share');
-}
-
 function secretMatches(secret: string, row: { secretHash: string; previousSecretHash: string | null; previousSecretUntil: Date | null }): boolean {
   if (matchesTokenHash(secret, row.secretHash)) return true;
   return row.previousSecretHash !== null && row.previousSecretUntil !== null && row.previousSecretUntil.getTime() > Date.now()
     && matchesTokenHash(secret, row.previousSecretHash);
 }
 
+/** After the access lock: a narrowing of the key's issuer holds that and waits for the key. */
 async function lockKey(tx: AuditTransaction, id: string): Promise<{ userId: string; name: string; revokedAt: Date | null; expiresAt: Date; issuedBy: string; secretHash: string }> {
   const [row] = await tx.select({
     userId: apiKeys.userId, name: apiKeys.name, revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt, issuedBy: apiKeys.issuedBy,
@@ -168,7 +155,7 @@ export class ApiKeyService {
     const secret = newKeySecret();
     await db.transaction(async (tx) => {
       const scope: ScopeIds = input.groupIds;
-      await lockActor(tx, actorId);
+      await lockAccess(tx);
       await lockScopeGroups(tx, [scope]);
       assertScopeAllowed('An API key', input.permissions, scope);
       await assertActorCovers(tx, actorId, input.permissions, scope, expiresAt);
@@ -188,6 +175,7 @@ export class ApiKeyService {
    */
   static async setEnabled(id: string, enabled: boolean, actor: GrantActor): Promise<ApiKeyView> {
     await db.transaction(async (tx) => {
+      await lockAccess(tx);
       const key = await lockKey(tx, id);
       if (key.revokedAt !== null) throw new ServiceError('CONFLICT', 'The key is revoked; issue a new one');
       if (enabled && key.expiresAt.getTime() <= Date.now()) throw new ServiceError('CONFLICT', 'The key has ended; issue a new one');
@@ -197,7 +185,6 @@ export class ApiKeyService {
         // A key whose issuer is disabled never works (resolve): replacing it is how it comes back (D-322).
         const [issuer] = await tx.select({ enabled: users.enabled }).from(users).where(eq(users.id, key.issuedBy));
         if (issuer?.enabled !== true) throw new ServiceError('CONFLICT', 'Its issuer is disabled; replace the key to take it over');
-        if (actor.userId !== null) await lockActor(tx, actor.userId);
         const [held] = await readKeys(tx, id);
         await assertActorCovers(tx, actor.userId, (held?.permissions ?? []) as Permission[], held?.groupIds ?? null, key.expiresAt);
       }
@@ -209,6 +196,8 @@ export class ApiKeyService {
 
   static async revoke(id: string, reason: string, actor: GrantActor): Promise<ApiKeyView> {
     await db.transaction(async (tx) => {
+      // revoked_by's foreign key waits on an actor being disabled with a new email, who waits on the key.
+      await lockAccess(tx);
       const key = await lockKey(tx, id);
       if (key.revokedAt !== null) throw new ServiceError('CONFLICT', 'The key is already revoked');
       const now = new Date();
@@ -260,6 +249,7 @@ export class ApiKeyService {
    */
   static async replaceInTx(tx: AuditTransaction, id: string, mode: 'leak' | 'planned', actor: GrantActor, fromLeaver?: string): Promise<{ readonly name: string; readonly token: string }> {
     if (actor.userId === null) throw new ServiceError('FORBIDDEN', 'Replacing a key needs a signed-in actor');
+    await lockAccess(tx);
     const key = await lockKey(tx, id);
     if (fromLeaver !== undefined && key.issuedBy !== fromLeaver) throw new ServiceError('INVALID_INPUT', `API key ${id} was not issued by this user`);
     if (mode === 'planned' && key.issuedBy !== actor.userId) {
@@ -271,7 +261,6 @@ export class ApiKeyService {
     }
     if (key.revokedAt !== null) throw new ServiceError('CONFLICT', 'The key is revoked; issue a new one');
     if (key.expiresAt.getTime() <= Date.now()) throw new ServiceError('CONFLICT', 'The key has ended; issue a new one');
-    await lockActor(tx, actor.userId);
     const [held] = await readKeys(tx, id);
     await assertActorCovers(tx, actor.userId, (held?.permissions ?? []) as Permission[], held?.groupIds ?? null, key.expiresAt);
     const keepOld = mode === 'planned';
@@ -291,13 +280,8 @@ export class ApiKeyService {
     return { name: key.name, token: keyToken(id, secret) };
   }
 
-  /**
-   * Lock, before taking a leaver's keys over: the actor's user row and held
-   * roles, then the keys in key-user order, as every other key change orders
-   * them, so a concurrent role edit or narrowing queues instead of deadlocking.
-   */
-  static async lockForTakeover(tx: AuditTransaction, keyIds: readonly string[], actorId: string): Promise<void> {
-    await lockActor(tx, actorId);
+  /** Before taking a leaver's keys over, in key-user order as every other key change. The caller holds the access lock. */
+  static async lockForTakeover(tx: AuditTransaction, keyIds: readonly string[]): Promise<void> {
     if (keyIds.length === 0) return;
     await tx.select({ id: apiKeys.id }).from(apiKeys).where(inArray(apiKeys.id, [...keyIds])).orderBy(asc(apiKeys.userId)).for('no key update');
   }

@@ -7,7 +7,7 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
-import { GrantService } from './grant.service.js';
+import { GrantService, lockAccess } from './grant.service.js';
 import { USER_KIND, type TakenOverKey } from '@galvanigraph/core-models';
 import { ApiKeyService } from './api-key.service.js';
 
@@ -147,6 +147,8 @@ export class UserService {
       // The user and their one all-channel assignment commit together, with
       // the assignment's audit row (grant.service).
       const createdId = await db.transaction(async (tx) => {
+        // Before the insert: an email change waits on its unique entry while holding this lock.
+        await lockAccess(tx);
         const [row] = await tx
           .insert(users)
           .values({
@@ -185,9 +187,8 @@ export class UserService {
 
       const actor = { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null };
       const oldRoles = await db.transaction(async (tx) => {
-        // The admin role lock comes first, before the user row lock, in every
-        // path that can remove an admin (grant.service), so concurrent changes
-        // queue and each sees the last one's result.
+        // First (grant.service), so what the actor and the target hold stays as checked.
+        await lockAccess(tx);
         if (id === actorId && input.role !== undefined) {
           const current = await GrantService.heldRoleNames(tx, id);
           if (!(current.length === 1 && current[0] === input.role)) {
@@ -253,8 +254,9 @@ export class UserService {
       }
 
       const taken = await db.transaction(async (tx) => {
-        // Cannot remove the last ENABLED admin: a disabled admin does not count.
+        await lockAccess(tx);
         await GrantService.assertCanManage(tx, actorId, id);
+        // Cannot remove the last ENABLED admin: a disabled admin does not count.
         await GrantService.assertKeepsAnAdmin(tx, { userId: id, disabling: true });
         const target = await lockTarget(tx, id);
 
@@ -266,7 +268,7 @@ export class UserService {
         const takenOver: TakenOverKey[] = [];
         // Taken over first, so they are the actor's when the rest are disabled.
         const toTake = [...new Set(takeOwnership)].sort();
-        if (toTake.length > 0) await ApiKeyService.lockForTakeover(tx, toTake, actorId);
+        if (toTake.length > 0) await ApiKeyService.lockForTakeover(tx, toTake);
         for (const keyId of toTake) {
           const next = await ApiKeyService.replaceInTx(tx, keyId, 'leak', actor, id);
           takenOver.push({ keyId, name: next.name, token: next.token });
@@ -309,6 +311,11 @@ export class UserService {
 
       // Revoke the sessions too, so stolen tokens for the account stop working.
       await db.transaction(async (tx) => {
+        if (id !== actorId) {
+          // Again, now that neither can change: hashing takes long enough for the target to gain access.
+          await lockAccess(tx);
+          await GrantService.assertCanManage(tx, actorId, id);
+        }
         await tx
           .update(users)
           .set({ passwordHash, updatedAt: new Date() })
