@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as zlib from 'node:zlib';
 import {
   HttpReceiver,
@@ -774,5 +775,113 @@ describe('HttpReceiver bodies that are not valid in their charset', () => {
     await sendRequest(TEST_PORT, { body: Buffer.from(text) });
 
     expect(seen.map((raw) => raw.content)).toEqual([text, text]);
+  });
+});
+
+/**
+ * Sends a request no HTTP client would build, and resolves with all the server sent once it
+ * closes the connection. `afterContinue` gives the body to send when the server answers 100 Continue.
+ */
+function sendRaw(head: string, afterContinue?: () => Promise<string>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let answer = '';
+    let continued = false;
+    const socket = net.connect(TEST_PORT, '127.0.0.1', () => { socket.write(head); });
+    socket.setTimeout(3_000, () => {
+      reject(new Error(`no answer, got "${answer}"`));
+      socket.destroy();
+    });
+    socket.on('data', (chunk: Buffer) => {
+      answer += chunk.toString('utf8');
+      if (continued || !afterContinue || !answer.includes('100 Continue')) return;
+      continued = true;
+      afterContinue().then((body) => { socket.write(body); }, reject);
+    });
+    // A close follows every error.
+    socket.on('error', () => undefined);
+    socket.on('close', () => { resolve(answer); });
+  });
+}
+
+const rawPost = (target: string, host: string): string => `POST ${target} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\nContent-Length: 2\r\n\r\nhi`;
+
+describe('HttpReceiver request target', () => {
+  it.each(['a b', '[', ''])('takes a request whose Host header is %j, query included', async (host) => {
+    const { seen } = await startRecording();
+
+    expect(await sendRaw(rawPost('/?site=east', host))).toMatch(/^HTTP\/1\.1 200 /);
+    expect(seen.map((raw) => [raw.content, raw.sourceMap['queryString']])).toEqual([['hi', { site: 'east' }]]);
+  });
+
+  it('takes the target // as a path below / with matchSubpaths, and refuses it without', async () => {
+    const { seen } = await startRecording({ matchSubpaths: true });
+
+    expect(await sendRaw(rawPost('//?a=1', 'localhost'))).toMatch(/^HTTP\/1\.1 200 /);
+    expect(seen.map((raw) => [raw.sourceMap['path'], raw.sourceMap['queryString']])).toEqual([['//', { a: '1' }]]);
+    await receiver?.onStop();
+
+    const exact = await startRecording();
+    expect(await sendRaw(rawPost('//?a=1', 'localhost'))).toMatch(/^HTTP\/1\.1 404 /);
+    expect(exact.seen).toEqual([]);
+  });
+
+  it('decodes the query and keeps the last value of a repeated parameter', async () => {
+    const { seen } = await startRecording();
+
+    await sendRequest(TEST_PORT, { path: '/?name=M%C3%BCller+J&site=a&site=b&raw=x?y', body: 'x' });
+
+    expect(seen.map((raw) => raw.sourceMap['queryString'])).toEqual([{ name: 'Müller J', site: 'b', raw: 'x?y' }]);
+  });
+});
+
+describe('HttpReceiver answers every request', () => {
+  it.each([
+    ['rejects', (): Promise<never> => Promise.reject(new Error('pipeline gone'))],
+    ['throws', (): never => { throw new Error('pipeline gone'); }],
+  ])('answers the error status when the dispatcher %s, and logs why without the body', async (_how, dispatcher) => {
+    const log = makeMockLogger();
+    receiver = new HttpReceiver(makeConfig({ errorStatusCode: 502 }), log.logger);
+    receiver.setDispatcher(dispatcher);
+    await receiver.onStart();
+
+    const res = await sendRequest(TEST_PORT, { body: 'PID|1||Doe' });
+
+    expect(res.status).toBe(502);
+    expect(log.errors).toHaveLength(1);
+    expect(log.errors[0]?.obj).toMatchObject({ errMsg: 'pipeline gone', remoteAddress: '127.0.0.1' });
+    expect(JSON.stringify(log.errors)).not.toContain('Doe');
+  });
+
+  it('closes the connection when the answer fails after its headers were written', async () => {
+    const log = makeMockLogger();
+    receiver = new HttpReceiver(makeConfig(), log.logger);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, response: 42 as unknown as string })));
+    await receiver.onStart();
+
+    expect(await sendRaw(rawPost('/', 'localhost'))).toBe('');
+    expect(log.errors).toHaveLength(1);
+  });
+
+  it('dispatches a request whose body was still arriving when the channel was undeployed', async () => {
+    const { seen } = await startRecording();
+
+    const head = 'POST / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n';
+    const answer = await sendRaw(head, async () => {
+      await receiver?.onUndeploy();
+      return 'hello';
+    });
+
+    expect(answer).toContain('HTTP/1.1 200 ');
+    expect(seen.map((raw) => raw.content)).toEqual(['hello']);
+  });
+
+  it('answers 503 to a request that arrives after the channel was undeployed', async () => {
+    const { seen } = await startRecording();
+    await receiver?.onUndeploy();
+
+    const res = await sendRequest(TEST_PORT, { body: 'late' });
+
+    expect(res.status).toBe(503);
+    expect(seen).toEqual([]);
   });
 });

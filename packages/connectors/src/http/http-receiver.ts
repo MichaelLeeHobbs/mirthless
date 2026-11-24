@@ -45,7 +45,7 @@ export interface HttpReceiverConfig {
   readonly method: string;
   readonly responseContentType: string;
   readonly responseStatusCode: number;
-  /** Only for a failed pipeline dispatch. */
+  /** For a failed pipeline dispatch, or an error in handling the request. */
   readonly errorStatusCode: number;
   readonly maxBodyBytes: number;
   /** For a body whose Content-Type declares no charset, except `base64`, which keeps the bytes of every body. */
@@ -108,7 +108,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
       }
 
       const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
-        void this.handleRequest(req, res);
+        this.handleRequest(req, res).catch((err: unknown) => { this.answerFailure(req, res, err); });
       };
       this.server = this.config.tls
         ? https.createServer(
@@ -180,12 +180,25 @@ export class HttpReceiver implements SourceConnectorRuntime {
       return;
     }
 
-    if (!this.dispatcher) {
-      this.writePlain(res, 500, 'No dispatcher configured');
+    // Taken before the body is read, which an undeploy can overtake.
+    const { dispatcher } = this;
+    if (!dispatcher) {
+      this.writePlain(res, 503, 'Service Unavailable');
       return;
     }
 
-    await this.dispatchRequest(req, res, reqPath);
+    await this.dispatchRequest(req, res, reqPath, dispatcher);
+  }
+
+  /** A request left unanswered would hold its sender until a timeout, without saying whether to send again. */
+  private answerFailure(req: http.IncomingMessage, res: http.ServerResponse, err: unknown): void {
+    this.logger.error({ ...errorInfo(err), remoteAddress: req.socket.remoteAddress }, 'Request handling failed');
+    if (res.headersSent) {
+      req.socket.destroy();
+      return;
+    }
+    res.writeHead(this.config.errorStatusCode);
+    res.end();
   }
 
   private acceptsPath(reqPath: string): boolean {
@@ -199,6 +212,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
     req: http.IncomingMessage,
     res: http.ServerResponse,
     reqPath: string,
+    dispatcher: MessageDispatcher,
   ): Promise<void> {
     let body: string;
     try {
@@ -209,7 +223,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
     }
 
     const raw = this.buildRawMessage(req, body, reqPath);
-    const result = await this.dispatcher!(raw);
+    const result = await dispatcher(raw);
 
     const failure = dispatchFailure(result);
     if (result.ok && failure === null) {
@@ -238,9 +252,10 @@ export class HttpReceiver implements SourceConnectorRuntime {
   }
 
   private buildRawMessage(req: http.IncomingMessage, body: string, reqPath: string): RawMessage {
-    const urlObj = new URL(req.url ?? '/', `http://${req.headers['host'] ?? 'localhost'}`);
+    // Not through URL, which throws on a malformed Host header or a target such as //.
+    const query = new URLSearchParams((req.url ?? '/').slice(reqPath.length));
     // Assigned key by key, a parameter named __proto__ would be dropped.
-    const queryString: Readonly<Record<string, string>> = Object.fromEntries(urlObj.searchParams);
+    const queryString: Readonly<Record<string, string>> = Object.fromEntries(query);
     return {
       content: body,
       sourceMap: {

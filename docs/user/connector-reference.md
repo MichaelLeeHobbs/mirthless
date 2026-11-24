@@ -101,7 +101,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 
 ### HTTP: what it does
 
-The source runs an HTTP or HTTPS server on its own port and accepts requests on one path and one method. A wrong method gets 405, a wrong path 404, failed authentication 401, and a body over `maxBodyBytes` 413. An accepted request answers `responseStatusCode` (a filtered message counts as accepted) and a pipeline failure answers `errorStatusCode`.
+The source runs an HTTP or HTTPS server on its own port and accepts requests on one path and one method. A wrong method gets 405, a wrong path 404, failed authentication 401, a body over `maxBodyBytes` 413, and a request to a channel that has just been undeployed 503. An accepted request answers `responseStatusCode` (a filtered message counts as accepted); a pipeline failure, or any other error in handling it, answers `errorStatusCode`.
 
 The source keeps a body whole or refuses it, and a refused body is never stored (D-334 in [DECISIONS.md](../progress/DECISIONS.md)):
 
@@ -132,7 +132,7 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 | `method` | No | The one method accepted: `GET`, `POST` (default), `PUT`, `PATCH` or `DELETE`, in any case. |
 | `responseContentType` | No | Content-Type of the reply. |
 | `responseStatusCode` | No | Status for an accepted message, 100 to 599; `200` by default. |
-| `errorStatusCode` | No | Status when the pipeline fails, 100 to 599; `500` by default. |
+| `errorStatusCode` | No | Status when the pipeline fails or the request cannot be handled, 100 to 599; `500` by default. |
 | `maxBodyBytes` | No | Largest request body, both as received and once decompressed; a larger one gets 413. |
 | `bodyCharset` | No | How a body is read when its Content-Type declares no charset: `utf-8` (default), `latin1` (ISO-8859-1) or `windows-1252`. A declared charset wins over these. `base64` keeps the bytes of every body, text included, whatever its Content-Type says. `windows-1252` needs a Node with full ICU (the official builds have it); without it the deploy fails. The `charset` key older editors saved is still ignored. |
 | `auth.type` | No | `BASIC` or `TOKEN`. With no `auth` object, anyone who can reach the port can post. API only. |
