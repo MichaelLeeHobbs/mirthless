@@ -9,7 +9,8 @@ import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { assertCharsetAvailable } from '../encoding.js';
 import { Decompressor } from './decompression.js';
-import { RefusedBodyError } from './refused-body.js';
+import { HttpListener, type Exchange } from './http-listener.js';
+import { RefusedBodyError, stopping } from './refused-body.js';
 import { readRequestBody, type RequestBody } from './request-body.js';
 
 /** Hashing first keeps the length from leaking and meets timingSafeEqual's equal-length rule. */
@@ -77,7 +78,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
   private readonly config: HttpReceiverConfig;
   private readonly logger: ConnectorLogger;
   private readonly decompressor: Decompressor;
-  private server: http.Server | null = null;
+  private listener: HttpListener | null = null;
   private dispatcher: MessageDispatcher | null = null;
 
   constructor(config: HttpReceiverConfig, logger?: ConnectorLogger) {
@@ -114,52 +115,32 @@ export class HttpReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
-        this.handleRequest(req, res).catch((err: unknown) => { this.answerFailure(req, res, err); });
-      };
-      this.server = this.config.tls
-        ? https.createServer(
-          {
-            cert: this.config.tls.cert,
-            key: this.config.tls.key,
-            ...(this.config.tls.ca !== undefined ? { ca: this.config.tls.ca } : {}),
-            requestCert: this.config.tls.requireClientCert === true,
-            rejectUnauthorized: this.config.tls.requireClientCert === true,
-          },
-          handler,
-        )
-        : http.createServer(handler);
+      this.listener = new HttpListener(this.createServer(), (exchange) => this.handle(exchange));
+      await this.listener.listen(this.config.port, this.config.host);
+    });
+  }
 
-      await new Promise<void>((resolve, reject) => {
-        const srv = this.server!;
-        srv.once('error', reject);
-        srv.listen(this.config.port, this.config.host, () => {
-          srv.removeListener('error', reject);
-          resolve();
-        });
-      });
+  private createServer(): http.Server | https.Server {
+    const { tls } = this.config;
+    if (!tls) return http.createServer();
+    return https.createServer({
+      cert: tls.cert,
+      key: tls.key,
+      ...(tls.ca !== undefined ? { ca: tls.ca } : {}),
+      requestCert: tls.requireClientCert === true,
+      rejectUnauthorized: tls.requireClientCert === true,
     });
   }
 
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
-      if (!this.server) return;
-
-      await new Promise<void>((resolve) => {
-        this.server!.close(() => { resolve(); });
-      });
-
-      this.server = null;
+      await this.listener?.stop();
     });
   }
 
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      if (!this.server) return;
-
-      this.server.close();
-      this.server.closeAllConnections();
-      this.server = null;
+      this.listener?.halt();
     });
   }
 
@@ -169,7 +150,12 @@ export class HttpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  private handle(exchange: Exchange): Promise<void> {
+    return this.handleRequest(exchange).catch((err: unknown) => { this.answerFailure(exchange.req, exchange.res, err); });
+  }
+
+  private async handleRequest(exchange: Exchange): Promise<void> {
+    const { req, res } = exchange;
     if (req.method?.toUpperCase() !== this.config.method.toUpperCase()) {
       this.writePlain(res, 405, 'Method Not Allowed');
       return;
@@ -187,7 +173,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
       return;
     }
 
-    await this.dispatchRequest(req, res, reqPath);
+    await this.dispatchRequest(exchange, reqPath);
   }
 
   /** A request left unanswered would hold its sender until a timeout, without saying whether to send again. */
@@ -208,18 +194,15 @@ export class HttpReceiver implements SourceConnectorRuntime {
     return reqPath.startsWith(base.endsWith('/') ? base : `${base}/`);
   }
 
-  private async dispatchRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    reqPath: string,
-  ): Promise<void> {
+  private async dispatchRequest(exchange: Exchange, reqPath: string): Promise<void> {
+    const { req, res } = exchange;
     // Undefined once the connection has closed.
     const { remoteAddress } = req.socket;
     let body: RequestBody;
     try {
-      body = await readRequestBody(req, this.config, this.decompressor);
+      body = await readRequestBody(exchange, this.config, this.decompressor);
     } catch (err) {
-      this.refuseBody(req, res, err);
+      this.refuseBody(exchange, err);
       return;
     }
 
@@ -228,6 +211,10 @@ export class HttpReceiver implements SourceConnectorRuntime {
       // sends again: dispatching now would take the message twice.
       if (req.socket.destroyed) {
         this.logger.warn({ remoteAddress }, 'Request not dispatched: its connection closed while the body was being read');
+        return;
+      }
+      if (!exchange.inTime) {
+        this.refuseBody(exchange, stopping());
         return;
       }
       await this.dispatchAndAnswer(res, this.buildRawMessage(req, body.text, reqPath));
@@ -259,7 +246,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
     res.end();
   }
 
-  private refuseBody(req: http.IncomingMessage, res: http.ServerResponse, err: unknown): void {
+  private refuseBody({ req, res, takeNoMore }: Exchange, err: unknown): void {
     if (!(err instanceof RefusedBodyError)) {
       this.logger.error(errorInfo(err), 'Failed reading request body');
       this.writePlain(res, 400, 'Bad Request');
@@ -269,8 +256,12 @@ export class HttpReceiver implements SourceConnectorRuntime {
     this.logger.warn(context, `Refused a request body: ${err.message}`);
     res.writeHead(err.status, { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(err.message), ...err.headers });
     res.write(err.message);
-    if (err.stillArriving) this.endLater(res);
-    else res.end();
+    if (err.stillArriving) {
+      takeNoMore();
+      this.endLater(res);
+    } else {
+      res.end();
+    }
   }
 
   /**
