@@ -9,6 +9,7 @@ const mockTemplates = { listTemplatesForChannel: vi.fn(), listTemplates: vi.fn()
 const emitAuditEvent = vi.fn();
 const recordOrRefuse = vi.fn(async () => ({ ok: true, value: undefined }));
 const getResource = vi.fn(async () => 'from-resource');
+const collectionFind = vi.fn(async () => []);
 
 vi.mock('../channel.service.js', () => ({ ChannelService: mockChannelService }));
 vi.mock('../code-template.service.js', () => ({ CodeTemplateService: mockTemplates }));
@@ -16,7 +17,7 @@ vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent }));
 vi.mock('../audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
 vi.mock('../../engine.js', () => ({
   createResourceBridge: () => getResource,
-  createCollectionBridge: () => ({ find: vi.fn(async () => []) }),
+  createCollectionBridge: () => ({ find: collectionFind }),
 }));
 
 const { ScriptTestRunService, TEST_RUN_TIMEOUT_MS } = await import('../script-test-run.service.js');
@@ -56,18 +57,18 @@ describe('ScriptTestRunService.run', () => {
     expect(mockTemplates.listTemplatesForChannel).toHaveBeenCalledWith(CHANNEL_ID);
   });
 
-  it('wires a read only for a caller holding its read permission, and names the one missing (D-310)', async () => {
-    const result = await ScriptTestRunService.run(
-      { kind: 'script', destinationSet: false, sample: '', script: "logger.info(await getResource('codes'));" },
-      { userId: 'u1', ipAddress: null },
-      { resources: false, collections: true },
-    );
+  it.each([
+    ['resources:read', { resources: false, collections: true }, "await getCollection('orders').find({}); await getResource('codes');", collectionFind, getResource],
+    ['collections:read', { resources: true, collections: false }, "await getResource('codes'); await getCollection('orders').find({});", getResource, collectionFind],
+  ] as const)('wires a read only for a caller holding its read permission, and names the one missing (D-310): %s', async (missing, reads, script, held, refused) => {
+    const result = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script }, { userId: 'u1', ipAddress: null }, reads);
 
-    expect(getResource).not.toHaveBeenCalled();
+    expect(held).toHaveBeenCalledOnce();
+    expect(refused).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.outcome).toBe('error');
-    expect(result.value.error).toContain('resources:read');
+    expect(result.value.error).toContain(missing);
   });
 
   it('audits who ran a script for which channel, never the sample', async () => {
