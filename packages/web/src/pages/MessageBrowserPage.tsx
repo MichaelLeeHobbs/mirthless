@@ -26,6 +26,7 @@ import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
 import { usePermissions } from '../hooks/use-permissions.js';
+import { sentDateTimeLocal } from '../lib/datetime-local.js';
 import { PERMISSION } from '../lib/permissions.js';
 
 export function MessageBrowserPage(): ReactNode {
@@ -103,11 +104,13 @@ export function MessageBrowserPage(): ReactNode {
 
   useThrottledSocketEvent(SOCKET_EVENT.MESSAGE_NEW, handleNewMessage, channelId);
 
+  const fromIso = sentDateTimeLocal(receivedFrom);
+  const toIso = sentDateTimeLocal(receivedTo);
   const searchParams: MessageSearchParams = {
     channelId,
     ...(statuses.length > 0 ? { status: statuses } : {}),
-    ...(receivedFrom.length > 0 ? { receivedFrom: new Date(receivedFrom).toISOString() } : {}),
-    ...(receivedTo.length > 0 ? { receivedTo: new Date(receivedTo).toISOString() } : {}),
+    ...(fromIso ? { receivedFrom: fromIso } : {}),
+    ...(toIso ? { receivedTo: toIso } : {}),
     ...(metaDataId.length > 0 ? { metaDataId: Number(metaDataId) } : {}),
     ...(messageIdSearch.length > 0 ? { messageId: Number(messageIdSearch) } : {}),
     ...(debouncedContentSearch.length > 0 ? { contentSearch: debouncedContentSearch } : {}),
@@ -171,14 +174,14 @@ export function MessageBrowserPage(): ReactNode {
       reason,
       filters: {
         ...(statuses.length > 0 ? { status: statuses } : {}),
-        ...(receivedFrom.length > 0 ? { receivedFrom: new Date(receivedFrom).toISOString() } : {}),
-        ...(receivedTo.length > 0 ? { receivedTo: new Date(receivedTo).toISOString() } : {}),
+        ...(fromIso ? { receivedFrom: fromIso } : {}),
+        ...(toIso ? { receivedTo: toIso } : {}),
         ...(metaDataId.length > 0 ? { metaDataId: Number(metaDataId) } : {}),
         ...(messageIdSearch.length > 0 ? { messageId: Number(messageIdSearch) } : {}),
         ...(debouncedContentSearch.length > 0 ? { contentSearch: debouncedContentSearch } : {}),
       },
     }).catch(() => { notify('Failed to export messages', 'error'); });
-  }, [exportMessages, channelId, channel?.name, statuses, receivedFrom, receivedTo, metaDataId, messageIdSearch, debouncedContentSearch, notify]);
+  }, [exportMessages, channelId, channel?.name, statuses, fromIso, toIso, metaDataId, messageIdSearch, debouncedContentSearch, notify]);
 
   useEffect(() => {
     setOffset(0);

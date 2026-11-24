@@ -12,6 +12,7 @@ import {
   kafkaDestinationPropertiesSchema,
   amqpSourcePropertiesSchema,
   amqpDestinationPropertiesSchema,
+  trimmedTextSchema,
   type ConnectionTestResult,
 } from '@galvanigraph/core-models';
 import { isReservedAddress, isReservedHostname } from '@galvanigraph/engine';
@@ -148,6 +149,13 @@ function requireString(props: Readonly<Record<string, unknown>>, key: string): s
   return val;
 }
 
+/** Trimmed as deploy trims it, so the address check and the connect see the host a deploy would. */
+function requireHost(props: Readonly<Record<string, unknown>>): string {
+  const host = trimmedTextSchema.safeParse(props['host']);
+  if (!host.success) throw new ServiceError('INVALID_INPUT', 'Missing required property: host');
+  return host.data;
+}
+
 function requireNumber(props: Readonly<Record<string, unknown>>, key: string): number {
   const val = props[key];
   if (typeof val !== 'number' || !Number.isFinite(val)) {
@@ -182,7 +190,7 @@ async function testTcpConnect(host: string, port: number): Promise<ConnectionTes
 }
 
 const testTcpMllp: Tester = async (_mode, props) => {
-  const host = requireString(props, 'host');
+  const host = requireHost(props);
   const port = requireNumber(props, 'port');
   return testTcpConnect(host, port);
 };
@@ -344,7 +352,7 @@ const testFile: Tester = async (mode, props) => {
 };
 
 const testDatabase: Tester = async (_mode, props) => {
-  const host = requireString(props, 'host');
+  const host = requireHost(props);
   const port = requireNumber(props, 'port');
   const database = requireString(props, 'database');
   const vendor = props['vendor'] ?? DATABASE_VENDOR.POSTGRESQL;
@@ -376,7 +384,7 @@ const testDatabase: Tester = async (_mode, props) => {
 };
 
 const testSmtp: Tester = async (_mode, props) => {
-  const host = requireString(props, 'host');
+  const host = requireHost(props);
   const port = requireNumber(props, 'port');
   await assertHostAllowed(host);
 
@@ -439,7 +447,7 @@ const testFhir: Tester = async (_mode, props) => {
 };
 
 const testDicom: Tester = async (_mode, props) => {
-  const host = requireString(props, 'host');
+  const host = requireHost(props);
   const port = requireNumber(props, 'port');
   return testTcpConnect(host, port);
 };
@@ -453,7 +461,7 @@ const testJavascript: Tester = async () => {
 };
 
 const testEmail: Tester = async (_mode, props) => {
-  const host = requireString(props, 'host');
+  const host = requireHost(props);
   const port = requireNumber(props, 'port');
   return testTcpConnect(host, port);
 };
@@ -466,7 +474,7 @@ function optionalString(props: Readonly<Record<string, unknown>>, key: string): 
 /** Reads the options as the registry's SFTP factories read them. */
 function readSftpOptions(props: Readonly<Record<string, unknown>>): SftpConnectionOptions {
   const options: SftpConnectionOptions = {
-    host: requireString(props, 'host'),
+    host: requireHost(props),
     port: props['port'] === undefined || props['port'] === '' ? 22 : requireNumber(props, 'port'),
     username: requireString(props, 'username'),
     password: optionalString(props, 'password'),

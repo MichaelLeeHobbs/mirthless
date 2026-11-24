@@ -474,6 +474,7 @@ export const connectorMessages = pgTable('connector_messages', {
 ### message_content
 
 ```typescript
+// packages/core-models/src/constants.ts
 export const CONTENT_TYPE = {
   RAW: 1,
   PROCESSED: 2,

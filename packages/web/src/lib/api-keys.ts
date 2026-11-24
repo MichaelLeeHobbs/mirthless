@@ -1,5 +1,5 @@
 import { ALL_CHANNELS, type ApiKeyView, type CreateApiKeyInput, type GrantEntry } from '@galvanigraph/core-models';
-import { fromDateTimeLocal } from './collections.js';
+import { fromDateTimeLocal } from './datetime-local.js';
 
 /**
  * Who may take a leaver's key over (D-322). The server also checks the holder
