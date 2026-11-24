@@ -260,10 +260,8 @@ export class HttpReceiver implements SourceConnectorRuntime {
 
   private buildRawMessage(req: http.IncomingMessage, body: string, reqPath: string): RawMessage {
     const urlObj = new URL(req.url ?? '/', `http://${req.headers['host'] ?? 'localhost'}`);
-    const queryString: Record<string, string> = {};
-    for (const [key, value] of urlObj.searchParams.entries()) {
-      queryString[key] = value;
-    }
+    // Assigned key by key, a parameter named __proto__ would be dropped.
+    const queryString: Readonly<Record<string, string>> = Object.fromEntries(urlObj.searchParams);
     return {
       content: body,
       sourceMap: {

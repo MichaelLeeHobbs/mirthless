@@ -228,6 +228,17 @@ describe('HttpReceiver', () => {
     expect(qs['foo']).toBe('bar');
   });
 
+  it('keeps a query parameter named __proto__', async () => {
+    const seen: RawMessage[] = [];
+    receiver = new HttpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw); return { messageId: 1, response: 'OK' }; }));
+    await receiver.onStart();
+
+    await sendRequest(TEST_PORT, { path: '/?__proto__=x&foo=bar', body: '' });
+
+    expect(seen.map((raw) => Object.entries(raw.sourceMap['queryString'] as object))).toEqual([[['__proto__', 'x'], ['foo', 'bar']]]);
+  });
+
   it('only matches configured method', async () => {
     receiver = new HttpReceiver(makeConfig({ method: 'POST' }));
     receiver.setDispatcher(makeDispatcher());
