@@ -126,7 +126,7 @@ describe('every route is guarded first', () => {
   });
 });
 
-describe('every route that names a channel', () => {
+describe('every route under /channels with an :id in its path', () => {
   // Without scopeToChannel(router), a caller holding the permission on one group reaches every channel (D-310).
   it('is in a router that reads the channel\'s scope', () => {
     const named = routes.filter((r) => /^\/api\/v1\/channels\/(.+\/)?:id(\/|$)/.test(r.path));
