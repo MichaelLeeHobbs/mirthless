@@ -1,10 +1,11 @@
 // The documented backups could not be restored (#361): `docker exec -t` gave pg_dump a TTY,
 // which wrote every newline byte of the binary dump as CR LF, and pg_dump still exited 0.
-// GitHub Actions also runs the commands as the pages print them. Elsewhere that needs
-// BACKUP_DOCS_DOCKER=1, since it starts a container.
+// GitHub Actions also runs the scripts and the commands as the pages print them. Elsewhere
+// that needs BACKUP_DOCS_DOCKER=1, since it starts a container.
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,196 +13,283 @@ import { REPO_ROOT, readRepoFile } from '../../../test/markdown.js';
 
 const BACKUP_PAGE = 'docs/ops/backup-restore.md';
 const UPGRADE_PAGE = 'docs/ops/upgrade.md';
-const EXAMPLE_DUMP = 'galvanigraph-20260712-020000.dump';
-const DOCUMENTED_CONTAINER = 'galvanigraph-db-prod';
-const CONTAINER = `galvanigraph-backup-docs-${String(process.pid)}`;
+const EXAMPLE_DUMP = '/backups/galvanigraph-20260712-020000.dump';
 const RUN_DOCKER = process.env['GITHUB_ACTIONS'] === 'true' || process.env['BACKUP_DOCS_DOCKER'] === '1';
 
-interface Run {
-  readonly status: number | null;
-  readonly output: string;
+function fences(page: string): readonly string[] {
+  return [...readRepoFile(page).replaceAll('\r\n', '\n').matchAll(/^ *```[^\n]*\n([\s\S]*?)^ *```$/gm)].map((m) => m[1] ?? '');
 }
 
-function fences(page: string, language: string): readonly string[] {
-  const text = readRepoFile(page).replaceAll('\r\n', '\n');
-  return [...text.matchAll(/^ *```(\w+)\n([\s\S]*?)^ *```$/gm)].filter((m) => m[1] === language).map((m) => m[2] ?? '');
-}
-
-function fenceWith(page: string, language: string, text: string): string {
-  const found = fences(page, language).filter((f) => f.includes(text));
-  expect(found, `one ${language} block in ${page} with "${text}"`).toHaveLength(1);
+function fenceWith(page: string, text: string): string {
+  const found = fences(page).filter((f) => f.includes(text));
+  expect(found, `one block in ${page} with: ${text}`).toHaveLength(1);
   return found[0] ?? '';
 }
 
-describe('docker exec in the operations pages', () => {
-  const pages = readdirSync(join(REPO_ROOT, 'docs/ops')).filter((f) => f.endsWith('.md')).map((f) => `docs/ops/${f}`);
-  const commands = pages.flatMap((page) => fences(page, 'bash').concat(fences(page, 'cron'))
-    .flatMap((block) => [...block.matchAll(/docker exec((?:\s+-\S+)*)/g)].map((m) => ({ page, command: m[0] }))));
+const IMAGE = /postgres:[\w.-]+/;
 
-  it('is used by the backup and upgrade pages', () => {
-    expect(new Set(commands.map((c) => c.page))).toEqual(new Set([BACKUP_PAGE, UPGRADE_PAGE]));
+describe('the backup pages and scripts', () => {
+  it('leave pg_dump to docker/backup.sh, so nobody pastes a command that gives it a TTY', () => {
+    const pages = readdirSync(join(REPO_ROOT, 'docs/ops')).filter((f) => f.endsWith('.md')).map((f) => `docs/ops/${f}`);
+    const blocks = pages.flatMap((page) => fences(page).map((block) => ({ page, block })));
+
+    expect(blocks.some((b) => b.block.includes('docker/backup.sh'))).toBe(true);
+    expect(blocks.filter((b) => b.block.includes('pg_dump'))).toEqual([]);
   });
 
-  it('never asks for a TTY, which changes the bytes a dump is saved with', () => {
-    const withTty = commands.filter((c) => /\s(?:-[a-z]*t[a-z]*|--tty)(?=\s|$)/.test(c.command));
-    expect(withTty, 'remove -t (#361)').toEqual([]);
+  it('check a dump with the version of Postgres that wrote it', () => {
+    const production = IMAGE.exec(readRepoFile('docker/docker-compose.prod.yml'))?.[0];
+
+    expect(production).toBeDefined();
+    expect(/^image=(.+)$/m.exec(readRepoFile('docker/check-dump.sh'))?.[1]).toBe(production);
+  });
+
+  it('keep the backup before an upgrade in a block of its own, apart from the commands that migrate', () => {
+    expect(fenceWith(UPGRADE_PAGE, 'docker/backup.sh').trim()).toBe('sh docker/backup.sh /backups');
+  });
+
+  it('schedule the backup with a line cron runs whole', () => {
+    const line = fenceWith(BACKUP_PAGE, '* * *').trim();
+
+    expect(line).toMatch(/^\d+ \d+ \* \* \* sh /);
+    expect(line, 'one line, and cron ends the command at a %').not.toMatch(/[\n%]/);
   });
 });
 
-describe.skipIf(!RUN_DOCKER)('the documented backup commands, run against Postgres', { timeout: 120_000 }, () => {
-  let dir = '';
+describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { timeout: 120_000 }, () => {
+  const container = `galvanigraph-backup-docs-${randomUUID()}`;
+  let backups = '';
 
-  /** Aims the command at the throwaway container: the restore drops the database it runs against. */
-  function documented(command: string): string {
-    const aimed = command.replaceAll(DOCUMENTED_CONTAINER, CONTAINER);
-    for (const m of aimed.matchAll(/docker exec(?:\s+-\S+)*\s+(\S+)/g)) {
-      if (m[1] !== CONTAINER) throw new Error(`Not the throwaway container: ${m[0]}`);
-    }
-    return aimed;
+  interface Run {
+    readonly status: number | null;
+    readonly output: string;
   }
 
-  function bash(command: string): Run {
-    const result = spawnSync('bash', ['-c', command], {
-      cwd: dir, encoding: 'utf8', timeout: 60_000,
+  function sh(command: string, env: Readonly<Record<string, string>> = {}): Run {
+    const result = spawnSync('sh', ['-c', command], {
+      cwd: REPO_ROOT, encoding: 'utf8', timeout: 110_000,
       // Git Bash on Windows would rewrite /dev/null in a container's arguments.
-      env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+      env: { ...process.env, MSYS_NO_PATHCONV: '1', DB_CONTAINER: container, ...env },
     });
     if (result.error) throw result.error;
     return { status: result.status, output: `${result.stdout}${result.stderr}` };
   }
 
   function ok(command: string): string {
-    const run = bash(command);
+    const run = sh(command);
     expect(run.status, `${command}\n${run.output}`).toBe(0);
     return run.output;
   }
 
+  /** The restore drops the database it runs against, so a docker command may only reach the throwaway container. */
+  function documented(command: string): string {
+    const aimed = command
+      .replaceAll(EXAMPLE_DUMP, `${backups}/example.dump`).replaceAll('/backups', backups)
+      .replaceAll('/opt/galvanigraph', REPO_ROOT.replaceAll('\\', '/'))
+      .replaceAll('galvanigraph-db-prod', container)
+      .replaceAll(/docker compose [^&\n]*/g, 'true ');
+    const rest = aimed.replaceAll(`docker exec ${container} `, '').replaceAll(`docker exec -i ${container} `, '');
+    if (/\bdocker\s/.test(rest)) throw new Error(`A docker command outside the throwaway container:\n${aimed}`);
+    return aimed;
+  }
+
   function sql(query: string): string {
-    return ok(`docker exec ${CONTAINER} psql -At -v ON_ERROR_STOP=1 -U galvanigraph -d galvanigraph -c "${query}"`).trim();
+    return ok(`docker exec ${container} psql -At -v ON_ERROR_STOP=1 -U galvanigraph -d galvanigraph -c "${query}"`).trim();
   }
 
   function fingerprint(): string {
-    return sql("SELECT count(*), md5(string_agg(body || encode(raw, 'hex'), '' ORDER BY id)) FROM m");
+    return sql("SELECT count(*), md5(string_agg(body || encode(raw, 'hex'), '' ORDER BY id)) FROM channels");
   }
 
-  const dumps = (): readonly string[] => readdirSync(dir).filter((f) => f.includes('dump'));
+  const path = (file: string): string => join(backups, file);
+  const age = (file: string, days: number): void => { utimesSync(path(file), new Date(), new Date(Date.now() - days * 86_400_000)); };
+  const check = (file: string): Run => sh(`sh docker/check-dump.sh "${backups}/${file}"`);
+  const cron = (): string => documented(fenceWith(BACKUP_PAGE, '* * *').trim().replace(/^(?:\S+ ){5}/, ''));
 
-  const takeDump = (): string => documented(fenceWith(BACKUP_PAGE, 'bash', 'pg_dump'));
-
-  const check = (file: string): string => documented(fenceWith(BACKUP_PAGE, 'bash', '&& echo "dump OK"')).replaceAll(EXAMPLE_DUMP, file);
-
-  function cronJob(): string {
-    const line = fenceWith(BACKUP_PAGE, 'cron', 'pg_dump').trim();
-    expect(line.split('\n'), 'a cron job is one line').toHaveLength(1);
-    const command = /^(?:\S+\s+){5}(.+)$/.exec(line)?.[1] ?? '';
-    mkdirSync(join(dir, 'backups'));
-    return documented(command).replaceAll('\\%', '%').replaceAll('/backups', './backups');
+  function newDump(): string {
+    const files = readdirSync(backups).filter((f) => /^galvanigraph-\d{8}-\d{6}\.dump$/.test(f));
+    expect(files).toHaveLength(1);
+    return files[0] ?? '';
   }
 
-  function upgradeStep(): string {
-    const lines = fenceWith(UPGRADE_PAGE, 'bash', 'pg_dump').split('\n');
-    return documented(lines.filter((l) => l.trimStart().startsWith('docker exec')).join('\n'));
+  function restoreExample(): void {
+    const output = ok(documented(fenceWith(BACKUP_PAGE, 'DROP DATABASE')));
+    expect(output).toContain('restored:');
   }
 
-  function restore(file: string): void {
-    const block = fenceWith(BACKUP_PAGE, 'bash', 'DROP DATABASE');
-    expect(block).toContain(EXAMPLE_DUMP);
-    const onlyDatabase = block.split('\n').filter((l) => !l.startsWith('docker compose')).join('\n');
-    ok(`set -e\n${documented(onlyDatabase).replaceAll(EXAMPLE_DUMP, file)}`);
+  /** A dump as `docker exec` without -t writes it. */
+  function goodDump(): Buffer {
+    ok(`docker exec ${container} pg_dump -U galvanigraph -d galvanigraph -F c > "${backups}/good.dump"`);
+    return readFileSync(path('good.dump'));
   }
 
-  function writeTtyDump(file: string): void {
-    ok(`docker exec -t ${CONTAINER} pg_dump -U galvanigraph -d galvanigraph -F c > ${file}`);
+  function throughTty(dump: Buffer): Buffer {
+    const out: number[] = [];
+    for (const byte of dump) {
+      if (byte === 0x0a) out.push(0x0d);
+      out.push(byte);
+    }
+    return Buffer.from(out);
   }
+
+  /** The archive header holds sec, min, hour, day, month (from 0) and year, each as a sign byte and four bytes, low first. */
+  function dumpedIn(dump: Buffer, month: number): Buffer {
+    expect([...dump.subarray(5, 7)], 'archive version the offsets are for').toEqual([1, 16]);
+    expect(dump.readInt32LE(38)).toBe(new Date().getUTCFullYear() - 1900);
+    const copy = Buffer.from(dump);
+    [30, 30, 12, 15, month].forEach((value, i) => copy.writeInt32LE(value, 13 + i * 5));
+    return copy;
+  }
+
+  /** After the year come the DST flag, three strings (length, then bytes) and the number of entries. */
+  function withoutEntries(dump: Buffer): Buffer {
+    const copy = Buffer.from(dump);
+    let at = 47;
+    for (let i = 0; i < 3; i++) at += 5 + copy.readInt32LE(at + 1);
+    expect(copy.readInt32LE(at + 1)).toBeGreaterThan(0);
+    expect(copy.readInt32LE(at + 1)).toBeLessThan(100);
+    copy.writeInt32LE(0, at + 1);
+    return copy;
+  }
+
+  const JULY = 6;
+  const NOVEMBER = 10;
 
   beforeAll(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'backup-docs-'));
+    backups = mkdtempSync(join(tmpdir(), 'backup-docs-')).replaceAll('\\', '/');
+    const image = IMAGE.exec(readRepoFile('docker/docker-compose.prod.yml'))?.[0] ?? '';
+    ok(`docker image inspect ${image} > /dev/null 2>&1 || docker pull -q ${image}`);
     const env = '-e POSTGRES_USER=galvanigraph -e POSTGRES_PASSWORD=throwaway -e POSTGRES_DB=galvanigraph';
-    ok(`docker run -d --name ${CONTAINER} ${env} postgres:17-alpine`);
+    ok(`docker run -d --rm --name ${container} ${env} ${image}`);
     // Over TCP: the server the image starts to initialise listens on its socket only.
-    await vi.waitFor(() => { ok(`docker exec ${CONTAINER} pg_isready -h 127.0.0.1 -U galvanigraph`); }, { timeout: 60_000, interval: 500 });
-  }, 180_000);
+    await vi.waitFor(() => { ok(`docker exec ${container} pg_isready -h 127.0.0.1 -U galvanigraph`); }, { timeout: 60_000, interval: 500 });
+  }, 300_000);
 
   afterAll(() => {
-    if (!dir) return;
-    bash(`docker rm -f -v ${CONTAINER}`);
-    rmSync(dir, { recursive: true, force: true });
+    sh(`docker rm -f -v ${container}`);
+    rmSync(backups, { recursive: true, force: true });
   }, 120_000);
 
   beforeEach(() => {
-    for (const entry of readdirSync(dir)) rmSync(join(dir, entry), { recursive: true });
-    sql(`DROP TABLE IF EXISTS m;
-      CREATE TABLE m (id int PRIMARY KEY, body text, raw bytea);
-      INSERT INTO m SELECT g, 'line ' || g || E'\\n' || random(), sha256(g::text::bytea) FROM generate_series(1, 5000) g`);
+    for (const entry of readdirSync(backups)) rmSync(path(entry), { recursive: true });
+    sql(`DROP TABLE IF EXISTS channels;
+      CREATE TABLE channels (id int PRIMARY KEY, body text, raw bytea);
+      INSERT INTO channels SELECT g, 'line ' || g || E'\\n' || random(), sha256(g::text::bytea) FROM generate_series(1, 5000) g`);
   }, 120_000);
 
-  it.each([
-    ['the recommended backup', takeDump, (): readonly string[] => dumps()],
-    ['the cron job', cronJob, (): readonly string[] => readdirSync(join(dir, 'backups')).map((f) => `backups/${f}`)],
-    ['the backup before an upgrade', upgradeStep, (): readonly string[] => dumps()],
-  ])('%s restores every row', (_name, command, files) => {
+  it('the recommended backup restores every row', () => {
     const before = fingerprint();
 
-    ok(command());
-    const [file, ...others] = files();
-    expect(others).toEqual([]);
-    expect(file).toMatch(/\.dump$/);
-    sql('TRUNCATE m');
-    restore(file ?? '');
+    expect(ok(documented(fenceWith(UPGRADE_PAGE, 'docker/backup.sh')))).toContain('dump OK');
+    writeFileSync(path('example.dump'), readFileSync(path(newDump())));
+    sql('TRUNCATE channels');
+    restoreExample();
 
     expect(before).toMatch(/^5000\|/);
     expect(fingerprint()).toBe(before);
   });
 
-  it('a backup that cannot be read back is not given its final name', () => {
-    const throughTty = takeDump().replace(`docker exec ${CONTAINER}`, `docker exec -t ${CONTAINER}`);
-    expect(throughTty).toContain('exec -t');
+  it('a backup that fails leaves no file and prints no go-ahead', () => {
+    const run = sh(`sh docker/backup.sh "${backups}"`, { DB_CONTAINER: `${container}-missing` });
 
-    expect(bash(throughTty).status).not.toBe(0);
-
-    expect(dumps()).toEqual([expect.stringMatching(/\.partial$/)]);
+    expect(run.status).not.toBe(0);
+    expect(run.output).not.toContain('dump OK');
+    expect(readdirSync(backups)).toEqual([]);
   });
 
-  it('the cron job deletes old dumps only once the new one has been read back', () => {
-    const command = cronJob();
-    const throughTty = command.replace(`docker exec ${CONTAINER}`, `docker exec -t ${CONTAINER}`);
-    ok('touch -d "30 days ago" backups/galvanigraph-old.dump backups/galvanigraph-failed.dump.partial');
+  it('a backup of a database without the GalvaniGraph tables is refused', () => {
+    const run = sh(`sh docker/backup.sh "${backups}"`, { POSTGRES_DB: 'postgres' });
 
-    expect(bash(throughTty).status).not.toBe(0);
-    expect(readdirSync(join(dir, 'backups'))).toContain('galvanigraph-old.dump');
-
-    ok(command);
-    expect(readdirSync(join(dir, 'backups'))).toEqual([expect.stringMatching(/^galvanigraph-\d{8}\.dump$/)]);
+    expect(run.status).not.toBe(0);
+    expect(run.output).toContain('NOT OK');
+    expect(readdirSync(backups)).toEqual([]);
   });
 
-  it('the check before an upgrade does not print its go-ahead for a dump taken through a TTY', () => {
-    const throughTty = upgradeStep().replace(`docker exec ${CONTAINER} pg_dump`, `docker exec -t ${CONTAINER} pg_dump`);
-    expect(throughTty).toContain('exec -t');
+  it('the cron job deletes only dumps past their age, and none when the backup fails', () => {
+    const kept = ['galvanigraph-recent.dump', 'galvanigraph-old.dump.gpg', 'galvanigraph-old.dump.repaired', 'yearly/galvanigraph-old.dump'];
+    mkdirSync(path('yearly'));
+    for (const file of [...kept, 'galvanigraph-old.dump']) {
+      writeFileSync(path(file), 'x');
+      age(file, file.includes('recent') ? 10 : 30);
+    }
 
-    expect(bash(throughTty).output).not.toContain('dump OK');
+    expect(sh(cron(), { DB_CONTAINER: `${container}-missing` }).status).not.toBe(0);
+    expect(existsSync(path('galvanigraph-old.dump'))).toBe(true);
+
+    ok(cron());
+    expect(existsSync(path('galvanigraph-old.dump'))).toBe(false);
+    expect(kept.filter((file) => !existsSync(path(file)))).toEqual([]);
+    newDump();
   });
 
-  it('the documented check accepts a whole dump and refuses a cut one', () => {
-    ok(`docker exec ${CONTAINER} pg_dump -U galvanigraph -d galvanigraph -F c > whole.dump`);
-    const whole = readFileSync(join(dir, 'whole.dump'));
-    writeFileSync(join(dir, 'cut.dump'), whole.subarray(0, Math.floor(whole.length * 0.9)));
+  it('the check accepts a whole dump and refuses a cut or empty one', () => {
+    const dump = goodDump();
+    writeFileSync(path('cut.dump'), dump.subarray(0, Math.floor(dump.length * 0.9)));
+    writeFileSync(path('empty.dump'), '');
 
-    expect(ok(check('whole.dump'))).toContain('dump OK');
-    const cut = bash(check('cut.dump'));
-    expect(cut.status).not.toBe(0);
-    expect(cut.output).not.toContain('dump OK');
+    expect(check('good.dump')).toMatchObject({ status: 0, output: expect.stringContaining('dump OK') as string });
+    for (const file of ['cut.dump', 'empty.dump', 'missing.dump']) {
+      const run = check(file);
+      expect(run.status, file).not.toBe(0);
+      expect(run.output, file).not.toContain('dump OK');
+    }
   });
 
-  it('the documented repair makes a dump taken through a TTY restorable', () => {
+  it.each([['July', JULY], ['November', NOVEMBER]])('the check refuses a dump taken through a TTY in %s', (_name, month) => {
+    writeFileSync(path('tty.dump'), throughTty(dumpedIn(goodDump(), month)));
+
+    const run = check('tty.dump');
+
+    expect(run.status).not.toBe(0);
+    expect(run.output).toContain('NOT OK');
+  });
+
+  it('the check refuses a dump that pg_restore reads as an empty archive, as it does some taken through a TTY', () => {
+    writeFileSync(path('no-entries.dump'), withoutEntries(goodDump()));
+
+    expect(sh(`docker exec -i ${container} pg_restore -f /dev/null < "${backups}/no-entries.dump"`).status).toBe(0);
+    const run = check('no-entries.dump');
+
+    expect(run.status).not.toBe(0);
+    expect(run.output).toContain('NOT OK');
+  });
+
+  it.each([['July', JULY], ['November', NOVEMBER]])('the documented repair undoes the damage to a dump taken in %s exactly', (_name, month) => {
+    const original = dumpedIn(goodDump(), month);
+    writeFileSync(path('example.dump'), throughTty(original));
+
+    expect(ok(documented(fenceWith(BACKUP_PAGE, 'perl')))).toContain('dump OK');
+
+    expect(readFileSync(path('example.dump.repaired')).equals(original)).toBe(true);
+    expect(readFileSync(path('example.dump')).equals(throughTty(original))).toBe(true);
+  });
+
+  it('the damage the repair undoes is the one a TTY does', () => {
+    ok(`docker exec -t ${container} pg_dump -U galvanigraph -d galvanigraph -F c > "${backups}/example.dump"`);
+
+    expect(ok(documented(fenceWith(BACKUP_PAGE, 'perl')))).toContain('dump OK');
+  });
+
+  it('the documented repair leaves a good dump alone', () => {
+    const dump = goodDump();
+    writeFileSync(path('example.dump'), dump);
+
+    const run = sh(documented(fenceWith(BACKUP_PAGE, 'perl')));
+
+    expect(run.output).toContain('leave it as it is');
+    expect(run.output).not.toContain('dump OK');
+    expect(existsSync(path('example.dump.repaired'))).toBe(false);
+    expect(readFileSync(path('example.dump')).equals(dump)).toBe(true);
+  });
+
+  it('the documented restore drops nothing when the dump is damaged', () => {
     const before = fingerprint();
-    writeTtyDump('tty.dump');
-    expect(bash(check('tty.dump')).status).not.toBe(0);
+    writeFileSync(path('example.dump'), throughTty(dumpedIn(goodDump(), NOVEMBER)));
 
-    ok(fenceWith(BACKUP_PAGE, 'bash', 'perl').replaceAll(EXAMPLE_DUMP, 'tty.dump'));
-    ok(check('repaired.dump'));
-    sql('TRUNCATE m');
-    restore('repaired.dump');
+    const run = sh(documented(fenceWith(BACKUP_PAGE, 'DROP DATABASE')));
 
+    expect(run.status).not.toBe(0);
+    expect(run.output).not.toContain('restored:');
     expect(fingerprint()).toBe(before);
   });
 });

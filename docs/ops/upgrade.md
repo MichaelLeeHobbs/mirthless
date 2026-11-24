@@ -401,28 +401,34 @@ The editor no longer shows the Listener's pool sizes or the Sender's mode and ma
 
 ## Backups taken with `docker exec -t` can't be restored (#361)
 
-Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that `pg_restore` can't read. Change any cron job or script that runs `pg_dump` through `docker exec -t`, and see [how to check and repair existing dumps](backup-restore.md#dumps-taken-with-docker-exec--t).
+Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that `pg_restore` can't read. Take a new backup with `docker/backup.sh`, change any cron job or script that runs `pg_dump` through `docker exec -t`, and [repair the dumps you still need](backup-restore.md#dumps-taken-with-docker-exec--t).
 
 ## Standard upgrade (Docker)
 
-```bash
-# 1. BACK UP FIRST (see docs/ops/backup-restore.md)
-#    First upgrade after a rename: the container, database and user still have the
-#    old name (see "Renamed from Mirthless or GalvaniFlow" below).
-#    Go on only if this prints "dump OK".
-docker exec galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > pre-upgrade.dump &&
-  docker exec -i galvanigraph-db-prod pg_restore -f /dev/null < pre-upgrade.dump && echo "dump OK"
+1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
 
-# 2. Pull the new code
-git pull                # there are no published images; the stack builds from source
+   ```bash
+   git pull
+   ```
 
-# 3. Rebuild & restart — the server container migrates on start
-docker compose -f docker/docker-compose.prod.yml up -d --build
+2. **Back up** into a directory outside the checkout, and note the file's name. Go on only if it prints `dump OK`. On the first upgrade after a rename, the container, database and user still have the old name, so set them as [Backup & restore](backup-restore.md#logical-backup-with-pg_dump-recommended) shows (see also [Renamed from Mirthless or GalvaniFlow](#renamed-from-mirthless-or-galvaniflow)).
 
-# 4. Verify
-curl -fsS http://localhost/health   # via nginx → server; expect status "ok"
-docker compose -f docker/docker-compose.prod.yml logs server | grep -i migrat
-```
+   ```bash
+   sh docker/backup.sh /backups
+   ```
+
+3. Rebuild and restart. The server container migrates when it starts.
+
+   ```bash
+   docker compose -f docker/docker-compose.prod.yml up -d --build
+   ```
+
+4. Verify: the health check goes through nginx to the server and answers with status `ok`.
+
+   ```bash
+   curl -fsS http://localhost/health
+   docker compose -f docker/docker-compose.prod.yml logs server | grep -i migrat
+   ```
 
 Watch the server logs for `[migrate] migrations applied` before the startup banner.
 
@@ -509,12 +515,13 @@ a bad upgrade:
 
 1. Stop the new server (`docker compose ... stop server web`).
 2. Restore the **pre-upgrade Postgres dump** (see
-   [backup-restore.md](backup-restore.md)) into a fresh database. This is the only safe
+   [backup-restore.md](backup-restore.md)) into a fresh database, without its last step,
+   which would start the new version and migrate it again. This is the only safe
    way to undo a schema migration — reverting just the code while leaving a newer schema
    in place is unsupported and can corrupt data.
 3. Redeploy the **previous** image/code version.
 4. Start the old server; it will see its own schema already migrated and boot normally.
 
 Because rollback means a database restore, **the pre-upgrade `pg_dump` is mandatory** —
-do not skip step 1 of the upgrade. Test upgrades in staging first whenever a release
+do not skip step 2 of the upgrade. Test upgrades in staging first whenever a release
 includes migrations.
