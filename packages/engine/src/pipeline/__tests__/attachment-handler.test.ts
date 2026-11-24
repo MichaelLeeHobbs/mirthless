@@ -124,9 +124,8 @@ describe('AttachmentHandler', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      if (result.value.attachments.length >= 2) {
-        expect(result.value.attachments[0]!.id).not.toBe(result.value.attachments[1]!.id);
-      }
+      expect(result.value.attachments).toHaveLength(2);
+      expect(result.value.attachments[0]!.id).not.toBe(result.value.attachments[1]!.id);
     });
 
     it('calculates correct byte size', async () => {

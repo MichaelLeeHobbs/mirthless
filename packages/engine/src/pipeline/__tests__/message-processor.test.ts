@@ -796,6 +796,8 @@ describe('MessageProcessor', () => {
   it.each([
     ['a blank record', '001\n\n003\n', {}],
     ['a CR inside a quoted value', '1,"two\r\nlines"\r\n', {}],
+    // The second column, past the names, is called column2 too: the row has room for one of them.
+    ['a column whose name repeats an earlier one', '1,2\n', { columnNames: ['column2'] }],
   ])('a Delimited preprocessor that changes nothing keeps %s', async (_name, text, delimited) => {
     const sendFn = makeSendFn();
     const config = makeConfig({

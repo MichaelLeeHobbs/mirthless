@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
 import { compileScript } from '../../sandbox/script-compiler.js';
 import { MessageProcessor, type PipelineConfig, type MessageStore, type SendToDestination, type ChannelScripts } from '../message-processor.js';
@@ -61,19 +62,15 @@ describe('Pipeline Map Continuity', () => {
       destinations: [],
     };
 
-    const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+    const store = makeStore();
+    const processor = new MessageProcessor(executor, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'MSH|test', sourceMap: {} },
       AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    // The source transformer should see the channelMap value from preprocessor
-    // (it transforms content = channelMap value)
-    // Store should have been called with the transformed content
-    // We verify via storeContent calls: the transformed content should be "hello"
-    expect(result.value.status).toBe('SENT');
+    expect(store.storeContent).toHaveBeenCalledWith('ch-1', 1, 0, CONTENT_TYPE.TRANSFORMED, 'hello', 'RAW');
   });
 
   it('channelMap persists from preprocessor to postprocessor', async () => {
