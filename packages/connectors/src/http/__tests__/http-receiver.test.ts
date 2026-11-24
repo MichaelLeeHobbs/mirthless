@@ -989,7 +989,7 @@ describe('HttpReceiver bodies that are not valid in their charset', () => {
  * Sends a request no HTTP client would build, and resolves with all the server sent once it
  * closes the connection. `afterContinue` gives the body to send when the server answers 100 Continue.
  */
-function sendRaw(head: string, afterContinue?: () => Promise<string>): Promise<string> {
+function sendRaw(head: string | Buffer, afterContinue?: () => Promise<string>): Promise<string> {
   return new Promise((resolve, reject) => {
     let answer = '';
     let continued = false;
@@ -1094,6 +1094,28 @@ describe('HttpReceiver stopped while a body is being decompressed', () => {
     expect((await answer).status).toBe(200);
     expect((await stopped).ok).toBe(true);
     expect(seen.map((raw) => raw.content)).toEqual([HL7]);
+  });
+});
+
+describe('HttpReceiver transfer codings', () => {
+  const chunked = (body: Buffer, coding: string): string => [
+    'POST / HTTP/1.1', 'Host: localhost', 'Connection: close', `Transfer-Encoding: ${coding}`, '',
+    body.length.toString(16), body.toString('latin1'), '0', '', '',
+  ].join('\r\n');
+
+  it.each(['chunked', 'Chunked'])('takes a body sent %s', async (coding) => {
+    const { seen } = await startRecording();
+
+    expect(await sendRaw(Buffer.from(chunked(Buffer.from(HL7), coding), 'latin1'))).toMatch(/^HTTP\/1\.1 200 /);
+    expect(seen.map((raw) => raw.content)).toEqual([HL7]);
+  });
+
+  // Node takes only the chunked off, so the body is still compressed when the source reads it.
+  it.each(['gzip, chunked', 'identity, chunked'])('answers 501 to Transfer-Encoding %s', async (coding) => {
+    const { seen } = await startRecording({ bodyCharset: 'base64' });
+
+    expect(await sendRaw(Buffer.from(chunked(zlib.gzipSync(HL7), coding), 'latin1'))).toMatch(/^HTTP\/1\.1 501 /);
+    expect(seen).toEqual([]);
   });
 });
 

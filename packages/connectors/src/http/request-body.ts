@@ -27,6 +27,7 @@ type BodyDecoder = (bytes: Buffer) => string;
  */
 export async function readRequestBody(req: IncomingMessage, config: RequestBodyConfig, decompressor: Decompressor): Promise<RequestBody> {
   const received = await readBytes(req, config.maxBodyBytes);
+  refuseTransferCoding(req.headers['transfer-encoding']);
   const coding = contentCoding(req.headers['content-encoding']);
   const decode = bodyDecoder(req.headers['content-type'], config.bodyCharset);
   if (!coding) return { text: decode(received), release: () => undefined };
@@ -55,6 +56,12 @@ function readBytes(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
     });
     req.on('error', reject);
   });
+}
+
+/** Node undoes chunked and nothing else, so a body with another transfer coding is still encoded. */
+function refuseTransferCoding(header: string | undefined): void {
+  if (header === undefined || header.trim().toLowerCase() === 'chunked') return;
+  throw new RefusedBodyError(501, `Unsupported Transfer-Encoding: ${header}`);
 }
 
 /**
