@@ -453,6 +453,7 @@ function convertSourceConnector(
   if (finalType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], 'Database Reader', channelName));
   if (finalType === 'FILE') warnings.push(...fileConnectorWarnings(propsNode, properties, 'File Reader', channelName));
   if (finalType === 'DICOM') warnings.push(...dicomWarnings(propsNode, 'source', 'DICOM Listener', channelName));
+  if (finalType === 'HTTP') warnings.push(...httpListenerWarnings(propsNode, channelName));
   const polling = pollingWarning(propsNode, channelName);
   if (polling) warnings.push(polling);
   return { type: remote?.type ?? finalType, properties };
@@ -1077,6 +1078,20 @@ function httpListenerProperties(propsNode: Record<string, unknown>): Record<stri
   const status = Number(getString(propsNode, 'responseStatusCode') ?? '');
   if (Number.isInteger(status) && status >= 100 && status <= 599) result['responseStatusCode'] = status;
   return result;
+}
+
+/**
+ * The listener's `charset` is no guide to its request bodies, so it does not set
+ * `bodyCharset`: Mirth encodes responses in it, and reads a body in the charset the
+ * request declares, else as UTF-8 for JSON and ISO-8859-1 for the rest.
+ */
+function httpListenerWarnings(propsNode: Record<string, unknown>, channelName: string): string[] {
+  const prefix = `Channel "${channelName}": the HTTP Listener`;
+  const warnings = [`${prefix} reads text that declares no charset as ISO-8859-1 in Mirth (JSON as UTF-8); GalvaniGraph reads UTF-8 and refuses the rest (415) unless bodyCharset is set`];
+  if ((getString(propsNode, 'binaryMimeTypes') ?? '').trim() !== '') {
+    warnings.push(`${prefix} keeps binary bodies as base64 in Mirth; GalvaniGraph refuses them (415) unless bodyCharset is base64, which applies to every body`);
+  }
+  return warnings;
 }
 
 function getNestedRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | null {
