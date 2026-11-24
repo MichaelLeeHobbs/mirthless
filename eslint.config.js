@@ -35,6 +35,7 @@ const SHARED_HELPERS = [
   { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvanigraph/connectors (smtp/smtp-dispatcher.ts)' },
   { names: 'parseHeaderLines|parseHeaders|headersFromText', home: '@galvanigraph/core-models (http-connector.schema.ts)' },
   { names: 'redirectMessage', home: 'packages/connectors/src/redirect.ts' },
+  { names: 'regexError|firstInvalidRegex', home: '@galvanigraph/core-models (regex-error.ts)' },
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
 ];
 // A permission check goes through holdsPermission or can (@galvanigraph/core-models

@@ -22,7 +22,7 @@ Plan is where to look for what happens next. `ROADMAP N13` means the item tagged
 
 ## Connectors
 
-The [connector reference](connector-reference.md) lists every connector and its settings. This section covers what that page cannot: connectors, schemes and database vendors that are missing, and settings that do nothing.
+The [connector reference](connector-reference.md) lists every connector and its settings. This section covers what that page cannot: connectors, schemes and database vendors that are missing.
 
 | Capability | Status | Limits | Plan | Docs | Mirth | Proof |
 |---|---|---|---|---|---|---|

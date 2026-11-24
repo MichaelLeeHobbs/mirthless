@@ -6,7 +6,7 @@ import MenuItem from '@mui/material/MenuItem';
 import FormGroup from '@mui/material/FormGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
-import { ERROR_EVENT_TYPES, alertRegexError, type AlertTriggerInput } from '@galvanigraph/core-models';
+import { ERROR_EVENT_TYPES, regexError, type AlertTriggerInput } from '@galvanigraph/core-models';
 import { humanize } from '../../lib/format.js';
 
 export type TriggerType = 'CHANNEL_ERROR' | 'NO_MESSAGES';
@@ -51,7 +51,7 @@ export function TriggerSection({ values, onChange }: TriggerSectionProps): React
         onChange={(e) => { onChange({ ...values, type: e.target.value as TriggerType }); }}
         size="small"
         fullWidth
-        sx={{ mb: 2, maxWidth: 320 }}
+        sx={{ mb: 2, maxWidth: 360 }}
       >
         <MenuItem value="CHANNEL_ERROR">A channel reports an error</MenuItem>
         <MenuItem value="NO_MESSAGES">A started channel receives no messages</MenuItem>
@@ -82,7 +82,7 @@ function NoMessagesFields({ values, onChange }: TriggerSectionProps): ReactNode 
 }
 
 function ChannelErrorFields({ values, onChange }: TriggerSectionProps): ReactNode {
-  const regexError = alertRegexError(values.regex);
+  const badRegex = regexError(values.regex);
   const handleErrorTypeToggle = (errorType: string): void => {
     const current = [...values.errorTypes];
     const index = current.indexOf(errorType);
@@ -119,8 +119,8 @@ function ChannelErrorFields({ values, onChange }: TriggerSectionProps): ReactNod
         onChange={(e) => { onChange({ ...values, regex: e.target.value }); }}
         fullWidth
         size="small"
-        error={regexError !== null}
-        helperText={regexError ?? 'Only trigger when the error message matches this regular expression'}
+        error={badRegex !== null}
+        helperText={badRegex ?? 'Only trigger when the error message matches this regular expression'}
       />
     </>
   );

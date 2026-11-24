@@ -549,6 +549,8 @@ async function restoreAlerts(
   for (const item of items) {
     try {
       const existing = foundOrThrow(await AlertService.getById(item.id));
+      // Before the trigger is checked: an alert left as it is has nothing to report.
+      if (existing && mode === 'SKIP') { skipped++; continue; }
       const createInput = {
         name: item.name,
         description: item.description ?? '',
@@ -563,7 +565,6 @@ async function restoreAlerts(
       };
 
       if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
         const res = await AlertService.update(item.id, { ...createInput, revision: existing.revision });
         if (!res.ok) throw res.error;
         updated++;

@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { regexError } from '../regex-error.js';
 
 export const ALERT_TRIGGER_TYPES = ['CHANNEL_ERROR', 'NO_MESSAGES'] as const;
 
@@ -18,19 +19,9 @@ export const ERROR_EVENT_TYPES = [
 
 export const ALERT_ACTION_TYPES = ['EMAIL', 'CHANNEL'] as const;
 
-/** Why the pattern does not compile, or null when it does. */
-export function alertRegexError(pattern: string): string | null {
-  try {
-    new RegExp(pattern);
-    return null;
-  } catch (err) {
-    return err instanceof Error ? err.message : String(err);
-  }
-}
-
 /** Refused at save, because a pattern that does not compile never matches and its alert never fires. */
 const alertRegexSchema = z.string().superRefine((pattern, ctx) => {
-  const message = alertRegexError(pattern);
+  const message = regexError(pattern);
   if (message !== null) ctx.addIssue({ code: 'custom', message });
 });
 

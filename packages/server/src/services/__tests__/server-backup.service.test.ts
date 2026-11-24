@@ -436,6 +436,17 @@ describe('ServerBackupService', () => {
         expect(section?.errors).toHaveLength(1);
       });
 
+      it('skips an alert the server has, whatever its regex', async () => {
+        mockAlertGetById.mockResolvedValue(okResult({ id: CH, revision: 3 }));
+        mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+        mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+        const result = await ServerBackupService.restoreBackup(
+          makeMinimalBackup({ alerts: [alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: '[unclosed' })] }), 'SKIP',
+        );
+        if (!result.ok) throw new Error('restore failed');
+        expect(result.value.sections.find((sec) => sec.section === 'alerts')).toMatchObject({ skipped: 1, errors: [] });
+      });
+
       it('reports an alert whose regex does not compile, and restores the alert after it', async () => {
         mockAlertGetById.mockResolvedValue(notFound());
         mockAlertCreate.mockResolvedValue(okResult({ id: CH }));
