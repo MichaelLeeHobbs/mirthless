@@ -71,7 +71,7 @@ Result: `logger.info.constructor`, `({}).constructor.constructor`,
 `process` and compiles no text. Covered by the `escape prevention` tests in
 `__tests__/sandbox-executor.test.ts`, for arguments and results by
 `__tests__/sandbox-boundary.test.ts`, and for points 9, 11 and 12 by
-`__tests__/hostile-scripts.test.ts`, in child processes (D-333).
+`__tests__/hostile-scripts.test.ts`, in child processes (D-334).
 
 ## Timeouts
 
