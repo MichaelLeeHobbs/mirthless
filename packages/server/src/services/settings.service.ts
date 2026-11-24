@@ -1,5 +1,5 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { UpsertSettingInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -37,6 +37,54 @@ function toReadDetail(row: typeof systemSettings.$inferSelect): SettingDetail {
   return { ...detail, value: redactSettingValue(detail.key, detail.type, detail.value) };
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const SMTP_HOST = 'smtp.host';
+const SMTP_PASSWORD = 'smtp.auth_pass';
+
+/** True when there was one. */
+async function clearPassword(tx: Tx): Promise<boolean> {
+  const cleared = await tx.update(systemSettings).set({ value: '', updatedAt: new Date() })
+    .where(and(eq(systemSettings.key, SMTP_PASSWORD), ne(systemSettings.value, '')))
+    .returning({ id: systemSettings.id });
+  return cleared.length > 0;
+}
+
+/**
+ * The password was typed for the host that was there: kept, a settings writer who never sees it
+ * could have it sent to a server of theirs (D-332). A save that sets the password too keeps that one.
+ */
+async function clearPasswordOfChangedHost(tx: Tx, inputs: readonly UpsertSettingInput[]): Promise<boolean> {
+  const hosts = inputs.filter((i) => i.key === SMTP_HOST);
+  if (hosts.length === 0 || inputs.some((i) => i.key === SMTP_PASSWORD)) return false;
+  const [stored] = await tx.select({ value: systemSettings.value }).from(systemSettings).where(eq(systemSettings.key, SMTP_HOST)).for('update');
+  if (hosts.every((h) => (h.value ?? '') === (stored?.value ?? ''))) return false;
+  return clearPassword(tx);
+}
+
+async function upsertRow(tx: Tx, input: UpsertSettingInput): Promise<SettingDetail> {
+  const { key, value, type, description, category } = input;
+  const [row] = await tx
+    .insert(systemSettings)
+    .values({ key, value, type, description, category })
+    .onConflictDoUpdate({ target: systemSettings.key, set: { value, type, description, category, updatedAt: new Date() } })
+    .returning();
+  return toDetail(row!);
+}
+
+function clearedAttribute(cleared: boolean): { readonly cleared?: string } {
+  return cleared ? { cleared: SMTP_PASSWORD } : {};
+}
+
+function recordChange(attributes: Record<string, unknown>, context: AuditContext | undefined): void {
+  emitEvent({
+    level: 'INFO', name: 'SETTINGS_CHANGED', outcome: 'SUCCESS',
+    userId: context?.userId ?? null, channelId: null,
+    serverId: null, ipAddress: context?.ipAddress ?? null,
+    attributes,
+  });
+}
+
 export class SettingsService {
   static async list(query?: { readonly category?: string }): Promise<Result<readonly SettingDetail[]>> {
     return tryCatch(async () => {
@@ -65,49 +113,23 @@ export class SettingsService {
     });
   }
 
-  /** Unmasked, so for the server's own use and never in a response. Null when not set. */
-  static async getStoredValue(key: string): Promise<Result<string | null>> {
+  /** Unmasked, so for the server's own use and never in a response. Read at one moment; a key not set is left out. */
+  static async getStoredValues(keys: readonly string[]): Promise<Result<ReadonlyMap<string, string>>> {
     return tryCatch(async () => {
-      const [row] = await db
+      const rows = await db
         .select()
         .from(systemSettings)
-        .where(eq(systemSettings.key, key));
-      return row?.value ?? null;
+        .where(inArray(systemSettings.key, [...keys]));
+      return new Map(rows.flatMap((r) => (r.value === null ? [] : [[r.key, r.value] as const])));
     });
   }
 
   static async upsert(input: UpsertSettingInput, context?: AuditContext): Promise<Result<SettingDetail>> {
     return tryCatch(async () => {
-      const [row] = await db
-        .insert(systemSettings)
-        .values({
-          key: input.key,
-          value: input.value,
-          type: input.type,
-          description: input.description,
-          category: input.category,
-        })
-        .onConflictDoUpdate({
-          target: systemSettings.key,
-          set: {
-            value: input.value,
-            type: input.type,
-            description: input.description,
-            category: input.category,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-
-      const detail = toDetail(row!);
-
-      emitEvent({
-        level: 'INFO', name: 'SETTINGS_CHANGED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId: null,
-        serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { key: input.key },
-      });
-
+      const { detail, cleared } = await db.transaction(async (tx) => ({
+        cleared: await clearPasswordOfChangedHost(tx, [input]), detail: await upsertRow(tx, input),
+      }));
+      recordChange({ key: input.key, ...clearedAttribute(cleared) }, context);
       return detail;
     });
   }
@@ -115,41 +137,12 @@ export class SettingsService {
   static async bulkUpsert(inputs: readonly UpsertSettingInput[], context?: AuditContext): Promise<Result<readonly SettingDetail[]>> {
     return tryCatch(async () => {
       const results: SettingDetail[] = [];
-
-      await db.transaction(async (tx) => {
-        for (const input of inputs) {
-          const [row] = await tx
-            .insert(systemSettings)
-            .values({
-              key: input.key,
-              value: input.value,
-              type: input.type,
-              description: input.description,
-              category: input.category,
-            })
-            .onConflictDoUpdate({
-              target: systemSettings.key,
-              set: {
-                value: input.value,
-                type: input.type,
-                description: input.description,
-                category: input.category,
-                updatedAt: new Date(),
-              },
-            })
-            .returning();
-
-          results.push(toDetail(row!));
-        }
+      const cleared = await db.transaction(async (tx) => {
+        const clears = await clearPasswordOfChangedHost(tx, inputs);
+        for (const input of inputs) results.push(await upsertRow(tx, input));
+        return clears;
       });
-
-      emitEvent({
-        level: 'INFO', name: 'SETTINGS_CHANGED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId: null,
-        serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { keys: inputs.map((i) => i.key) },
-      });
-
+      recordChange({ keys: inputs.map((i) => i.key), ...clearedAttribute(cleared) }, context);
       return results;
     });
   }
@@ -165,14 +158,12 @@ export class SettingsService {
         throw new ServiceError('NOT_FOUND', `Setting "${key}" not found`);
       }
 
-      await db.delete(systemSettings).where(eq(systemSettings.key, key));
-
-      emitEvent({
-        level: 'INFO', name: 'SETTINGS_CHANGED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId: null,
-        serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { key, action: 'delete' },
+      const cleared = await db.transaction(async (tx) => {
+        const clears = key === SMTP_HOST && await clearPassword(tx);
+        await tx.delete(systemSettings).where(eq(systemSettings.key, key));
+        return clears;
       });
+      recordChange({ key, action: 'delete', ...clearedAttribute(cleared) }, context);
     });
   }
 }

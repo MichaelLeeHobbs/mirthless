@@ -399,6 +399,10 @@ A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (d
 
 The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
 
+## Alert email signs in over TLS only (#358)
+
+With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save.
+
 ## Standard upgrade (Docker)
 
 ```bash

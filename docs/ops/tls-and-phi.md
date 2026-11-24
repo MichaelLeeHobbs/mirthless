@@ -69,7 +69,7 @@ Individual connectors carry their own optional TLS configuration, independent of
 | Kafka and AMQP source and destination | `useTls: true` | Optional certificate store ids in `tls`: `caCertId`, `clientCertId`, `rejectUnauthorized` (default `true`) |
 | DATABASE source and destination | `tls: true` | None to set: the server certificate is always verified against the system's trusted CAs |
 | SMTP destination | `secure: true` (TLS from connect, usually port 465) or `requireTLS: true` (STARTTLS required before sending, usually port 587) | The Node runtime's trust store |
-| Alert email (system settings, not a connector) | `smtp.secure: true` (TLS from connect) or `smtp.require_tls: true` (STARTTLS required before signing in or sending) | The Node runtime's trust store |
+| Alert email (system settings, not a connector) | `smtp.secure: true` (TLS from connect) or `smtp.require_tls: true` (STARTTLS required before sending). With `smtp.auth_user` set, one of the two is always required | The Node runtime's trust store |
 | EMAIL source | `secure` (default `true`) | The Node runtime's trust store |
 | FHIR destination | An `https://` base URL | The Node runtime's trust store |
 
