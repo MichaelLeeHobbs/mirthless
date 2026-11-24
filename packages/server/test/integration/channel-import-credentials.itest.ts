@@ -64,7 +64,7 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
   // The same stored channel for each test: creating one makes its message partitions, which is slow.
   beforeEach(async () => {
     const { db, eq, schema } = mods;
-    await db.update(schema.channels).set({ sourceConnectorType: 'HTTP', sourceConnectorProperties: SOURCE, scriptTimeoutSeconds: 240 })
+    await db.update(schema.channels).set({ sourceConnectorType: 'HTTP', sourceConnectorProperties: SOURCE, scriptTimeoutSeconds: 240, deletedAt: null })
       .where(eq(schema.channels.id, channelId));
     await db.delete(schema.channelConnectors).where(eq(schema.channelConnectors.channelId, channelId));
     await db.insert(schema.channelConnectors).values([
@@ -312,21 +312,40 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
     });
   });
 
-  it('reads the stored credentials after it has the channel\'s lock, so a save that was under way is not undone', async () => {
-    const writer = await mods.pool.connect();
-    let importing: Promise<ImportResult> | undefined;
-    try {
-      await writer.query('BEGIN');
-      await writer.query('UPDATE channels SET revision = revision + 1 WHERE id = $1', [channelId]);
-      await writer.query(`UPDATE channel_connectors SET properties = properties || '{"password":"saved-meanwhile"}' WHERE channel_id = $1 AND meta_data_id = 1`, [channelId]);
-      importing = importFile(file);
-      await waitForBlocked(mods.pool, 'select "id" from "channels"');
-      await writer.query('COMMIT');
-    } finally {
-      await writer.query('ROLLBACK');
-      writer.release();
+  describe('when another change to the channel is under way', () => {
+    /** Imports the file while `statements` hold the channel's row, and lets them commit once the import waits for it. */
+    async function importDuring(entry: ChannelExportEntry, ...statements: readonly string[]): Promise<ImportResult> {
+      const writer = await mods.pool.connect();
+      try {
+        await writer.query('BEGIN');
+        for (const statement of statements) await writer.query(statement, [channelId]);
+        const importing = importFile(entry);
+        await waitForBlocked(mods.pool, 'select "id" from "channels"');
+        await writer.query('COMMIT');
+        return await importing;
+      } finally {
+        await writer.query('ROLLBACK');
+        writer.release();
+      }
     }
-    expect((await importing).errors).toEqual([]);
-    expect((await stored()).destinations.get(1)).toEqual({ ...DATABASE, password: 'saved-meanwhile' });
+
+    it('keeps the credential a save just stored, not the one it replaced', async () => {
+      const result = await importDuring(
+        file,
+        'UPDATE channels SET revision = revision + 1 WHERE id = $1',
+        `UPDATE channel_connectors SET properties = properties || '{"password":"saved-meanwhile"}' WHERE channel_id = $1 AND meta_data_id = 1`,
+      );
+      expect(result.errors).toEqual([]);
+      expect((await stored()).destinations.get(1)).toEqual({ ...DATABASE, password: 'saved-meanwhile' });
+    });
+
+    it('does not overwrite a channel that was just deleted', async () => {
+      const result = await importDuring({ ...file, description: 'written over a deleted channel' }, 'UPDATE channels SET deleted_at = now() WHERE id = $1');
+      expect(result).toEqual({
+        created: 0, updated: 0, skipped: 0, errors: [`Channel "${file.name}": not imported; it was deleted while the import waited for it`],
+      });
+      const { rows } = await mods.pool.query<{ description: string }>('SELECT description FROM channels WHERE id = $1', [channelId]);
+      expect(rows.map((r) => r.description)).toEqual([file.description]);
+    });
   });
 });

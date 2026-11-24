@@ -198,13 +198,7 @@ async function createChannel(
   return 'created';
 }
 
-/**
- * Judged after the channel row is locked FOR UPDATE: a membership change locks
- * the same row, so the channel cannot leave the importer's scope between this
- * check and the write.
- */
 async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Promise<boolean> {
-  await tx.select({ id: channels.id }).from(channels).where(eq(channels.id, channelId)).for('update');
   if (run.placement === 'restore') return true;
   const userId = run.context?.userId;
   const standing = userId ? await queryUserStanding(tx, userId) : null;
@@ -214,7 +208,19 @@ async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Pr
   return can(standing.grants, PERMISSIONS.CHANNELS_WRITE, { groupIds });
 }
 
-/** The entry with the stored credentials it may keep (D-335). Needs the lock mayOverwrite takes, or a save under way would be undone. */
+/**
+ * Judged after the channel row is locked FOR UPDATE, which a membership change
+ * and a delete lock too: the channel cannot leave the importer's scope, or be
+ * deleted, between this check and the write.
+ */
+async function overwriteRefusal(tx: ImportTx, channelId: string, run: ImportRun): Promise<string | null> {
+  const [live] = await tx.select({ id: channels.id }).from(channels)
+    .where(and(eq(channels.id, channelId), isNull(channels.deletedAt))).for('update');
+  if (!(await mayOverwrite(tx, channelId, run))) return 'it would replace a channel you cannot change';
+  return live ? null : 'it was deleted while the import waited for it';
+}
+
+/** The entry with the stored credentials it may keep (D-335). Needs the lock overwriteRefusal takes, or a save under way would be undone. */
 async function withStoredCredentials(tx: ImportTx, entry: ChannelExportEntry): Promise<ChannelExportEntry> {
   const [source] = await tx
     .select({ connectorType: channels.sourceConnectorType, properties: channels.sourceConnectorProperties })
@@ -239,9 +245,8 @@ async function overwriteChannel(file: ChannelExportEntry, run: ImportRun): Promi
   const now = new Date();
 
   return db.transaction(async (tx) => {
-    if (!(await mayOverwrite(tx, file.id, run))) {
-      return `Channel "${file.name}": not imported; it would replace a channel you cannot change`;
-    }
+    const refusal = await overwriteRefusal(tx, file.id, run);
+    if (refusal !== null) return `Channel "${file.name}": not imported; ${refusal}`;
     const entry = await withStoredCredentials(tx, file);
     // An import keeps the stored enabled flag, which is deploy control (#225);
     // a restore sets it. The revision goes up so an editor opened before gets a conflict.
