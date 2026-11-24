@@ -89,6 +89,16 @@ describe('ChannelExportService.exportChannel', () => {
     }
   });
 
+  it('exports the script timeout (#334)', async () => {
+    mockGetById.mockResolvedValue({ ok: true, value: makeChannelDetail({ scriptTimeoutSeconds: 240 }) as never, error: null });
+
+    const result = await ChannelExportService.exportChannel('ch-001');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.channels[0]?.scriptTimeoutSeconds).toBe(240);
+  });
+
   it('redacts secret connector properties and audits the export (finding 5c)', async () => {
     const detail = makeChannelDetail({
       sourceConnectorProperties: { host: 'lab', port: 6661, password: 'src-secret' },

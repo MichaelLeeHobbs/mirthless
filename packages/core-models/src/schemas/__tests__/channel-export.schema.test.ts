@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod/v4';
 import { channelImportSchema } from '../channel-export.schema.js';
+import { channelPropertiesSchema } from '../channel.schema.js';
 import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../../constants.js';
 
 function destination(connectorType: string, metaDataId = 1): Record<string, unknown> {
@@ -68,6 +69,27 @@ describe('channelImportSchema connector types', () => {
     expect(message).toContain('Channel "Orders"');
     expect(message).toContain('destination "To Mailbox"');
     expect(message).toContain('EMAIL');
+  });
+});
+
+describe('channelImportSchema script timeout', () => {
+  const importedTimeout = (fields: Record<string, unknown>): number | undefined => {
+    const result = channelImportSchema.safeParse(importFile([{ ...entry('TCP_MLLP', []), ...fields }]));
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(true);
+    return result.data?.channels[0]?.scriptTimeoutSeconds;
+  };
+
+  it.each([1, 120, 300])('keeps %s seconds', (scriptTimeoutSeconds) => {
+    expect(importedTimeout({ scriptTimeoutSeconds })).toBe(scriptTimeoutSeconds);
+  });
+
+  it('is absent from a file exported before it was included', () => {
+    expect(importedTimeout({})).toBeUndefined();
+  });
+
+  it.each([0, -1, 301, 15.5, '60', null])('refuses %j, as the channel API does', (scriptTimeoutSeconds) => {
+    expect(channelPropertiesSchema.safeParse({ scriptTimeoutSeconds }).success).toBe(false);
+    expect(channelImportSchema.safeParse(importFile([{ ...entry('TCP_MLLP', []), scriptTimeoutSeconds }])).success).toBe(false);
   });
 });
 

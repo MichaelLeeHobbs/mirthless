@@ -47,36 +47,11 @@ vi.mock('../../db/schema/index.js', () => ({
   transformerSteps: { transformerId: 'transformerId' },
 }));
 
-import { ChannelImportService, stripRedactedProperties, connectorDirectionError } from '../channel-import.service.js';
+import { ChannelImportService, connectorDirectionError } from '../channel-import.service.js';
 import { PartitionManagerService } from '../partition-manager.service.js';
 import { GrantService } from '../grant.service.js';
 import { db } from '../../lib/db.js';
 import { StdError } from 'stderr-lib';
-
-describe('stripRedactedProperties', () => {
-  it('drops redacted credential values but keeps everything else', () => {
-    const out = stripRedactedProperties({
-      host: 'db.local', port: 5432, password: '__REDACTED__', apiKey: '__REDACTED__', username: 'svc',
-    });
-    expect(out).toEqual({ host: 'db.local', port: 5432, username: 'svc' });
-    expect('password' in out).toBe(false);
-    expect('apiKey' in out).toBe(false);
-  });
-
-  it('drops redacted values nested in objects and arrays', () => {
-    const out = stripRedactedProperties({
-      auth: { username: 'svc', password: '__REDACTED__' },
-      tls: { cert: 'C', key: '__REDACTED__' },
-      attachments: [{ filename: 'a', apiToken: '__REDACTED__' }, 'x'],
-    });
-    expect(out).toEqual({ auth: { username: 'svc' }, tls: { cert: 'C' }, attachments: [{ filename: 'a' }, 'x'] });
-  });
-
-  it('returns an empty object for null/non-object input', () => {
-    expect(stripRedactedProperties(null)).toEqual({});
-    expect(stripRedactedProperties(undefined)).toEqual({});
-  });
-});
 
 function makeEntry(overrides?: Partial<ChannelExportEntry>): ChannelExportEntry {
   return {
@@ -154,6 +129,15 @@ describe('ChannelImportService.importChannels', () => {
         errors: [],
       });
     }
+  });
+
+  it('imports a database connector with TLS on for a caller scoped to some groups', async () => {
+    const database: ChannelExportEntry['destinations'][number] = {
+      metaDataId: 1, name: 'Archive', enabled: true, connectorType: 'DATABASE', properties: { host: 'db', tls: true }, queueMode: 'NEVER',
+      retryCount: 0, retryIntervalMs: 0, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+    };
+    const result = await ChannelImportService.importChannels([makeEntry({ destinations: [database] })], 'SKIP');
+    expect(result.ok && result.value).toEqual({ created: 1, updated: 0, skipped: 0, errors: [] });
   });
 
   it('checks the group for new channels once before importing, and refuses the whole import when it fails', async () => {

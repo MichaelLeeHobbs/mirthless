@@ -148,6 +148,24 @@ export async function deleteTestChannel(mods: ServerModules, id: string): Promis
   await mods.db.execute(mods.sql`DELETE FROM channels WHERE id = ${id}`);
 }
 
+const LOCK_WAIT_TIMEOUT_MS = 10_000;
+
+/** A blocked statement shows in pg_stat_activity as a Lock wait with the statement as its query. */
+export async function waitForBlocked(pool: ServerModules['pool'], queryPrefix: string): Promise<void> {
+  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const { rows } = await pool.query<{ waiting: string }>(
+      `SELECT count(*) AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+          AND query ILIKE $1`,
+      [`${queryPrefix}%`],
+    );
+    if (Number(rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`No statement starting "${queryPrefix}" ever blocked on the locked row`);
+}
+
 type ResultLike<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly message: string } };
