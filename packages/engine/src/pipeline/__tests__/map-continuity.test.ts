@@ -32,6 +32,11 @@ function makeSendFn(response = 'ACK'): SendToDestination {
   });
 }
 
+/** Destination and content of each send. The order is fixed only for destinations that wait for the previous one. */
+function sentBy(send: SendToDestination): ReadonlyArray<readonly unknown[]> {
+  return (send as ReturnType<typeof vi.fn>).mock.calls.map((c: unknown[]) => [c[0], c[2]]);
+}
+
 async function compile(code: string): Promise<{ code: string }> {
   const result = await compileScript(code, { sourcefile: 'test.js' });
   if (!result.ok) throw new Error('Compile failed');
@@ -207,8 +212,11 @@ describe('Pipeline Map Continuity', () => {
     expect(transformedCall![4]).toBe('sourceValue');
   });
 
-  it('fresh connectorMap per script execution does not leak between destinations', async () => {
-    const destFilter = await compile('connectorMap["destSpecific"] = msg; return true;');
+  it('fresh connectorMap per destination does not leak between destinations', async () => {
+    const filter = await compile('connectorMap["runs"] = (connectorMap["runs"] || 0) + 1; return true;');
+    const transformer = await compile('msg = "run " + connectorMap["runs"];');
+    const scripts = { filter, transformer };
+    const send = makeSendFn();
 
     const config: PipelineConfig = {
       channelId: 'ch-1',
@@ -216,21 +224,19 @@ describe('Pipeline Map Continuity', () => {
       dataType: 'RAW',
       scripts: {},
       destinations: [
-        { metaDataId: 1, name: 'Dest1', enabled: true, scripts: { filter: destFilter }, queueMode: 'NEVER' },
-        { metaDataId: 2, name: 'Dest2', enabled: true, scripts: { filter: destFilter }, queueMode: 'NEVER' },
+        { metaDataId: 1, name: 'Dest1', enabled: true, scripts, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest2', enabled: true, scripts, queueMode: 'NEVER', waitForPrevious: true },
       ],
     };
 
-    const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+    const processor = new MessageProcessor(executor, makeStore(), send, config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'test', sourceMap: {} },
       AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.destinationResults).toHaveLength(2);
-    expect(result.value.destinationResults.every((d) => d.status === 'SENT')).toBe(true);
+    expect(sentBy(send)).toEqual([[1, 'run 1'], [2, 'run 1']]);
   });
 
   it('connectorMap set in a destination filter is visible in that destination transformer only', async () => {
@@ -242,16 +248,14 @@ describe('Pipeline Map Continuity', () => {
       channelId: 'ch-1', serverId: 'srv-1', dataType: 'RAW', scripts: {},
       destinations: [
         { metaDataId: 1, name: 'Dest1', enabled: true, scripts: { filter: destFilter, transformer: destTransformer }, queueMode: 'NEVER' },
-        { metaDataId: 2, name: 'Dest2', enabled: true, scripts: { transformer: plainTransformer }, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest2', enabled: true, scripts: { transformer: plainTransformer }, queueMode: 'NEVER', waitForPrevious: true },
       ],
     };
     const processor = new MessageProcessor(executor, makeStore(), send, config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(MESSAGE_BUDGET_MS));
 
     expect(result.ok).toBe(true);
-    const sent = (send as ReturnType<typeof vi.fn>).mock.calls.map((c: unknown[]) => [c[0], c[2]]);
-    expect(sent).toContainEqual([1, 'from-x']);
-    expect(sent).toContainEqual([2, 'undefined']);
+    expect(sentBy(send)).toEqual([[1, 'from-x'], [2, 'undefined']]);
   });
 
   it('responseMap written by a response transformer reaches the postprocessor', async () => {
