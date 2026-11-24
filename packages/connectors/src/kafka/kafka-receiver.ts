@@ -41,10 +41,9 @@ interface RecordPosition {
   readonly offset: string;
 }
 
+/** `fromEntries`, because assigning a header named `__proto__` sets no property. */
 function headersToRecord(headers: ReadonlyMap<Buffer, Buffer>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [name, value] of headers) result[name.toString('utf8')] = value.toString('utf8');
-  return result;
+  return Object.fromEntries([...headers].map(([name, value]) => [name.toString('utf8'), value.toString('utf8')]));
 }
 
 /** A value that is not valid UTF-8 (in UTF-8 mode) gets a `charsetError` in the source map. */

@@ -105,16 +105,17 @@ function nestedHeaderJson(header: unknown): string {
   return parts.join('');
 }
 
+function headerValue(value: unknown): unknown {
+  if (Buffer.isBuffer(value)) return value.toString('utf8');
+  if (typeof value === 'bigint') return value.toString();
+  if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) return value;
+  if (value instanceof Date) return value.toISOString();
+  return nestedHeaderJson(value);
+}
+
+/** `fromEntries`, because assigning a header named `__proto__` sets no property. */
 export function headersToRecord(headers: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [name, value] of Object.entries(headers ?? {})) {
-    if (Buffer.isBuffer(value)) result[name] = value.toString('utf8');
-    else if (typeof value === 'bigint') result[name] = value.toString();
-    else if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) result[name] = value;
-    else if (value instanceof Date) result[name] = value.toISOString();
-    else result[name] = nestedHeaderJson(value);
-  }
-  return result;
+  return Object.fromEntries(Object.entries(headers ?? {}).map(([name, value]) => [name, headerValue(value)]));
 }
 
 /** Stays unacknowledged until ack or nack. */
