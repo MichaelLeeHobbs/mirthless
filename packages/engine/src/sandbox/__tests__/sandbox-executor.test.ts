@@ -8,6 +8,7 @@ import {
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy, createX12Proxy } from '../../pipeline/data-type-handler.js';
 import { Hl7Message, X12Message } from '@galvanigraph/core-util';
+import type { BridgeDependencies } from '../bridge-functions.js';
 
 function makeScript(code: string): CompiledScript {
   return { code };
@@ -281,6 +282,130 @@ describe('VmSandboxExecutor', () => {
   });
 
   describe('escape prevention', () => {
+    /** 'undefined' from the sandbox's Function, which may not compile text; 'object' from the host's. */
+    const REACH = "function reach(make) { try { return make('return typeof process')(); } catch (e) { return e instanceof EvalError ? 'undefined' : 'foreign error'; } }\n";
+
+    function escapeScript(code: string): CompiledScript {
+      return makeScript(REACH + code);
+    }
+
+    async function returned(code: string, deps?: BridgeDependencies): Promise<unknown> {
+      const result = await new VmSandboxExecutor(deps).execute(escapeScript(code), makeContext(), makeOptions());
+      return result.ok ? result.value.returnValue : `error: ${result.error.message}`;
+    }
+
+    it.each(Object.getOwnPropertyNames(Object.prototype))('the global has no %s of the host', async (name) => {
+      expect(await returned(`var v = globalThis[${JSON.stringify(name)}]; return reach(v.constructor.constructor);`)).toBe('undefined');
+      expect(await returned(`return reach(${name}.constructor.constructor);`)).toBe('undefined');
+    });
+
+    const ALL_BRIDGES: BridgeDependencies = {
+      httpFetch: async () => ({ status: 200, statusText: '', headers: {}, body: '' }),
+      dbQuery: async () => [],
+      routeMessage: async () => ({ success: true }),
+      getResource: async () => null,
+      collections: { store: vi.fn(), find: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    };
+
+    it.each([['no bridges', undefined], ['every bridge', ALL_BRIDGES]])('everything reachable from the global belongs to the sandbox (%s)', async (_name, deps) => {
+      const found = await returned(`
+        var queue = [[globalThis, 'globalThis']]; var known = new Set(); var foreign = []; var i = 0;
+        function root(o) { for (;;) { var p = Object.getPrototypeOf(o); if (p === null) { return o; } o = p; } }
+        while (i < queue.length) {
+          var o = queue[i][0]; var path = queue[i][1]; i += 1;
+          if (known.has(o)) { continue; }
+          known.add(o);
+          var top = root(o);
+          if (top !== Object.prototype && top !== o) { foreign.push(path); }
+          var next = [[Object.getPrototypeOf(o), path + '.__proto__']];
+          Reflect.ownKeys(o).forEach(function (k) {
+            var d = Object.getOwnPropertyDescriptor(o, k);
+            [d.value, d.get, d.set].forEach(function (v) { next.push([v, path + '.' + String(k)]); });
+          });
+          next.forEach(function (n) { if ((typeof n[0] === 'object' && n[0] !== null) || typeof n[0] === 'function') { queue.push(n); } });
+        }
+        return [known.size > 500, foreign.join(' ')].join('|');`, deps);
+
+      expect(found).toBe('true|');
+    });
+
+    it.each([
+      "import('node:fs');",
+      "import /* x */ ('node:fs');",
+      "import\n('node:fs');",
+      "import.source('node:fs');",
+      "`${import('node:fs')}`;",
+      "if (false) { import('node:fs'); }",
+      "\\u0069mport('node:fs');",
+      "<!-- x\nimport('node:fs');",
+    ])('a script cannot run %s', async (code) => {
+      for (const deps of [undefined, ALL_BRIDGES]) {
+        const result = await new VmSandboxExecutor(deps).execute(makeScript(code), makeContext(), makeOptions());
+        expect(result.ok ? 'ran' : result.error.message).toBe('Keyword must not contain escaped characters');
+      }
+    });
+
+    it.each(["\\import('node:fs');", "\\\\import('node:fs');", "\\u{69}mport('node:fs');"])('a script cannot run %s either', async (code) => {
+      const result = await executor.execute(makeScript(code), makeContext(), makeOptions());
+      expect(result.ok ? 'ran' : result.error.message).toMatch(/Invalid Unicode escape|Invalid or unexpected token|Keyword must not/);
+    });
+
+    it.each([
+      ['a string', "return 'import (x)';", 'import (x)'],
+      ['a string with a path', "return 'C:\\\\import\\\\f';", 'C:\\import\\f'],
+      ['a string with a needless escape', "return '\\import';", 'import'],
+      ['a template', 'return `import (${1 + 1})`;', 'import (2)'],
+      ['a regular expression', "return /^import$/.test('import');", true],
+      ['a group name', "return /(?<import>x)/.exec('x').groups.import;", 'x'],
+      ['a property and a method', 'var o = { import: 1, reimport() { return this.import + 1; } }; return o.reimport();', 2],
+      ['raw text', 'return String.raw`C:\\import\\x${1}import` + String.raw({ raw: [\'a\', \'b\'] }, 1);', 'C:\\import\\x1importa1b'],
+      ['a control escape', "return /^\\cimport$/.test('\\tmport');", true],
+      ['a longer name', 'function importPatients() { return 3; } return importPatients();', 3],
+      ['a private name', 'class Q { #import = 4; get() { return this.#import; } } return new Q().get();', 4],
+      ['JSON', `return JSON.parse('{"import":5}').import;`, 5],
+    ])('the word import in %s means what it says', async (_where, code, value) => {
+      expect(await returned(code)).toBe(value);
+    });
+
+    it.each([
+      "eval('1')",
+      "(0, eval)('1')",
+      "new Function('return 1')",
+      "(async function () {}).constructor('return 1')",
+      "(function* () {}).constructor('return 1')",
+      "(async function* () {}).constructor('return 1')",
+    ])('a script cannot compile text with %s', async (code) => {
+      expect(await returned(`try { ${code}; return 'compiled'; } catch (e) { return e instanceof EvalError; }`)).toBe(true);
+    });
+
+    it('an error has no stack, and its formatter is never called', async () => {
+      const code = `
+        var formatted = 0;
+        Error.prepareStackTrace = function () { formatted += 1; return 'x'; };
+        class Own extends Error {}
+        var errors = [new Error('a'), new Own('b')];
+        try { parseHL7(123); } catch (e) { errors.push(e); }
+        try { null.x; } catch (e) { errors.push(e); }
+        var o = {}; Error.captureStackTrace(o); errors.push(o);
+        return errors.map(function (e) { return String(e.stack); }).join(',') + ' ' + formatted + ' ' + errors[0].message;`;
+      expect(await returned(code)).toBe('undefined,undefined,undefined,undefined,undefined 0 a');
+    });
+
+    it('then gives a plain promise, whatever the promise says its constructor is', async () => {
+      const code = `
+        class Own extends Promise {}
+        var p = Own.resolve(1);
+        var chained = p.then(function (v) { return v + 1; });
+        var caught = Own.reject(new Error('no')).catch(function (e) { return e.message; });
+        var last = Own.resolve(1).finally(function () {});
+        return [await chained, await caught, await last, chained.constructor === Promise, p instanceof Own, Promise.prototype.then.name, Promise.prototype.then.length].join(',');`;
+      expect(await returned(code, ALL_BRIDGES)).toBe('2,no,1,true,true,then,2');
+    });
+
+    it('then refuses a promise that cannot be given a plain constructor', async () => {
+      expect(await returned("var p = Promise.resolve(1); Object.defineProperty(p, 'constructor', { value: 1 }); try { p.then(function () {}); } catch (e) { return e instanceof TypeError; }")).toBe(true);
+    });
+
     it('does not expose host process/require/module/globalThis', async () => {
       const script = makeScript(
         'return [typeof process, typeof require, typeof module, typeof global].join(",");',
@@ -293,7 +418,7 @@ describe('VmSandboxExecutor', () => {
     });
 
     it('logger.info.constructor cannot reach host process (the reported RCE)', async () => {
-      const script = makeScript("return logger.info.constructor('return typeof process')();");
+      const script = escapeScript("return reach(logger.info.constructor);");
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(true);
@@ -303,7 +428,7 @@ describe('VmSandboxExecutor', () => {
     });
 
     it('({}).constructor.constructor cannot reach host process', async () => {
-      const script = makeScript("return ({}).constructor.constructor('return typeof process')();");
+      const script = escapeScript("return reach(({}).constructor.constructor);");
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(true);
@@ -314,7 +439,7 @@ describe('VmSandboxExecutor', () => {
     it('the HL7 message proxy method .constructor cannot reach host process', async () => {
       const hl7 = 'MSH|^~\\&|S|F|R|F|20260329||ADT^A01|C1|P|2.5\rPID|||99999^^^MRN';
       const context = makeContext({ msg: createHl7Proxy(Hl7Message.parse(hl7)) });
-      const script = makeScript("return msg.get.constructor('return typeof process')();");
+      const script = escapeScript("return reach(msg.get.constructor);");
       const result = await executor.execute(script, context, makeOptions());
 
       expect(result.ok).toBe(true);
@@ -329,11 +454,11 @@ describe('VmSandboxExecutor', () => {
     it('an X12 msg reads and edits through host calls, comes back as the host message, and leaks nothing', async () => {
       const isa = 'ISA*00*          *00*          *ZZ*SUBMITTER      *ZZ*RECEIVER       *261110*1200*^*00501*000000020*0*P*:~';
       const proxy = createX12Proxy(X12Message.parse(`${isa}NM1*IL*1*DOE*JANE****MI*MEMBER123~`));
-      const script = makeScript([
+      const script = escapeScript([
         "msg.set('NM1.9', msg.get('NM1.9') + 'X');",
         "channelMap.copy = msg;",
-        "var leak = msg.get.constructor('return typeof process')();",
-        "var thrown; try { msg.set('CLM.1', 'x'); } catch (e) { thrown = [e instanceof Error, e.constructor.constructor('return typeof process')()].join(','); }",
+        "var leak = reach(msg.get.constructor);",
+        "var thrown; try { msg.set('CLM.1', 'x'); } catch (e) { thrown = [e instanceof Error, reach(e.constructor.constructor)].join(','); }",
         "return [msg.getSegmentCount('NM1'), leak, thrown].join('|');",
       ].join('\n'));
       const result = await executor.execute(script, makeContext({ msg: proxy }), makeOptions());
@@ -360,9 +485,9 @@ describe('VmSandboxExecutor', () => {
       const ioExecutor = new VmSandboxExecutor({
         httpFetch: () => Promise.reject(new Error('nope')),
       });
-      const script = makeScript(
+      const script = escapeScript(
         "try { await httpFetch('https://example.com'); return 'no-throw'; }" +
-        " catch (e) { return e.constructor.constructor('return typeof process')(); }",
+        " catch (e) { return reach(e.constructor.constructor); }",
       );
       const result = await ioExecutor.execute(script, makeContext(), makeOptions());
       ioExecutor.dispose();
@@ -385,9 +510,9 @@ describe('VmSandboxExecutor', () => {
     it.each(SYNC_THROWERS)('a host error thrown by %s cannot leak the host Function', async (_name, body) => {
       const hl7 = Hl7Message.parse('MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5\rPID|1||99999');
       const context = makeContext({ msg: createHl7Proxy(hl7) });
-      const script = makeScript(
+      const script = escapeScript(
         `try { ${body}; return 'no-throw'; }` +
-        " catch (e) { return [e instanceof Error, e.constructor.constructor('return typeof process')()].join(','); }",
+        " catch (e) { return [e instanceof Error, reach(e.constructor.constructor)].join(','); }",
       );
       const result = await executor.execute(script, context, makeOptions());
 
@@ -411,25 +536,6 @@ describe('VmSandboxExecutor', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.message).toContain('parseHL7 expects a string');
-    });
-
-    it('a stack trace hook cannot reach host functions through call sites', async () => {
-      const script = makeScript(
-        "Error.prepareStackTrace = function (_e, sites) { return sites; };" +
-        "var found = 'none';" +
-        "try { parseHL7(123); } catch (e) { /* ignore */ }" +
-        "var sites = new Error('x').stack;" +
-        "for (var i = 0; i < sites.length; i++) {" +
-        "  var fn = sites[i].getFunction && sites[i].getFunction();" +
-        "  if (fn) { var r = fn.constructor('return typeof process')(); if (r !== 'undefined') { found = r; } }" +
-        "}" +
-        "return found;",
-      );
-      const result = await executor.execute(script, makeContext(), makeOptions());
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.returnValue).toBe('none');
     });
   });
 });

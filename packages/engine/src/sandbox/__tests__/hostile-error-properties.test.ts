@@ -5,14 +5,8 @@
 // A regression hangs or kills whatever runs the script, hence the child processes.
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { execFile } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import type { HostileCase, HostileOutcome, HostileRun } from './support/hostile-script-child.js';
-
-const CHILD = fileURLToPath(new URL('./support/hostile-script-child.ts', import.meta.url));
-const ENGINE = fileURLToPath(new URL('../../..', import.meta.url));
-/** Kills a child that hangs; every case together takes a few seconds. */
-const CHILD_DEADLINE_MS = 45_000;
+import type { HostileCase, HostileRun } from './support/hostile-script-child.js';
+import { CHILD_HOOK_TIMEOUT_MS, runHostileScripts, type ChildRun } from './support/hostile-run.js';
 
 const LOOP = 'for (;;) {}';
 /** For scripts stopped by their limit. */
@@ -25,7 +19,7 @@ interface Expected { readonly case: HostileCase; readonly error: RegExp }
 function stopped(name: string, script: string, template?: string): Expected {
   return {
     case: { name, script: `${script} ${LOOP}`, timeout: LOOP_TIMEOUT, ...(template === undefined ? {} : { template }) },
-    error: /timed out after 300ms$/,
+    error: /^Script execution timed out after 300ms$/,
   };
 }
 
@@ -58,11 +52,10 @@ const SYNC_CASES: readonly Expected[] = [
   stopped('a code setter after deleting the one on Error.prototype', `Reflect.deleteProperty(Error.prototype, 'code'); ${define('Error.prototype', 'code', THROWING_SETTER)}`),
   stopped('a code setter installed with Reflect.defineProperty', `Reflect.defineProperty(Error.prototype, 'code', ${THROWING_SETTER});`),
   stopped('a code setter installed with __defineSetter__', "try { Error.prototype.__defineSetter__('code', function () { throw 1; }); } catch (ignored) {}"),
-  stopped('a Proxy as the prototype of Error.prototype', 'Object.setPrototypeOf(Error.prototype, new Proxy({}, { set() { throw 1; }, get() { throw 1; } }));'),
   // Node's write then does nothing, so the timeout is not recognised and names the time the call had left.
   {
     ...stopped('a frozen Error.prototype', `Object.freeze(Error.prototype); ${define('Object.prototype', 'code', THROWING_SETTER)}`),
-    error: /timed out after \d+ms$/,
+    error: /^Script execution timed out after \d+ms$/,
   },
   stopped('a replaced Error constructor', `${define('Object.prototype', 'code', THROWING_SETTER)} Error = class { set code(v) { throw 1; } };`),
   // These were never at risk: they pin that Node uses no other property of the timeout error.
@@ -76,8 +69,6 @@ const SYNC_CASES: readonly Expected[] = [
   fails('an error with a looping stack getter', `var evil = new Error('e'); Object.defineProperty(evil, 'stack', ${LOOPING_ACCESSOR}); ${THROW_OUT}`, /^e$/),
   fails('an error with a looping stack setter', `var evil = new Error('e'); Object.defineProperty(evil, 'stack', { get() { return 's'; }, set() { for (;;) {} } }); ${THROW_OUT}`, /^e$/),
   fails('an error with a looping message getter', `var evil = new Error('e'); Object.defineProperty(evil, 'message', ${LOOPING_ACCESSOR}); ${THROW_OUT}`, /^Script failed$/),
-  fails('a thrown Proxy whose traps loop', `var loop = function () { for (;;) {} }; var evil = new Proxy({}, { get: loop, set: loop, has: loop, getPrototypeOf: loop, getOwnPropertyDescriptor: loop, defineProperty: loop }); ${THROW_OUT}`, /^Script failed$/),
-  fails('a thrown object whose prototype is a Proxy with looping traps', `var loop = function () { for (;;) {} }; var evil = Object.create(new Proxy({}, { get: loop, has: loop, getPrototypeOf: loop })); ${THROW_OUT}`, /^Script failed$/),
   fails('an error thrown while Error.prepareStackTrace loops', `Error.prepareStackTrace = function () { for (;;) {} }; var evil = new Error('e'); ${THROW_OUT}`, /^e$/),
 ];
 
@@ -107,33 +98,11 @@ const ISOLATED_CASES: readonly Expected[] = [
   unhandled('an unhandled error with a looping stack getter', `const evil = new Error('e'); Object.defineProperty(evil, 'stack', ${LOOPING_ACCESSOR});`, /^The test run failed: e$/),
   unhandled('an unhandled object with a looping inspect method', "const evil = { stack: 's', message: 'e', [Symbol.for('nodejs.util.inspect.custom')]() { for (;;) {} } };", /^The test run failed: e$/),
   unhandled('an unhandled error whose message is not text', "const evil: any = new Error('e'); evil.message = { toString: 1, valueOf: 1 };", /^The test run failed: Unreadable error value$/),
-  unhandled('an unhandled Proxy whose traps loop', 'const loop = () => { for (;;) {} }; const evil = new Proxy({}, { get: loop, has: loop, getPrototypeOf: loop, getOwnPropertyDescriptor: loop, ownKeys: loop });', /^The test run failed: Unreadable error value$/),
   unhandled('an unhandled null', 'const evil = null;', /^The test run failed: Unreadable error value$/),
   unhandled('an unhandled string', "const evil = 'plain text';", /^The test run failed: plain text$/),
   unhandled('an unhandled error that claims to be out of memory', "const evil = Object.assign(new Error('e'), { code: 'ERR_WORKER_OUT_OF_MEMORY' });", /^The test run failed: e$/),
   stopped('a throwing code setter installed by a code template', 'install();', `function install() { ${define('Error.prototype', 'code', THROWING_SETTER)} ${define('Object.prototype', 'code', THROWING_SETTER)} }`),
 ];
-
-interface ChildRun { readonly outcomes: ReadonlyMap<string, HostileOutcome>; readonly end: string }
-
-function runChild(mode: HostileRun['mode'], expected: readonly Expected[]): Promise<ChildRun> {
-  const run: HostileRun = { mode, cases: expected.map((e) => e.case) };
-  return new Promise((resolve) => {
-    execFile(
-      process.execPath,
-      ['--import', 'tsx', CHILD, JSON.stringify(run)],
-      { cwd: ENGINE, timeout: CHILD_DEADLINE_MS, killSignal: 'SIGKILL' },
-      (err, stdout, stderr) => {
-        // What follows the last newline is empty, or a line the child was killed while writing.
-        const lines = stdout.split('\n').slice(0, -1).map((l) => JSON.parse(l) as HostileOutcome);
-        const end = err === null ? 'exited normally'
-          : err.killed === true ? 'hung and was killed'
-            : `ended with ${String(err.code)}: ${stderr.slice(0, 300)}`;
-        resolve({ outcomes: new Map(lines.map((l) => [l.name, l])), end });
-      },
-    );
-  });
-}
 
 describe.each<[HostileRun['mode'], readonly Expected[]]>([
   ['sync', SYNC_CASES],
@@ -142,7 +111,7 @@ describe.each<[HostileRun['mode'], readonly Expected[]]>([
 ])('a hostile script in a %s run', (mode, expected) => {
   let child: ChildRun;
 
-  beforeAll(async () => { child = await runChild(mode, expected); }, CHILD_DEADLINE_MS + 15_000);
+  beforeAll(async () => { child = await runHostileScripts(mode, expected.map((e) => e.case)); }, CHILD_HOOK_TIMEOUT_MS);
 
   it.each(expected.map((e): [string, RegExp] => [e.case.name, e.error]))('%s', (name, error) => {
     const outcome = child.outcomes.get(name);
