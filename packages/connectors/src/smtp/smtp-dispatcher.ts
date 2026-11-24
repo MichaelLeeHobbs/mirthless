@@ -195,10 +195,6 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
   }
 }
 
-/**
- * requireTLS is forwarded as given: the SMTP connector sets it from its
- * properties; the server's own mail passes false.
- */
 export function buildNodemailerOptions(config: SmtpTransportConfig): Record<string, unknown> {
   const hasCreds = !!config.auth && !!config.auth.user;
   return {

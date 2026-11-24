@@ -45,6 +45,18 @@ describe('TriggerSection', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ windowMinutes: 1 }));
   });
 
+  it('marks a regex that does not compile, saying why', () => {
+    renderSection({ ...ERRORS, regex: '[unclosed' });
+    expect(screen.getByLabelText('Regex Filter (optional)').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByText(/Unterminated character class/)).toBeTruthy();
+  });
+
+  it('does not mark a regex that compiles', () => {
+    renderSection({ ...ERRORS, regex: 'timeout|refused' });
+    expect(screen.getByLabelText('Regex Filter (optional)').getAttribute('aria-invalid')).toBe('false');
+    expect(screen.getByText('Only trigger when the error message matches this regular expression')).toBeTruthy();
+  });
+
   it('switches the trigger type from the selector', () => {
     const onChange = renderSection(ERRORS);
     fireEvent.mouseDown(screen.getByRole('combobox'));

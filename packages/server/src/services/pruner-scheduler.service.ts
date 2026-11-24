@@ -3,6 +3,7 @@ import { getBoss } from '../lib/queue.js';
 import { SettingsService } from './settings.service.js';
 import { DataPrunerService } from './data-pruner.service.js';
 import { emitEvent } from '../lib/event-emitter.js';
+import { foundOrThrow } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
 
 const JOB_NAME = 'data-pruner-auto';
@@ -29,6 +30,12 @@ export interface UpdatePrunerScheduleInput {
 let lastRunResult: PrunerLastRunResult | null = null;
 let lastRunAt: string | null = null;
 let workerRegistered = false;
+
+async function readSchedule(): Promise<UpdatePrunerScheduleInput> {
+  const enabled = foundOrThrow(await SettingsService.getByKey('pruner.enabled'));
+  const cron = foundOrThrow(await SettingsService.getByKey('pruner.cron_expression'));
+  return { enabled: enabled?.value === 'true', cronExpression: cron?.value ?? DEFAULT_CRON };
+}
 
 export class PrunerSchedulerService {
   static async start(): Promise<Result<void>> {
@@ -67,15 +74,12 @@ export class PrunerSchedulerService {
         workerRegistered = true;
       }
 
-      const enabledResult = await SettingsService.getByKey('pruner.enabled');
-      const cronResult = await SettingsService.getByKey('pruner.cron_expression');
-
-      const enabled = enabledResult.ok && enabledResult.value.value === 'true';
-      const cron = cronResult.ok ? (cronResult.value.value ?? DEFAULT_CRON) : DEFAULT_CRON;
+      // After the worker: when this fails, a schedule an earlier start stored still runs.
+      const { enabled, cronExpression } = await readSchedule();
 
       if (enabled) {
-        await boss.schedule(JOB_NAME, cron, {});
-        logger.info({ cron }, 'Pruner scheduler started');
+        await boss.schedule(JOB_NAME, cronExpression, {});
+        logger.info({ cron: cronExpression }, 'Pruner scheduler started');
       } else {
         logger.info({ component: 'pruner' }, 'Pruner scheduler disabled');
       }
@@ -94,13 +98,7 @@ export class PrunerSchedulerService {
 
   static async getStatus(): Promise<Result<PrunerScheduleStatus>> {
     return tryCatch(async () => {
-      const enabledResult = await SettingsService.getByKey('pruner.enabled');
-      const cronResult = await SettingsService.getByKey('pruner.cron_expression');
-
-      const enabled = enabledResult.ok && enabledResult.value.value === 'true';
-      const cronExpression = cronResult.ok ? (cronResult.value.value ?? DEFAULT_CRON) : DEFAULT_CRON;
-
-      return { enabled, cronExpression, lastRunAt, lastRunResult };
+      return { ...(await readSchedule()), lastRunAt, lastRunResult };
     });
   }
 
@@ -110,20 +108,23 @@ export class PrunerSchedulerService {
     return tryCatch(async () => {
       const boss = getBoss();
 
-      await SettingsService.upsert({
-        key: 'pruner.enabled',
-        value: String(input.enabled),
-        type: 'boolean',
-        description: 'Enable automatic data pruning',
-        category: 'pruner',
-      });
-      await SettingsService.upsert({
-        key: 'pruner.cron_expression',
-        value: input.cronExpression,
-        type: 'string',
-        description: 'Cron expression for data pruner schedule',
-        category: 'pruner',
-      });
+      const saved = await SettingsService.bulkUpsert([
+        {
+          key: 'pruner.enabled',
+          value: String(input.enabled),
+          type: 'boolean',
+          description: 'Enable automatic data pruning',
+          category: 'pruner',
+        },
+        {
+          key: 'pruner.cron_expression',
+          value: input.cronExpression,
+          type: 'string',
+          description: 'Cron expression for data pruner schedule',
+          category: 'pruner',
+        },
+      ]);
+      if (!saved.ok) throw saved.error;
 
       if (boss) {
         await boss.unschedule(JOB_NAME);

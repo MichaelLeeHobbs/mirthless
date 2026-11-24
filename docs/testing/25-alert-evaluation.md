@@ -18,7 +18,7 @@
 | 7 | Regex matches error message | Create alert with regex="timeout.*connection", trigger error "timeout on connection" | Alert fires | |
 | 8 | Regex does not match error message | Create alert with regex="^fatal", trigger error "warning: low memory" | Alert does not fire | |
 | 9 | No regex means all messages match | Create alert with regex=null | Alert fires regardless of error message content | |
-| 10 | Invalid regex treated as no match | Create alert with regex="[invalid" | Alert does not fire (invalid regex safely handled) | |
+| 10 | Invalid regex refused | Create alert with regex="[invalid" | The save is refused, and the field shows why the regex does not compile | |
 | 11 | Disabled alert never matches | Create alert with enabled=false, trigger matching error | Alert does not fire | |
 | 12 | Only CHANNEL_ERROR trigger type matches | Create alert with trigger.type="OTHER_TYPE" | Alert does not fire for channel errors | |
 

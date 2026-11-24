@@ -88,7 +88,6 @@ export const EMAIL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   postAction: 'MARK_READ',
   moveToFolder: '',
   subjectFilter: '',
-  includeAttachments: false,
 };
 
 export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {

@@ -20,7 +20,7 @@ interface SettingInputProps {
   readonly placeholder?: string;
 }
 
-function SecretInput({ id, label, value, onChange, disabled, error, secretStored }: SettingInputProps): ReactNode {
+function SecretInput({ id, label, value, onChange, disabled, error, secretStored, placeholder }: SettingInputProps): ReactNode {
   const [shown, setShown] = useState(false);
   return (
     <TextField
@@ -31,7 +31,7 @@ function SecretInput({ id, label, value, onChange, disabled, error, secretStored
       autoComplete="new-password"
       value={value}
       disabled={disabled}
-      placeholder={secretStored ? 'Saved. Type to replace.' : 'Not set'}
+      placeholder={placeholder ?? (secretStored ? 'Saved. Type to replace.' : 'Not set')}
       error={error !== null}
       helperText={error}
       onChange={(e) => { onChange(e.target.value); }}
