@@ -1,5 +1,5 @@
 // What a script does near the stack limit must not hand it a server-realm error, and nothing it
-// leaves behind may run or fail outside its own timed calls (D-334).
+// leaves behind may run or fail outside its own timed calls (D-339).
 // A regression hangs or kills whatever runs the script, hence the child processes.
 
 import { describe, it, expect, beforeAll } from 'vitest';

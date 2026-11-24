@@ -16,7 +16,7 @@ exposed** to your scripts, sourced from `packages/engine/src/sandbox/sandbox-exe
 
 ### What a script does not have
 
-The standard JavaScript objects are there, except these, which the sandbox leaves out because code reached through them can escape it or run past the script's time limit (D-334):
+The standard JavaScript objects are there, except these, which the sandbox leaves out because code reached through them can escape it or run past the script's time limit (D-339):
 
 | Not available | What happens | Use instead |
 |---|---|---|
