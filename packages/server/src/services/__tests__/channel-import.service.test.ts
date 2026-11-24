@@ -47,36 +47,11 @@ vi.mock('../../db/schema/index.js', () => ({
   transformerSteps: { transformerId: 'transformerId' },
 }));
 
-import { ChannelImportService, stripRedactedProperties, connectorDirectionError } from '../channel-import.service.js';
+import { ChannelImportService, connectorDirectionError } from '../channel-import.service.js';
 import { PartitionManagerService } from '../partition-manager.service.js';
 import { GrantService } from '../grant.service.js';
 import { db } from '../../lib/db.js';
 import { StdError } from 'stderr-lib';
-
-describe('stripRedactedProperties', () => {
-  it('drops redacted credential values but keeps everything else', () => {
-    const out = stripRedactedProperties({
-      host: 'db.local', port: 5432, password: '__REDACTED__', apiKey: '__REDACTED__', username: 'svc',
-    });
-    expect(out).toEqual({ host: 'db.local', port: 5432, username: 'svc' });
-    expect('password' in out).toBe(false);
-    expect('apiKey' in out).toBe(false);
-  });
-
-  it('drops redacted values nested in objects and arrays', () => {
-    const out = stripRedactedProperties({
-      auth: { username: 'svc', password: '__REDACTED__' },
-      tls: { cert: 'C', key: '__REDACTED__' },
-      attachments: [{ filename: 'a', apiToken: '__REDACTED__' }, 'x'],
-    });
-    expect(out).toEqual({ auth: { username: 'svc' }, tls: { cert: 'C' }, attachments: [{ filename: 'a' }, 'x'] });
-  });
-
-  it('returns an empty object for null/non-object input', () => {
-    expect(stripRedactedProperties(null)).toEqual({});
-    expect(stripRedactedProperties(undefined)).toEqual({});
-  });
-});
 
 function makeEntry(overrides?: Partial<ChannelExportEntry>): ChannelExportEntry {
   return {

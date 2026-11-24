@@ -6,6 +6,7 @@ import {
   isSecretPropertyKey,
   redactSettingValue,
   redactConnectorProperties,
+  stripRedactedProperties,
 } from '../secret-redaction.js';
 
 describe('secret-redaction — settings', () => {
@@ -111,5 +112,30 @@ describe('secret-redaction — channel detail', () => {
     expect(out['name']).toBe('c');
     expect(out['sourceConnectorProperties']).toEqual({ auth: { password: REDACTED } });
     expect(out['destinations']).toEqual([{ name: 'd', properties: { tls: { key: REDACTED } } }, { name: 'e' }]);
+  });
+});
+
+describe('stripRedactedProperties', () => {
+  it('drops redacted credential values but keeps everything else', () => {
+    const out = stripRedactedProperties({
+      host: 'db.local', port: 5432, password: '__REDACTED__', apiKey: '__REDACTED__', username: 'svc',
+    });
+    expect(out).toEqual({ host: 'db.local', port: 5432, username: 'svc' });
+    expect('password' in out).toBe(false);
+    expect('apiKey' in out).toBe(false);
+  });
+
+  it('drops redacted values nested in objects and arrays', () => {
+    const out = stripRedactedProperties({
+      auth: { username: 'svc', password: '__REDACTED__' },
+      tls: { cert: 'C', key: '__REDACTED__' },
+      attachments: [{ filename: 'a', apiToken: '__REDACTED__' }, 'x'],
+    });
+    expect(out).toEqual({ auth: { username: 'svc' }, tls: { cert: 'C' }, attachments: [{ filename: 'a' }, 'x'] });
+  });
+
+  it('returns an empty object for null/non-object input', () => {
+    expect(stripRedactedProperties(null)).toEqual({});
+    expect(stripRedactedProperties(undefined)).toEqual({});
   });
 });

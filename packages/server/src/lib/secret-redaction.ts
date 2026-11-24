@@ -58,6 +58,39 @@ export function redactConnectorProperties(
   return root;
 }
 
+/**
+ * Exports mask credentials as REDACTED; importing the marker would write it over
+ * a real password. With the key dropped the secret is absent, so the connector
+ * fails loud at deploy instead of authenticating with a bogus value.
+ */
+export function stripRedactedProperties(props: unknown): Record<string, unknown> {
+  if (!isPlainObject(props)) return {};
+  const root: Record<string, unknown> = {};
+  // Exports redact at any depth (nested auth/tls/headers), so strip at any depth.
+  const stack: Array<[Record<string, unknown>, Record<string, unknown>]> = [[props, root]];
+  while (stack.length > 0) {
+    const [src, dst] = stack.pop()!;
+    for (const [key, value] of Object.entries(src)) {
+      if (value === REDACTED) continue;
+      if (isPlainObject(value)) {
+        const copy: Record<string, unknown> = {};
+        dst[key] = copy;
+        stack.push([value, copy]);
+      } else if (Array.isArray(value)) {
+        const kept = value.filter((item) => item !== REDACTED);
+        const items: unknown[] = kept.map((item) => (isPlainObject(item) ? {} : item));
+        dst[key] = items;
+        kept.forEach((item, i) => {
+          if (isPlainObject(item)) stack.push([item, items[i] as Record<string, unknown>]);
+        });
+      } else {
+        dst[key] = value;
+      }
+    }
+  }
+  return root;
+}
+
 /** Also takes a revision snapshot, which has the same shape. */
 export function redactChannelDetail(detail: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const source = detail['sourceConnectorProperties'];
