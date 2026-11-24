@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { nestedTables, nestedTablesJson } from '../../__fixtures__/nested-headers.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
+import type { AmqpDelivery } from '../amqp-client.js';
 
 class FakeChannel extends EventEmitter {
   calls: [string, ...unknown[]][] = [];
@@ -73,7 +74,7 @@ describe('consumeAmqp', () => {
   });
 
   it('hands over deliveries whose ack and nack reach the channel', async () => {
-    const seen: Parameters<Parameters<typeof consumeAmqp>[1]>[0][] = [];
+    const seen: AmqpDelivery[] = [];
     await consumeAmqp({ ...config, queue: 'adt' }, (d) => { seen.push(d); });
     const msg = {
       content: Buffer.from('MSH'), fields: { exchange: 'hl7', routingKey: 'adt.a01', redelivered: true },

@@ -534,7 +534,7 @@ describe('headersToRecord', () => {
     expect(headersToRecord({ x: [{ big: 12345678901234567890n }] })).toEqual({ x: '[{"big":"12345678901234567890"}]' });
   });
 
-  // The most the default 128 KB frame can carry.
+  // As deep as a default 128 KB frame can nest.
   it('keeps every level of tables and arrays nested tens of thousands deep', () => {
     let arrays: unknown = 'leaf';
     for (let i = 0; i < 26_000; i += 1) arrays = [arrays];
@@ -542,6 +542,10 @@ describe('headersToRecord', () => {
       tables: nestedTablesJson(26_000),
       arrays: `${'['.repeat(26_000)}"leaf"${']'.repeat(26_000)}`,
     });
+  });
+
+  it('writes a missing value inside a table or array as null, so the text stays JSON', () => {
+    expect(headersToRecord({ x: [undefined, { a: undefined }] })).toEqual({ x: '[null,{"a":null}]' });
   });
 
   it('keeps every item of an array with 131,072 items', () => {

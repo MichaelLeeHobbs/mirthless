@@ -52,37 +52,55 @@ async function open(config: AmqpConnectionConfig): Promise<ChannelModel> {
   return connect(connectOptions(config), socketOptions(config));
 }
 
-type JsonStep = { readonly text: string } | { readonly value: unknown };
-
-/** The steps that write a table or array, last one first, or null for a value with nothing nested in it. */
-function nestedSteps(value: unknown): JsonStep[] | null {
-  const isArray = Array.isArray(value);
-  if (!isArray && (!isPlainObject(value) || Buffer.isBuffer(value) || value instanceof Date)) return null;
-  const steps: JsonStep[] = [{ text: isArray ? '[' : '{' }];
-  for (const [name, item] of Object.entries(value)) {
-    const comma = steps.length > 1 ? ',' : '';
-    steps.push({ text: isArray ? comma : `${comma}${JSON.stringify(name)}:` }, { value: item });
-  }
-  steps.push({ text: isArray ? ']' : '}' });
-  return steps.reverse();
+interface OpenContainer {
+  readonly entries: Iterator<readonly [prefix: string, value: unknown]>;
+  readonly end: string;
+  comma: string;
 }
 
-/** What JSON.stringify writes for a decoded header. JSON.stringify itself overflows the stack on one nested a few thousand deep (D-331). */
+function* arrayEntries(items: readonly unknown[]): Generator<readonly [string, unknown]> {
+  for (const item of items) yield ['', item];
+}
+
+function* tableEntries(table: Readonly<Record<string, unknown>>): Generator<readonly [string, unknown]> {
+  for (const name of Object.keys(table)) yield [`${JSON.stringify(name)}:`, table[name]];
+}
+
+/** Null for a value with nothing nested in it. */
+function openContainer(value: unknown): OpenContainer | null {
+  if (Array.isArray(value)) return { entries: arrayEntries(value), end: ']', comma: '' };
+  if (!isPlainObject(value) || Buffer.isBuffer(value) || value instanceof Date) return null;
+  return { entries: tableEntries(value), end: '}', comma: '' };
+}
+
+/**
+ * Not JSON.stringify, which overflows the stack a few thousand levels down when it has a replacer
+ * (big integers need one) or meets bytes (D-331).
+ */
 function nestedHeaderJson(header: unknown): string {
   const parts: string[] = [];
-  const pending: JsonStep[] = [{ value: header }];
-  for (let step = pending.pop(); step; step = pending.pop()) {
-    if ('text' in step) {
-      parts.push(step.text);
+  const open: OpenContainer[] = [];
+  const write = (value: unknown): void => {
+    const container = openContainer(value);
+    if (container) {
+      open.push(container);
+      parts.push(container.end === ']' ? '[' : '{');
+    } else {
+      parts.push(JSON.stringify(typeof value === 'bigint' ? value.toString() : value ?? null));
+    }
+  };
+  write(header);
+  for (let current = open.at(-1); current; current = open.at(-1)) {
+    const entry = current.entries.next();
+    if (entry.done) {
+      parts.push(current.end);
+      open.pop();
       continue;
     }
-    const nested = nestedSteps(step.value);
-    if (nested) {
-      // One at a time: a wide array spread into push overflows the stack too.
-      for (const next of nested) pending.push(next);
-    } else {
-      parts.push(JSON.stringify(typeof step.value === 'bigint' ? step.value.toString() : step.value));
-    }
+    const [prefix, value] = entry.value;
+    parts.push(current.comma + prefix);
+    current.comma = ',';
+    write(value);
   }
   return parts.join('');
 }
