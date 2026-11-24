@@ -99,7 +99,7 @@ function narrowsLinks(before: Links, after: Links): boolean {
   return needsEveryChannel(before) || (before ?? []).some((id) => !(after ?? []).includes(id));
 }
 
-/** Taking links out has no end, so what the writer held over them must have none (D-331). */
+/** Taking links out has no end, so what the writer held over them must have none (D-333). */
 async function assertNarrowingLasts(reader: DbReader, before: Links, after: Links, context?: AuditContext): Promise<void> {
   if (!narrowsLinks(before, after)) return;
   const lasting = await actorGrants(reader, context?.userId ?? null, null);
@@ -298,7 +298,7 @@ export class CodeTemplateService {
 
   /**
    * For a backup restore, which needs system:restore rather than code_templates:write. Shrinking
-   * the links lasts, so like a restored membership it needs that with no end (D-331).
+   * the links lasts, so like a restored membership it needs that with no end (D-333).
    */
   static async overwriteLibrary(library: { readonly id: string; readonly name: string; readonly description: string | null; readonly channelIds: Links }, context?: AuditContext): Promise<void> {
     const { id, name, description, channelIds } = library;

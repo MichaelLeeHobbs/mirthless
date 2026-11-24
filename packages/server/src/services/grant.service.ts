@@ -45,7 +45,7 @@ export interface AdminLossCheck {
 /**
  * The access lock is the admin role row. Everyone takes it in this one mode: a share mode for
  * changes that only check their actor would let them overtake a waiting revocation, since
- * Postgres does not queue a share lock behind it (D-331). FOR NO KEY UPDATE leaves an insert
+ * Postgres does not queue a share lock behind it (D-333). FOR NO KEY UPDATE leaves an insert
  * whose foreign key points at the row (a new admin assignment) alone.
  *
  * Order (plan section 5): the channel or library being changed, the access lock, users, other
@@ -59,7 +59,7 @@ export async function lockAccess(tx: AuditTransaction): Promise<string> {
   return row.id;
 }
 
-/** The route's guard read `permission` before the lock, so it is read again under it (D-331). */
+/** The route's guard read `permission` before the lock, so it is read again under it (D-333). */
 export async function lockAccessFor(tx: AuditTransaction, actorId: string | null, permission: Permission): Promise<string> {
   const adminRoleId = await lockAccess(tx);
   assertStillHolds(await actorGrants(tx, actorId), permission);
@@ -148,7 +148,7 @@ async function assertNameFree(tx: AuditTransaction, name: string, exceptId?: str
 
 /**
  * Counts expired assignments, since renewing one restores it, but not those of an API key that
- * has ended or is revoked, which nothing renews (D-331).
+ * has ended or is revoked, which nothing renews (D-333).
  */
 async function permissionsGrantedThrough(tx: AuditTransaction, groupIds: readonly string[]): Promise<readonly Permission[]> {
   const rows = await tx.selectDistinct({ roleId: assignments.roleId, admin: roles.admin })
@@ -808,7 +808,7 @@ export class GrantService {
   /**
    * The target rule until the target's access ends, `users:write` included: whoever sets a
    * password, or enables a user whose password they know, can sign in as them for that long
-   * (D-331). The caller holds the access lock.
+   * (D-333). The caller holds the access lock.
    */
   static async assertCanManageToTheEnd(tx: AuditTransaction, actorId: string, targetId: string): Promise<void> {
     const ends = new Set((await assignmentsOf(tx, targetId)).filter((a) => a.live).map((a) => a.expiresAt));
