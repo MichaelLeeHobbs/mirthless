@@ -6,6 +6,7 @@ import {
   isSecretPropertyKey,
   redactSettingValue,
   redactConnectorProperties,
+  stripRedactedProperties,
 } from '../secret-redaction.js';
 
 describe('secret-redaction — settings', () => {
@@ -111,5 +112,86 @@ describe('secret-redaction — channel detail', () => {
     expect(out['name']).toBe('c');
     expect(out['sourceConnectorProperties']).toEqual({ auth: { password: REDACTED } });
     expect(out['destinations']).toEqual([{ name: 'd', properties: { tls: { key: REDACTED } } }, { name: 'e' }]);
+  });
+});
+
+describe('stripRedactedProperties', () => {
+  it('drops redacted credential values but keeps everything else', () => {
+    const out = stripRedactedProperties({
+      host: 'db.local', port: 5432, password: '__REDACTED__', apiKey: '__REDACTED__', username: 'svc',
+    });
+    expect(out).toEqual({ host: 'db.local', port: 5432, username: 'svc' });
+    expect('password' in out).toBe(false);
+    expect('apiKey' in out).toBe(false);
+  });
+
+  it('drops redacted values nested in objects and arrays', () => {
+    const out = stripRedactedProperties({
+      auth: { username: 'svc', password: '__REDACTED__' },
+      tls: { cert: 'C', key: '__REDACTED__' },
+      attachments: [{ filename: 'a', apiToken: '__REDACTED__' }, 'x'],
+    });
+    expect(out).toEqual({ auth: { username: 'svc' }, tls: { cert: 'C' }, attachments: [{ filename: 'a' }, 'x'] });
+  });
+
+  it('returns an empty object for null/non-object input', () => {
+    expect(stripRedactedProperties(null)).toEqual({});
+    expect(stripRedactedProperties(undefined)).toEqual({});
+  });
+});
+
+describe('stripRedactedProperties with stored properties', () => {
+  it('puts back the stored secret at each path that holds the marker, at any depth', () => {
+    const stored = { password: 'p', auth: { basic: { password: 'q' } }, headers: { Authorization: 'r', Accept: 'a' } };
+    const file = {
+      password: REDACTED, auth: { basic: { password: REDACTED } }, headers: { Authorization: REDACTED, Accept: 'changed' },
+    };
+    expect(stripRedactedProperties(file, stored)).toEqual({
+      password: 'p', auth: { basic: { password: 'q' } }, headers: { Authorization: 'r', Accept: 'changed' },
+    });
+  });
+
+  it('leaves alone what the file holds in clear, and adds nothing the file does not name', () => {
+    expect(stripRedactedProperties({ password: 'new' }, { password: 'old', token: 'old' })).toEqual({ password: 'new' });
+  });
+
+  it.each([
+    ['nothing there', { auth: { password: REDACTED } }, { password: 'p' }],
+    ['an empty secret', { auth: { password: REDACTED } }, { auth: { password: '' } }],
+    ['a null secret', { auth: { password: REDACTED } }, { auth: { password: null } }],
+    ['the marker itself', { auth: { password: REDACTED } }, { auth: { password: REDACTED } }],
+    ['a secret that is not text', { auth: { password: REDACTED } }, { auth: { password: { nested: 'p' } } }],
+    ['text where the file has an object', { auth: { password: REDACTED } }, { auth: 'p' }],
+    ['a list where the file has an object', { auth: { password: REDACTED } }, { auth: [{ password: 'p' }] }],
+    ['an inherited value', { auth: { password: REDACTED } }, { auth: Object.create({ password: 'p' }) as unknown }],
+  ])('drops the marker when the stored value is %s', (_what, file, stored) => {
+    expect(stripRedactedProperties(file, stored)).toEqual({ auth: {} });
+  });
+
+  it('never puts a stored value back under a key that is not a secret', () => {
+    expect(stripRedactedProperties({ host: REDACTED, port: 1 }, { host: 'db', port: 1 })).toEqual({ port: 1 });
+  });
+
+  it('never puts a stored secret back inside a list', () => {
+    const file = { attachments: [{ apiToken: REDACTED, deeper: { password: REDACTED } }, REDACTED] };
+    const stored = { attachments: [{ apiToken: 't', deeper: { password: 'p' } }, 'x'] };
+    expect(stripRedactedProperties(file, stored)).toEqual({ attachments: [{ deeper: {} }] });
+  });
+
+  it('reads stored properties that are not an object as none', () => {
+    expect(stripRedactedProperties({ password: REDACTED, port: 1 }, null)).toEqual({ port: 1 });
+    expect(stripRedactedProperties({ password: REDACTED, port: 1 }, ['p'])).toEqual({ port: 1 });
+  });
+
+  it('follows deeply nested properties without recursion', () => {
+    const DEPTH = 20_000;
+    const nested = (password: string): Record<string, unknown> => {
+      let value: Record<string, unknown> = { password };
+      for (let i = 0; i < DEPTH; i++) value = { a: value };
+      return value;
+    };
+    let found: unknown = stripRedactedProperties(nested(REDACTED), nested('p'));
+    for (let i = 0; i < DEPTH; i++) found = (found as { a: unknown }).a;
+    expect(found).toEqual({ password: 'p' });
   });
 });

@@ -326,7 +326,7 @@ type ChannelState = typeof CHANNEL_STATE[keyof typeof CHANNEL_STATE];
 
 ### Adding a connector
 
-Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES`). From there the compiler or a test names most of what is missing: the registry factory (`registry-types.test.ts`), the docs page (the docs guard), the destination dropdown label and the dashboard label (typed by connector type). These places are keyed by a plain string, so nothing tells you when one is missing:
+Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES`). From there the compiler or a test names most of what is missing: the registry factory (`registry-types.test.ts`), the docs page (the docs guard), the destination dropdown label and the dashboard label, and the settings an import may change without losing a stored credential (`packages/server/src/lib/stored-credentials.ts`, D-335), all typed by connector type. These places are keyed by a plain string, so nothing tells you when one is missing:
 
 - Deploy validation schemas (`SOURCE_SCHEMAS`, `DEST_SCHEMAS`) in `packages/server/src/services/connector-validation.service.ts`. A type with no schema in a direction fails every deploy with `Unknown source connector type` or `Unknown destination connector type`, so add one for each direction the connector has.
 - Test Connection testers (`TESTERS`) in `packages/server/src/services/connection-test.service.ts`. Without one, Test Connection fails with `Unknown connector type`.

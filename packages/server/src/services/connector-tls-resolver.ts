@@ -41,9 +41,10 @@ function optionalId(bag: Record<string, unknown>, key: string): string | undefin
 /** A CA (`caCertId`) is public, so naming one is harmless. */
 const PRIVATE_KEY_CERT_KEYS = ['clientCertId', 'serverCertId'] as const;
 
+/** A `tls` that is not an object names none: a DATABASE connector's is a switch. */
 export function privateKeyCertificateIds(props: unknown): readonly string[] {
-  if (!isPlainObject(props)) return [];
-  const bag = readTlsBag(props);
+  const bag = isPlainObject(props) ? props['tls'] : undefined;
+  if (!isPlainObject(bag)) return [];
   return [...new Set(PRIVATE_KEY_CERT_KEYS.map((k) => optionalId(bag, k)).filter((id): id is string => id !== undefined))];
 }
 
@@ -58,14 +59,7 @@ export async function certificatesNotUsedBy(channelIds: readonly string[], certi
     SELECT cc.properties AS props FROM channel_connectors cc JOIN channels c ON c.id = cc.channel_id
       WHERE cc.channel_id IN (${ids}) AND c.deleted_at IS NULL
   `);
-  const inUse = new Set<string>();
-  for (const row of used.rows) {
-    try {
-      for (const id of privateKeyCertificateIds(row.props)) inUse.add(id);
-    } catch {
-      // A stored tls value that is not an object references no certificate.
-    }
-  }
+  const inUse = new Set(used.rows.flatMap((row) => privateKeyCertificateIds(row.props)));
   return certificateIds.filter((id) => !inUse.has(id));
 }
 

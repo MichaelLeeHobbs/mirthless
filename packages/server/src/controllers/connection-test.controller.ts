@@ -42,7 +42,7 @@ export class ConnectionTestController {
     try {
       if (!(await scopedTestAllowed(req, res, input))) return;
     } catch (err: unknown) {
-      // A refusal, or a tls value that is not an object, is answered as such; anything else is a server fault.
+      // A refusal is answered as such; anything else is a server fault.
       if (!(err instanceof ServiceError)) logger.error(errorInfo(err), 'Connection test scope check failed');
       refuse(res, err instanceof ServiceError ? err : new ServiceError('INTERNAL', 'Connection test failed'));
       return;

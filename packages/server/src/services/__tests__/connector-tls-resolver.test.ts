@@ -6,7 +6,7 @@ vi.mock('../certificate.service.js', () => ({
   CertificateService: { getMaterialById: (...args: unknown[]) => mockGetMaterialById(...args) },
 }));
 
-const { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls, privateKeyCertificateIds } = await import('../connector-tls-resolver.js');
+const { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls, privateKeyCertificateIds, assertCertificatesInScope } = await import('../connector-tls-resolver.js');
 
 function okMaterial(certificatePem: string, privateKeyPem: string | null): unknown {
   return { ok: true, value: { certificatePem, privateKeyPem }, error: null };
@@ -267,7 +267,20 @@ describe('privateKeyCertificateIds', () => {
     expect(privateKeyCertificateIds({ tls: { clientCertId: '' } })).toEqual([]);
   });
 
-  it('fails loud on a tls value that is not an object', () => {
-    expect(() => privateKeyCertificateIds({ tls: 'yes' })).toThrow();
+  // A DATABASE connector's tls is a switch. The resolvers refuse any of these on a connector that reads a bag (D-277).
+  it.each([[true], ['yes'], [1], [['c1']]])('names nothing for a tls that is %j', (tls) => {
+    expect(privateKeyCertificateIds({ tls })).toEqual([]);
+  });
+});
+
+// What a save, an import and Test Connection all ask.
+describe('assertCertificatesInScope', () => {
+  it('lets a connector whose tls is a switch through, for a caller with no channels of their own', async () => {
+    await expect(assertCertificatesInScope(undefined, 'channels:write', [{ host: 'db', tls: true }, { tls: false }])).resolves.toBeUndefined();
+  });
+
+  it('still refuses a certificate beside it', async () => {
+    await expect(assertCertificatesInScope(undefined, 'channels:write', [{ host: 'db', tls: true }, { tls: { clientCertId: 'c1' } }]))
+      .rejects.toThrow('can be used only where the channels in your access already use it');
   });
 });

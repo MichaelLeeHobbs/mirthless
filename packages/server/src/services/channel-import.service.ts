@@ -1,6 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
-import { eq, isNull, and, sql } from 'drizzle-orm';
+import { DrizzleQueryError, eq, isNull, and, sql } from 'drizzle-orm';
 import {
   PERMISSIONS,
   can,
@@ -18,7 +18,8 @@ import { PartitionManagerService } from './partition-manager.service.js';
 import { GrantService } from './grant.service.js';
 import { assertCertificatesInScope } from './connector-tls-resolver.js';
 import { queryUserStanding } from '../lib/principal.js';
-import { REDACTED } from '../lib/secret-redaction.js';
+import { stripRedactedProperties } from '../lib/secret-redaction.js';
+import { overwriteProperties, sameDestination } from '../lib/stored-credentials.js';
 import {
   channels,
   channelScripts,
@@ -30,40 +31,6 @@ import {
   transformerSteps,
   channelGroupMembers,
 } from '../db/schema/index.js';
-import { isPlainObject } from '@galvanigraph/core-util';
-
-/**
- * Exports mask credentials as REDACTED; importing the marker would write it over
- * a real password. With the key dropped the secret is absent, so the connector
- * fails loud at deploy instead of authenticating with a bogus value.
- */
-export function stripRedactedProperties(props: unknown): Record<string, unknown> {
-  if (!isPlainObject(props)) return {};
-  const root: Record<string, unknown> = {};
-  // Exports redact at any depth (nested auth/tls/headers), so strip at any depth.
-  const stack: Array<[Record<string, unknown>, Record<string, unknown>]> = [[props, root]];
-  while (stack.length > 0) {
-    const [src, dst] = stack.pop()!;
-    for (const [key, value] of Object.entries(src)) {
-      if (value === REDACTED) continue;
-      if (isPlainObject(value)) {
-        const copy: Record<string, unknown> = {};
-        dst[key] = copy;
-        stack.push([value, copy]);
-      } else if (Array.isArray(value)) {
-        const kept = value.filter((item) => item !== REDACTED);
-        const items: unknown[] = kept.map((item) => (isPlainObject(item) ? {} : item));
-        dst[key] = items;
-        kept.forEach((item, i) => {
-          if (isPlainObject(item)) stack.push([item, items[i] as Record<string, unknown>]);
-        });
-      } else {
-        dst[key] = value;
-      }
-    }
-  }
-  return root;
-}
 
 /**
  * Where an import puts channels (D-310): new channels join `groupId` or the
@@ -160,9 +127,42 @@ async function importSingleChannel(
 
     return await createChannel(entry, run);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return `Error importing "${entry.name}": ${msg}`;
+    return `Error importing "${entry.name}": ${importErrorText(err)}`;
   }
+}
+
+/** A failed statement is reported in the database's own words: no value from the channel belongs in an import's answer. */
+function importErrorText(err: unknown): string {
+  const reported = err instanceof DrizzleQueryError ? err.cause ?? 'a database statement failed' : err;
+  return reported instanceof Error ? reported.message : String(reported);
+}
+
+type ImportedColumns = Omit<typeof channels.$inferInsert, 'id' | 'enabled' | 'revision' | 'createdAt' | 'updatedAt'>;
+
+/**
+ * Drizzle leaves out an undefined column, so a file with no script timeout gives
+ * a new channel the default and an overwritten one keeps its own.
+ */
+function importedColumns(entry: ChannelExportEntry): ImportedColumns {
+  return {
+    name: entry.name,
+    description: entry.description,
+    inboundDataType: entry.inboundDataType,
+    outboundDataType: entry.outboundDataType,
+    sourceConnectorType: entry.sourceConnectorType,
+    sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
+    responseMode: entry.responseMode,
+    responseConnectorName: entry.responseConnectorName,
+    initialState: entry.initialState,
+    messageStorageMode: entry.messageStorageMode,
+    encryptData: entry.encryptData,
+    removeContentOnCompletion: entry.removeContentOnCompletion,
+    removeAttachmentsOnCompletion: entry.removeAttachmentsOnCompletion,
+    pruningEnabled: entry.pruningEnabled,
+    pruningMaxAgeDays: entry.pruningMaxAgeDays,
+    pruningArchiveEnabled: entry.pruningArchiveEnabled,
+    scriptTimeoutSeconds: entry.scriptTimeoutSeconds,
+  };
 }
 
 async function createChannel(
@@ -173,25 +173,10 @@ async function createChannel(
 
   await db.transaction(async (tx) => {
     await tx.insert(channels).values({
+      ...importedColumns(entry),
       id: entry.id,
-      name: entry.name,
-      description: entry.description,
       enabled: entry.enabled,
       revision: 1,
-      inboundDataType: entry.inboundDataType,
-      outboundDataType: entry.outboundDataType,
-      sourceConnectorType: entry.sourceConnectorType,
-      sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
-      responseMode: entry.responseMode,
-      responseConnectorName: entry.responseConnectorName,
-      initialState: entry.initialState,
-      messageStorageMode: entry.messageStorageMode,
-      encryptData: entry.encryptData,
-      removeContentOnCompletion: entry.removeContentOnCompletion,
-      removeAttachmentsOnCompletion: entry.removeAttachmentsOnCompletion,
-      pruningEnabled: entry.pruningEnabled,
-      pruningMaxAgeDays: entry.pruningMaxAgeDays,
-      pruningArchiveEnabled: entry.pruningArchiveEnabled,
       createdAt: now,
       updatedAt: now,
     });
@@ -213,13 +198,7 @@ async function createChannel(
   return 'created';
 }
 
-/**
- * Judged after the channel row is locked FOR UPDATE: a membership change locks
- * the same row, so the channel cannot leave the importer's scope between this
- * check and the write.
- */
 async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Promise<boolean> {
-  await tx.select({ id: channels.id }).from(channels).where(eq(channels.id, channelId)).for('update');
   if (run.placement === 'restore') return true;
   const userId = run.context?.userId;
   const standing = userId ? await queryUserStanding(tx, userId) : null;
@@ -229,34 +208,52 @@ async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Pr
   return can(standing.grants, PERMISSIONS.CHANNELS_WRITE, { groupIds });
 }
 
-async function overwriteChannel(entry: ChannelExportEntry, run: ImportRun): Promise<ImportOutcome> {
+/**
+ * Judged after the channel row is locked FOR UPDATE, which a membership change
+ * and a delete lock too: the channel cannot leave the importer's scope, or be
+ * deleted, between this check and the write.
+ */
+async function overwriteRefusal(tx: ImportTx, channelId: string, run: ImportRun): Promise<string | null> {
+  const [live] = await tx.select({ id: channels.id }).from(channels)
+    .where(and(eq(channels.id, channelId), isNull(channels.deletedAt))).for('update');
+  if (!(await mayOverwrite(tx, channelId, run))) return 'it would replace a channel you cannot change';
+  return live ? null : 'it was deleted while the import waited for it';
+}
+
+/** The entry with the stored credentials it may keep (D-335). Needs the lock overwriteRefusal takes, or a save under way would be undone. */
+async function withStoredCredentials(tx: ImportTx, entry: ChannelExportEntry): Promise<ChannelExportEntry> {
+  const [source] = await tx
+    .select({ connectorType: channels.sourceConnectorType, properties: channels.sourceConnectorProperties })
+    .from(channels).where(eq(channels.id, entry.id));
+  const destinations = await tx
+    .select({
+      metaDataId: channelConnectors.metaDataId, name: channelConnectors.name,
+      connectorType: channelConnectors.connectorType, properties: channelConnectors.properties,
+    })
+    .from(channelConnectors).where(eq(channelConnectors.channelId, entry.id));
+  const importedSource = { connectorType: entry.sourceConnectorType, properties: entry.sourceConnectorProperties };
+  return {
+    ...entry,
+    sourceConnectorProperties: overwriteProperties('source', importedSource, source),
+    destinations: entry.destinations.map((d) => ({
+      ...d, properties: overwriteProperties('destination', d, sameDestination(d, entry.destinations, destinations)),
+    })),
+  };
+}
+
+async function overwriteChannel(file: ChannelExportEntry, run: ImportRun): Promise<ImportOutcome> {
   const now = new Date();
 
   return db.transaction(async (tx) => {
-    if (!(await mayOverwrite(tx, entry.id, run))) {
-      return `Channel "${entry.name}": not imported; it would replace a channel you cannot change`;
-    }
+    const refusal = await overwriteRefusal(tx, file.id, run);
+    if (refusal !== null) return `Channel "${file.name}": not imported; ${refusal}`;
+    const entry = await withStoredCredentials(tx, file);
     // An import keeps the stored enabled flag, which is deploy control (#225);
     // a restore sets it. The revision goes up so an editor opened before gets a conflict.
     await tx.update(channels).set({
-      name: entry.name,
-      description: entry.description,
+      ...importedColumns(entry),
       ...(run.placement === 'restore' ? { enabled: entry.enabled } : {}),
       revision: sql`${channels.revision} + 1`,
-      inboundDataType: entry.inboundDataType,
-      outboundDataType: entry.outboundDataType,
-      sourceConnectorType: entry.sourceConnectorType,
-      sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
-      responseMode: entry.responseMode,
-      responseConnectorName: entry.responseConnectorName,
-      initialState: entry.initialState,
-      messageStorageMode: entry.messageStorageMode,
-      encryptData: entry.encryptData,
-      removeContentOnCompletion: entry.removeContentOnCompletion,
-      removeAttachmentsOnCompletion: entry.removeAttachmentsOnCompletion,
-      pruningEnabled: entry.pruningEnabled,
-      pruningMaxAgeDays: entry.pruningMaxAgeDays,
-      pruningArchiveEnabled: entry.pruningArchiveEnabled,
       updatedAt: now,
     }).where(eq(channels.id, entry.id));
 
