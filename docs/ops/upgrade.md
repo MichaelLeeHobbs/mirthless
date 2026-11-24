@@ -411,10 +411,10 @@ Until 2026-11-23 the backup commands on this page and in [Backup & restore](back
    git pull
    ```
 
-2. **Back up** into a directory outside the checkout that no nightly job cleans up, and note the file's name. Create the directory once. Go on only if it prints `dump OK`. An install [created as Mirthless or GalvaniFlow](#renamed-from-mirthless-or-galvaniflow) sets its names as [Backup & restore](backup-restore.md#logical-backup-with-pg_dump-recommended) shows.
+2. **Back up** into a directory outside the checkout and outside the one your nightly job cleans up, and note the file's name. Create the directory once. Go on only if it prints `dump OK`. An install [created as Mirthless or GalvaniFlow](#renamed-from-mirthless-or-galvaniflow) sets its names as [Backup & restore](backup-restore.md#logical-backup-with-pg_dump-recommended) shows.
 
    ```bash
-   sh docker/backup.sh /backups/pre-upgrade
+   sh docker/backup.sh /pre-upgrade-backups
    ```
 
 3. Rebuild and restart. The server container migrates when it starts.

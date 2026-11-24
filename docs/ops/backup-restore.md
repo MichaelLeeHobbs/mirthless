@@ -53,7 +53,7 @@ Automate it with a cron job on the host (example: nightly at 02:00, keep 14 days
 
 Old dumps are deleted only after a new one has been read back. Make sure someone sees the job fail: cron mails the output only if the host can send mail.
 
-The read-back finds a file that is cut short or garbled, and one without GalvaniGraph's tables. It can't tell whether the data is what you expect. Only a restore proves a backup, so restore one into a spare Postgres from time to time.
+The read-back finds a file that is cut short or garbled, and one without GalvaniGraph's tables. It doesn't find everything, and can't tell whether the data is what you expect. Only a restore proves a backup, so restore one into a spare Postgres from time to time.
 
 ### Check a dump
 

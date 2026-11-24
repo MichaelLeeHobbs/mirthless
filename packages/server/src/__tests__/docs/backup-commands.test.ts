@@ -31,9 +31,11 @@ const IMAGE = /postgres:[\w.-]+/;
 describe('the backup pages and scripts', () => {
   it('leave pg_dump to docker/backup.sh, so nobody pastes a command that gives it a TTY', () => {
     const pages = readdirSync(join(REPO_ROOT, 'docs/ops')).filter((f) => f.endsWith('.md')).map((f) => `docs/ops/${f}`);
-    const commands = pages.flatMap((page) => readRepoFile(page).split('\n').filter((line) => /\bpg_dump\s+-/.test(line)));
+    const commands = pages.flatMap((page) => readRepoFile(page).split('\n').filter((line) => /\bpg_dump(?:all)?\s+-/.test(line)));
+    const blocks = pages.flatMap((page) => fences(page)).filter((block) => block.includes('pg_dump'));
 
     expect(commands).toEqual([]);
+    expect(blocks).toEqual([]);
     expect(readRepoFile('docker/backup.sh')).toMatch(/^docker exec "\$container" pg_dump /m);
   });
 
@@ -45,7 +47,7 @@ describe('the backup pages and scripts', () => {
   });
 
   it('keep the backup before an upgrade in a block of its own, apart from the commands that migrate', () => {
-    expect(fenceWith(UPGRADE_PAGE, 'docker/backup.sh').trim()).toBe('sh docker/backup.sh /backups/pre-upgrade');
+    expect(fenceWith(UPGRADE_PAGE, 'docker/backup.sh').trim()).toBe('sh docker/backup.sh /pre-upgrade-backups');
   });
 
   it('schedule the backup with a line cron runs whole', () => {
@@ -84,7 +86,7 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
   /** The restore drops the database it runs against, so a docker command may only reach the throwaway container. */
   function documented(command: string): string {
     const aimed = command
-      .replaceAll(EXAMPLE_DUMP, `${backups}/example.dump`).replaceAll('/backups', backups)
+      .replaceAll(EXAMPLE_DUMP, `${backups}/example.dump`).replaceAll('/backups', backups).replaceAll('/pre-upgrade-backups', `${backups}/pre-upgrade`)
       .replaceAll('/opt/galvanigraph', REPO_ROOT.replaceAll('\\', '/'))
       .replaceAll('galvanigraph-db-prod', container)
       .replaceAll(/docker compose [^&\n]*/g, 'true ');
@@ -107,6 +109,13 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
   const age = (file: string, days: number): void => { utimesSync(path(file), new Date(), new Date(Date.now() - days * 86_400_000)); };
   const repairExample = (): Run => sh(documented(fenceWith(BACKUP_PAGE, 'docker/repair-dump.sh')));
   const check = (file: string): Run => sh(`sh docker/check-dump.sh "${backups}/${file}"`);
+  /** Runs the check with `docker` replaced by a shell script. */
+  function checkWithDocker(script: string): Run {
+    mkdirSync(path('bin'));
+    writeFileSync(path('bin/docker'), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    writeFileSync(path('any.dump'), 'x');
+    return sh(`bin=$(cd "${backups}/bin" && pwd) && PATH="$bin:$PATH" sh docker/check-dump.sh "${backups}/any.dump"`);
+  }
   const cron = (): string => documented(fenceWith(BACKUP_PAGE, '* * *').trim().replace(/^(?:\S+ ){5}/, ''));
 
   function newDump(folder = ''): string {
@@ -266,15 +275,18 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
   });
 
   it('the check does not call a dump damaged when Docker could not run it', () => {
-    goodDump();
-    mkdirSync(path('bin'));
-    writeFileSync(path('bin/docker'), '#!/bin/sh\nexit 125\n', { mode: 0o755 });
-
-    const run = sh(`bin=$(cd "${backups}/bin" && pwd) && PATH="$bin:$PATH" sh docker/check-dump.sh "${backups}/good.dump"`);
+    const run = checkWithDocker('exit 125');
 
     expect(run.status).toBe(2);
     expect(run.output).toContain('says nothing about');
-    expect(run.output).not.toMatch(/OK/);
+    expect(run.output).not.toMatch(/dump OK|NOT OK/);
+  });
+
+  it('the check refuses a dump whose contents could not be listed to the end', () => {
+    const run = checkWithDocker("case $* in *--list) echo '1; 0 0 TABLE DATA public channels x'; exit 1 ;; esac");
+
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('NOT OK');
   });
 
   it.each([['July', JULY], ['November', NOVEMBER]])('the documented repair undoes the damage to a dump taken in %s exactly', (_name, month) => {
@@ -316,6 +328,12 @@ describe.skipIf(!RUN_DOCKER)('the documented backups, run against Postgres', { t
     expect(repairExample().status).not.toBe(0);
 
     expect(readFileSync(path('example.dump.repaired')).equals(repaired)).toBe(true);
+  });
+
+  it('a repair of a file that is not there writes nothing', () => {
+    expect(repairExample().output).toContain('cannot be read');
+
+    expect(readdirSync(backups)).toEqual([]);
   });
 
   it('a repair that does not give a readable dump leaves only the original', () => {

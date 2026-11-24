@@ -39,6 +39,7 @@ stop_if_not_run "$status"
 # pg_restore takes a damaged header for an empty archive and exits 0 (#361), so the tables must be there too.
 contents=$(pg_restore_file --list) || status=$?
 stop_if_not_run "$status"
+[ "$status" -eq 0 ] || not_ok 'pg_restore could not list it'
 case "$contents" in
   *' TABLE DATA public channels '*) echo "dump OK: $file" ;;
   *) not_ok 'it does not hold the channels table' ;;
