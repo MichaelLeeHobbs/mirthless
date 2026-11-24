@@ -1,4 +1,4 @@
-import { transform } from 'esbuild';
+import { transform, type TransformOptions } from 'esbuild';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
 import { SCRIPT_BODY_OPEN, regexError, scriptBodyPosition, wrapScriptBody } from '@galvanigraph/core-models';
@@ -50,6 +50,16 @@ function unwrapBody(output: string): string {
   return [...lines.slice(1, close), ...trailer].join('\n');
 }
 
+/**
+ * Asks esbuild, off the main thread: compiled for a target without `import()`, only a script that
+ * has one comes out different.
+ */
+async function usesDynamicImport(source: string, options: TransformOptions, compiled: string): Promise<boolean> {
+  if (!compiled.includes('import')) return false;
+  const without = await transform(source, { ...options, supported: { 'dynamic-import': false } });
+  return without.code !== compiled;
+}
+
 export async function compileScript(
   code: string,
   options?: CompileOptions,
@@ -62,7 +72,7 @@ export async function compileScript(
     const cached = useCache ? scriptCache.get(key) : undefined;
     if (cached) return cached;
 
-    const transformOptions: Parameters<typeof transform>[1] = {
+    const transformOptions: TransformOptions = {
       loader: 'ts',
       target: 'es2022',
       sourcemap: opts.sourcemap ? 'inline' : false,
@@ -74,8 +84,11 @@ export async function compileScript(
     // A script is a function body (the executor runs it inside one), so it is
     // compiled as one: on its own, a top-level await makes esbuild read it as a
     // module, where the script's top-level return is a syntax error.
-    const result = await transform(wrapScriptBody(code), transformOptions);
+    const source = wrapScriptBody(code);
+    const result = await transform(source, transformOptions);
     const body = unwrapBody(result.code);
+    // The sandbox would fail every message on it with a syntax error that does not say why.
+    if (await usesDynamicImport(source, transformOptions, result.code)) throw new Error("Scripts can't load modules: import() is not available");
 
     const compiled: CompiledScript = result.map
       ? { code: body, sourceMap: result.map }
