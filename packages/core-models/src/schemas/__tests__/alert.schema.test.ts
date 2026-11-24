@@ -91,6 +91,19 @@ describe('alertTriggerSchema', () => {
     expect(result.data.regex).toBe('timeout|connection refused');
   });
 
+  it('rejects a regex that does not compile, saying why', () => {
+    const result = alertTriggerSchema.safeParse({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: '[unclosed' });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.path)).toEqual([['regex']]);
+    expect(result.error?.issues[0]?.message).toContain('Unterminated character class');
+  });
+
+  it('rejects a bad regex in an update', () => {
+    const result = updateAlertSchema.safeParse({ revision: 1, trigger: { ...VALID_TRIGGER, regex: '(' } });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.path)).toEqual([['trigger', 'regex']]);
+  });
+
   it('accepts a NO_MESSAGES trigger with a window in minutes', () => {
     const result = alertTriggerSchema.safeParse({ type: 'NO_MESSAGES', windowMinutes: 30 });
     expect(result.success).toBe(true);
