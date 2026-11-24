@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { createChannelSchema, updateChannelSchema } from '@galvanigraph/core-models';
+import { channelExportSchema, createChannelSchema, updateChannelSchema, type ChannelExportEntry } from '@galvanigraph/core-models';
 import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('Channel export and import (real Postgres)', () => {
@@ -211,6 +211,104 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const afterJs = unwrap(await ChannelService.getById(created1.id));
     expect(afterJs.scripts.find((s) => s.scriptType === 'DEPLOY')?.language).toBe('JAVASCRIPT');
   });
+
+  type Row = Readonly<Record<string, unknown>>;
+
+  /** The channel's row and its one destination's. */
+  async function storedRows(id: string): Promise<{ readonly channel: Row; readonly destination: Row }> {
+    const { db, eq, schema } = mods;
+    const [channel] = await db.select().from(schema.channels).where(eq(schema.channels.id, id));
+    const destinations = await db.select().from(schema.channelConnectors).where(eq(schema.channelConnectors.channelId, id));
+    expect(destinations).toHaveLength(1);
+    return { channel: channel!, destination: destinations[0]! };
+  }
+
+  const without = (row: Row, columns: readonly string[]): Row =>
+    Object.fromEntries(Object.entries(row).filter(([column]) => !columns.includes(column)));
+
+  // The rest of the columns must come back as they were exported.
+  const OWN_CHANNEL_COLUMNS = ['id', 'revision', 'createdAt', 'updatedAt', 'deletedAt', 'lastDeployedAt'];
+  const OWN_DESTINATION_COLUMNS = ['id', 'channelId', 'chainId', 'orderInChain', 'createdAt', 'updatedAt'];
+
+  const withDestination = (name: string): ReturnType<typeof createChannelSchema.parse> => ({
+    ...rawChannel(name), destinations: createChannelSchema.shape.destinations.parse([{ name: 'Only', connectorType: 'JAVASCRIPT', properties: {} }]),
+  });
+
+  /** The channel as the exported file holds it. */
+  async function exportedEntry(id: string): Promise<ChannelExportEntry> {
+    const exported = unwrap(await exportMod.ChannelExportService.exportChannel(id));
+    return channelExportSchema.parse(JSON.parse(JSON.stringify(exported))).channels[0]!;
+  }
+
+  it('brings every column back, in a new channel and over an existing one (#334)', async () => {
+    const { ChannelService, db, eq, schema } = mods;
+    const name = `itest-columns-${randomUUID()}`;
+    const source = unwrap(await ChannelService.create(withDestination(name), actor));
+    const target = unwrap(await ChannelService.create(withDestination(`${name}-target`), actor));
+    created.push(source.id, target.id);
+    const plain = await storedRows(target.id);
+    await db.update(schema.channels).set({
+      name: `${name}-full`, description: 'every column set', enabled: true, inboundDataType: 'XML', outboundDataType: 'JSON',
+      initialState: 'PAUSED', messageStorageMode: 'RAW', encryptData: true, removeContentOnCompletion: true,
+      removeAttachmentsOnCompletion: true, pruningEnabled: true, pruningMaxAgeDays: 12, pruningArchiveEnabled: true,
+      scriptTimeoutSeconds: 240, sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: { port: 6661 },
+      responseMode: 'DESTINATION', responseConnectorName: 'To EHR',
+    }).where(eq(schema.channels.id, source.id));
+    await db.update(schema.channelConnectors).set({
+      metaDataId: 7, name: 'To EHR', enabled: false, connectorType: 'CHANNEL', properties: { targetChannelId: target.id },
+      responseTransformer: 'return msg;', responseTransformerLanguage: 'TYPESCRIPT', queueMode: 'ALWAYS', retryCount: 3,
+      retryIntervalMs: 500, rotateQueue: true, queueThreadCount: 4, waitForPrevious: true,
+    }).where(eq(schema.channelConnectors.channelId, source.id));
+    const full = await storedRows(source.id);
+    // A column left at the value a new channel has would come back without being imported.
+    const unchanged = (row: Row, from: Row, own: readonly string[]): readonly string[] =>
+      Object.keys(without(row, own)).filter((column) => JSON.stringify(row[column]) === JSON.stringify(from[column]));
+    expect(unchanged(full.channel, plain.channel, OWN_CHANNEL_COLUMNS)).toEqual([]);
+    expect(unchanged(full.destination, plain.destination, OWN_DESTINATION_COLUMNS)).toEqual([]);
+
+    const entry = await exportedEntry(source.id);
+    const copyId = randomUUID();
+    created.push(copyId);
+    expect(unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId }], 'SKIP', actor))).toMatchObject({ created: 1, errors: [] });
+    const copy = await storedRows(copyId);
+    expect(without(copy.channel, OWN_CHANNEL_COLUMNS)).toEqual(without(full.channel, OWN_CHANNEL_COLUMNS));
+    expect(without(copy.destination, OWN_DESTINATION_COLUMNS)).toEqual(without(full.destination, OWN_DESTINATION_COLUMNS));
+
+    expect(unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: target.id }], 'OVERWRITE', actor))).toMatchObject({ updated: 1, errors: [] });
+    const over = await storedRows(target.id);
+    // An import keeps the stored enabled flag (#225).
+    const ownOver = [...OWN_CHANNEL_COLUMNS, 'enabled'];
+    expect(without(over.channel, ownOver)).toEqual(without(full.channel, ownOver));
+    expect(without(over.destination, OWN_DESTINATION_COLUMNS)).toEqual(without(full.destination, OWN_DESTINATION_COLUMNS));
+  });
+
+  it('takes the script timeout from the file, or without one keeps the stored value or the 30 s default (#334)', async () => {
+    const id = randomUUID();
+    created.push(id);
+    const { scriptTimeoutSeconds: _older, ...olderFile } = { ...await exportedEntryOf(`itest-timeout-${id}`), id };
+    const stored = async (): Promise<number> => unwrap(await mods.ChannelService.getById(id)).scriptTimeoutSeconds;
+    const importOne = async (entry: ChannelExportEntry): Promise<void> => {
+      expect(unwrap(await importMod.ChannelImportService.importChannels([entry], 'OVERWRITE', actor)).errors).toEqual([]);
+    };
+
+    await importOne(olderFile);
+    expect(await stored()).toBe(30);
+    await importOne({ ...olderFile, scriptTimeoutSeconds: 120 });
+    expect(await stored()).toBe(120);
+    await importOne(olderFile);
+    expect(await stored()).toBe(120);
+
+    const freshId = randomUUID();
+    created.push(freshId);
+    await importOne({ ...olderFile, id: freshId, scriptTimeoutSeconds: 45 });
+    expect(unwrap(await mods.ChannelService.getById(freshId)).scriptTimeoutSeconds).toBe(45);
+  });
+
+  async function exportedEntryOf(name: string): Promise<ChannelExportEntry> {
+    const channel = unwrap(await mods.ChannelService.create(rawChannel(name), actor));
+    created.push(channel.id);
+    return exportedEntry(channel.id);
+  }
 
   it('refuses a destination filter named only by another server\'s connector id', async () => {
     const id = randomUUID();

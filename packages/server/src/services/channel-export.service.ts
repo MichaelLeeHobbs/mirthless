@@ -37,6 +37,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     pruningEnabled: detail.pruningEnabled,
     pruningMaxAgeDays: detail.pruningMaxAgeDays,
     pruningArchiveEnabled: detail.pruningArchiveEnabled,
+    scriptTimeoutSeconds: detail.scriptTimeoutSeconds,
     scripts: detail.scripts.map((s) => ({
       scriptType: s.scriptType,
       script: s.script,

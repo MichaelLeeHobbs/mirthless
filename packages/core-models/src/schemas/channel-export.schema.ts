@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import { toScriptLanguage } from './script-language.schema.js';
-import { sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
+import { channelPropertiesSchema, sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
 
 // Script languages and response transformers are optional so files exported
 // before they were included still import (as JavaScript, with no response transformer).
@@ -110,6 +110,8 @@ export const channelExportEntrySchema = z.object({
   pruningEnabled: z.boolean(),
   pruningMaxAgeDays: z.number().nullable(),
   pruningArchiveEnabled: z.boolean(),
+  /** The channel API's bound without its default. Absent in files exported before #334. */
+  scriptTimeoutSeconds: channelPropertiesSchema.shape.scriptTimeoutSeconds.unwrap().optional(),
   scripts: z.array(channelExportScriptSchema),
   destinations: z.array(channelExportDestinationSchema),
   metadataColumns: z.array(channelExportMetadataColumnSchema),

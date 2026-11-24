@@ -165,6 +165,34 @@ async function importSingleChannel(
   }
 }
 
+type ImportedColumns = Omit<typeof channels.$inferInsert, 'id' | 'enabled' | 'revision' | 'createdAt' | 'updatedAt'>;
+
+/**
+ * Drizzle leaves out an undefined column, so a file with no script timeout gives
+ * a new channel the default and an overwritten one keeps its own.
+ */
+function importedColumns(entry: ChannelExportEntry): ImportedColumns {
+  return {
+    name: entry.name,
+    description: entry.description,
+    inboundDataType: entry.inboundDataType,
+    outboundDataType: entry.outboundDataType,
+    sourceConnectorType: entry.sourceConnectorType,
+    sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
+    responseMode: entry.responseMode,
+    responseConnectorName: entry.responseConnectorName,
+    initialState: entry.initialState,
+    messageStorageMode: entry.messageStorageMode,
+    encryptData: entry.encryptData,
+    removeContentOnCompletion: entry.removeContentOnCompletion,
+    removeAttachmentsOnCompletion: entry.removeAttachmentsOnCompletion,
+    pruningEnabled: entry.pruningEnabled,
+    pruningMaxAgeDays: entry.pruningMaxAgeDays,
+    pruningArchiveEnabled: entry.pruningArchiveEnabled,
+    scriptTimeoutSeconds: entry.scriptTimeoutSeconds,
+  };
+}
+
 async function createChannel(
   entry: ChannelExportEntry,
   run: ImportRun,
@@ -173,25 +201,10 @@ async function createChannel(
 
   await db.transaction(async (tx) => {
     await tx.insert(channels).values({
+      ...importedColumns(entry),
       id: entry.id,
-      name: entry.name,
-      description: entry.description,
       enabled: entry.enabled,
       revision: 1,
-      inboundDataType: entry.inboundDataType,
-      outboundDataType: entry.outboundDataType,
-      sourceConnectorType: entry.sourceConnectorType,
-      sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
-      responseMode: entry.responseMode,
-      responseConnectorName: entry.responseConnectorName,
-      initialState: entry.initialState,
-      messageStorageMode: entry.messageStorageMode,
-      encryptData: entry.encryptData,
-      removeContentOnCompletion: entry.removeContentOnCompletion,
-      removeAttachmentsOnCompletion: entry.removeAttachmentsOnCompletion,
-      pruningEnabled: entry.pruningEnabled,
-      pruningMaxAgeDays: entry.pruningMaxAgeDays,
-      pruningArchiveEnabled: entry.pruningArchiveEnabled,
       createdAt: now,
       updatedAt: now,
     });
@@ -239,24 +252,9 @@ async function overwriteChannel(entry: ChannelExportEntry, run: ImportRun): Prom
     // An import keeps the stored enabled flag, which is deploy control (#225);
     // a restore sets it. The revision goes up so an editor opened before gets a conflict.
     await tx.update(channels).set({
-      name: entry.name,
-      description: entry.description,
+      ...importedColumns(entry),
       ...(run.placement === 'restore' ? { enabled: entry.enabled } : {}),
       revision: sql`${channels.revision} + 1`,
-      inboundDataType: entry.inboundDataType,
-      outboundDataType: entry.outboundDataType,
-      sourceConnectorType: entry.sourceConnectorType,
-      sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
-      responseMode: entry.responseMode,
-      responseConnectorName: entry.responseConnectorName,
-      initialState: entry.initialState,
-      messageStorageMode: entry.messageStorageMode,
-      encryptData: entry.encryptData,
-      removeContentOnCompletion: entry.removeContentOnCompletion,
-      removeAttachmentsOnCompletion: entry.removeAttachmentsOnCompletion,
-      pruningEnabled: entry.pruningEnabled,
-      pruningMaxAgeDays: entry.pruningMaxAgeDays,
-      pruningArchiveEnabled: entry.pruningArchiveEnabled,
       updatedAt: now,
     }).where(eq(channels.id, entry.id));
 
