@@ -29,6 +29,7 @@ const PAGES = {
   'source-delimited': { url: '/channels/c6', click: ['Source', 'Source Transformer'], scrollTo: 'Source Transformer' },
   'destination-database': { url: '/channels/c6', click: 'Destinations', scrollTo: 'Connector Settings' },
   'source-file': { url: '/channels/c6', click: 'Source', scrollTo: 'Connector Settings' },
+  'source-http': { url: '/channels/c4', click: 'Source', scrollTo: 'Connector Settings' },
   'source-dicom': { url: '/channels/c5', click: 'Source', scrollTo: 'Connector Settings' },
   'destination-dicom': { url: '/channels/c5', click: 'Destinations', scrollTo: 'Connector Settings' },
   'message-browser': '/channels/c1/messages',

@@ -28,11 +28,12 @@ import {
   createDefaultDestination,
 } from '../destinations/connector-defaults.js';
 import { MLLP_RESPONSE_MODES } from '../source/tcp-mllp-options.js';
-import { CHARSET_OPTIONS } from '../common/charset-options.js';
+import { CHARSET_OPTIONS, QUEUE_CHARSET_OPTIONS } from '../common/charset-options.js';
 import {
   tcpMllpSourcePropertiesSchema,
   tcpMllpDestinationPropertiesSchema,
   CONNECTOR_CHARSETS,
+  QUEUE_CHARSETS,
   TCP_MLLP_RESPONSE_MODES,
   fileSourcePropertiesSchema,
   fileDestinationPropertiesSchema,
@@ -142,6 +143,10 @@ describe('TCP/MLLP defaults match the core-models schema', () => {
 describe('the charset field', () => {
   it('offers exactly the charsets the TCP/MLLP and FILE schemas accept', () => {
     expect(CHARSET_OPTIONS.map((o) => o.value)).toEqual([...CONNECTOR_CHARSETS]);
+  });
+
+  it('offers exactly the charsets the Kafka, AMQP and HTTP source schemas accept', () => {
+    expect(QUEUE_CHARSET_OPTIONS.map((o) => o.value)).toEqual([...QUEUE_CHARSETS]);
   });
 });
 

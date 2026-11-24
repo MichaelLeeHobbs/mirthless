@@ -12,6 +12,7 @@ import type { SourceConnectorFormProps } from './types.js';
 import { HTTP_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { CertificateSelect } from '../common/CertificateSelect.js';
+import { QUEUE_CHARSET_OPTIONS } from '../common/charset-options.js';
 import { getStr, getNum, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
 import { HTTP_METHODS, HTTP_SCHEMES as SCHEMES } from '@galvanigraph/core-models';
 
@@ -91,6 +92,20 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
             <MenuItem key={m} value={m}>{m}</MenuItem>
           ))}
         </TextField>
+
+        <TextField
+          label="Body Charset"
+          value={getStr(properties, 'bodyCharset', 'utf-8')}
+          onChange={handleText('bodyCharset')}
+          select
+          helperText="Used when Content-Type names no charset; a body that is not valid text is refused (415). Binary keeps every body as base64 instead."
+          fullWidth
+          sx={{ mb: 2 }}
+        >
+          {QUEUE_CHARSET_OPTIONS.map((c) => (
+            <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
+          ))}
+        </TextField>
       </Grid>
 
       <Grid
@@ -143,7 +158,7 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
           type="number"
           value={getNum(properties, 'maxBodyBytes', 52428800)}
           onChange={handleNumber('maxBodyBytes')}
-          helperText="Inbound request body cap in bytes (default 52428800 = 50 MiB)"
+          helperText="Body cap in bytes, received and decompressed (default 52428800 = 50 MiB)"
           fullWidth
           sx={{ mb: 2 }}
           slotProps={{ htmlInput: { min: 1 } }}
