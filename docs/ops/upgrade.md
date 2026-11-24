@@ -403,6 +403,10 @@ The editor no longer shows the Listener's pool sizes or the Sender's mode and ma
 
 Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that can't be restored. Take a new backup with `docker/backup.sh`, change any cron job or script that runs `pg_dump` through `docker exec -t`, and [repair the dumps you still need](backup-restore.md#dumps-taken-with-docker-exec--t).
 
+## Alert email signs in over TLS only (#358)
+
+With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

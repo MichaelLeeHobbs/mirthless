@@ -7,6 +7,7 @@ export interface SmtpConfig {
   readonly host: string;
   readonly port: number;
   readonly secure: boolean;
+  readonly requireTls: boolean;
   readonly from: string;
   readonly authUser: string;
   readonly authPass: string;
@@ -16,13 +17,13 @@ export type SmtpTransport = ConnectorSmtpTransport;
 
 export type TransportFactory = (config: SmtpConfig) => SmtpTransport;
 
-/** The builder sends auth only when a user is set. */
+/** The builder sends auth only when a user is set, and the password never goes out before TLS (D-332). */
 function defaultTransportFactory(config: SmtpConfig): SmtpTransport {
   return createNodemailerTransport({
     host: config.host,
     port: config.port,
     secure: config.secure,
-    requireTLS: false,
+    requireTLS: config.requireTls || (config.authUser !== '' && !config.secure),
     auth: { user: config.authUser, pass: config.authPass },
   });
 }
@@ -39,33 +40,39 @@ export function resetTransportFactory(): void {
   transportFactory = defaultTransportFactory;
 }
 
-async function readSetting(key: string): Promise<string> {
-  const result = await SettingsService.getStoredValue(key);
-  if (!result.ok) throw new Error(`Failed to read ${key}: ${result.error.message}`);
-  return result.value ?? '';
+const SMTP_KEYS = ['smtp.host', 'smtp.port', 'smtp.secure', 'smtp.require_tls', 'smtp.from', 'smtp.auth_user', 'smtp.auth_pass'] as const;
+
+type SmtpKey = (typeof SMTP_KEYS)[number];
+
+/** In one read, so a password is never paired with the host of a later save. */
+async function readSmtpSettings(): Promise<(key: SmtpKey) => string> {
+  const result = await SettingsService.getStoredValues(SMTP_KEYS);
+  if (!result.ok) throw new Error(`Failed to read the SMTP settings: ${result.error.message}`);
+  return (key) => result.value.get(key) ?? '';
+}
+
+/** Any other text fails the email: read as off, it would send without TLS. */
+function asSwitch(key: SmtpKey, value: string): boolean {
+  if (value !== '' && value !== 'true' && value !== 'false') throw new Error(`${key} must be true or false`);
+  return value === 'true';
 }
 
 export class EmailService {
   static async getSmtpConfig(): Promise<Result<SmtpConfig>> {
     return tryCatch(async () => {
-      const [host, port, secure, from, authUser, authPass] = await Promise.all([
-        readSetting('smtp.host'),
-        readSetting('smtp.port'),
-        readSetting('smtp.secure'),
-        readSetting('smtp.from'),
-        readSetting('smtp.auth_user'),
-        readSetting('smtp.auth_pass'),
-      ]);
-
+      const read = await readSmtpSettings();
+      const host = read('smtp.host');
       if (!host) throw new Error('SMTP host is not configured');
+      const port = read('smtp.port');
 
       return {
         host,
         port: port ? Number(port) : 587,
-        secure: secure === 'true',
-        from,
-        authUser,
-        authPass,
+        secure: asSwitch('smtp.secure', read('smtp.secure')),
+        requireTls: asSwitch('smtp.require_tls', read('smtp.require_tls')),
+        from: read('smtp.from'),
+        authUser: read('smtp.auth_user'),
+        authPass: read('smtp.auth_pass'),
       };
     });
   }
