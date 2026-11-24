@@ -43,11 +43,48 @@ const DESTINATION_SHAPES: Readonly<Record<DestinationConnectorType, object>> = {
   AMQP: amqpDestinationPropertiesSchema.shape,
 };
 
-type Row = readonly [label: string, direction: ConnectorDirection, type: string, keys: ConnectorKeys, shape: object];
+// Written out, not read from the table, so a key that leaves the deciding list fails here.
+const SOURCE_MUST_DECIDE: Readonly<Record<SourceConnectorType, readonly string[]>> = {
+  TCP_MLLP: ['host', 'port', 'tls'],
+  HTTP: ['host', 'port', 'path', 'matchSubpaths', 'auth', 'scheme', 'tls'],
+  FILE: [
+    'directory', 'fileFilter', 'ignoreDot', 'pollingIntervalMs', 'sortBy', 'charset', 'binary', 'checkFileAge', 'fileAgeMs',
+    'postAction', 'moveToDirectory', 'processBatch',
+  ],
+  DATABASE: ['vendor', 'host', 'port', 'database', 'username', 'tls'],
+  JAVASCRIPT: ['script', 'scriptLanguage', 'pollingIntervalMs', 'processBatch'],
+  CHANNEL: ['channelId', 'processBatch'],
+  DICOM: ['port', 'storageDir', 'aeTitle', 'connectionTimeoutMs', 'dispatchMode', 'postAction', 'moveToDirectory', 'processBatch'],
+  EMAIL: ['host', 'port', 'secure', 'username', 'protocol'],
+  SFTP: ['host', 'port', 'username', 'strictHostKey', 'hostKey'],
+  KAFKA: ['brokers', 'clientId', 'useTls', 'tls', 'saslMechanism', 'saslUsername'],
+  AMQP: ['host', 'port', 'vhost', 'username', 'useTls', 'tls'],
+};
+
+const DESTINATION_MUST_DECIDE: Readonly<Record<DestinationConnectorType, readonly string[]>> = {
+  TCP_MLLP: ['host', 'port', 'tls'],
+  HTTP: ['url', 'parameters', 'headers', 'basicAuth', 'scheme', 'tls'],
+  FILE: ['directory', 'outputPattern', 'charset', 'binary', 'tempFileEnabled', 'appendMode', 'template'],
+  DATABASE: ['vendor', 'host', 'port', 'database', 'username', 'tls'],
+  JAVASCRIPT: ['script', 'scriptLanguage', 'template'],
+  SMTP: ['host', 'port', 'secure', 'requireTLS', 'authUser'],
+  CHANNEL: ['targetChannelId', 'waitForResponse', 'template'],
+  FHIR: ['baseUrl', 'resourceType', 'authType', 'authUsername', 'authHeaderName', 'headers'],
+  DICOM: ['host', 'port', 'calledAETitle', 'callingAETitle', 'maxRetries', 'retryDelayMs', 'timeoutMs', 'template'],
+  SFTP: ['host', 'port', 'username', 'strictHostKey', 'hostKey'],
+  KAFKA: ['brokers', 'clientId', 'useTls', 'tls', 'saslMechanism', 'saslUsername', 'topic'],
+  AMQP: ['host', 'port', 'vhost', 'username', 'useTls', 'tls', 'exchange', 'routingKey', 'headers'],
+};
+
+type Row = readonly [
+  label: string, direction: ConnectorDirection, type: string, keys: ConnectorKeys, shape: object, mustDecide: readonly string[],
+];
 
 const ROWS: readonly Row[] = [
-  ...SOURCE_CONNECTOR_TYPES.map((t): Row => [`${t} source`, 'source', t, CONNECTOR_KEYS.source[t], SOURCE_SHAPES[t]]),
-  ...DESTINATION_CONNECTOR_TYPES.map((t): Row => [`${t} destination`, 'destination', t, CONNECTOR_KEYS.destination[t], DESTINATION_SHAPES[t]]),
+  ...SOURCE_CONNECTOR_TYPES.map((t): Row => [`${t} source`, 'source', t, CONNECTOR_KEYS.source[t], SOURCE_SHAPES[t], SOURCE_MUST_DECIDE[t]]),
+  ...DESTINATION_CONNECTOR_TYPES.map((t): Row => [
+    `${t} destination`, 'destination', t, CONNECTOR_KEYS.destination[t], DESTINATION_SHAPES[t], DESTINATION_MUST_DECIDE[t],
+  ]),
 ];
 
 /**
@@ -63,7 +100,7 @@ function secretsIn(properties: Readonly<Record<string, unknown>>, keys: Connecto
   return [...keys.credentials.map((key) => properties[key]), (properties['probe'] as { token?: unknown }).token];
 }
 
-describe.each(ROWS)('the stored credentials of a %s', (_label, direction, connectorType, keys, shape) => {
+describe.each(ROWS)('the stored credentials of a %s', (_label, direction, connectorType, keys, shape, mustDecide) => {
   const stored = storedProperties(keys);
   const exported = redactConnectorProperties(stored);
   const overwrite = (properties: Record<string, unknown>, from: Record<string, unknown> = stored): Record<string, unknown> =>
@@ -85,8 +122,12 @@ describe.each(ROWS)('the stored credentials of a %s', (_label, direction, connec
     expect(overwrite({ ...exported, ...changes })).toEqual({ ...stored, ...changes });
   });
 
+  it('has no more and no fewer deciding settings than are written out here', () => {
+    expect([...keys.deciding].sort()).toEqual([...mustDecide].sort());
+  });
+
   it('are dropped when any deciding setting is changed, missing from the file or new in it', () => {
-    for (const key of keys.deciding) {
+    for (const key of mustDecide) {
       expect(secretsIn(overwrite({ ...exported, [key]: 'changed' }), keys), key).toEqual(none);
       const { [key]: _absent, ...fewer } = exported;
       expect(secretsIn(overwrite(fewer), keys), key).toEqual(none);
