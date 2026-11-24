@@ -987,24 +987,19 @@ describe('HttpReceiver bodies that are not valid in their charset', () => {
     expect(seen).toEqual([]);
   });
 
-  // PostgreSQL text cannot hold U+0000, so the store would fail and the sender would retry forever.
+  // Whether it can be stored is the channel's business: an encrypted one can, and one that stores nothing need not.
   it.each([
-    ['utf-8', undefined, Buffer.from('PID|1\0|Doe')],
-    ['latin1', undefined, Buffer.concat([PDF, Buffer.alloc(4)])],
-    ['windows-1252', undefined, Buffer.concat([PDF, Buffer.alloc(4)])],
-    ['utf-8', 'ISO-8859-1', Buffer.concat([PDF, Buffer.alloc(4)])],
-    ['utf-8', 'utf-8', Buffer.from('PID|1\0|Doe')],
-    ['utf-8', undefined, Buffer.from('PID|1', 'utf16le')],
-  ] as const)('refuses text that holds U+0000: bodyCharset %s, declared %s', async (bodyCharset, declared, body) => {
-    const { seen, log } = await startRecording({ bodyCharset });
+    ['utf-8', undefined, Buffer.from('PID|1\0|Doe'), 'PID|1\0|Doe'],
+    ['latin1', undefined, EVERY_BYTE, EVERY_BYTE.toString('latin1')],
+    ['windows-1252', undefined, Buffer.from([0x25, 0x00, 0x93]), '%\0\u201c'],
+    ['utf-8', 'utf-8', Buffer.from('PID|1\0|Doe'), 'PID|1\0|Doe'],
+  ] as const)('takes text that holds U+0000: bodyCharset %s, declared %s', async (bodyCharset, declared, body, content) => {
+    const { seen } = await startRecording({ bodyCharset });
 
     const res = await sendRequest(TEST_PORT, { body, headers: { 'content-type': declared ? `text/plain; charset=${declared}` : 'text/plain' } });
 
-    expect(res.status).toBe(415);
-    expect(res.body).toContain('U+0000');
-    expect(res.body).toContain('bodyCharset');
-    expect(seen).toEqual([]);
-    expect(log.warnings).toHaveLength(1);
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual([content]);
   });
 
   it('keeps zero bytes with base64, and UTF-16 text that declares itself', async () => {

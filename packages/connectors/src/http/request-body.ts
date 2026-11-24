@@ -32,10 +32,10 @@ export async function readRequestBody(req: IncomingMessage, config: RequestBodyC
   if (received.length === 0) return { text: '', release: () => undefined };
   const coding = contentCoding(req.headers['content-encoding']);
   const decode = bodyDecoder(req.headers['content-type'], config.bodyCharset);
-  if (!coding) return { text: storableText(decode(received)), release: () => undefined };
+  if (!coding) return { text: decode(received), release: () => undefined };
   const { bytes, release } = await decompressor.run(coding, received, () => req.socket.destroyed);
   try {
-    return { text: storableText(decode(bytes)), release };
+    return { text: decode(bytes), release };
   } catch (err) {
     release();
     throw err;
@@ -99,16 +99,6 @@ function strictDecoder(charset: string): TextDecoder | null {
   }
 }
 
-/** PostgreSQL text cannot hold U+0000, so the store would fail every time the sender tried again. */
-function storableText(text: string): string {
-  if (text.includes('\0')) throw notText('Request body holds U+0000, which cannot be stored as text');
-  return text;
-}
-
 function invalidText(charset: string): RefusedBodyError {
-  return notText(`Request body is not valid ${charset}`);
-}
-
-function notText(why: string): RefusedBodyError {
-  return new RefusedBodyError(415, `${why}. Declare the character set it is in (charset in Content-Type), or set bodyCharset on the HTTP source: the character set of a body that declares none, or base64 to keep binary bodies.`);
+  return new RefusedBodyError(415, `Request body is not valid ${charset}. Declare the character set it is in (charset in Content-Type), or set bodyCharset on the HTTP source: the character set of a body that declares none, or base64 to keep binary bodies.`);
 }
