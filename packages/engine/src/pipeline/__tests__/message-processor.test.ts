@@ -64,6 +64,11 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
   };
 }
 
+/** Status writes in order, as [metaDataId, status]. */
+function statuses(store: MessageStore): ReadonlyArray<readonly [number, string]> {
+  return vi.mocked(store.updateConnectorMessageStatus).mock.calls.map((c) => [c[2], c[3]] as const);
+}
+
 let sandbox: VmSandboxExecutor;
 
 beforeEach(() => {
@@ -89,9 +94,10 @@ describe('MessageProcessor', () => {
 
     expect(store.createMessage).toHaveBeenCalledOnce();
     expect(store.createConnectorMessage).toHaveBeenCalledTimes(2); // source + dest
-    expect(store.storeContent).toHaveBeenCalled();
+    expect(vi.mocked(store.storeContent).mock.calls.map((c) => c[3])).toEqual([CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP, CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE]);
+    expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [1, 'SENT'], [0, 'SENT']]);
+    expect(vi.mocked(store.incrementStats).mock.calls.map((c) => [c[1], c[3]])).toEqual([[0, 'received'], [1, 'sent'], [0, 'sent']]);
     expect(store.markProcessed).toHaveBeenCalledOnce();
-    expect(store.incrementStats).toHaveBeenCalled();
   });
 
   it('filters message at source filter (returns false)', async () => {
@@ -114,6 +120,8 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults).toHaveLength(0);
 
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'FILTERED']]);
+    expect(store.markProcessed).toHaveBeenCalledOnce();
     expect(store.incrementStats).toHaveBeenCalledWith(
       expect.any(String), 0, expect.any(String), 'filtered',
     );
@@ -380,6 +388,9 @@ describe('MessageProcessor', () => {
       expect.any(String), 1, 0, 13, expect.stringContaining('Invalid JSON'), 'TEXT',
     );
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'ERROR']]);
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('invalid HL7V2 errors the message', async () => {
@@ -401,6 +412,10 @@ describe('MessageProcessor', () => {
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 13, expect.stringContaining('Invalid HL7V2'), 'TEXT',
     );
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'ERROR']]);
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('parseHL7(msg) on already-parsed HL7V2 msg is a no-op', async () => {
@@ -459,6 +474,8 @@ describe('MessageProcessor', () => {
     expect(dest1!.status).toBe('FILTERED');
     expect(dest2!.status).toBe('SENT');
     expect(sendFn).toHaveBeenCalledTimes(1);
+    expect(statuses(store)).toContainEqual([1, 'FILTERED']);
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 1, expect.any(String), 'filtered');
   });
 
   it('queues message when destination queueEnabled', async () => {
@@ -502,6 +519,7 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(store.incrementStats).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
   });
 
   it('ON_FAILURE: attempts a direct send first, then queues on failure (not ERROR)', async () => {
@@ -641,6 +659,7 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     // Must error before sending — never deliver un-persisted PHI.
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
   });
 
   it('preprocessor and postprocessor scripts execute', async () => {
@@ -709,6 +728,8 @@ describe('MessageProcessor', () => {
       expect.any(String), 0, expect.any(String), 'errored',
     );
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'ERROR']]);
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('reports ERROR when destination send fails', async () => {
@@ -729,6 +750,8 @@ describe('MessageProcessor', () => {
     expect(store.incrementStats).toHaveBeenCalledWith(
       expect.any(String), 1, expect.any(String), 'errored',
     );
+    expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [1, 'ERROR'], [0, 'ERROR']]);
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('destination filter script error marks the destination ERROR and does not send', async () => {
@@ -750,6 +773,7 @@ describe('MessageProcessor', () => {
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 1, 13, expect.stringContaining('filter boom'), 'TEXT',
     );
@@ -775,6 +799,7 @@ describe('MessageProcessor', () => {
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 1, 13, expect.stringContaining('transform boom'), 'TEXT',
     );
@@ -860,7 +885,8 @@ describe('MessageProcessor', () => {
       expect.any(String), 1, 0, 13, expect.stringContaining('post fail'), 'TEXT',
     );
     expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
-    expect(onError).toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [1, 'SENT'], [0, 'ERROR']]);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('post fail') }));
   });
 
   it('destination transformer modifies content before send', async () => {
