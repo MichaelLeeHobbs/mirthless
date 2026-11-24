@@ -58,7 +58,7 @@ An install created before this change runs the server as the superuser. After `g
 4. Check the server log for `[migrate] the server runs as "galvanigraph_app", which owns no application tables`, and that the server's connections use that role:
 
    ```bash
-   docker exec -t galvanigraph-db-prod psql -U galvanigraph -d galvanigraph \
+   docker exec galvanigraph-db-prod psql -U galvanigraph -d galvanigraph \
      -c "SELECT DISTINCT usename FROM pg_stat_activity WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid();"
    ```
 
@@ -399,13 +399,19 @@ A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (d
 
 The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
 
+## Backups taken with `docker exec -t` can't be restored (#361)
+
+Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that `pg_restore` can't read. Change any cron job or script that runs `pg_dump` through `docker exec -t`, and see [how to check and repair existing dumps](backup-restore.md#dumps-taken-with-docker-exec--t).
+
 ## Standard upgrade (Docker)
 
 ```bash
 # 1. BACK UP FIRST (see docs/ops/backup-restore.md)
 #    First upgrade after a rename: the container, database and user still have the
 #    old name (see "Renamed from Mirthless or GalvaniFlow" below).
-docker exec -t galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > pre-upgrade.dump
+#    Go on only if this prints "dump OK".
+docker exec galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > pre-upgrade.dump &&
+  docker exec -i galvanigraph-db-prod pg_restore -f /dev/null < pre-upgrade.dump && echo "dump OK"
 
 # 2. Pull the new code
 git pull                # there are no published images; the stack builds from source

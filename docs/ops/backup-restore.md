@@ -35,10 +35,15 @@ Run a compressed custom-format dump against the running container:
 
 ```bash
 # Production compose: container name is galvanigraph-db-prod
-docker exec -t galvanigraph-db-prod \
-  pg_dump -U galvanigraph -d galvanigraph -F c \
-  > galvanigraph-$(date +%Y%m%d-%H%M%S).dump
+file=galvanigraph-$(date +%Y%m%d-%H%M%S).dump
+docker exec galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > "$file.partial" &&
+  docker exec -i galvanigraph-db-prod pg_restore -f /dev/null < "$file.partial" &&
+  mv "$file.partial" "$file"
 ```
+
+The second command reads the whole dump back, and only a dump that passes gets its final name. A file still ending in `.partial` is not a backup.
+
+Run `pg_dump` through `docker exec` without `-t`. With `-t` it writes to a terminal, which changes the newline bytes in the file, and the dump can't be restored.
 
 `-F c` (custom format) enables selective, parallel `pg_restore` and is smaller than
 plain SQL. For a plain-SQL dump you can inspect, use `-F p` and redirect to a `.sql`
@@ -47,20 +52,48 @@ file.
 Automate it with a cron job on the host (example: nightly at 02:00, keep 14 days):
 
 ```cron
-0 2 * * * docker exec -t galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > /backups/galvanigraph-$(date +\%Y\%m\%d).dump && find /backups -name 'galvanigraph-*.dump' -mtime +14 -delete
+0 2 * * * f=/backups/galvanigraph-$(date +\%Y\%m\%d).dump; docker exec galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > $f.partial && docker exec -i galvanigraph-db-prod pg_restore -f /dev/null < $f.partial && mv $f.partial $f && find /backups -name 'galvanigraph-*.dump*' -mtime +14 -delete
 ```
+
+Old dumps, and `.partial` files from runs that failed, are deleted only after a new dump has been read back.
+
+### Check a dump
+
+```bash
+docker exec -i galvanigraph-db-prod pg_restore -f /dev/null < galvanigraph-20260712-020000.dump && echo "dump OK"
+```
+
+This reads the whole file and restores nothing. If it doesn't print `dump OK`, the file can't be restored as it is. `pg_restore --list` is not enough, because it reads only the table of contents. The check works on custom-format dumps (`-F c`), not on plain SQL.
+
+### Dumps taken with `docker exec -t`
+
+Until 2026-11-23 this page and the upgrade guide ran `pg_dump` through `docker exec -t`, and the dumps that wrote can't be restored ([#361](https://github.com/MichaelLeeHobbs/mirthless/issues/361)). `pg_dump` exited 0, so nothing reported it. If you used those commands:
+
+1. Switch to the commands above, take a new backup now and check it. Update the cron job too.
+2. [Check](#check-a-dump) each older dump you still need.
+3. Repair the ones that fail. The terminal put one carriage return before each newline byte, and this takes exactly those out:
+
+   ```bash
+   perl -pe 's/\r\n\z/\n/' galvanigraph-20260712-020000.dump > repaired.dump
+   ```
+
+4. Check `repaired.dump`, and keep the original until it passes. If it fails too, the dump has other damage.
+
+Don't repair a dump that passes the check: the repair damages a good one.
 
 ### Restore with `pg_restore`
 
 Restoring into a **fresh, empty** database is safest. Stop the server first so nothing
 writes during the restore.
 
+**[Check the dump](#check-a-dump) before you start.** The steps below drop the database before they read the file.
+
 ```bash
 # Stop the app (leave db running)
 docker compose -f docker/docker-compose.prod.yml stop server web
 
 # Drop & recreate the database, then restore
-docker exec -t galvanigraph-db-prod psql -U galvanigraph -d postgres \
+docker exec galvanigraph-db-prod psql -U galvanigraph -d postgres \
   -c "DROP DATABASE IF EXISTS galvanigraph WITH (FORCE);" \
   -c "CREATE DATABASE galvanigraph OWNER galvanigraph;"
 
