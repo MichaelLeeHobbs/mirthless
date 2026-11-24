@@ -22,6 +22,7 @@ export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   responseContentType: 'text/plain',
   errorStatusCode: 500,
   maxBodyBytes: 52428800,
+  bodyCharset: 'utf-8',
   // HTTPS takes certificate-store IDs, which the server resolves to PEM at deploy. Never store raw PEM here.
   scheme: 'HTTP',
   tls: { serverCertId: '', caCertId: '', requireClientCert: false },

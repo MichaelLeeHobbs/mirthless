@@ -116,6 +116,18 @@ describe('HttpSourceForm — error/body-size options', () => {
     typeNumber('Max Body Bytes', '1024');
     expect(lastProps['maxBodyBytes']).toBe(1024);
   });
+
+  it('shows UTF-8 for a channel saved without a body charset, and writes the one chosen', () => {
+    renderForm(HttpSourceForm as unknown as FormLike, { scheme: 'HTTP', tls: {} });
+    expect(screen.getByLabelText('Body Charset').textContent).toBe('UTF-8');
+    selectOption('Body Charset', 'Binary (keep bytes as base64)');
+    expect(lastProps['bodyCharset']).toBe('base64');
+  });
+
+  it('shows the body charset a channel was saved with', () => {
+    renderForm(HttpSourceForm as unknown as FormLike, { scheme: 'HTTP', tls: {}, bodyCharset: 'windows-1252' });
+    expect(screen.getByLabelText('Body Charset').textContent).toBe('Windows-1252');
+  });
 });
 
 describe('SmtpDestinationForm — requireTLS', () => {

@@ -1,13 +1,16 @@
 import * as http from 'node:http';
 import * as https from 'node:https';
-import { TextDecoder } from 'node:util';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-import { DEFAULT_MAX_BODY_BYTES } from '@galvanigraph/core-models';
+import { DEFAULT_MAX_BODY_BYTES, type QueueCharset } from '@galvanigraph/core-models';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { assertCharsetAvailable } from '../encoding.js';
+import { Decompressor } from './decompression.js';
+import { RefusedBodyError } from './refused-body.js';
+import { readRequestBody, type RequestBody } from './request-body.js';
 
 /** Hashing first keeps the length from leaking and meets timingSafeEqual's equal-length rule. */
 function constantTimeEqual(a: string, b: string): boolean {
@@ -44,38 +47,17 @@ export interface HttpReceiverConfig {
   readonly method: string;
   readonly responseContentType: string;
   readonly responseStatusCode: number;
-  /** Only for a failed pipeline dispatch. */
+  /** For a failed pipeline dispatch, or an error in handling the request. */
   readonly errorStatusCode: number;
   readonly maxBodyBytes: number;
+  /** For a body whose Content-Type declares no charset, except `base64`, which keeps the bytes of every body. */
+  readonly bodyCharset: QueueCharset;
   readonly auth?: HttpAuthConfig | undefined;
   readonly tls?: TlsServerOptions | undefined;
 }
 
-class UnsupportedCharsetError extends Error {
-  constructor(contentType: string) {
-    super(`Unsupported character set in Content-Type: ${contentType}`);
-  }
-}
-
-/**
- * Null for an unknown charset, which is refused (415): decoding in the wrong one
- * corrupts every non-ASCII character without any error. A byte order mark is kept.
- */
-export function decoderFor(contentType: string | undefined): TextDecoder | null {
-  const match = /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType ?? '');
-  try {
-    return new TextDecoder(match?.[1] ?? 'utf-8', { ignoreBOM: true });
-  } catch {
-    return null;
-  }
-}
-
-class BodyTooLargeError extends Error {
-  constructor() {
-    super('Request body exceeds maximum size');
-    this.name = 'BodyTooLargeError';
-  }
-}
+/** How long a sender still sending has to read its answer before the connection is closed. */
+const LINGER_MS = 2_000;
 
 const CREDENTIAL_HEADERS: ReadonlySet<string> = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
 
@@ -94,12 +76,14 @@ function withoutCredentials(headers: http.IncomingHttpHeaders): Record<string, s
 export class HttpReceiver implements SourceConnectorRuntime {
   private readonly config: HttpReceiverConfig;
   private readonly logger: ConnectorLogger;
+  private readonly decompressor: Decompressor;
   private server: http.Server | null = null;
   private dispatcher: MessageDispatcher | null = null;
 
   constructor(config: HttpReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
     this.logger = logger ?? createConnectorLogger('HTTP');
+    this.decompressor = new Decompressor(config.maxBodyBytes);
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -120,6 +104,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
       }
       const authError = missingCredential(this.config.auth);
       if (authError) throw new Error(authError);
+      assertCharsetAvailable(this.config.bodyCharset);
     });
   }
 
@@ -130,7 +115,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
       }
 
       const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
-        void this.handleRequest(req, res);
+        this.handleRequest(req, res).catch((err: unknown) => { this.answerFailure(req, res, err); });
       };
       this.server = this.config.tls
         ? https.createServer(
@@ -202,12 +187,18 @@ export class HttpReceiver implements SourceConnectorRuntime {
       return;
     }
 
-    if (!this.dispatcher) {
-      this.writePlain(res, 500, 'No dispatcher configured');
+    await this.dispatchRequest(req, res, reqPath);
+  }
+
+  /** A request left unanswered would hold its sender until a timeout, without saying whether to send again. */
+  private answerFailure(req: http.IncomingMessage, res: http.ServerResponse, err: unknown): void {
+    this.logger.error({ ...errorInfo(err), remoteAddress: req.socket.remoteAddress }, 'Request handling failed');
+    if (res.headersSent) {
+      req.socket.destroy();
       return;
     }
-
-    await this.dispatchRequest(req, res, reqPath);
+    res.writeHead(this.config.errorStatusCode);
+    res.end();
   }
 
   private acceptsPath(reqPath: string): boolean {
@@ -222,27 +213,37 @@ export class HttpReceiver implements SourceConnectorRuntime {
     res: http.ServerResponse,
     reqPath: string,
   ): Promise<void> {
-    let body: string;
+    // Undefined once the connection has closed.
+    const { remoteAddress } = req.socket;
+    let body: RequestBody;
     try {
-      body = await this.readBody(req);
+      body = await readRequestBody(req, this.config, this.decompressor);
     } catch (err) {
-      if (err instanceof UnsupportedCharsetError) {
-        this.logger.warn({ remoteAddress: req.socket.remoteAddress, contentType: req.headers['content-type'] }, 'Rejected a body in a character set this server cannot decode');
-        this.writePlain(res, 415, err.message);
-        return;
-      }
-      if (err instanceof BodyTooLargeError) {
-        this.logger.warn({ remoteAddress: req.socket.remoteAddress }, 'Rejected oversized body');
-        this.writePlain(res, 413, 'Payload Too Large');
-        return;
-      }
-      this.logger.error(errorInfo(err), 'Failed reading request body');
-      this.writePlain(res, 400, 'Bad Request');
+      this.refuseBody(req, res, err);
       return;
     }
 
-    const raw = this.buildRawMessage(req, body, reqPath);
-    const result = await this.dispatcher!(raw);
+    try {
+      // A halt destroys every connection, so this covers one too. The sender got no answer and
+      // sends again: dispatching now would take the message twice.
+      if (req.socket.destroyed) {
+        this.logger.warn({ remoteAddress }, 'Request not dispatched: its connection closed while the body was being read');
+        return;
+      }
+      await this.dispatchAndAnswer(res, this.buildRawMessage(req, body.text, reqPath));
+    } finally {
+      body.release();
+    }
+  }
+
+  private async dispatchAndAnswer(res: http.ServerResponse, raw: RawMessage): Promise<void> {
+    const { dispatcher } = this;
+    if (!dispatcher) {
+      this.writePlain(res, 503, 'Service Unavailable');
+      return;
+    }
+
+    const result = await dispatcher(raw);
 
     const failure = dispatchFailure(result);
     if (result.ok && failure === null) {
@@ -258,12 +259,34 @@ export class HttpReceiver implements SourceConnectorRuntime {
     res.end();
   }
 
-  private buildRawMessage(req: http.IncomingMessage, body: string, reqPath: string): RawMessage {
-    const urlObj = new URL(req.url ?? '/', `http://${req.headers['host'] ?? 'localhost'}`);
-    const queryString: Record<string, string> = {};
-    for (const [key, value] of urlObj.searchParams.entries()) {
-      queryString[key] = value;
+  private refuseBody(req: http.IncomingMessage, res: http.ServerResponse, err: unknown): void {
+    if (!(err instanceof RefusedBodyError)) {
+      this.logger.error(errorInfo(err), 'Failed reading request body');
+      this.writePlain(res, 400, 'Bad Request');
+      return;
     }
+    const context = { remoteAddress: req.socket.remoteAddress, contentType: req.headers['content-type'], status: err.status };
+    this.logger.warn(context, `Refused a request body: ${err.message}`);
+    res.writeHead(err.status, { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(err.message), ...err.headers });
+    res.write(err.message);
+    if (err.stillArriving) this.endLater(res);
+    else res.end();
+  }
+
+  /**
+   * Closed with bytes unread, the connection would reset and take the answer with it. They go
+   * on being read and dropped until the sender closes or the time is up.
+   */
+  private endLater(res: http.ServerResponse): void {
+    const linger = setTimeout(() => { res.end(); }, LINGER_MS);
+    res.once('close', () => { clearTimeout(linger); });
+  }
+
+  private buildRawMessage(req: http.IncomingMessage, body: string, reqPath: string): RawMessage {
+    // Not through URL, which throws on a malformed Host header or a target such as //.
+    const query = new URLSearchParams((req.url ?? '/').slice(reqPath.length));
+    // Assigned key by key, a parameter named __proto__ would be dropped.
+    const queryString: Readonly<Record<string, string>> = Object.fromEntries(query);
     return {
       content: body,
       sourceMap: {
@@ -296,34 +319,5 @@ export class HttpReceiver implements SourceConnectorRuntime {
   private writePlain(res: http.ServerResponse, status: number, message: string): void {
     res.writeHead(status, { 'Content-Type': 'text/plain' });
     res.end(message);
-  }
-
-  private readBody(req: http.IncomingMessage): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-      const decoder = decoderFor(req.headers['content-type']);
-      if (decoder === null) {
-        req.resume();
-        reject(new UnsupportedCharsetError(req.headers['content-type'] ?? ''));
-        return;
-      }
-      const chunks: Buffer[] = [];
-      let size = 0;
-      let rejected = false;
-      req.on('data', (chunk: Buffer) => {
-        if (rejected) return;
-        size += chunk.length;
-        if (size > this.config.maxBodyBytes) {
-          rejected = true;
-          // Stop reading but do NOT destroy the socket — the caller still needs
-          // to flush a 413 response back to the sender.
-          req.pause();
-          reject(new BodyTooLargeError());
-          return;
-        }
-        chunks.push(chunk);
-      });
-      req.on('end', () => { resolve(decoder.decode(Buffer.concat(chunks))); });
-      req.on('error', reject);
-    });
   }
 }

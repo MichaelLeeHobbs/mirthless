@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
-import { delimitedOptionsSchema } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, delimitedOptionsSchema } from '@galvanigraph/core-models';
 import { MessageProcessor, groupDestinationChains } from '../message-processor.js';
 import type {
   MessageStore,
@@ -64,6 +64,11 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
   };
 }
 
+/** Status writes in order, as [metaDataId, status]. */
+function statuses(store: MessageStore): ReadonlyArray<readonly [number, string]> {
+  return vi.mocked(store.updateConnectorMessageStatus).mock.calls.map((c) => [c[2], c[3]] as const);
+}
+
 let sandbox: VmSandboxExecutor;
 
 beforeEach(() => {
@@ -89,9 +94,12 @@ describe('MessageProcessor', () => {
 
     expect(store.createMessage).toHaveBeenCalledOnce();
     expect(store.createConnectorMessage).toHaveBeenCalledTimes(2); // source + dest
-    expect(store.storeContent).toHaveBeenCalled();
+    const contentTypes = vi.mocked(store.storeContent).mock.calls.map((c) => c[3]);
+    expect(new Set(contentTypes.slice(0, 2))).toEqual(new Set([CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP]));
+    expect(contentTypes.slice(2)).toEqual([CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE]);
+    expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [1, 'SENT'], [0, 'SENT']]);
+    expect(vi.mocked(store.incrementStats).mock.calls.map((c) => [c[1], c[3]])).toEqual([[0, 'received'], [1, 'sent'], [0, 'sent']]);
     expect(store.markProcessed).toHaveBeenCalledOnce();
-    expect(store.incrementStats).toHaveBeenCalled();
   });
 
   it.each([
@@ -128,6 +136,8 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults).toHaveLength(0);
 
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'FILTERED']]);
+    expect(store.markProcessed).toHaveBeenCalledOnce();
     expect(store.incrementStats).toHaveBeenCalledWith(
       expect.any(String), 0, expect.any(String), 'filtered',
     );
@@ -210,7 +220,7 @@ describe('MessageProcessor', () => {
     expect(sendFn).toHaveBeenCalledWith(1, 1,'dest_modified', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
-  it('routes to 2 destinations in parallel', async () => {
+  it('routes to 2 destinations', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
     const config = makeConfig({
@@ -394,6 +404,9 @@ describe('MessageProcessor', () => {
       expect.any(String), 1, 0, 13, expect.stringContaining('Invalid JSON'), 'TEXT',
     );
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'ERROR']]);
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('invalid HL7V2 errors the message', async () => {
@@ -415,6 +428,10 @@ describe('MessageProcessor', () => {
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 13, expect.stringContaining('Invalid HL7V2'), 'TEXT',
     );
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'ERROR']]);
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('parseHL7(msg) on already-parsed HL7V2 msg is a no-op', async () => {
@@ -473,6 +490,8 @@ describe('MessageProcessor', () => {
     expect(dest1!.status).toBe('FILTERED');
     expect(dest2!.status).toBe('SENT');
     expect(sendFn).toHaveBeenCalledTimes(1);
+    expect(statuses(store)).toContainEqual([1, 'FILTERED']);
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 1, expect.any(String), 'filtered');
   });
 
   it('queues message when destination queueEnabled', async () => {
@@ -516,6 +535,7 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(store.incrementStats).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
   });
 
   it('ON_FAILURE: attempts a direct send first, then queues on failure (not ERROR)', async () => {
@@ -655,26 +675,27 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     // Must error before sending — never deliver un-persisted PHI.
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
   });
 
   it('preprocessor and postprocessor scripts execute', async () => {
-    const store = makeStore();
     const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
     const config = makeConfig({
       scripts: {
-        preprocessor: { code: 'logger.info("pre"); return rawData;' },
-        postprocessor: { code: 'logger.info("post"); return true;' },
+        preprocessor: { code: 'return rawData + "_PRE";' },
+        postprocessor: { code: 'globalChannelMap["post"] = msg;' },
       },
+      globalChannelMap: gcm,
     });
     const processor = new MessageProcessor(
-      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+      sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe('SENT');
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MSG_PRE', expect.any(AbortSignal), expect.any(String), undefined);
+    expect(gcm.get('post')).toBe('MSG_PRE');
   });
 
   it('skips disabled destinations', async () => {
@@ -723,6 +744,8 @@ describe('MessageProcessor', () => {
       expect.any(String), 0, expect.any(String), 'errored',
     );
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'ERROR']]);
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('reports ERROR when destination send fails', async () => {
@@ -743,6 +766,8 @@ describe('MessageProcessor', () => {
     expect(store.incrementStats).toHaveBeenCalledWith(
       expect.any(String), 1, expect.any(String), 'errored',
     );
+    expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [1, 'ERROR'], [0, 'ERROR']]);
+    expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
   it('destination filter script error marks the destination ERROR and does not send', async () => {
@@ -764,6 +789,7 @@ describe('MessageProcessor', () => {
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 1, 13, expect.stringContaining('filter boom'), 'TEXT',
     );
@@ -789,6 +815,7 @@ describe('MessageProcessor', () => {
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(sendFn).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 1, 13, expect.stringContaining('transform boom'), 'TEXT',
     );
@@ -810,6 +837,8 @@ describe('MessageProcessor', () => {
   it.each([
     ['a blank record', '001\n\n003\n', {}],
     ['a CR inside a quoted value', '1,"two\r\nlines"\r\n', {}],
+    // The second column, past the names, is called column2 too: the row has room for one of them.
+    ['a column whose name repeats an earlier one', '1,2\n', { columnNames: ['column2'] }],
   ])('a Delimited preprocessor that changes nothing keeps %s', async (_name, text, delimited) => {
     const sendFn = makeSendFn();
     const config = makeConfig({
@@ -872,7 +901,8 @@ describe('MessageProcessor', () => {
       expect.any(String), 1, 0, 13, expect.stringContaining('post fail'), 'TEXT',
     );
     expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
-    expect(onError).toHaveBeenCalled();
+    expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [1, 'SENT'], [0, 'ERROR']]);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('post fail') }));
   });
 
   it('destination transformer modifies content before send', async () => {
@@ -899,8 +929,8 @@ describe('MessageProcessor', () => {
     const sendFn = makeSendFn();
     const config = makeConfig({
       scripts: {
-        globalPreprocessor: { code: 'return rawData + "_GLOBAL";' },
-        preprocessor: { code: 'return rawData + "_CHANNEL";' },
+        globalPreprocessor: { code: 'return msg + "_GLOBAL";' },
+        preprocessor: { code: 'return msg + "_CHANNEL";' },
       },
     });
     const processor = new MessageProcessor(
@@ -909,47 +939,44 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1,expect.any(String), expect.any(AbortSignal), expect.any(String), undefined);
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MSG_GLOBAL_CHANNEL', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('global postprocessor runs after channel postprocessor', async () => {
-    const store = makeStore();
-    const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
+    const ranAs = (name: string): { code: string } => ({ code: `globalChannelMap["ran"] = (globalChannelMap["ran"] || []).concat("${name}");` });
     const config = makeConfig({
-      scripts: {
-        postprocessor: { code: 'logger.info("channel_post"); return true;' },
-        globalPostprocessor: { code: 'logger.info("global_post"); return true;' },
-      },
+      scripts: { postprocessor: ranAs('channel'), globalPostprocessor: ranAs('global') },
+      globalChannelMap: gcm,
     });
     const processor = new MessageProcessor(
-      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+      sandbox, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe('SENT');
+    expect(gcm.get('ran')).toEqual(['channel', 'global']);
   });
 
   it('works with only global scripts (no channel scripts)', async () => {
-    const store = makeStore();
     const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
     const config = makeConfig({
       scripts: {
         globalPreprocessor: { code: 'return rawData + "_GP";' },
-        globalPostprocessor: { code: 'logger.info("done"); return true;' },
+        globalPostprocessor: { code: 'globalChannelMap["post"] = msg;' },
       },
+      globalChannelMap: gcm,
     });
     const processor = new MessageProcessor(
-      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+      sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    const result = await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe('SENT');
+    expect(result.ok && result.value.status).toBe('SENT');
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MSG_GP', expect.any(AbortSignal), expect.any(String), undefined);
+    expect(gcm.get('post')).toBe('MSG_GP');
   });
 
   it('global preprocessor modifies content for downstream stages', async () => {
@@ -1080,7 +1107,7 @@ describe('MessageProcessor', () => {
     expect(sendFn).not.toHaveBeenCalled();
   });
 
-  it('stores sourceMap as JSON string after raw content', async () => {
+  it('stores the raw content and the sourceMap, as JSON, on the source row', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
     const processor = new MessageProcessor(
@@ -1089,40 +1116,9 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    // CONTENT_TYPE.SOURCE_MAP = 9
-    expect(store.storeContent).toHaveBeenCalledWith(
-      expect.any(String), 1, 0, 9, expect.any(String), 'JSON',
-    );
-  });
-
-  it('stores sourceMap with contentType=9', async () => {
-    const store = makeStore();
-    const sendFn = makeSendFn();
-    const processor = new MessageProcessor(
-      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
-    );
-
-    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
-
-    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
-    const sourceMapCall = calls.find((c) => c[3] === 9);
-    expect(sourceMapCall).toBeDefined();
-    expect(sourceMapCall![3]).toBe(9);
-  });
-
-  it('stores sourceMap with dataType=JSON', async () => {
-    const store = makeStore();
-    const sendFn = makeSendFn();
-    const processor = new MessageProcessor(
-      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
-    );
-
-    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
-
-    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
-    const sourceMapCall = calls.find((c) => c[3] === 9);
-    expect(sourceMapCall).toBeDefined();
-    expect(sourceMapCall![5]).toBe('JSON');
+    const { channelId } = makeConfig();
+    expect(store.storeContent).toHaveBeenCalledWith(channelId, 1, 0, CONTENT_TYPE.RAW, 'MSH|^~\\&|SENDER', 'RAW');
+    expect(store.storeContent).toHaveBeenCalledWith(channelId, 1, 0, CONTENT_TYPE.SOURCE_MAP, '{"remoteAddress":"127.0.0.1"}', 'JSON');
   });
 
   it('stores empty sourceMap {} as JSON', async () => {
@@ -1298,11 +1294,8 @@ describe('MessageProcessor reports where an error happened', () => {
 
       await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-      const transformedAt = order.indexOf('status:0:TRANSFORMED');
-      const firstSend = order.indexOf('send:1');
-      expect(order.indexOf('row:1')).toBeLessThan(transformedAt);
-      expect(order.indexOf('row:2')).toBeLessThan(transformedAt);
-      expect(transformedAt).toBeLessThan(firstSend);
+      expect(new Set(order.slice(0, 3))).toEqual(new Set(['row:0', 'row:1', 'row:2']));
+      expect(order.slice(3, 5)).toEqual(['status:0:TRANSFORMED', 'send:1']);
     });
 
     it('errors the message and sends nothing when a destination row cannot be created', async () => {
