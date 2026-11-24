@@ -705,6 +705,15 @@ describe('HttpReceiver compressed bodies', () => {
     expect(seen).toEqual([]);
   });
 
+  it.each([...CODINGS.map(([coding]) => coding), 'zstd'])('takes an empty body whose Content-Encoding is %s', async (coding) => {
+    const { seen } = await startRecording({ method: 'GET' });
+
+    const res = await sendRequest(TEST_PORT, { method: 'GET', headers: { 'content-encoding': coding } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual(['']);
+  });
+
   it('limits the bytes received as well as the decompressed size', async () => {
     const { seen } = await startRecording({ maxBodyBytes: 16 });
     const body = zlib.gzipSync('x'.repeat(16));

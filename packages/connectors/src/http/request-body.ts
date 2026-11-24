@@ -28,6 +28,8 @@ type BodyDecoder = (bytes: Buffer) => string;
 export async function readRequestBody(req: IncomingMessage, config: RequestBodyConfig, decompressor: Decompressor): Promise<RequestBody> {
   const received = await readBytes(req, config.maxBodyBytes);
   refuseTransferCoding(req.headers['transfer-encoding']);
+  // Nothing to decode: a GET may name a coding it has no body for.
+  if (received.length === 0) return { text: '', release: () => undefined };
   const coding = contentCoding(req.headers['content-encoding']);
   const decode = bodyDecoder(req.headers['content-type'], config.bodyCharset);
   if (!coding) return { text: storableText(decode(received)), release: () => undefined };
