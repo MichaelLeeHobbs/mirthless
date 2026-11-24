@@ -15,7 +15,7 @@ A pull request is compared with its merge base on `main`.
 | `.github/workflows/**`, `scripts/ci/**` | Everything, decided in the workflow without running the classifier, so a pull request that breaks the classifier still runs its tests |
 | Anything else: root `package.json`, `pnpm-lock.yaml`, `tsconfig*`, `eslint.config.js`, `docker/**`, `scripts/**`, a path with no rule | Everything |
 
-The server's docs guards that read the repository through `readRepoFile` (connector reference, access control, capabilities) run in the `docs` job on every change whose gate doesn't already run the server's tests. The capabilities page cites proof tests across the repo, so deleting a cited web test or e2e spec must still fail CI.
+The server's docs guards that read the repository through `readRepoFile` (connector reference, access control, capabilities) run in the `docs` job on every change whose gate doesn't already run the server's tests. The capabilities page cites proof tests across the repo, so deleting a cited web test or e2e spec must still fail CI. Another guard, `backup-commands.test.ts`, also runs the documented backup, check, repair and restore commands against a throwaway Postgres container (#361). That part runs only on GitHub Actions, or with `BACKUP_DOCS_DOCKER=1`.
 
 A package's jobs come from the workspace dependency graph: a job runs when a package it exercises, or one of that package's dependencies, changed. Connector integration exercises connectors; the Postgres lane, server; e2e, server and web.
 
