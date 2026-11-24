@@ -15,7 +15,8 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/db/migrations/**'],
+      // The watchdog's thread and its tests' child processes run where V8 coverage does not look.
+      exclude: ['src/**/*.test.ts', 'src/**/__tests__/support/**', 'src/lib/script-watchdog-worker.ts', 'src/db/migrations/**'],
       // ~1 point under measured coverage; only raised, toward the 95% target (D-193).
       thresholds: { statements: 57, branches: 58, functions: 71, lines: 57 },
     },

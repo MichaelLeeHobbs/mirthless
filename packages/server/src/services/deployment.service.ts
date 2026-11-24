@@ -531,7 +531,7 @@ async function redeployLatestRecord(ch: ChannelDeployEntry): Promise<boolean> {
 /**
  * Redeploy one enabled channel from its record at startup. Returns false when
  * the channel should be running and is not (a failed deploy, an unreadable
- * record); true when it deployed or, by design, was not redeployed.
+ * record, a hold); true when it deployed or, by design, was not redeployed.
  */
 async function redeployRecorded(ch: ChannelDeployEntry, recorded: RecordedDeployment | undefined): Promise<boolean> {
   if (recorded === undefined) {
@@ -542,6 +542,11 @@ async function redeployRecorded(ch: ChannelDeployEntry, recorded: RecordedDeploy
   if (recorded.kind === 'undeployed') {
     logger.info({ channelId: ch.id, channelName: ch.name }, 'Channel was undeployed before the restart, so it stays undeployed');
     return true;
+  }
+  if (recorded.kind === 'held') {
+    logger.error({ channelId: ch.id, channelName: ch.name, reason: recorded.reason }, 'Channel was not redeployed: the script watchdog is holding it');
+    emitNotRedeployed(ch, 'ERROR', `${recorded.reason} Fix the script, then deploy the channel.`);
+    return false;
   }
   if (recorded.kind === 'unreadable') {
     logger.error({ channelId: ch.id, channelName: ch.name, reason: recorded.reason }, 'Channel was not redeployed: its deployment record cannot be read');

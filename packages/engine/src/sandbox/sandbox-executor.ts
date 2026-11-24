@@ -11,6 +11,7 @@ import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
 import { ownString, thrownText } from './sandbox-value.js';
+import { watchScript } from './script-watch.js';
 
 export interface CompiledScript {
   readonly code: string;
@@ -21,6 +22,8 @@ export interface ExecutionOptions {
   /** Wall-clock milliseconds, covering synchronous and async work. */
   readonly timeout: number;
   readonly signal?: AbortSignal | undefined;
+  /** Whose script it is, for the watchdog (D-335). */
+  readonly channelId?: string | undefined;
 }
 
 export interface ExecutionResult {
@@ -594,6 +597,7 @@ function toHostError(e: unknown): Error {
 interface TimeLimit {
   readonly deadline: number;
   readonly ms: number;
+  readonly channelId: string | undefined;
 }
 
 function timedOut(limit: TimeLimit): Error {
@@ -631,7 +635,7 @@ class AsyncRun {
   readonly done = new Promise<void>((resolve, reject) => { this.resolveDone = resolve; this.rejectDone = reject; });
 
   /** Set by `start`; no IO can complete before the script has started. */
-  private limit: TimeLimit = { deadline: 0, ms: 0 };
+  private limit: TimeLimit = { deadline: 0, ms: 0, channelId: undefined };
 
   constructor(private readonly contextObj: vm.Context) {}
 
@@ -694,14 +698,14 @@ function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit): unkno
   const left = limit.deadline - Date.now();
   if (left <= 0) throw timedOut(limit);
   try {
-    return vm.runInContext(code, contextObj, { timeout: left, displayErrors: false }) as unknown;
+    return watchScript(left, limit.channelId, () => vm.runInContext(code, contextObj, { timeout: left, displayErrors: false }) as unknown);
   } catch (e) {
     throw isVmTimeout(e) ? timedOut(limit) : toHostError(e);
   }
 }
 
-function limitFromNow(ms: number): TimeLimit {
-  return { deadline: Date.now() + ms, ms };
+function limitFromNow({ timeout, channelId }: ExecutionOptions): TimeLimit {
+  return { deadline: Date.now() + timeout, ms: timeout, channelId };
 }
 
 /**
@@ -709,8 +713,8 @@ function limitFromNow(ms: number): TimeLimit {
  * because a busy host reached its result late (D-323). The limit still stops a looping toJSON
  * or getter in the result.
  */
-function collect(contextObj: vm.Context, ms: number): CollectedResult {
-  const out = runTimed('__collect()', contextObj, limitFromNow(ms));
+function collect(contextObj: vm.Context, options: ExecutionOptions): CollectedResult {
+  const out = runTimed('__collect()', contextObj, limitFromNow(options));
   if (typeof out !== 'string') throw new Error('Script result could not be read');
   const parsed = JSON.parse(out) as CollectedResult;
   if (parsed.err !== undefined) throw new Error(parsed.err);
@@ -757,13 +761,13 @@ export class VmSandboxExecutor implements SandboxExecutor {
       contextObj['__payloadJson'] = JSON.stringify(payload);
       // Building the globals has a limit of its own and the script's starts when the
       // script does, so one execute can take the setup time plus the limit (D-300).
-      const setup = limitFromNow(options.timeout);
+      const setup = limitFromNow(options);
       runTimed(BOOTSTRAP_SRC, contextObj, setup);
       runTimed(INVOKE_SRC, contextObj, setup);
 
       // Each script gets its own wall-clock limit. A caller's signal can cancel
       // it sooner, but can never let it run longer than `timeout`.
-      const limit = limitFromNow(options.timeout);
+      const limit = limitFromNow(options);
       const expiry = AbortSignal.timeout(options.timeout);
       const signal = options.signal ? AbortSignal.any([options.signal, expiry]) : expiry;
       run.start(limit);
@@ -782,7 +786,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
         run.finish(undefined, true);
       }
 
-      const collected = collect(contextObj, options.timeout);
+      const collected = collect(contextObj, options);
       return {
         returnValue: restore(state, collected.r),
         msg: restore(state, collected.m),

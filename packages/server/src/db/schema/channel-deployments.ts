@@ -6,7 +6,7 @@
 // One row per channel, replaced at each deploy; CHANNEL_DEPLOYED events keep
 // the history of who deployed what and when.
 
-import { pgTable, uuid, integer, jsonb, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, integer, jsonb, text, timestamp } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 
 export const channelDeployments = pgTable('channel_deployments', {
@@ -28,6 +28,8 @@ export const channelDeployments = pgTable('channel_deployments', {
   deployedAt: timestamp('deployed_at', { withTimezone: true }).notNull().defaultNow(),
   /** Set when someone undeploys the channel: a restart does not bring it back. Cleared by the next deploy. */
   undeployedAt: timestamp('undeployed_at', { withTimezone: true }),
+  /** Set by the script watchdog: a restart does not bring the channel back, and reports it (D-335). Cleared by the next deploy. */
+  heldReason: text('held_reason'),
 });
 
 /**

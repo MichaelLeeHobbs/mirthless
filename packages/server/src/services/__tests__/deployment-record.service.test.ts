@@ -35,7 +35,7 @@ function row(fields: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     channelId: ID, channelRevision: 4, format: DEPLOYMENT_FORMAT, channel: STORED_CHANNEL,
     codeTemplates: bundle.templates, globalScripts: bundle.globalScripts,
-    deployedBy: null, deployedAt: new Date(), undeployedAt: null, ...fields,
+    deployedBy: null, deployedAt: new Date(), undeployedAt: null, heldReason: null, ...fields,
   };
 }
 
@@ -64,6 +64,18 @@ describe('DeploymentRecordService.listRecorded', () => {
 
   it('reports an undeployed channel without reading its bundle', async () => {
     rows = [row({ undeployedAt: new Date(), format: 999 })];
+
+    expect(await readOne()).toEqual({ kind: 'undeployed' });
+  });
+
+  it('reports a channel the script watchdog holds without reading its bundle', async () => {
+    rows = [row({ heldReason: 'A script was stuck.', format: 999 })];
+
+    expect(await readOne()).toEqual({ kind: 'held', reason: 'A script was stuck.' });
+  });
+
+  it('reports a held channel someone undeployed as undeployed', async () => {
+    rows = [row({ heldReason: 'A script was stuck.', undeployedAt: new Date() })];
 
     expect(await readOne()).toEqual({ kind: 'undeployed' });
   });

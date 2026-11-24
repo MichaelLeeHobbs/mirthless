@@ -1,0 +1,1 @@
+ALTER TABLE "channel_deployments" ADD COLUMN "held_reason" text;

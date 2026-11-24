@@ -1324,7 +1324,7 @@ export class EngineManager {
       globalChannelMap: gcmBefore, globalMap: globalBefore, configMap: maps.configMap,
       extras: { channelId: channel.id, channelName: channel.name, ...extras },
     };
-    const result = await this.sandbox.execute(script, context, { timeout: channel.scriptTimeoutSeconds * 1_000 });
+    const result = await this.sandbox.execute(script, context, { timeout: channel.scriptTimeoutSeconds * 1_000, channelId: channel.id });
     if (result.ok) {
       maps.gcm.applyChanges(gcmBefore, result.value.mapUpdates.globalChannelMap);
       maps.globalMap.applyChanges(globalBefore, result.value.mapUpdates.globalMap);

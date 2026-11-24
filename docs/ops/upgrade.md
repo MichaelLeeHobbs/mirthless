@@ -92,7 +92,7 @@ An install upgrading to it has no records yet. On the first start after the upgr
 After that start:
 
 - A channel comes back as it was last deployed. A code template or global script change reaches a channel only when the channel is deployed again.
-- A channel you undeploy stays undeployed after a restart.
+- A channel you undeploy stays undeployed after a restart. So does one whose script hung the server, until it is deployed again ([operations](resource-and-observability.md#a-script-that-hangs-the-server)).
 - An enabled channel that has never been deployed is not deployed at startup; the log and a `CHANNEL_NOT_REDEPLOYED` event name it. This includes channels restored from a backup onto a new server: deploy them after the restore.
 - Enabling or disabling a channel needs `channels:deploy`.
 
