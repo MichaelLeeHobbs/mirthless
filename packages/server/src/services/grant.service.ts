@@ -9,8 +9,9 @@
 // - within rule: an actor may assign a role only when they hold every permission it gives
 //   over the assignment's scope, and may add a permission to a role only when they hold it
 //   over every scope the role is assigned on;
-// - lasting rule (D-330): what an actor gives, they must hold for as long as it lasts. A role
-//   assigned to anyone, a single role and a channel's groups have no end;
+// - lasting rule (D-330): what an actor gives, they must hold for as long as it lasts. A
+//   permission added to an assigned role, a single role given to a user and a channel added
+//   to a group have no end;
 // - target rule: an actor may act on a user only when that user's permissions are all
 //   among the actor's own;
 // - nobody changes their own role (user.service), and the admin role is locked.
@@ -290,15 +291,14 @@ interface ResolvedAssignment {
   readonly expiresAt: Date | null;
 }
 
-function sameScope(a: ScopeIds, b: ScopeIds): boolean {
-  if (a === null || b === null) return a === b;
-  const inA = new Set(a);
-  return inA.size === new Set(b).size && b.every((g) => inA.has(g));
+function scopeWithin(inner: ScopeIds, outer: ScopeIds): boolean {
+  if (outer === null) return true;
+  return inner !== null && inner.every((g) => outer.includes(g));
 }
 
-/** Already given, at least as long: resending it gives nothing new. */
+/** Already given, at least as widely and as long: sending it again gives nothing new. */
 function isKept(current: readonly AssignmentView[], input: AssignmentInput, expiresAt: Date | null): boolean {
-  return current.some((c) => c.live && c.roleId === input.roleId && sameScope(c.groupIds, input.groupIds)
+  return current.some((c) => c.live && c.roleId === input.roleId && scopeWithin(input.groupIds, c.groupIds)
     && (c.expiresAt === null || (expiresAt !== null && expiresAt.getTime() <= Date.parse(c.expiresAt))));
 }
 
@@ -594,8 +594,9 @@ export class GrantService {
    * Recorded like any membership change: who could reach what is rebuilt from these rows.
    * The channel row locks first, as ChannelGroupService.setChannelGroups locks it, so a
    * restore and a save of the same channel's groups queue and each records the before the
-   * other left. No grant rule applies: system:restore can replace any channel's scripts, so
-   * its holder already reaches every channel.
+   * other left. system:restore can replace any channel's scripts, so its holder already
+   * reaches every channel, and needs no other grant; but the membership lasts, so where it
+   * gives access they must hold system:restore with no end (D-330).
    */
   static async restoreMembership(channelId: string, groupId: string, actor: GrantActor): Promise<void> {
     await db.transaction(async (tx) => {
@@ -604,6 +605,14 @@ export class GrantService {
       if (!channel) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
       const before = (await tx.select({ groupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
         .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId).sort();
+      // FOR SHARE, as applyChannelGroups locks it, so an assignment made meanwhile is seen.
+      await tx.select({ id: channelGroups.id }).from(channelGroups).where(eq(channelGroups.id, groupId)).for('share');
+      if ((await permissionsGrantedThrough(tx, [groupId])).length > 0) {
+        const lasting = await actorGrants(tx, actor.userId, null);
+        if (!holdsOver(lasting, PERMISSIONS.SYSTEM_RESTORE, null)) {
+          throw new ServiceError('FORBIDDEN', 'Restoring a membership that gives access needs system:restore with no end time', { missing: [PERMISSIONS.SYSTEM_RESTORE] });
+        }
+      }
       await tx.insert(channelGroupMembers).values({ channelGroupId: groupId, channelId });
       await AuditService.recordInTx(tx, {
         action: AUDIT_ACTION.CHANNEL_GROUPS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, channelId, ipAddress: actor.ipAddress ?? null,
@@ -682,7 +691,7 @@ export class GrantService {
    * Adding a channel to a group is a grant (D-310, plan section 2): everyone the group's live
    * assignments cover gains those permissions on the channel, so the actor must already hold
    * every one of them there, with no end, since the membership has none (D-330). So an API key,
-   * which always ends, can add a channel only to a group that gives nobody access. Removing narrows access and needs only the route's
+   * which always ends, can add a channel only to a group that grants nothing. Removing narrows access and needs only the route's
    * channels:write. Returns the groups before.
    */
   static async applyChannelGroups(tx: AuditTransaction, channelId: string, wanted: readonly string[], actor: GrantActor): Promise<readonly string[]> {

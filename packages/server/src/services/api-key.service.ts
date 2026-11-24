@@ -76,8 +76,9 @@ async function readKeys(reader: Reader, id?: string): Promise<ApiKeyView[]> {
 
 async function assertActorCovers(tx: AuditTransaction, actorId: string | null, permissions: readonly Permission[], scope: ScopeIds, expiresAt: Date): Promise<void> {
   assertActorHoldsOver(await actorGrants(tx, actorId), 'this key', permissions, scope);
+  const atEnd = await actorGrants(tx, actorId, expiresAt);
   try {
-    assertActorHoldsOver(await actorGrants(tx, actorId, expiresAt), 'this key', permissions, scope, expiresAt);
+    assertActorHoldsOver(atEnd, 'this key', permissions, scope, expiresAt);
   } catch {
     throw new ServiceError('FORBIDDEN', 'A key cannot outlast your own access: some of what it holds ends for you before the key would. Pick an earlier end.');
   }
