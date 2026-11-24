@@ -974,6 +974,37 @@ describe('HttpReceiver bodies that are not valid in their charset', () => {
     expect(seen).toEqual([]);
   });
 
+  // PostgreSQL text cannot hold U+0000, so the store would fail and the sender would retry forever.
+  it.each([
+    ['utf-8', undefined, Buffer.from('PID|1\0|Doe')],
+    ['latin1', undefined, Buffer.concat([PDF, Buffer.alloc(4)])],
+    ['windows-1252', undefined, Buffer.concat([PDF, Buffer.alloc(4)])],
+    ['utf-8', 'ISO-8859-1', Buffer.concat([PDF, Buffer.alloc(4)])],
+    ['utf-8', 'utf-8', Buffer.from('PID|1\0|Doe')],
+    ['utf-8', undefined, Buffer.from('PID|1', 'utf16le')],
+  ] as const)('refuses text that holds U+0000: bodyCharset %s, declared %s', async (bodyCharset, declared, body) => {
+    const { seen, log } = await startRecording({ bodyCharset });
+
+    const res = await sendRequest(TEST_PORT, { body, headers: { 'content-type': declared ? `text/plain; charset=${declared}` : 'text/plain' } });
+
+    expect(res.status).toBe(415);
+    expect(res.body).toContain('U+0000');
+    expect(res.body).toContain('bodyCharset');
+    expect(seen).toEqual([]);
+    expect(log.warnings).toHaveLength(1);
+  });
+
+  it('keeps zero bytes with base64, and UTF-16 text that declares itself', async () => {
+    const { seen } = await startRecording({ bodyCharset: 'base64' });
+    await sendRequest(TEST_PORT, { body: Buffer.alloc(3) });
+    expect(seen.map((raw) => raw.content)).toEqual(['AAAA']);
+    await receiver?.onStop();
+
+    const text = await startRecording();
+    await sendRequest(TEST_PORT, { body: Buffer.from('PID|1', 'utf16le'), headers: { 'content-type': 'text/plain; charset=utf-16le' } });
+    expect(text.seen.map((raw) => raw.content)).toEqual(['PID|1']);
+  });
+
   it('keeps a byte order mark, declared charset or not', async () => {
     const { seen } = await startRecording();
     const text = '\ufeffMSH|1';
