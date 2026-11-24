@@ -147,9 +147,10 @@ export interface DestinationIdentity {
 }
 
 /**
- * The stored destination a file's one is, if that is certain. A metaDataId
- * alone does not say: every save from the editor renumbers the destinations by
- * position. Nor does a name that two of them have.
+ * The stored destination at the file's id and name. A metaDataId alone does not
+ * say which one it is: every save from the editor renumbers the destinations by
+ * position. Nor does a name that two of them have. Whoever saved the channel
+ * since the export may have put another credential there, which is then kept.
  */
 export function sameDestination<T extends DestinationIdentity>(
   imported: DestinationIdentity, inFile: readonly DestinationIdentity[], stored: readonly T[],

@@ -154,6 +154,7 @@ A backup is complete or it fails: if a channel or a resource cannot be read, or 
   re-created) out of band. This is intentional: config backups should be safe to store
   and diff without leaking secrets.
 - **Secret settings** (the alert email password) — exported as `__REDACTED__`. A restore keeps the value the server has, except that restoring another `smtp.host` clears the alert email password (the section counts it as skipped): type it again on the Settings page.
+- **Channel connector credentials** — exported as `__REDACTED__`. A restore that overwrites keeps the stored one only while the connector is the same one and still goes to the same place as the same user, and clears it otherwise; a channel created by a restore has none. See [credentials](api-automation.md#credentials).
 - **JWT secret, database credentials, and other environment secrets** — these live in
   `.env` / your secrets manager, never in the backup.
 
