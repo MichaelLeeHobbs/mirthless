@@ -200,16 +200,17 @@ describe('HttpReceiver stop', () => {
 
   it('gives a body that comes after it no time once the messages before it are answered', async () => {
     fakeTimers();
-    const requests = watchRequests();
-    onTestFinished(requests.end);
     const { dispatch, letGo } = holding();
     const seen = await start({}, dispatch);
     const working = await connect(`${head(5)}first`);
     const late = await connect('');
     await until(() => { expect(seen).toHaveLength(1); });
+    await settled();
+    const requests = watchRequests();
+    onTestFinished(requests.end);
     const stopped = receiver!.onStop();
     late.socket.write(`${head(100)}MSH|`);
-    await until(() => { expect(requests.all).toHaveLength(2); });
+    await until(() => { expect(requests.all).toHaveLength(1); });
 
     letGo();
 
