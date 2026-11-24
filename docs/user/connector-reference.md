@@ -103,6 +103,8 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 
 The source runs an HTTP or HTTPS server on its own port and accepts requests on one path and one method. A wrong method gets 405, a wrong path 404, failed authentication 401, a body over `maxBodyBytes` 413, and a request to a channel that has just been undeployed 503. An accepted request answers `responseStatusCode` (a filtered message counts as accepted); a pipeline failure, or any other error in handling it, answers `errorStatusCode`.
 
+A stop or a pause takes no new messages: one that comes on a connection still open gets 503, and the connection is closed. A message already in the pipeline is answered first, however long it takes, and its sender then has 15 seconds to read the answer. A body still arriving has 5 seconds, and then its sender gets 503 (413 if it is over `maxBodyBytes` by then). A halt closes every connection at once.
+
 The source keeps a body whole or refuses it, and a refused body is never stored (D-334 in [DECISIONS.md](../progress/DECISIONS.md)):
 
 - A body with `Content-Encoding` `gzip` (or `x-gzip`), `deflate` (the zlib format) or `br` is decompressed. Any other coding, or two codings, gets 415. A body that does not decompress, or has bytes after the compressed data, gets 400. A `Transfer-Encoding` other than `chunked` gets 501.

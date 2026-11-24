@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, onTestFinished, vi } from 'vitest';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as zlib from 'node:zlib';
@@ -14,6 +14,7 @@ import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
+import { Decompressor } from '../decompression.js';
 import { withTimeout } from '../../timeout.js';
 
 const TEST_PORT = 18661;
@@ -817,6 +818,16 @@ describe('HttpReceiver limits what compressed bodies can hold', () => {
     expect((await post(FULL, BR)).status).toBe(200);
   });
 
+  it('stops decompressing a body once it is refused', async () => {
+    let engine: zlib.Gunzip | undefined;
+    const coding = { name: 'gzip', createEngine: (options: zlib.ZlibOptions): zlib.Gunzip => (engine = zlib.createGunzip(options)) };
+
+    const refused = new Decompressor(1024).run(coding, zlib.gzipSync(Buffer.alloc(LIMIT)), () => false);
+
+    await expect(refused).rejects.toMatchObject({ status: 413 });
+    expect(engine?.destroyed).toBe(true);
+  });
+
   it('decompresses at most two bodies at once, and then the rest', async () => {
     const { seen } = await startRecording();
     closeGunzipGate();
@@ -1222,6 +1233,10 @@ describe('HttpReceiver stopped while a body is being decompressed', () => {
   });
 
   it('dispatches nothing for a sender whose connection closed, who will send it again', async () => {
+    let serverSide: net.Socket | undefined;
+    const watch = (message: unknown): void => { serverSide = (message as { request: http.IncomingMessage }).request.socket; };
+    diagnostics.subscribe('http.server.request.start', watch);
+    onTestFinished(() => { diagnostics.unsubscribe('http.server.request.start', watch); });
     const { seen } = await startRecording();
     closeGunzipGate();
     const body = zlib.gzipSync(HL7);
@@ -1231,9 +1246,9 @@ describe('HttpReceiver stopped while a body is being decompressed', () => {
     });
     await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); }, WAIT);
 
+    const closed = new Promise<void>((resolve) => { serverSide?.once('close', resolve); });
     socket.destroy();
-    // The server has seen the close once a stop has nothing left to wait for.
-    await withTimeout(receiver!.onStop(), 2_000, 'HTTP source stop');
+    await closed;
     await finishGunzip();
 
     expect(seen).toEqual([]);
