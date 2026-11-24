@@ -684,11 +684,15 @@ describe('HttpReceiver compressed bodies', () => {
     expect(seen).toEqual([]);
   });
 
-  // zlib and brotli stop at the end of the stream without an error, which would drop the second message.
-  it.each(CODINGS.filter(([coding]) => !coding.includes('gzip')))('refuses bytes after the end of a %s body instead of dropping them', async (coding, compress) => {
+  // Node drops them without an error, except that gunzip takes a further member, and refuses bytes other than zero.
+  it.each(CODINGS.flatMap(([coding, compress]) => [
+    [coding, 'text', compress, Buffer.from('MSH|2\r')],
+    [coding, 'zero bytes', compress, Buffer.alloc(8)],
+    ...(coding.includes('gzip') ? [] : [[coding, 'a second stream', compress, compress('MSH|2\r')] as const]),
+  ] as const))('refuses a %s body with %s after its end instead of dropping them', async (coding, _what, compress, extra) => {
     const { seen } = await startRecording();
 
-    const res = await sendRequest(TEST_PORT, { body: Buffer.concat([compress('MSH|1\r'), compress('MSH|2\r')]), headers: { 'content-encoding': coding } });
+    const res = await sendRequest(TEST_PORT, { body: Buffer.concat([compress('MSH|1\r'), extra]), headers: { 'content-encoding': coding } });
 
     expect(res.status).toBe(400);
     expect(seen).toEqual([]);
