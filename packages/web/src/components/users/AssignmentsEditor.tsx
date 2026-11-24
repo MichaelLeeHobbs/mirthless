@@ -122,7 +122,7 @@ let nextRowKey = 0;
 function newDraft(roles: readonly RoleSummary[]): AssignmentDraft {
   const first = roles.find((r) => !r.admin) ?? roles[0];
   nextRowKey += 1;
-  return { key: `new-${String(nextRowKey)}`, roleId: first?.id ?? '', groupIds: null, expiresAt: '', reason: '', expired: false };
+  return { key: `new-${String(nextRowKey)}`, roleId: first?.id ?? '', groupIds: null, expiresAt: '', savedExpiresAt: null, reason: '', expired: false };
 }
 
 export function AssignmentsEditor({ value, onChange }: AssignmentsEditorProps): ReactNode {

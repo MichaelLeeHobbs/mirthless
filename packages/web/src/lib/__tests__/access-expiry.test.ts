@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { EXPIRY_WARNING_MS, MAX_TIMER_MS, expiryState, nextTimerDelay } from '../access-expiry.js';
+import { MAX_TIMER_DELAY_MS } from '@galvanigraph/core-models';
+import { EXPIRY_WARNING_MS, expiryState, nextTimerDelay } from '../access-expiry.js';
 
 const NOW = Date.parse('2026-11-17T12:00:00Z');
 
@@ -24,7 +25,7 @@ describe('nextTimerDelay', () => {
   });
 
   it('never waits past what setTimeout honours, nor less than a second', () => {
-    expect(nextTimerDelay(NOW + 90 * 24 * 3600 * 1000, NOW)).toBe(MAX_TIMER_MS);
+    expect(nextTimerDelay(NOW + 90 * 24 * 3600 * 1000, NOW)).toBe(MAX_TIMER_DELAY_MS);
     expect(nextTimerDelay(NOW + 10, NOW)).toBe(1000);
   });
 });

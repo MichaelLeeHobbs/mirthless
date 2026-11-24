@@ -8,6 +8,7 @@
 import { z } from 'zod/v4';
 import {
   connectorPortSchema,
+  trimmedTextSchema,
   wholeNumberSchema,
   sourceCommonProperties,
   destinationCommonProperties,
@@ -62,7 +63,7 @@ export const tcpMllpSourceObjectSchema = z.strictObject({
 
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const tcpMllpDestinationObjectSchema = z.strictObject({
-  host: z.string().trim().min(1),
+  host: trimmedTextSchema,
   port: connectorPortSchema,
   maxConnections: wholeNumberSchema(1).default(5),
   /** Milliseconds to wait for the response. */

@@ -409,7 +409,7 @@ The receiver never read it: an email arrives as the mail server holds it, attach
 
 ## An alert's regex must compile (#133)
 
-An alert whose regex filter does not compile never fired, and nothing said so. Saving one is now refused with the reason. One saved earlier is kept, still never fires, and logs a warning when a channel it covers deploys: look for "its regex filter does not compile" after the upgrade. Restoring a backup that would create or overwrite such an alert reports it and restores the others; one the server already has is skipped as before.
+An alert whose regex filter does not compile never fired, and nothing said so. Saving one is now refused with the reason. One saved earlier is kept, still never fires, and logs a warning when a channel it covers deploys: look for "its regex filter does not compile" after the upgrade. Restoring a backup that would create or overwrite such an alert reports it and restores the others; in Skip mode, one the server already has is skipped as before.
 
 ## Standard upgrade (Docker)
 

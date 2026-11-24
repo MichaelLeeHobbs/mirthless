@@ -1028,15 +1028,11 @@ export class EngineManager {
       },
     };
 
-    const CT_RAW = 1;
-    const CT_SENT = 5;
-    const CT_SOURCE_MAP = 9;
-
     // The original sourceMap (e.g. correlationId from an upstream channel) is
     // stored with the message; carry it into the reprocess. It may be absent
     // under storage modes that do not keep it, in which case it starts empty.
     const loadSourceMap = async (channelId: string, messageId: number): Promise<Record<string, unknown>> => {
-      const stored = await store.loadContent(channelId, messageId, 0, CT_SOURCE_MAP);
+      const stored = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.SOURCE_MAP);
       if (!stored.ok || stored.value === null) return {};
       try {
         const parsed: unknown = JSON.parse(stored.value);
@@ -1047,7 +1043,7 @@ export class EngineManager {
     };
 
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
-      const raw = await store.loadContent(channelId, messageId, 0, CT_RAW);
+      const raw = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.RAW);
       if (!raw.ok || raw.value === null) {
         return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
       }
@@ -1079,7 +1075,7 @@ export class EngineManager {
     };
 
     const redispatchDestination = async (channelId: string, messageId: number, metaDataId: number): Promise<Result<void>> => {
-      const sent = await store.loadContent(channelId, messageId, metaDataId, CT_SENT);
+      const sent = await store.loadContent(channelId, messageId, metaDataId, CONTENT_TYPE.SENT);
       if (!sent.ok) {
         return { ok: false, value: null, error: sent.error } as Result<void>;
       }

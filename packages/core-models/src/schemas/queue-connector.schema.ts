@@ -4,12 +4,11 @@
 import { z } from 'zod/v4';
 import {
   connectorPortSchema,
+  trimmedTextSchema,
   wholeNumberSchema,
   sourceCommonProperties,
   destinationCommonProperties,
 } from './connector-property-fields.js';
-
-const required = z.string().trim().min(1);
 
 export const clientTlsRefSchema = z.strictObject({
   /** Empty: the system trust store. */
@@ -44,14 +43,14 @@ export type KafkaSaslMechanism = (typeof KAFKA_SASL_MECHANISMS)[number];
 export const KAFKA_START_FROM = ['EARLIEST', 'LATEST'] as const;
 export type KafkaStartFrom = (typeof KAFKA_START_FROM)[number];
 
-const brokers = required.refine(
+const brokers = trimmedTextSchema.refine(
   (value) => value.split(',').every((entry) => /^[^\s:]+:\d{1,5}$/.test(entry.trim())),
   { message: 'must be host:port pairs separated by commas' },
 );
 
 const kafkaConnection = {
   brokers,
-  clientId: required.default('galvanigraph'),
+  clientId: trimmedTextSchema.default('galvanigraph'),
   useTls: z.boolean().default(false),
   tls: clientTlsRefSchema.optional(),
   saslMechanism: z.enum(KAFKA_SASL_MECHANISMS).default('NONE'),
@@ -67,8 +66,8 @@ const saslUsernameIssue = { message: 'SASL needs a username', path: ['saslUserna
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const kafkaSourceObjectSchema = z.strictObject({
   ...kafkaConnection,
-  topic: required,
-  groupId: required,
+  topic: trimmedTextSchema,
+  groupId: trimmedTextSchema,
   startFrom: z.enum(KAFKA_START_FROM).default('EARLIEST'),
   charset,
   maxStoreAttempts,
@@ -81,7 +80,7 @@ export type KafkaSourceProperties = z.infer<typeof kafkaSourceObjectSchema>;
 export const kafkaDestinationObjectSchema = z.strictObject({
   ...kafkaConnection,
   /** May use `${name}`. */
-  topic: required,
+  topic: trimmedTextSchema,
   /**
    * May use `${name}`; empty sends no key. Not named `key`: secret redaction
    * masks a property of that name (the TLS key PEM).
@@ -94,7 +93,7 @@ export const kafkaDestinationPropertiesSchema = kafkaDestinationObjectSchema.ref
 export type KafkaDestinationProperties = z.infer<typeof kafkaDestinationObjectSchema>;
 
 const amqpConnection = {
-  host: required,
+  host: trimmedTextSchema,
   port: connectorPortSchema.default(5672),
   vhost: z.string().default('/'),
   username: z.string().default(''),
@@ -107,7 +106,7 @@ const amqpConnection = {
 export const amqpSourcePropertiesSchema = z.strictObject({
   ...amqpConnection,
   /** An existing queue; the connector never declares one. */
-  queue: required,
+  queue: trimmedTextSchema,
   charset,
   maxStoreAttempts,
   ...sourceCommonProperties,

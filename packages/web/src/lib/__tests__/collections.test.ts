@@ -4,8 +4,6 @@ import {
   parseFields,
   fieldColumn,
   nextSort,
-  toDateTimeLocal,
-  fromDateTimeLocal,
   filledFields,
   payloadPreview,
 } from '../collections.js';
@@ -53,22 +51,6 @@ describe('nextSort', () => {
   it('starts a text column A-Z and a date column newest first', () => {
     expect(nextSort({ sort: 'createdAt', order: 'desc' }, fieldColumn('accession'))).toEqual({ sort: 'fields.accession', order: 'asc' });
     expect(nextSort({ sort: 'payload', order: 'asc' }, 'expireAt')).toEqual({ sort: 'expireAt', order: 'desc' });
-  });
-});
-
-describe('toDateTimeLocal / fromDateTimeLocal', () => {
-  it('round-trips an instant through the local datetime input to the minute', () => {
-    const iso = '2026-10-27T14:05:00.000Z';
-    expect(fromDateTimeLocal(toDateTimeLocal(iso))).toBe(iso);
-  });
-
-  it('treats blank as never expiring', () => {
-    expect(toDateTimeLocal(null)).toBe('');
-    expect(fromDateTimeLocal('  ')).toBeNull();
-  });
-
-  it('returns undefined for a value it cannot read', () => {
-    expect(fromDateTimeLocal('not a date')).toBeUndefined();
   });
 });
 

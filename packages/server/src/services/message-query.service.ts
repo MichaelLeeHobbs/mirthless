@@ -1,6 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, sql } from 'drizzle-orm';
-import type { MessageSearchQuery } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, type ContentType, type MessageSearchQuery } from '@galvanigraph/core-models';
 import { db } from '../lib/db.js';
 import { ServiceError } from '../lib/service-error.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
@@ -65,21 +65,21 @@ export interface MessageCounts {
   readonly errored: number;
 }
 
-const CONTENT_TYPE_NAMES: Record<number, string> = {
-  1: 'raw',
-  2: 'processed',
-  3: 'transformed',
-  4: 'encoded',
-  5: 'sent',
-  6: 'response',
-  7: 'responseTransformed',
-  8: 'responseSent',
-  9: 'sourceMap',
-  10: 'channelMap',
-  11: 'error',
-  12: 'responseError',
-  13: 'processingError',
-};
+const CONTENT_TYPE_NAMES: Readonly<Record<number, string>> = {
+  [CONTENT_TYPE.RAW]: 'raw',
+  [CONTENT_TYPE.PROCESSED]: 'processed',
+  [CONTENT_TYPE.TRANSFORMED]: 'transformed',
+  [CONTENT_TYPE.ENCODED]: 'encoded',
+  [CONTENT_TYPE.SENT]: 'sent',
+  [CONTENT_TYPE.RESPONSE]: 'response',
+  [CONTENT_TYPE.RESPONSE_TRANSFORMED]: 'responseTransformed',
+  [CONTENT_TYPE.RESPONSE_SENT]: 'responseSent',
+  [CONTENT_TYPE.SOURCE_MAP]: 'sourceMap',
+  [CONTENT_TYPE.CHANNEL_MAP]: 'channelMap',
+  [CONTENT_TYPE.ERROR]: 'error',
+  [CONTENT_TYPE.RESPONSE_ERROR]: 'responseError',
+  [CONTENT_TYPE.PROCESSING_ERROR]: 'processingError',
+} satisfies Record<ContentType, string>;
 
 export class MessageQueryService {
   static async searchMessages(

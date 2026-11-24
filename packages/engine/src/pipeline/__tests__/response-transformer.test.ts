@@ -80,7 +80,7 @@ describe('Response Transformer', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.destinationResults[0]!.response).toBe('original response');
-    // CT_RESPONSE = 6, CT_RESPONSE_TRANSFORMED = 7
+    // CONTENT_TYPE.RESPONSE = 6, CONTENT_TYPE.RESPONSE_TRANSFORMED = 7
     const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const responseStores = storeContentCalls.filter((c: unknown[]) => c[3] === 6);
     const transformedStores = storeContentCalls.filter((c: unknown[]) => c[3] === 7);
@@ -88,7 +88,7 @@ describe('Response Transformer', () => {
     expect(transformedStores).toHaveLength(0);
   });
 
-  it('runs response transformer and stores CT_RESPONSE_TRANSFORMED', async () => {
+  it('runs response transformer and stores CONTENT_TYPE.RESPONSE_TRANSFORMED', async () => {
     const store = makeStore();
     const sendFn = makeSendFn({ status: 'SENT', content: 'original response' });
     const responseTransformerScript = makeScript('return "transformed: " + msg;');
@@ -191,7 +191,7 @@ describe('Response Transformer', () => {
     const errorStores = storeContentCalls.filter((c: unknown[]) => c[3] === 13);
     expect(errorStores).toHaveLength(1);
     expect(onError).toHaveBeenCalledOnce();
-    // No CT_RESPONSE_TRANSFORMED (7) was stored.
+    // No CONTENT_TYPE.RESPONSE_TRANSFORMED (7) was stored.
     expect(storeContentCalls.filter((c: unknown[]) => c[3] === 7)).toHaveLength(0);
   });
 
@@ -294,7 +294,7 @@ describe('Response Transformer', () => {
     expect(result.value.destinationResults[0]!.response).toBe('original');
   });
 
-  it('stores CT_RESPONSE_TRANSFORMED with correct metaDataId', async () => {
+  it('stores CONTENT_TYPE.RESPONSE_TRANSFORMED with correct metaDataId', async () => {
     const store = makeStore();
     const sendFn = makeSendFn({ status: 'SENT', content: 'resp' });
     const rtScript = makeScript('return "tx-resp";');
