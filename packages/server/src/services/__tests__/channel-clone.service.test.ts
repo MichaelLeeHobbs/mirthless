@@ -133,6 +133,27 @@ const DESTINATIONS = [
   },
 ];
 
+const RULE = {
+  enabled: false, name: 'ADT only', operator: 'OR', type: 'RULE_BUILDER', script: 'return msg.MSH[9] === "ADT";', language: 'TYPESCRIPT',
+  field: 'MSH.9', condition: 'EQUALS', values: ['ADT', 'ORU'],
+};
+
+/** As a JavaScript rule is stored: the Rule Builder's fields are null. */
+const SCRIPT_RULE = {
+  enabled: true, name: 'By script', operator: 'AND', type: 'JAVASCRIPT', script: 'return true;', language: 'JAVASCRIPT',
+  field: null, condition: null, values: null,
+};
+
+const TRANSFORMER = {
+  inboundDataType: 'JSON', outboundDataType: 'XML', inboundProperties: { in: 1 }, outboundProperties: { out: 2 },
+  inboundTemplate: 'in template', outboundTemplate: 'out template',
+};
+
+const STEP = {
+  enabled: false, name: 'Set MRN', type: 'MAPPER', script: 'tmp.mrn = msg.PID[3];', language: 'TYPESCRIPT',
+  sourceField: 'PID.3', targetField: 'mrn', defaultValue: 'none', mapping: 'COPY',
+};
+
 const METADATA_COLUMNS = [
   { id: 'm1', name: 'patientId', dataType: 'STRING', mappingExpression: 'msg.PID.3' },
   { id: 'm2', name: 'eventDate', dataType: 'TIMESTAMP', mappingExpression: null },
@@ -216,17 +237,18 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
   mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
     let insertCallCount = 0;
     const tx = {
-      insert: vi.fn().mockImplementation(() => {
+      insert: vi.fn().mockImplementation((table: unknown) => {
         insertCallCount++;
         // Channel insert (call 1) returns the created row; later inserts return
         // []. Every .values() supports both `.returning()` and direct await.
         const rows = insertCallCount === 1 ? [channel] : [];
         return {
-          values: vi.fn().mockReturnValue(
-            Object.assign(Promise.resolve(rows), {
+          values: (values: unknown) => {
+            txInserts.push({ table, values });
+            return Object.assign(Promise.resolve(rows), {
               returning: vi.fn().mockResolvedValue(rows),
-            }),
-          ),
+            });
+          },
         };
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
@@ -235,6 +257,9 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
     return fn(tx);
   });
 }
+
+let txInserts: { table: unknown; values: unknown }[] = [];
+const insertedChannels = (): readonly unknown[] => txInserts.filter((i) => i.table === channels).map((i) => i.values);
 
 interface RecordedUpdate { table: unknown; values: Record<string, unknown>; condition: unknown }
 let txUpdates: RecordedUpdate[] = [];
@@ -250,6 +275,7 @@ const txUpdate = vi.fn((table: unknown) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
+  txInserts = [];
   txUpdates = [];
   mockSet.mockReturnValue({ where: mockUpdateWhere });
   mockUpdateWhere.mockResolvedValue(undefined);
@@ -277,7 +303,7 @@ describe('ChannelService.clone', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.id).toBe(CLONED_ID);
-    expect(result.value.name).toBe('Cloned Channel');
+    expect(insertedChannels()).toEqual([expect.objectContaining({ name: 'Cloned Channel' })]);
   });
 
   it('sets enabled to false on the cloned channel', async () => {
@@ -290,13 +316,11 @@ describe('ChannelService.clone', () => {
     const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    // Shows only that create ran; 'copies channel properties from source' checks enabled: false.
-    expect(mockTransaction).toHaveBeenCalledOnce();
+    expect(insertedChannels()).toEqual([expect.objectContaining({ enabled: false })]);
   });
 
   it('copies channel properties from source', async () => {
-    const source = makeChannel();
+    const source = makeChannel({ responseConnectorName: 'Dest 1' });
     const cloned = makeClonedChannel();
 
     setupGetByIdMocks(source);
@@ -317,13 +341,19 @@ describe('ChannelService.clone', () => {
     expect(createInput.sourceConnectorType).toBe('TCP_MLLP');
     expect(createInput.sourceConnectorProperties).toEqual({ port: 6661 });
     expect(createInput.responseMode).toBe('AUTO_AFTER_DESTINATIONS');
-    expect(createInput.properties?.initialState).toBe('STARTED');
-    expect(createInput.properties?.messageStorageMode).toBe('PRODUCTION');
-    // An encrypted channel's clone stays encrypted (no silent plaintext PHI).
-    expect(createInput.properties?.encryptData).toBe(true);
-    expect(createInput.properties?.pruningEnabled).toBe(true);
-    expect(createInput.properties?.pruningMaxAgeDays).toBe(30);
-    expect(createInput.properties?.pruningArchiveEnabled).toBe(true);
+    expect(createInput.responseConnectorName).toBe('Dest 1');
+    expect(createInput.properties).toEqual({
+      initialState: 'STARTED',
+      messageStorageMode: 'PRODUCTION',
+      // An encrypted channel's clone stays encrypted (no silent plaintext PHI).
+      encryptData: true,
+      removeContentOnCompletion: true,
+      removeAttachmentsOnCompletion: false,
+      pruningEnabled: true,
+      pruningMaxAgeDays: 30,
+      pruningArchiveEnabled: true,
+      scriptTimeoutSeconds: 30,
+    });
 
     createSpy.mockRestore();
   });
@@ -332,7 +362,8 @@ describe('ChannelService.clone', () => {
     const source = makeChannel();
     const cloned = makeClonedChannel();
 
-    setupGetByIdMocks(source);
+    const languages = ['TYPESCRIPT', 'JAVASCRIPT', 'JAVASCRIPT', 'TYPESCRIPT'];
+    setupGetByIdMocks(source, { scripts: DEFAULT_SCRIPTS.map((script, i) => ({ ...script, language: languages[i] })) });
     setupCreateMocks(cloned);
 
     const createSpy = vi.spyOn(ChannelService, 'create');
@@ -343,10 +374,10 @@ describe('ChannelService.clone', () => {
     expect(createSpy).toHaveBeenCalledOnce();
 
     const createInput = createSpy.mock.calls[0]![0];
-    expect(createInput.scripts?.deploy).toBe('deploy code');
-    expect(createInput.scripts?.undeploy).toBe('undeploy code');
-    expect(createInput.scripts?.preprocessor).toBe('');
-    expect(createInput.scripts?.postprocessor).toBe('');
+    expect(createInput.scripts).toEqual({
+      deploy: 'deploy code', undeploy: 'undeploy code', preprocessor: '', postprocessor: '',
+      languages: { deploy: 'TYPESCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'TYPESCRIPT' },
+    });
 
     createSpy.mockRestore();
   });
@@ -355,7 +386,10 @@ describe('ChannelService.clone', () => {
     const source = makeChannel();
     const cloned = makeClonedChannel();
 
-    setupGetByIdMocks(source, { destinations: DESTINATIONS });
+    const copied = DESTINATIONS.map(({ id: _id, metaDataId: _metaDataId, ...rest }, i) => ({
+      ...rest, responseTransformer: i === 0 ? null : 'responseStatus = SENT;', responseTransformerLanguage: i === 0 ? 'JAVASCRIPT' : 'TYPESCRIPT',
+    }));
+    setupGetByIdMocks(source, { destinations: copied.map((dest, i) => ({ id: `d${String(i)}`, metaDataId: i + 1, ...dest })) });
     setupCreateMocks(cloned);
 
     const createSpy = vi.spyOn(ChannelService, 'create');
@@ -366,15 +400,7 @@ describe('ChannelService.clone', () => {
     expect(createSpy).toHaveBeenCalledOnce();
 
     const createInput = createSpy.mock.calls[0]![0];
-    expect(createInput.destinations).toHaveLength(2);
-    expect(createInput.destinations![0]!.name).toBe('Dest 1');
-    expect(createInput.destinations![0]!.connectorType).toBe('HTTP');
-    expect(createInput.destinations![0]!.properties).toEqual({ url: 'http://localhost' });
-    expect(createInput.destinations![0]!.retryCount).toBe(3);
-    expect(createInput.destinations![1]!.name).toBe('Dest 2');
-    expect(createInput.destinations![1]!.connectorType).toBe('TCP_MLLP');
-    expect(createInput.destinations![1]!.queueMode).toBe('ON_FAILURE');
-    expect(createInput.destinations![1]!.waitForPrevious).toBe(true);
+    expect(createInput.destinations).toEqual(copied);
 
     createSpy.mockRestore();
   });
@@ -512,18 +538,15 @@ describe('ChannelService.clone', () => {
       destinations,
       filters: [{ id: 'f1', connectorId: null }],
       filterRules: [{
-        id: 'r1', filterId: 'f1', sequenceNumber: 0, enabled: true, name: 'ADT only',
-        operator: 'AND', type: 'JAVASCRIPT', script: 'return msg.MSH[9] === "ADT";', language: 'TYPESCRIPT',
-        field: null, condition: null, values: null,
+        id: 'r1', filterId: 'f1', sequenceNumber: 0, ...RULE,
+      }, {
+        id: 'r2', filterId: 'f1', sequenceNumber: 1, ...SCRIPT_RULE,
       }],
       transformers: [{
-        id: 't1', connectorId: 'd3', inboundDataType: 'HL7V2', outboundDataType: 'XML',
-        inboundProperties: {}, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null,
+        id: 't1', connectorId: 'd3', ...TRANSFORMER,
       }],
       transformerSteps: [{
-        id: 'st1', transformerId: 't1', sequenceNumber: 0, enabled: true, name: 'Set MRN',
-        type: 'JAVASCRIPT', script: 'tmp.mrn = msg.PID[3];', language: 'TYPESCRIPT', sourceField: null, targetField: null,
-        defaultValue: null, mapping: null,
+        id: 'st1', transformerId: 't1', sequenceNumber: 0, ...STEP,
       }],
     });
     setupCreateMocks(makeClonedChannel());
@@ -551,17 +574,14 @@ describe('ChannelService.clone', () => {
     expect(result.ok).toBe(true);
 
     expect(inserted.get(channelFilters)).toEqual([{ channelId: CLONED_ID, connectorId: null }]);
+    // Every field travels, the language too: a TypeScript rule must stay type-checked on the clone.
     expect(inserted.get(filterRules)).toEqual([[
-      // The language travels too: a TypeScript rule must stay type-checked on the clone.
-      expect.objectContaining({ filterId: 'new-f1', name: 'ADT only', script: 'return msg.MSH[9] === "ADT";', language: 'TYPESCRIPT' }),
+      { filterId: 'new-f1', sequenceNumber: 0, ...RULE },
+      { filterId: 'new-f1', sequenceNumber: 1, ...SCRIPT_RULE },
     ]]);
     // Destination transformer: on the clone's second destination, not the source's d3.
-    expect(inserted.get(channelTransformers)).toEqual([
-      expect.objectContaining({ channelId: CLONED_ID, connectorId: 'new-d2', outboundDataType: 'XML' }),
-    ]);
-    expect(inserted.get(transformerSteps)).toEqual([[
-      expect.objectContaining({ transformerId: 'new-t1', name: 'Set MRN', script: 'tmp.mrn = msg.PID[3];', language: 'TYPESCRIPT' }),
-    ]]);
+    expect(inserted.get(channelTransformers)).toEqual([{ channelId: CLONED_ID, connectorId: 'new-d2', ...TRANSFORMER }]);
+    expect(inserted.get(transformerSteps)).toEqual([[{ transformerId: 'new-t1', sequenceNumber: 0, ...STEP }]]);
     const destValues = inserted.get(channelConnectors)?.[0] as readonly Record<string, unknown>[];
     expect(destValues[1]).toEqual(expect.objectContaining({ metaDataId: 2, responseTransformer: 'responseStatus = SENT;' }));
   });

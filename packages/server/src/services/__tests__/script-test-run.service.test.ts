@@ -9,6 +9,7 @@ const mockTemplates = { listTemplatesForChannel: vi.fn(), listTemplates: vi.fn()
 const emitAuditEvent = vi.fn();
 const recordOrRefuse = vi.fn(async () => ({ ok: true, value: undefined }));
 const getResource = vi.fn(async () => 'from-resource');
+const collectionFind = vi.fn(async () => []);
 
 vi.mock('../channel.service.js', () => ({ ChannelService: mockChannelService }));
 vi.mock('../code-template.service.js', () => ({ CodeTemplateService: mockTemplates }));
@@ -16,7 +17,7 @@ vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent }));
 vi.mock('../audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
 vi.mock('../../engine.js', () => ({
   createResourceBridge: () => getResource,
-  createCollectionBridge: () => ({ find: vi.fn(async () => []) }),
+  createCollectionBridge: () => ({ find: collectionFind }),
 }));
 
 const { ScriptTestRunService, TEST_RUN_TIMEOUT_MS } = await import('../script-test-run.service.js');
@@ -57,18 +58,18 @@ describe('ScriptTestRunService.run', () => {
     expect(mockTemplates.listTemplatesForChannel).toHaveBeenCalledWith(CHANNEL_ID);
   });
 
-  it('wires a read only for a caller holding its read permission, and names the one missing (D-310)', async () => {
-    const result = await ScriptTestRunService.run(
-      { kind: 'script', destinationSet: false, sample: '', script: "logger.info(await getResource('codes'));" },
-      { userId: 'u1', ipAddress: null },
-      { resources: false, collections: true },
-    );
+  it.each([
+    ['resources:read', { resources: false, collections: true }, "await getCollection('orders').find({}); await getResource('codes');", collectionFind, getResource],
+    ['collections:read', { resources: true, collections: false }, "await getResource('codes'); await getCollection('orders').find({});", getResource, collectionFind],
+  ] as const)('wires a read only for a caller holding its read permission, and names the one missing (D-310): %s', async (missing, reads, script, held, refused) => {
+    const result = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script }, { userId: 'u1', ipAddress: null }, reads);
 
-    expect(getResource).not.toHaveBeenCalled();
+    expect(held).toHaveBeenCalledOnce();
+    expect(refused).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.outcome).toBe('error');
-    expect(result.value.error).toContain('resources:read');
+    expect(result.value.error).toContain(missing);
   });
 
   it('audits who ran a script for which channel, never the sample', async () => {
@@ -94,16 +95,17 @@ describe('ScriptTestRunService.run', () => {
   });
 
   it('stops an endless loop at the test-run limit, even for a channel that allows longer', async () => {
-    mockChannelService.getById.mockResolvedValue(ok({ id: CHANNEL_ID, scriptTimeoutSeconds: 600, destinations: [] }));
-    const started = Date.now();
+    // Short enough that a run given this limit by mistake ends, and reports it, before the test times out.
+    const channelLimitSeconds = 4 * (TEST_RUN_TIMEOUT_MS / 1_000);
+    mockChannelService.getById.mockResolvedValue(ok({ id: CHANNEL_ID, scriptTimeoutSeconds: channelLimitSeconds, destinations: [] }));
     const result = await ScriptTestRunService.run({
       kind: 'script', dataType: 'HL7V2', destinationSet: false, channelId: CHANNEL_ID, sample: ADT, script: 'while (true) {}',
     }, undefined, BOTH_READS);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.outcome).toBe('error');
-    expect(result.value.error).toMatch(new RegExp(`${String(TEST_RUN_TIMEOUT_MS)} ?ms`));
-    expect(Date.now() - started).toBeLessThan(TEST_RUN_TIMEOUT_MS + 3_000);
+    // The sandbox's own words. The worker's backstop, 2 x the limit + 5 s, says "was stopped after" the same limit.
+    expect(result.value.error).toBe(`Script execution timed out after ${String(TEST_RUN_TIMEOUT_MS)}ms`);
   });
 
   it('runs one test at a time per server, refusing the second instead of queueing it', async () => {
@@ -146,8 +148,16 @@ describe('ScriptTestRunService.run', () => {
   });
 
   it('uses every template when no channel is given', async () => {
-    await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, undefined, BOTH_READS);
-    expect(mockTemplates.listTemplates).toHaveBeenCalled();
+    const template = (code: string): object => ({ type: 'FUNCTION', contexts: ['SOURCE_FILTER_TRANSFORMER'], code });
+    mockTemplates.listTemplates.mockResolvedValue(ok([
+      template("function one(): string { return 'one'; }"), template("function two(): string { return 'two'; }"),
+    ]));
+
+    const result = await ScriptTestRunService.run({
+      kind: 'script', templateContext: 'SOURCE_FILTER_TRANSFORMER', destinationSet: false, sample: '', script: 'logger.info(one() + two());',
+    }, undefined, BOTH_READS);
+
+    expect(result.ok && result.value.logs.map((l) => l.message)).toEqual(['onetwo']);
     expect(mockChannelService.getById).not.toHaveBeenCalled();
   });
 });

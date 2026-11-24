@@ -73,11 +73,12 @@ describe('AttachmentHandler', () => {
       const config: AttachmentConfig = { mode: ATTACHMENT_MODE.REGEX };
       const handler = new AttachmentHandler(config);
 
-      const result = await handler.extract('test content');
+      // String.replace with an undefined pattern would take out this word.
+      const result = await handler.extract('field undefined');
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.content).toBe('test content');
+      expect(result.value.content).toBe('field undefined');
       expect(result.value.attachments).toHaveLength(0);
     });
 
@@ -124,23 +125,22 @@ describe('AttachmentHandler', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      if (result.value.attachments.length >= 2) {
-        expect(result.value.attachments[0]!.id).not.toBe(result.value.attachments[1]!.id);
-      }
+      expect(result.value.attachments).toHaveLength(2);
+      expect(result.value.attachments[0]!.id).not.toBe(result.value.attachments[1]!.id);
     });
 
     it('calculates correct byte size', async () => {
       const config: AttachmentConfig = {
         mode: ATTACHMENT_MODE.REGEX,
-        pattern: 'UNICODE_TEST',
+        pattern: '€+',
       };
       const handler = new AttachmentHandler(config);
 
-      const result = await handler.extract('UNICODE_TEST');
+      const result = await handler.extract('a€€b');
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.attachments[0]!.size).toBe(Buffer.byteLength('UNICODE_TEST'));
+      expect(result.value.attachments[0]!.size).toBe(6);
     });
   });
 
@@ -175,9 +175,11 @@ describe('AttachmentHandler', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
+      expect(result.value.content).toBe('Before  After');
       expect(result.value.attachments).toHaveLength(1);
       expect(result.value.attachments[0]!.content).toBe('EMBEDDED_DATA');
       expect(result.value.attachments[0]!.mimeType).toBe('text/plain');
+      expect(result.value.attachments[0]!.size).toBe(13);
       expect(result.value.attachments[0]!.id).toBeDefined();
     });
 

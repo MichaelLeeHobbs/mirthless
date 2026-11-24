@@ -5,6 +5,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import type { Permission } from '@galvanigraph/core-models';
 import { permissionsOfGuard, requirePermission } from '../../middleware/permission.middleware.js';
 import { walkApiRoutes, isPublic, SESSION_ONLY_ROUTES, type ApiRoute, type WalkedRoute } from './api-routes.js';
+import { ROUTE_TREE_LOAD_MS } from '../../../test/time-budgets.js';
 import { MessageController } from '../../controllers/message.controller.js';
 import { MessageExportController } from '../../controllers/message-export.controller.js';
 import { AttachmentController } from '../../controllers/attachment.controller.js';
@@ -92,7 +93,7 @@ let routes: readonly WalkedRoute[];
 
 beforeAll(async () => {
   routes = await walkApiRoutes((await import('../index.js')).default);
-}, 60_000); // Loads every router and controller; under a full parallel run that outlasts the 10 s hook default.
+}, ROUTE_TREE_LOAD_MS);
 
 function unguarded(walked: readonly WalkedRoute[]): readonly string[] {
   return walked
@@ -109,9 +110,9 @@ describe('every route is guarded first', () => {
   it('catches a route with no guard, or with its guard after another handler', () => {
     const handler = (): void => undefined;
     const fixtures: readonly WalkedRoute[] = [
-      { method: 'POST', path: '/api/v1/admin/prune', handlers: [handler] },
-      { method: 'GET', path: '/api/v1/system', handlers: [handler, requirePermission('system:info'), handler] },
-      { method: 'GET', path: '/api/v1/tags', handlers: [requirePermission('settings:read'), handler] },
+      { method: 'POST', path: '/api/v1/admin/prune', handlers: [handler], paramHandlers: [] },
+      { method: 'GET', path: '/api/v1/system', handlers: [handler, requirePermission('system:info'), handler], paramHandlers: [] },
+      { method: 'GET', path: '/api/v1/tags', handlers: [requirePermission('settings:read'), handler], paramHandlers: [] },
     ];
     expect(unguarded(fixtures)).toEqual(['POST /api/v1/admin/prune', 'GET /api/v1/system']);
   });
@@ -122,6 +123,15 @@ describe('every route is guarded first', () => {
       expect(route, label(s)).toBeDefined();
       expect(route?.handlers.some((h) => permissionsOfGuard(h) !== undefined), label(s)).toBe(false);
     }
+  });
+});
+
+describe('every route under /channels with an :id in its path', () => {
+  // Without scopeToChannel(router), a caller holding the permission on one group reaches every channel (D-310).
+  it('is in a router that reads the channel\'s scope', () => {
+    const named = routes.filter((r) => /^\/api\/v1\/channels\/(.+\/)?:id(\/|$)/.test(r.path));
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((r) => !r.paramHandlers.includes('id')).map(label)).toEqual([]);
   });
 });
 

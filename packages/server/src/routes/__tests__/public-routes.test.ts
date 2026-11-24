@@ -5,6 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'node:http';
 import { connect, type AddressInfo } from 'node:net';
 import { walkApiRoutes, isPublic, PUBLIC_ROUTES, type ApiRoute } from './api-routes.js';
+import { ROUTE_TREE_LOAD_MS } from '../../../test/time-budgets.js';
 
 const ID = '3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c';
 
@@ -40,7 +41,7 @@ beforeAll(async () => {
   };
   await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
   base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
-}, 60_000); // Loads the whole app and every router; under a full parallel run that outlasts the 10 s hook default.
+}, ROUTE_TREE_LOAD_MS);
 
 afterAll(async () => {
   const running = server as Server | undefined;
