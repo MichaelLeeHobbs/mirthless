@@ -93,16 +93,16 @@ describe('ScriptTestRunService.run', () => {
   });
 
   it('stops an endless loop at the test-run limit, even for a channel that allows longer', async () => {
-    mockChannelService.getById.mockResolvedValue(ok({ id: CHANNEL_ID, scriptTimeoutSeconds: 600, destinations: [] }));
-    const started = Date.now();
+    // Short enough that a run given this limit by mistake ends, and reports it, before the test times out.
+    const channelLimitSeconds = 4 * (TEST_RUN_TIMEOUT_MS / 1_000);
+    mockChannelService.getById.mockResolvedValue(ok({ id: CHANNEL_ID, scriptTimeoutSeconds: channelLimitSeconds, destinations: [] }));
     const result = await ScriptTestRunService.run({
       kind: 'script', dataType: 'HL7V2', destinationSet: false, channelId: CHANNEL_ID, sample: ADT, script: 'while (true) {}',
     }, undefined, BOTH_READS);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.outcome).toBe('error');
-    expect(result.value.error).toMatch(new RegExp(`${String(TEST_RUN_TIMEOUT_MS)} ?ms`));
-    expect(Date.now() - started).toBeLessThan(TEST_RUN_TIMEOUT_MS + 3_000);
+    expect(result.value.error).toMatch(new RegExp(` after ${String(TEST_RUN_TIMEOUT_MS)} ?ms`));
   });
 
   it('runs one test at a time per server, refusing the second instead of queueing it', async () => {
