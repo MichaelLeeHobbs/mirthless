@@ -50,7 +50,8 @@ export function TriggerSection({ values, onChange }: TriggerSectionProps): React
         value={values.type}
         onChange={(e) => { onChange({ ...values, type: e.target.value as TriggerType }); }}
         size="small"
-        sx={{ mb: 2, minWidth: 320 }}
+        fullWidth
+        sx={{ mb: 2, maxWidth: 320 }}
       >
         <MenuItem value="CHANNEL_ERROR">A channel reports an error</MenuItem>
         <MenuItem value="NO_MESSAGES">A started channel receives no messages</MenuItem>

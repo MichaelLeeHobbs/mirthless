@@ -435,6 +435,24 @@ describe('ServerBackupService', () => {
         expect(mockAlertCreate).not.toHaveBeenCalled();
         expect(section?.errors).toHaveLength(1);
       });
+
+      it('reports an alert whose regex does not compile, and restores the alert after it', async () => {
+        mockAlertGetById.mockResolvedValue(notFound());
+        mockAlertCreate.mockResolvedValue(okResult({ id: CH }));
+        mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+        mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+        const result = await ServerBackupService.restoreBackup(makeMinimalBackup({
+          alerts: [
+            { ...alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: '[unclosed' }), name: 'Bad' },
+            { ...alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: 'refused' }), name: 'Good' },
+          ],
+        }), 'SKIP');
+        if (!result.ok) throw new Error('restore failed');
+        const section = result.value.sections.find((sec) => sec.section === 'alerts');
+        expect(section).toMatchObject({ created: 1, errors: [expect.stringMatching(/^Alert "Bad": .*Unterminated character class/s)] });
+        expect(mockAlertCreate).toHaveBeenCalledTimes(1);
+        expect(mockAlertCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Good' }));
+      });
     });
 
     it('restores settings in SKIP mode', async () => {
