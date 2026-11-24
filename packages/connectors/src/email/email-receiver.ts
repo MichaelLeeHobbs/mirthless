@@ -53,7 +53,6 @@ export interface EmailReceiverConfig {
   readonly postAction: EmailPostAction;
   readonly moveToFolder: string;
   readonly subjectFilter: string;
-  readonly includeAttachments: boolean;
 }
 
 export { EMAIL_PROTOCOL, EMAIL_POST_ACTION };

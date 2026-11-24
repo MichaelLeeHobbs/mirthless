@@ -128,12 +128,12 @@ describeIntegration('roles and grant rules (real Postgres)', () => {
 
     it('refuses to add a permission the editor lacks, but lets them remove one', async () => {
       const admin = await userWithRole('admin');
-      const deployer = await userWithRole('deployer');
+      const editor = await userWithRole((await GrantService.getRole(await createRole(admin, ['channels:read', 'roles:write']))).name);
       const id = await createRole(admin, ['channels:read', 'users:read']);
-      await expect(db.transaction((tx) => GrantService.updateRole(tx, id, { permissions: ['channels:read', 'users:read', 'users:write'] }, { userId: deployer })))
+      await expect(db.transaction((tx) => GrantService.updateRole(tx, id, { permissions: ['channels:read', 'users:read', 'users:write'] }, { userId: editor })))
         .rejects.toSatisfy((e) => codeOf(e) === 'FORBIDDEN');
-      // Keeping users:read, which the deployer lacks, is not adding it.
-      await db.transaction((tx) => GrantService.updateRole(tx, id, { permissions: ['users:read'] }, { userId: deployer }));
+      // Keeping users:read, which the editor lacks, is not adding it.
+      await db.transaction((tx) => GrantService.updateRole(tx, id, { permissions: ['users:read'] }, { userId: editor }));
       expect((await GrantService.getRole(id)).permissions).toEqual(['users:read']);
     });
 

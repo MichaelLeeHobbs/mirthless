@@ -6,6 +6,7 @@ const mockChannelImportChannels = vi.fn();
 const mockRestoreMembership = vi.fn().mockResolvedValue(undefined);
 const mockListLibraries = vi.fn();
 const mockListTemplates = vi.fn();
+const mockOverwriteLibrary = vi.fn();
 const mockAlertList = vi.fn();
 const mockAlertGetByIds = vi.fn();
 const mockAlertCreate = vi.fn();
@@ -62,7 +63,7 @@ vi.mock('../grant.service.js', () => ({
   GrantService: { restoreMembership: mockRestoreMembership },
 }));
 vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listLibraries: mockListLibraries, listTemplates: mockListTemplates },
+  CodeTemplateService: { listLibraries: mockListLibraries, listTemplates: mockListTemplates, overwriteLibrary: mockOverwriteLibrary },
 }));
 vi.mock('../alert.service.js', () => ({
   AlertService: { list: mockAlertList, getById: mockAlertGetById, getByIds: mockAlertGetByIds, create: mockAlertCreate, update: mockAlertUpdate },
@@ -434,6 +435,35 @@ describe('ServerBackupService', () => {
         const section = await restoreAlert(alertItem({ type: 'NO_MESSAGES', errorTypes: [], regex: null, windowMinutes: null }));
         expect(mockAlertCreate).not.toHaveBeenCalled();
         expect(section?.errors).toHaveLength(1);
+      });
+
+      it('skips an alert the server has, whatever its regex', async () => {
+        mockAlertGetById.mockResolvedValue(okResult({ id: CH, revision: 3 }));
+        mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+        mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+        const result = await ServerBackupService.restoreBackup(
+          makeMinimalBackup({ alerts: [alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: '[unclosed' })] }), 'SKIP',
+        );
+        if (!result.ok) throw new Error('restore failed');
+        expect(result.value.sections.find((sec) => sec.section === 'alerts')).toMatchObject({ skipped: 1, errors: [] });
+      });
+
+      it('reports an alert whose regex does not compile, and restores the alert after it', async () => {
+        mockAlertGetById.mockResolvedValue(notFound());
+        mockAlertCreate.mockResolvedValue(okResult({ id: CH }));
+        mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+        mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+        const result = await ServerBackupService.restoreBackup(makeMinimalBackup({
+          alerts: [
+            { ...alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: '[unclosed' }), name: 'Bad' },
+            { ...alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: 'refused' }), name: 'Good' },
+          ],
+        }), 'SKIP');
+        if (!result.ok) throw new Error('restore failed');
+        const section = result.value.sections.find((sec) => sec.section === 'alerts');
+        expect(section).toMatchObject({ created: 1, errors: [expect.stringMatching(/^Alert "Bad": .*Unterminated character class/s)] });
+        expect(mockAlertCreate).toHaveBeenCalledTimes(1);
+        expect(mockAlertCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Good' }));
       });
     });
 
@@ -833,7 +863,7 @@ describe('ServerBackupService', () => {
           section: 'codeTemplateLibraries', table: codeTemplateLibraries, label: 'Code template library "Lib"',
           backup: { codeTemplateLibraries: [libraryItem] },
           inserted: libraryItem,
-          updatedTo: { name: 'Lib', description: 'd', channelIds: ['ch-1'] },
+          updatedTo: null,
         },
         {
           section: 'codeTemplates', table: codeTemplates, label: 'Code template "fmt"',
@@ -865,7 +895,7 @@ describe('ServerBackupService', () => {
           expect(mockUpdate).not.toHaveBeenCalled();
         });
 
-        it('updates an existing row by id in OVERWRITE mode', async () => {
+        it.skipIf(updatedTo === null)('updates an existing row by id in OVERWRITE mode', async () => {
           mockSelectWhere.mockResolvedValue([{ id }]);
           expect(await restoreSection(backup, 'OVERWRITE', section)).toEqual({ section, ...counts(0, 1, 0) });
           expect(mockUpdate).toHaveBeenCalledWith(table);
@@ -879,6 +909,16 @@ describe('ServerBackupService', () => {
           mockInsertValues.mockRejectedValue(new Error('duplicate key'));
           expect(await restoreSection(backup, 'SKIP', section)).toEqual({ section, ...counts(0, 0, 0, [`${label}: duplicate key`]) });
         });
+      });
+
+      it('overwrites a library through the service that judges its links, and reports a refusal', async () => {
+        mockSelectWhere.mockResolvedValue([{ id: libraryItem.id }]);
+        expect(await restoreSection({ codeTemplateLibraries: [libraryItem] }, 'OVERWRITE', 'codeTemplateLibraries')).toEqual({ section: 'codeTemplateLibraries', ...counts(0, 1, 0) });
+        expect(mockOverwriteLibrary.mock.calls[0]?.[0]).toEqual(libraryItem);
+
+        mockOverwriteLibrary.mockRejectedValueOnce(new ServiceError('FORBIDDEN', 'needs system:restore'));
+        expect(await restoreSection({ codeTemplateLibraries: [libraryItem] }, 'OVERWRITE', 'codeTemplateLibraries'))
+          .toEqual({ section: 'codeTemplateLibraries', ...counts(0, 0, 0, ['Code template library "Lib": needs system:restore']) });
       });
 
       it('stores a missing library channel list as null', async () => {
