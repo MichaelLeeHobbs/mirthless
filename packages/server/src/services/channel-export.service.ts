@@ -24,8 +24,8 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     inboundDataType: detail.inboundDataType,
     outboundDataType: detail.outboundDataType,
     sourceConnectorType: detail.sourceConnectorType,
-    // Secret credentials are redacted from exports so a backup file cannot leak
-    // DB/SMTP/IMAP passwords. Re-import requires re-entering credentials.
+    // Masked so an export or a backup file cannot leak a credential. An import
+    // keeps the stored ones where it can (D-335).
     sourceConnectorProperties: redactConnectorProperties(detail.sourceConnectorProperties),
     responseMode: detail.responseMode,
     responseConnectorName: detail.responseConnectorName,
@@ -37,6 +37,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     pruningEnabled: detail.pruningEnabled,
     pruningMaxAgeDays: detail.pruningMaxAgeDays,
     pruningArchiveEnabled: detail.pruningArchiveEnabled,
+    scriptTimeoutSeconds: detail.scriptTimeoutSeconds,
     scripts: detail.scripts.map((s) => ({
       scriptType: s.scriptType,
       script: s.script,

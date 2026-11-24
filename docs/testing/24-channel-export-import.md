@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | 1 | Export all channels | Click Export All button in channels list header (or GET /api/channels/export) | JSON response with version=1, exportedAt timestamp, and channels array containing all channels. If one channel cannot be read, the export fails and names it instead of leaving it out | |
 | 2 | Export single channel | Select a channel, click Export (or GET /api/channels/:id/export) | JSON response with version=1 and channels array containing one channel | |
-| 3 | Exported JSON structure | Export a channel, inspect JSON | Contains id, name, description, enabled, revision, inboundDataType, outboundDataType, sourceConnectorType, sourceConnectorProperties, responseMode, initialState, scripts, destinations, metadataColumns, filters, transformers | |
+| 3 | Exported JSON structure | Export a channel, inspect JSON | Contains id, name, description, enabled, revision, inboundDataType, outboundDataType, sourceConnectorType, sourceConnectorProperties, responseMode, initialState, scriptTimeoutSeconds, scripts, destinations, metadataColumns, filters, transformers | |
 | 4 | Destinations included | Export channel with 3 destinations | All 3 destinations in export with metaDataId, name, connectorType, properties, queue settings | |
 | 5 | Scripts included | Export channel with deploy/undeploy scripts | Scripts array contains scriptType and script content | |
 | 6 | Filters included | Export channel with filter rules | Filters array contains connectorId and rules with enabled, name, operator, type, script, field, condition, values | |
@@ -26,7 +26,7 @@
 |---|---|---|---|---|
 | 12 | Import new channels | POST /api/channels/import with valid export JSON and collisionMode=SKIP | Response: created=N, updated=0, skipped=0, errors=[] | |
 | 13 | Import with SKIP collision mode | Import channels where IDs already exist, collisionMode=SKIP | Existing channels unchanged, skipped count incremented | |
-| 14 | Import with OVERWRITE collision mode | Import channels where IDs already exist, collisionMode=OVERWRITE | Existing channels overwritten with import data, updated count incremented | |
+| 14 | Import with OVERWRITE collision mode | Import channels where IDs already exist, collisionMode=OVERWRITE | Existing channels overwritten with import data, updated count incremented. Credentials masked in the file keep their stored values unless the connector's target or user, or a destination's name or position, changed (`packages/server/test/integration/channel-import-credentials.itest.ts`) | |
 | 15 | Import with CREATE_NEW collision mode | Import channels where IDs already exist, collisionMode=CREATE_NEW | New channels created with fresh UUIDs, created count incremented | |
 | 16 | OVERWRITE replaces relations | Import with OVERWRITE, channel has different destinations/scripts | Old destinations, scripts, filters, transformers, metadata columns deleted and replaced | |
 | 17 | CREATE_NEW assigns new UUID | Import with CREATE_NEW on existing ID | Imported channel gets randomUUID, original channel untouched | |
@@ -42,6 +42,6 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 25 | Export then import produces identical channel | Export a channel, delete it, import the export JSON | Re-created channel matches original in all fields (name, description, connectors, scripts, filters, transformers, metadata columns) | |
+| 25 | Export then import produces identical channel | Export a channel, delete it, import the export JSON | Re-created channel matches original in all fields (name, description, script timeout, connectors, scripts, filters, transformers, metadata columns), except that connector credentials are empty | |
 | 26 | Export all then import all | Export all channels, delete all, import with collisionMode=SKIP | All channels recreated, created count matches original count | |
-| 27 | Export + import preserves connector properties | Export channel with FILE source and SMTP destination | Imported channel has identical sourceConnectorProperties and destination properties | |
+| 27 | Export + import preserves connector properties | Export channel with FILE source and SMTP destination | Imported channel has identical sourceConnectorProperties and destination properties, except that credentials are empty in a new channel | |

@@ -58,6 +58,53 @@ export function redactConnectorProperties(
   return root;
 }
 
+function ownProperty(value: unknown, key: string): unknown {
+  return isPlainObject(value) && Object.hasOwn(value, key) ? value[key] : undefined;
+}
+
+function isRestorableSecret(key: string, stored: unknown): boolean {
+  return isSecretPropertyKey(key) && typeof stored === 'string' && stored !== '' && stored !== REDACTED;
+}
+
+/**
+ * Exports mask credentials as REDACTED; importing the marker would write it over
+ * a real password. With the key dropped the secret is absent, so the connector
+ * fails loud at deploy instead of authenticating with a bogus value.
+ *
+ * With `stored`, a marker takes the secret stored at the same path instead.
+ * Never inside a list, whose entries have no identity to match by. Whether the
+ * connector may have it back is the caller's to decide (overwriteProperties).
+ */
+export function stripRedactedProperties(props: unknown, stored?: unknown): Record<string, unknown> {
+  if (!isPlainObject(props)) return {};
+  const root: Record<string, unknown> = {};
+  // Exports redact at any depth (nested auth/tls/headers), so strip at any depth.
+  const stack: Array<[Record<string, unknown>, Record<string, unknown>, unknown]> = [[props, root, stored]];
+  while (stack.length > 0) {
+    const [src, dst, storedHere] = stack.pop()!;
+    for (const [key, value] of Object.entries(src)) {
+      const storedValue = ownProperty(storedHere, key);
+      if (value === REDACTED) {
+        if (isRestorableSecret(key, storedValue)) dst[key] = storedValue;
+      } else if (isPlainObject(value)) {
+        const copy: Record<string, unknown> = {};
+        dst[key] = copy;
+        stack.push([value, copy, storedValue]);
+      } else if (Array.isArray(value)) {
+        const kept = value.filter((item) => item !== REDACTED);
+        const items: unknown[] = kept.map((item) => (isPlainObject(item) ? {} : item));
+        dst[key] = items;
+        kept.forEach((item, i) => {
+          if (isPlainObject(item)) stack.push([item, items[i] as Record<string, unknown>, undefined]);
+        });
+      } else {
+        dst[key] = value;
+      }
+    }
+  }
+  return root;
+}
+
 /** Also takes a revision snapshot, which has the same shape. */
 export function redactChannelDetail(detail: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const source = detail['sourceConnectorProperties'];

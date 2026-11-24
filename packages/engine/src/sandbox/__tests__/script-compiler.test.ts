@@ -8,6 +8,7 @@ import {
   type FilterRuleInput,
   scriptCacheSize,
 } from '../script-compiler.js';
+import { ESCAPED_IMPORT, withoutDynamicImport } from '../dynamic-import.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../sandbox-executor.js';
 import { createSandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy } from '../../pipeline/data-type-handler.js';
@@ -38,6 +39,39 @@ describe('compileScript', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.code).not.toContain('interface');
+  });
+
+  it.each([
+    "import('node:fs');",
+    "if (msg.a) { return import('./x'); }",
+    "const m = await import('node:fs'); return m;",
+    'return async () => { await import(msg.name); };',
+    'class A { static x = import(`y`); } return 1;',
+  ])('refuses a script that loads a module: %s', async (code) => {
+    const result = await compileScript(code);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(compileErrorMessages(result.error, code)).toEqual(["Scripts can't load modules: import() is not available"]);
+  });
+
+  it.each([
+    "// import('x') is gone\nreturn 1;",
+    "return 'import (x)';",
+    "return msg.import('x');",
+    'return /import(x)/.source + `import(${1})`;',
+    'return /\\cimport/u.test(msg);',
+    'function importAll() { return 1; } return importAll();',
+  ])('compiles a script that only mentions import: %s', async (code) => {
+    expect((await compileScript(code)).ok).toBe(true);
+  });
+
+  it('escapes import in text full of backslashes in linear time', () => {
+    const slashes = '\\'.repeat(400_000);
+    const started = performance.now();
+
+    expect(withoutDynamicImport(`/*${slashes}import*/`)).toBe(`/*${slashes}${ESCAPED_IMPORT}*/`);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 
   it('returns inline source map when sourcemap enabled', async () => {
