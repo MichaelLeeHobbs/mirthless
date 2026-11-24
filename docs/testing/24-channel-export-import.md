@@ -8,7 +8,7 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 1 | Export all channels | Click Export All button in channels list header (or GET /api/channels/export) | JSON response with version=1, exportedAt timestamp, and channels array containing all channels | |
+| 1 | Export all channels | Click Export All button in channels list header (or GET /api/channels/export) | JSON response with version=1, exportedAt timestamp, and channels array containing all channels. If one channel cannot be read, the export fails and names it instead of leaving it out | |
 | 2 | Export single channel | Select a channel, click Export (or GET /api/channels/:id/export) | JSON response with version=1 and channels array containing one channel | |
 | 3 | Exported JSON structure | Export a channel, inspect JSON | Contains id, name, description, enabled, revision, inboundDataType, outboundDataType, sourceConnectorType, sourceConnectorProperties, responseMode, initialState, scripts, destinations, metadataColumns, filters, transformers | |
 | 4 | Destinations included | Export channel with 3 destinations | All 3 destinations in export with metaDataId, name, connectorType, properties, queue settings | |

@@ -138,6 +138,8 @@ The response is `{ "success": true, "data": { ... } }`. The `data` object
 - `users` — **without password hashes** (see below), `settings`, `resources` (with content)
 - `tags`, `tagAssignments`, `configMap`, `globalMap`
 
+A backup is complete or it fails: if a channel or a resource cannot be read, or there are more than 10,000 channels or alerts, the download answers an error and the server log says why. For a channel the error names it.
+
 ### What is included vs excluded
 
 **Included:** all channel configuration and the shared config surface listed above.

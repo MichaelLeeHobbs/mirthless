@@ -1,9 +1,20 @@
 import { createRequire } from 'node:module';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../settings.service.js', () => ({
-  SettingsService: { getByKey: vi.fn() },
+// The database is faked, not SettingsService: a faked getByKey hid that it masks smtp.auth_pass.
+const mockReadSetting = vi.fn<(key: string) => Promise<readonly unknown[]>>();
+
+vi.mock('drizzle-orm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('drizzle-orm')>()),
+  eq: (_column: unknown, value: unknown) => value,
 }));
+
+vi.mock('../../lib/db.js', () => {
+  const db = { select: () => ({ from: () => ({ where: (key: string) => mockReadSetting(key) }) }) };
+  return { db, default: db };
+});
+
+vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
 
 vi.mock('../../lib/logger.js', () => ({
   default: {
@@ -14,7 +25,6 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 const { EmailService, setTransportFactory, resetTransportFactory } = await import('../email.service.js');
-const { SettingsService } = await import('../settings.service.js');
 
 const mockSendMail = vi.fn().mockResolvedValue({ messageId: 'test-msg-id' });
 const mockClose = vi.fn();
@@ -24,9 +34,6 @@ function makeMockTransport(): { sendMail: ReturnType<typeof vi.fn>; close: Retur
 }
 
 const mockTransportFactory = vi.fn().mockReturnValue(makeMockTransport());
-
-type MockGetByKey = ReturnType<typeof vi.fn>;
-const mockGetByKey = SettingsService.getByKey as unknown as MockGetByKey;
 
 function mockSmtpSettings(overrides?: Partial<Record<string, string | null>>): void {
   const defaults: Record<string, string> = {
@@ -40,29 +47,13 @@ function mockSmtpSettings(overrides?: Partial<Record<string, string | null>>): v
 
   const values = { ...defaults, ...overrides };
 
-  mockGetByKey.mockImplementation(async (key: string) => {
+  mockReadSetting.mockImplementation(async (key) => {
     const value = values[key];
-    if (value === undefined) {
-      return {
-        ok: false as const,
-        value: null,
-        error: { code: 'NOT_FOUND', message: `Setting "${key}" not found` },
-      };
-    }
-    return {
-      ok: true as const,
-      value: {
-        key,
-        value,
-        type: 'string',
-        id: 'test',
-        description: null,
-        category: 'smtp',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      error: null,
-    };
+    if (value === undefined) return [];
+    return [{
+      id: 'test', key, value, type: key === 'smtp.auth_pass' ? 'password' : 'string',
+      description: null, category: 'smtp', createdAt: new Date(), updatedAt: new Date(),
+    }];
   });
 }
 
@@ -92,7 +83,7 @@ describe('EmailService', () => {
       expect(result.value.from).toBe('alerts@example.com');
       expect(result.value.authUser).toBe('user@example.com');
       expect(result.value.authPass).toBe('secret123');
-      expect(mockGetByKey).toHaveBeenCalledTimes(6);
+      expect(mockReadSetting).toHaveBeenCalledTimes(6);
     });
 
     it('returns error when SMTP host is empty', async () => {
@@ -106,11 +97,7 @@ describe('EmailService', () => {
     });
 
     it('returns error when host setting is missing', async () => {
-      mockGetByKey.mockResolvedValue({
-        ok: false as const,
-        value: null,
-        error: { code: 'NOT_FOUND', message: 'Setting not found' },
-      });
+      mockReadSetting.mockResolvedValue([]);
 
       const result = await EmailService.getSmtpConfig();
 
@@ -118,6 +105,24 @@ describe('EmailService', () => {
       if (result.ok) return;
       expect(result.error.message).toContain('SMTP host is not configured');
     });
+
+    it.each(['smtp.host', 'smtp.port', 'smtp.secure', 'smtp.from', 'smtp.auth_user', 'smtp.auth_pass'])(
+      'returns the read error when %s cannot be read, instead of treating it as unset',
+      async (failing) => {
+        mockSmtpSettings();
+        const readStored = mockReadSetting.getMockImplementation()!;
+        mockReadSetting.mockImplementation(async (key) => {
+          if (key === failing) throw new Error('connection refused');
+          return readStored(key);
+        });
+
+        const result = await EmailService.getSmtpConfig();
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.message).toBe(`Failed to read ${failing}: connection refused`);
+      },
+    );
 
     it('defaults port to 587 when not set', async () => {
       mockSmtpSettings({ 'smtp.port': '' });
@@ -185,11 +190,7 @@ describe('EmailService', () => {
     });
 
     it('returns error when settings are missing', async () => {
-      mockGetByKey.mockResolvedValue({
-        ok: false as const,
-        value: null,
-        error: { code: 'NOT_FOUND', message: 'Setting not found' },
-      });
+      mockReadSetting.mockResolvedValue([]);
 
       const result = await EmailService.sendMail(
         ['admin@example.com'],

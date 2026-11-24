@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateUserInput, TakenOverKey, UpdateUserInput } from '@galvanigraph/core-models';
 import { api, type UserSummary, type UserDetail } from '../api/client.js';
+import { reloadApiKeys } from './use-api-keys.js';
 
 const USER_KEYS = {
   all: ['users'] as const,
@@ -49,8 +50,6 @@ export function useCreateUser(): ReturnType<typeof useMutation<UserDetail, Error
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() });
-      // Their API keys were disabled or taken over.
-      await queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
   });
 }
@@ -71,6 +70,7 @@ export function useUpdateUser(): ReturnType<typeof useMutation<UserDetail, Error
         queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() }),
         queryClient.invalidateQueries({ queryKey: USER_KEYS.detail(variables.id) }),
       ]);
+      reloadApiKeys(queryClient);
     },
   });
 }
@@ -95,6 +95,8 @@ export function useDeleteUser(): ReturnType<typeof useMutation<readonly TakenOve
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() });
+      // Last: the Users page's offboard dialog, still open here, lists these keys.
+      reloadApiKeys(queryClient);
     },
   });
 }

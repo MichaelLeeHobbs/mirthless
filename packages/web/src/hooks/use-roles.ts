@@ -4,6 +4,7 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from '@tanstack/react-query';
 import type { CreateRoleInput, UpdateRoleInput } from '@galvanigraph/core-models';
 import { api, type RoleSummary } from '../api/client.js';
+import { reloadApiKeys } from './use-api-keys.js';
 
 const ROLE_KEYS = {
   all: ['roles'] as const,
@@ -73,6 +74,7 @@ export function useUpdateRole(): UseMutationResult<RoleSummary, RoleRequestError
         queryClient.invalidateQueries({ queryKey: ROLE_KEYS.all }),
         queryClient.invalidateQueries({ queryKey: ['users'] }),
       ]);
+      reloadApiKeys(queryClient);
     },
   });
 }

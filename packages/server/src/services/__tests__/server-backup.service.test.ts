@@ -93,6 +93,7 @@ vi.mock('../config-map.service.js', () => ({
 }));
 
 const { ServerBackupService } = await import('../server-backup.service.js');
+const { ServiceError } = await import('../../lib/service-error.js');
 const {
   channelDependencies, channelGroupMembers, channelTagAssignments, resources,
   codeTemplateLibraries, codeTemplates, channelGroups, channelTags,
@@ -106,8 +107,12 @@ function okResult<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
 }
 
-function errResult(message: string): { ok: false; value: null; error: { message: string } } {
-  return { ok: false, value: null, error: { message } };
+function errResult(message: string): { ok: false; value: null; error: Error } {
+  return { ok: false, value: null, error: new Error(message) };
+}
+
+function notFound(): { ok: false; value: null; error: Error } {
+  return { ok: false, value: null, error: new ServiceError('NOT_FOUND', 'not found') };
 }
 
 /** As GlobalScriptService refuses a save. */
@@ -301,6 +306,45 @@ describe('ServerBackupService', () => {
       expect(result.value.backup.resources).toHaveLength(1);
       expect(result.value.backup.resources[0]!.content).toBe('console.log(1)');
     });
+
+    it('fails when there are more alerts than one backup reads', async () => {
+      setupExportMocks();
+      mockAlertList.mockResolvedValue(okResult({ data: [], pagination: { page: 1, pageSize: 10000, total: 10001, totalPages: 2 } }));
+
+      const result = await ServerBackupService.exportBackup('Monthly backup');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('10001');
+    });
+
+    it('fails when a resource cannot be read, rather than saving it without its content', async () => {
+      setupExportMocks();
+      mockResourceList.mockResolvedValue(okResult([
+        { id: 'r-1', name: 'Script', description: null, mimeType: 'text/plain', sizeBytes: 10 },
+      ]));
+      mockResourceGetById.mockResolvedValue(errResult('connection reset'));
+
+      const result = await ServerBackupService.exportBackup('Monthly backup');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('connection reset');
+    });
+
+    it('leaves out a resource deleted after the list was read', async () => {
+      setupExportMocks();
+      mockResourceList.mockResolvedValue(okResult([
+        { id: 'r-1', name: 'Script', description: null, mimeType: 'text/plain', sizeBytes: 10 },
+      ]));
+      mockResourceGetById.mockResolvedValue(notFound());
+
+      const result = await ServerBackupService.exportBackup('Monthly backup');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.backup.resources).toEqual([]);
+    });
   });
 
   describe('restoreBackup', () => {
@@ -326,7 +370,7 @@ describe('ServerBackupService', () => {
       });
 
       async function restoreAlert(item: ServerBackup['alerts'][number]): Promise<RestoreSectionResult | undefined> {
-        mockAlertGetById.mockResolvedValue(errResult('NOT_FOUND'));
+        mockAlertGetById.mockResolvedValue(notFound());
         mockAlertCreate.mockResolvedValue(okResult({ id: item.id }));
         mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
         mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
@@ -360,7 +404,7 @@ describe('ServerBackupService', () => {
       });
 
       it('reports a failed create as an error, not as created', async () => {
-        mockAlertGetById.mockResolvedValue(errResult('NOT_FOUND'));
+        mockAlertGetById.mockResolvedValue(notFound());
         mockAlertCreate.mockResolvedValue({ ok: false, value: null, error: new Error('name taken') });
         mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
         mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
@@ -371,6 +415,19 @@ describe('ServerBackupService', () => {
         const section = result.value.sections.find((sec) => sec.section === 'alerts');
         expect(section?.created).toBe(0);
         expect(section?.errors[0]).toContain('name taken');
+      });
+
+      it('reports an alert that cannot be read as an error, and creates no copy of it', async () => {
+        mockAlertGetById.mockResolvedValue(errResult('connection reset'));
+        mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+        mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+        const result = await ServerBackupService.restoreBackup(
+          makeMinimalBackup({ alerts: [alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null })] }), 'SKIP',
+        );
+        if (!result.ok) throw new Error('restore failed');
+        const section = result.value.sections.find((sec) => sec.section === 'alerts');
+        expect(section).toMatchObject({ created: 0, errors: ['Alert "A": connection reset'] });
+        expect(mockAlertCreate).not.toHaveBeenCalled();
       });
 
       it('reports an invalid trigger as an error instead of saving it', async () => {
@@ -418,7 +475,7 @@ describe('ServerBackupService', () => {
       const backup = makeMinimalBackup({
         settings: [{ key: 'new.key', value: 'val', type: 'string', description: null, category: 'test' }],
       });
-      mockSettingsGetByKey.mockResolvedValue(errResult('NOT_FOUND'));
+      mockSettingsGetByKey.mockResolvedValue(notFound());
       mockSettingsUpsert.mockResolvedValue(okResult({ key: 'new.key', value: 'val' }));
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
@@ -429,6 +486,22 @@ describe('ServerBackupService', () => {
       if (!result.ok) return;
       const settingsSection = result.value.sections.find((s) => s.section === 'settings');
       expect(settingsSection?.created).toBe(1);
+    });
+
+    it.each(['SKIP', 'OVERWRITE'] as const)('keeps a live secret when its setting cannot be read in %s mode', async (mode) => {
+      const backup = makeMinimalBackup({
+        settings: [{ key: 'smtp.auth_pass', value: '__REDACTED__', type: 'password', description: null, category: 'smtp' }],
+      });
+      mockSettingsGetByKey.mockResolvedValue(errResult('connection reset'));
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+
+      const result = await ServerBackupService.restoreBackup(backup, mode);
+
+      if (!result.ok) throw new Error('restore failed');
+      expect(result.value.sections.find((s) => s.section === 'settings'))
+        .toEqual({ section: 'settings', created: 0, updated: 0, skipped: 0, errors: ['Settings "smtp.auth_pass": connection reset'] });
+      expect(mockSettingsUpsert).not.toHaveBeenCalled();
     });
 
     it('restores tags with SKIP mode', async () => {
@@ -600,7 +673,7 @@ describe('ServerBackupService', () => {
       const backup = makeMinimalBackup({
         globalMap: [{ key: 'counter', value: '42', isJson: true }, { key: 'zip', value: '00501', isJson: false }],
       });
-      mockGlobalMapGetByKey.mockResolvedValue({ ok: false, value: null, error: new Error('not found') });
+      mockGlobalMapGetByKey.mockResolvedValue(notFound());
       mockGlobalMapUpsert.mockResolvedValue(okResult({ key: 'counter', value: '42' }));
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
@@ -616,7 +689,7 @@ describe('ServerBackupService', () => {
       const backup = makeMinimalBackup({
         configMap: [{ category: 'app', name: 'version', value: '1.0' }],
       });
-      mockConfigMapGetByKey.mockResolvedValue(errResult('NOT_FOUND'));
+      mockConfigMapGetByKey.mockResolvedValue(notFound());
       mockConfigMapUpsert.mockResolvedValue(okResult({ category: 'app', name: 'version', value: '1.0' }));
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
@@ -682,9 +755,9 @@ describe('ServerBackupService', () => {
         ],
         globalMap: [{ key: 'x', value: 'y', isJson: false }],
       });
-      mockSettingsGetByKey.mockResolvedValue(errResult('NOT_FOUND'));
+      mockSettingsGetByKey.mockResolvedValue(notFound());
       mockSettingsUpsert.mockResolvedValue(okResult({}));
-      mockGlobalMapGetByKey.mockResolvedValue(errResult('NOT_FOUND'));
+      mockGlobalMapGetByKey.mockResolvedValue(notFound());
       mockGlobalMapUpsert.mockResolvedValue(okResult({}));
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
@@ -895,7 +968,7 @@ describe('ServerBackupService', () => {
 
       describe.each(cases)('$section', (c) => {
         it.each(['SKIP', 'OVERWRITE'] as const)('creates an entry the lookup does not find in %s mode', async (mode) => {
-          c.getByKey.mockResolvedValue(errResult('NOT_FOUND'));
+          c.getByKey.mockResolvedValue(notFound());
           c.upsert.mockResolvedValue(okResult({}));
           expect(await restoreSection(c.backup, mode, c.section)).toEqual({ section: c.section, ...counts(1, 0, 0) });
           expect(c.getByKey).toHaveBeenCalledWith(...c.lookupArgs);
@@ -922,15 +995,15 @@ describe('ServerBackupService', () => {
           expect(c.upsert).toHaveBeenCalledWith(...c.nullUpsertArgs);
         });
 
-        it('counts an entry as created when the lookup fails for any reason', async () => {
+        it.each(['SKIP', 'OVERWRITE'] as const)('reports a failed lookup as an error and writes nothing in %s mode', async (mode) => {
           c.getByKey.mockResolvedValue(errResult('connection reset'));
-          c.upsert.mockResolvedValue(okResult({}));
-          expect(await restoreSection(c.backup, 'OVERWRITE', c.section)).toEqual({ section: c.section, ...counts(1, 0, 0) });
+          expect(await restoreSection(c.backup, mode, c.section)).toEqual({ section: c.section, ...counts(0, 0, 0, [`${c.label}: connection reset`]) });
+          expect(c.upsert).not.toHaveBeenCalled();
         });
 
         it.each([
           ['existing', okResult({}), 'OVERWRITE'],
-          ['missing', errResult('NOT_FOUND'), 'SKIP'],
+          ['missing', notFound(), 'SKIP'],
         ] as const)('reports a failed upsert of a %s entry as an error, not a count', async (_kind, lookup, mode) => {
           c.getByKey.mockResolvedValue(lookup);
           c.upsert.mockResolvedValue({ ok: false, value: null, error: new Error('write failed') });

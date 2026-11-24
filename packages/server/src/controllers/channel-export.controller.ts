@@ -5,6 +5,7 @@ import { ChannelImportService } from '../services/channel-import.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 import { channelScopeOf } from '../lib/channel-scope.js';
+import { isServiceError } from '../lib/service-error.js';
 
 export class ChannelExportController {
   static async exportChannel(req: Request, res: Response): Promise<void> {
@@ -27,7 +28,9 @@ export class ChannelExportController {
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export all channels');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Export failed' } });
+      // A service error names the channel that could not be read; anything else stays generic.
+      const error = isServiceError(result.error) ? errorResponse(result.error) : { code: 'INTERNAL', message: 'Export failed' };
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error });
       return;
     }
 

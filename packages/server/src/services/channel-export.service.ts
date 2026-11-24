@@ -1,6 +1,9 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { ALL_CHANNELS, toScriptLanguage, type ChannelExport, type ChannelExportEntry } from '@galvanigraph/core-models';
+import { errorInfo } from '@galvanigraph/core-util';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import logger from '../lib/logger.js';
+import { foundOrThrow, ServiceError } from '../lib/service-error.js';
 import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import { ChannelService, type ChannelDetail } from './channel.service.js';
 import type { ChannelScope } from '../lib/channel-scope.js';
@@ -98,6 +101,19 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
   };
 }
 
+const MAX_CHANNELS = 10000;
+
+/** Null: deleted after the list was read, so not missing from the export. */
+async function readEntry(summary: { readonly id: string; readonly name: string }): Promise<ChannelExportEntry | null> {
+  try {
+    const detail = foundOrThrow(await ChannelService.getById(summary.id));
+    return detail && channelToExportEntry(detail);
+  } catch (err) {
+    logger.error({ ...errorInfo(err), channelId: summary.id }, 'Export failed: channel could not be read');
+    throw new ServiceError('INTERNAL', `Channel "${summary.name}" (${summary.id}) could not be read, so nothing was exported`);
+  }
+}
+
 export class ChannelExportService {
   static async exportChannel(id: string, context?: AuditContext): Promise<Result<ChannelExport>> {
     return tryCatch(async () => {
@@ -121,15 +137,17 @@ export class ChannelExportService {
 
   static async exportAll(context?: AuditContext, scope: ChannelScope = ALL_CHANNELS): Promise<Result<ChannelExport>> {
     return tryCatch(async () => {
-      const listResult = await ChannelService.list({ page: 1, pageSize: 10000 }, scope);
+      const listResult = await ChannelService.list({ page: 1, pageSize: MAX_CHANNELS }, scope);
       if (!listResult.ok) throw listResult.error;
+      const { total } = listResult.value.pagination;
+      if (total > MAX_CHANNELS) {
+        throw new ServiceError('INTERNAL', `One export reads at most ${String(MAX_CHANNELS)} channels and there are ${String(total)}, so nothing was exported`);
+      }
 
       const entries: ChannelExportEntry[] = [];
       for (const summary of listResult.value.data) {
-        const detailResult = await ChannelService.getById(summary.id);
-        if (detailResult.ok) {
-          entries.push(channelToExportEntry(detailResult.value));
-        }
+        const entry = await readEntry(summary);
+        if (entry) entries.push(entry);
       }
 
       emitEvent({

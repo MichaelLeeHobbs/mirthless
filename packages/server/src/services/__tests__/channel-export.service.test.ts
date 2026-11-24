@@ -12,9 +12,14 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+vi.mock('../../lib/logger.js', () => ({
+  default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+
 import { ChannelExportService } from '../channel-export.service.js';
 import { ChannelService } from '../channel.service.js';
 import { emitEvent } from '../../lib/event-emitter.js';
+import { isServiceError, ServiceError } from '../../lib/service-error.js';
 
 const mockGetById = vi.mocked(ChannelService.getById);
 const mockList = vi.mocked(ChannelService.list);
@@ -244,34 +249,55 @@ describe('ChannelExportService.exportAll', () => {
     }
   });
 
-  it('skips channels that fail to load', async () => {
+  function listOf(ids: readonly string[], total = ids.length): void {
     mockList.mockResolvedValue({
       ok: true,
       value: {
-        data: [
-          { id: 'ch-1', name: 'Channel 1' },
-          { id: 'ch-2', name: 'Channel 2' },
-        ],
-        pagination: { page: 1, pageSize: 10000, total: 2, totalPages: 1 },
+        data: ids.map((id) => ({ id, name: `Channel ${id}` })),
+        pagination: { page: 1, pageSize: 10000, total, totalPages: Math.ceil(total / 10000) },
       } as never,
       error: null,
     });
+  }
 
-    let callCount = 0;
-    mockGetById.mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
-        return { ok: true as const, value: makeChannelDetail({ id: 'ch-1' }) as never, error: null };
-      }
-      return { ok: false as const, value: null, error: stderr({ name: 'Error', message: 'DB error', code: 'INTERNAL' }) };
-    });
+  it('fails, naming the channel, when one channel cannot be read', async () => {
+    listOf(['ch-1', 'ch-2', 'ch-3']);
+    mockGetById.mockImplementation(async (id) => (id === 'ch-2'
+      ? { ok: false as const, value: null, error: stderr({ name: 'Error', message: 'connection reset', code: 'ECONNRESET' }) }
+      : { ok: true as const, value: makeChannelDetail({ id }) as never, error: null }));
+
+    const result = await ChannelExportService.exportAll();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('Channel ch-2');
+    expect(isServiceError(result.error, 'INTERNAL')).toBe(true);
+    expect(mockEmitEvent).not.toHaveBeenCalled();
+  });
+
+  it('leaves out a channel deleted after the list was read', async () => {
+    listOf(['ch-1', 'ch-2']);
+    mockGetById.mockImplementation(async (id) => (id === 'ch-2'
+      ? { ok: false as const, value: null, error: stderr(new ServiceError('NOT_FOUND', 'Channel ch-2 not found')) }
+      : { ok: true as const, value: makeChannelDetail({ id }) as never, error: null }));
 
     const result = await ChannelExportService.exportAll();
 
     expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.channels).toHaveLength(1);
-    }
+    if (!result.ok) return;
+    expect(result.value.channels.map((c) => c.id)).toEqual(['ch-1']);
+  });
+
+  it('fails when there are more channels than one export reads', async () => {
+    listOf(['ch-1'], 10001);
+    mockGetById.mockImplementation(async (id) => ({ ok: true as const, value: makeChannelDetail({ id }) as never, error: null }));
+
+    const result = await ChannelExportService.exportAll();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('10001');
+    expect(mockEmitEvent).not.toHaveBeenCalled();
   });
 
   it('returns error when list fails', async () => {

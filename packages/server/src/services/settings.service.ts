@@ -65,6 +65,17 @@ export class SettingsService {
     });
   }
 
+  /** Unmasked, so for the server's own use and never in a response. Null when not set. */
+  static async getStoredValue(key: string): Promise<Result<string | null>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select()
+        .from(systemSettings)
+        .where(eq(systemSettings.key, key));
+      return row?.value ?? null;
+    });
+  }
+
   static async upsert(input: UpsertSettingInput, context?: AuditContext): Promise<Result<SettingDetail>> {
     return tryCatch(async () => {
       const [row] = await db

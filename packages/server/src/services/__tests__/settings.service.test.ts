@@ -186,6 +186,20 @@ describe('SettingsService', () => {
     });
   });
 
+  describe('getStoredValue', () => {
+    it('returns a secret unmasked, for the server to use', async () => {
+      pushResponse([makeSettingRow({ key: 'smtp.auth_pass', type: 'password', value: 'hunter2', category: 'smtp' })]);
+
+      expect(await SettingsService.getStoredValue('smtp.auth_pass')).toMatchObject({ ok: true, value: 'hunter2' });
+    });
+
+    it('returns null for a key that is not set', async () => {
+      pushResponse([]);
+
+      expect(await SettingsService.getStoredValue('smtp.auth_pass')).toMatchObject({ ok: true, value: null });
+    });
+  });
+
   describe('list — secret redaction', () => {
     it('masks secret values but leaves non-secret values intact', async () => {
       pushResponse([
