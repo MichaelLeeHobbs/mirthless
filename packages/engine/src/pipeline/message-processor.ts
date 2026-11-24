@@ -291,9 +291,11 @@ export class MessageProcessor {
     this.store = store;
     this.sendFn = sendFn;
     this.config = config;
-    this.execOptions = config.scriptTimeoutMs
-      ? { ...execOptions, timeout: config.scriptTimeoutMs }
-      : execOptions;
+    this.execOptions = {
+      ...execOptions,
+      channelId: config.channelId,
+      ...(config.scriptTimeoutMs ? { timeout: config.scriptTimeoutMs } : {}),
+    };
   }
 
   async processMessage(

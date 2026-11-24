@@ -45,6 +45,9 @@ RUN pnpm install --frozen-lockfile --prod
 # Stage 4: Production image
 FROM base AS production
 ENV NODE_ENV=production
+# PID 1 in a container cannot be ended from inside it, which the script watchdog
+# must be able to do to the server (D-340), so tini is PID 1.
+RUN apk add --no-cache tini
 
 # Copy root and per-package node_modules from prod-deps stage (prod-only)
 COPY --from=prod-deps /app/node_modules ./node_modules
@@ -86,5 +89,5 @@ USER galvanigraph
 EXPOSE 3000
 
 # Entrypoint migrates + seeds, then execs the CMD (the server).
-ENTRYPOINT ["/app/docker/server-entrypoint.sh"]
+ENTRYPOINT ["/sbin/tini", "--", "/app/docker/server-entrypoint.sh"]
 CMD ["node", "packages/server/dist/index.js"]

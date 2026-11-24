@@ -19,7 +19,7 @@ The first three are **unauthenticated** and safe for load balancers / orchestrat
 
 ### Startup steps
 
-At startup the server starts the job queue (pg-boss), then the data pruner schedule, which needs the queue, and redeploys what each enabled channel last deployed (its recorded deployment, D-328), never configuration saved since. Channel redeploy does not use the queue, so it runs alongside it, and one failed step never skips another. A step fails when it throws or reports an error, and the queue and the pruner schedule also fail when they have not started after 60 seconds. Channel redeploy has no time limit; it reads every live channel in one query, deploys each once, and fails when any channel could not be redeployed, naming those channels (the others are still deployed). It does not redeploy a channel someone undeployed, or an enabled channel that has never been deployed: the second is logged and recorded as a `CHANNEL_NOT_REDEPLOYED` WARN event, and does not fail the step. A step reported failed by its timeout keeps running: if it then succeeds, its failure is cleared and a `Startup step finished after its timeout` WARN line is logged (a queue that starts late then starts the pruner schedule); if it fails, its real error replaces the timeout.
+At startup the server starts the job queue (pg-boss), then the data pruner schedule, which needs the queue, and redeploys what each enabled channel last deployed (its recorded deployment, D-328), never configuration saved since. Channel redeploy does not use the queue, so it runs alongside it, and one failed step never skips another. A step fails when it throws or reports an error, and the queue and the pruner schedule also fail when they have not started after 60 seconds. Channel redeploy has no time limit; it reads every live channel in one query, deploys each once, and fails when any channel could not be redeployed, naming those channels (the others are still deployed). It does not redeploy a channel the script watchdog holds ([below](#a-script-that-hangs-the-server)), which counts as failed, a channel someone undeployed, or an enabled channel that has never been deployed: the last is logged and recorded as a `CHANNEL_NOT_REDEPLOYED` WARN event, and does not fail the step. A step reported failed by its timeout keeps running: if it then succeeds, its failure is cleared and a `Startup step finished after its timeout` WARN line is logged (a queue that starts late then starts the pruner schedule); if it fails, its real error replaces the timeout.
 
 A failed step is logged at ERROR (`Startup step failed`, with `step`), recorded as a `SERVER_STARTUP_STEP_FAILED` event (Events page), and reported by health: `/health/ready` and `/health` answer `200` with `status:"degraded"` (`/health/ready` also names the steps in `startup.failedSteps`: `queue`, `pruner-scheduler`, `channel-redeploy`, `audit-partitions`; the last also reruns daily, see [audit log](audit-log.md)), and `/health/full` adds each step's error and time. Both stay `200` so an instance is not pulled out of a load balancer, which would hide the UI an operator needs to fix it (D-308); alert on `status:"degraded"` instead. A failure stays recorded until the server restarts, or until that step later succeeds, so such an alert clears on the next restart that starts cleanly.
 
@@ -46,6 +46,20 @@ Recommended probe wiring:
 
 The Docker healthcheck for the server container uses `/health/live` (see
 `docker/docker-compose.prod.yml`).
+
+---
+
+## A script that hangs the server
+
+A channel script's time limit does not stop every script. One it does not stop holds the server's main thread: no channel, API request or health check runs. A watchdog thread ends the process when a script is still running 60 seconds past its limit, and the supervisor starts the server again.
+
+- The channel whose script was stuck stays undeployed after the restart, so the same message can't hang the server again. The others come back. The log has a FATAL line from the watchdog naming the channel. The start logs an ERROR, records a `CHANNEL_NOT_REDEPLOYED` ERROR event with the reason, and reports the `channel-redeploy` step as failed, so health is `degraded`.
+- To bring the channel back, fix its script and deploy it. A message it had not finished runs again then, if its content is stored. To keep it off without the error at every start, disable the channel instead.
+- If the database does not answer within 8 seconds, the server is ended without holding the channel, and the channel comes back with the restart. If the script ends by itself meanwhile, the server runs on and the channel with it.
+- The server must run under something that restarts it: `restart: unless-stopped` (the production compose file), Kubernetes, systemd with `Restart=always`. It is ended with SIGKILL (exit code 137).
+- A process cannot end itself as PID 1. The image runs [tini](https://github.com/krallin/tini) as PID 1; another image needs `docker run --init`. The server logs a warning at start when it is PID 1.
+- A liveness probe that restarts the server sooner than the watchdog does loses the hold, and the same message can hang the server again after each restart. Give it a failure window longer than twice your longest script timeout plus 70 seconds (reading a script's result has a limit of the same length).
+- The watchdog is off from when a debugger port is opened until it is closed or the server restarts: a breakpoint looks like a stuck script. The server logs a warning then, and an ERROR when the watchdog's thread stops, which is started again after 10 seconds.
 
 ---
 

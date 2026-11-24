@@ -81,6 +81,8 @@ promise against the abort signal for an async wall-clock timeout.
 
 The script's code and its IO settles share one deadline that starts when the script does. Building the sandbox's globals and collecting the script's result are not counted against it: each has a limit of its own, as long as the script's, so a script that finished in time is never reported as timed out because a busy host reached its result late (D-323). One execution can therefore take the setup time, the limit, and the collection time; a toJSON or getter in the result that loops is stopped by the collection's limit. A worker test run is terminated 5 s after both limits. IO results that are ready are settled together in one timed call, one result at a time inside it, because each timed call starts a watchdog thread that a busy machine is slow to schedule (D-300). A timeout always names the whole limit.
 
+The limit does not stop every script. Each timed call is shown in shared memory while it runs (`script-watch.ts`), and a thread of the server ends the process when one is still running a minute past its limit; the supervisor restarts the server and the script's channel stays undeployed (D-340, [operations](../../../../docs/ops/resource-and-observability.md#a-script-that-hangs-the-server)). A Test run's worker is not watched.
+
 ## Notes / limitations
 
 - There is **no** `memoryLimit` knob — `node:vm` cannot enforce one, so it was
@@ -88,7 +90,7 @@ The script's code and its IO settles share one deadline that starts when the scr
 - Data injection is a JSON round-trip per execution (deep-clones, drops functions/
   `Date`s in maps). This is intentional (correctness/security over microseconds).
   Revisit only if profiling shows it matters.
-- A time limit is not a guarantee against a hostile script, or a very unlucky one: some native code of V8 and Node never sees the stop, or can lose it (point 12), and the sandbox has no say over it. Terminating a test run's worker does not help there either: the caller gets its answer, but the thread runs on.
+- A time limit is not a guarantee against a hostile script, or a very unlucky one: some native code of V8 and Node never sees the stop, or can lose it (point 12), and the sandbox has no say over it. In the server the watchdog above then ends the process. Terminating a test run's worker does not help there either: the caller gets its answer, but the thread runs on.
 - Run the server without source maps (`--enable-source-maps`): they add host code to what a script can reach.
 - The removals are part of the defense: before returning one to scripts, find what it is listed for above.
 - If a genuine hard isolate is ever needed (fully untrusted multi-tenant scripts),

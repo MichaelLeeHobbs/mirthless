@@ -210,6 +210,14 @@ describe('EngineManager deploy/undeploy scripts', () => {
       expect(extras['channelName']).toBe('Test Channel');
     });
 
+    it('executes it as the channel, so the watchdog knows whose script it is', async () => {
+      const channel = makeChannel({ scriptTimeoutSeconds: 7, scripts: [{ scriptType: 'DEPLOY', script: 'logger.info("deploying");' }] });
+
+      await new EngineManager('test-server').deploy(bundleOf(channel as never));
+
+      expect(mockSandboxExecute.mock.calls[0]![2]).toEqual({ timeout: 7_000, channelId: CHANNEL_ID });
+    });
+
     it('applies globalChannelMap updates from deploy script', async () => {
       mockSandboxExecute.mockResolvedValueOnce({
         ok: true,

@@ -910,6 +910,24 @@ describe('DeploymentService', () => {
       expect(mockEmitEvent).toHaveBeenCalledWith(expect.objectContaining({ name: 'CHANNEL_NOT_REDEPLOYED', level: 'WARN', channelId: 'a' }));
     });
 
+    it('does not deploy a channel the script watchdog holds, reports it, and deploys the others', async () => {
+      mockChannelService.listLiveForDeploy.mockResolvedValue(ok([summary('a'), summary('b')]));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+      mockRecords.listRecorded.mockImplementation(async ([id]: readonly string[]) => ok(new Map([
+        [id, id === 'a' ? { kind: 'held', reason: 'A script of this channel was stuck.' } : { kind: 'deployed', bundle: bundle({ ...CHANNEL_DETAIL, id: 'b' }) }],
+      ])));
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toBe('1 of 2 channels failed to redeploy: ch-a');
+      expect(deployedOrder()).toEqual(['b']);
+      expect(mockEmitEvent).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'CHANNEL_NOT_REDEPLOYED', level: 'ERROR', outcome: 'FAILURE', channelId: 'a',
+        attributes: { channelName: 'ch-a', reason: 'A script of this channel was stuck. Fix the script, then deploy the channel.' },
+      }));
+    });
+
     it('fails naming a channel whose record cannot be read, and deploys nothing from it', async () => {
       mockChannelService.listLiveForDeploy.mockResolvedValue(ok([summary('a')]));
       mockListAllDependencies.mockResolvedValue(ok([]));

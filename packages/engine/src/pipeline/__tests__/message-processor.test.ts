@@ -102,6 +102,20 @@ describe('MessageProcessor', () => {
     expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ['its own script time limit', { scriptTimeoutMs: 1_234 }, 1_234],
+    ['no script time limit', {}, DEFAULT_EXECUTION_OPTIONS.timeout],
+  ])('runs a script as its channel, with %s, so the watchdog knows whose it is', async (_name, overrides, timeout) => {
+    const execute = vi.spyOn(sandbox, 'execute');
+    const config = makeConfig({ scripts: { sourceFilter: { code: 'return true;' } }, ...overrides });
+    const processor = new MessageProcessor(sandbox, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(30_000));
+
+    expect(execute).toHaveBeenCalled();
+    expect(execute.mock.calls[0]![2]).toMatchObject({ channelId: config.channelId, timeout });
+  });
+
   it('filters message at source filter (returns false)', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

@@ -1,6 +1,9 @@
 export type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from './sandbox-executor.js';
 export { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from './sandbox-executor.js';
 export { isHostValue, thrownText, UNREADABLE_ERROR } from './sandbox-value.js';
+export type { ScriptWatch, StuckLimits } from './script-watch.js';
+export { beatScriptWatch, readScriptWatch, scriptWatchBuffer, StuckDetector } from './script-watch.js';
+export { workerEntry } from './worker-entry.js';
 export type { SandboxContext, SandboxLogger, LogEntry } from './sandbox-context.js';
 export { createSandboxContext } from './sandbox-context.js';
 export type { CompileOptions, FilterRuleInput, TransformerStepInput } from './script-compiler.js';

@@ -8,7 +8,11 @@
 
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CONTENT_TYPE, createChannelSchema, type CreateChannelInput } from '@galvanigraph/core-models';
+import { runStuckScript } from '../../src/lib/__tests__/support/run-stuck-script.js';
 import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('A restart deploys the recorded deployment, not the saved head (#225)', () => {
@@ -48,6 +52,10 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     await shutdown.undeployAll(engineMod.getEngine(), silent);
     const result = await deployment.DeploymentService.autoDeployChannels();
     return result.ok ? null : result.error.message;
+  }
+
+  function databaseUrl(): string {
+    return process.env['DATABASE_URL'] ?? '';
   }
 
   function channelInput(transformerScript: string): CreateChannelInput {
@@ -168,6 +176,124 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     unwrap(await deployment.DeploymentService.deploy(id, actor));
     expect(await restart()).toBeNull();
     expect(isDeployed(id)).toBe(true);
+  });
+
+  it('a channel whose script got stuck is held at the restart and reported, until it is deployed again', { timeout: 90_000 }, async () => {
+    const { id, name } = await createChannel("msg = 'h:' + String(msg);");
+    const other = await createChannel("msg = 'o:' + String(msg);");
+    unwrap(await deployment.DeploymentService.deploy(id, actor));
+    unwrap(await deployment.DeploymentService.deploy(other.id, actor));
+
+    const end = await runStuckScript({ channelId: id, connectionString: databaseUrl() });
+    expect(end).toMatchObject({ timedOut: false, exitedCleanly: false });
+    expect(end.output).toContain('stays undeployed after the restart');
+
+    expect(await restart()).toContain(name);
+    expect(isDeployed(id)).toBe(false);
+    expect(await transformedBy(other.id, 'x')).toBe('o:x');
+
+    unwrap(await deployment.DeploymentService.deploy(id, actor));
+    expect(await restart()).toBeNull();
+    expect(await transformedBy(id, 'y')).toBe('h:y');
+  });
+
+  it('a stuck script of a channel with no deployment holds nothing, and says so', { timeout: 90_000 }, async () => {
+    const end = await runStuckScript({ channelId: randomUUID(), connectionString: databaseUrl() });
+
+    expect(end).toMatchObject({ timedOut: false, exitedCleanly: false });
+    expect(end.output).toContain('"held":false');
+    expect(end.output).toContain('no deployment to hold');
+  });
+
+  it('a hold that has to wait for a lock gives up, and the process still ends', { timeout: 90_000 }, async () => {
+    const { id } = await createChannel("msg = 'l:' + String(msg);");
+    unwrap(await deployment.DeploymentService.deploy(id, actor));
+    const locker = await mods.pool.connect();
+    try {
+      await locker.query('BEGIN');
+      await locker.query('SELECT 1 FROM channel_deployments WHERE channel_id = $1 FOR UPDATE', [id]);
+
+      const end = await runStuckScript({ channelId: id, connectionString: databaseUrl() });
+
+      expect(end).toMatchObject({ timedOut: false, exitedCleanly: false });
+      expect(end.output).toContain('canceling statement due to statement timeout');
+      expect(end.output).not.toContain('Failed query');
+    } finally {
+      await locker.query('ROLLBACK');
+      locker.release();
+    }
+  });
+
+  it('a script that ends by itself while its channel is being held costs no restart, and the next stuck one does', { timeout: 120_000 }, async () => {
+    const { id } = await createChannel("msg = 's:' + String(msg);");
+    unwrap(await deployment.DeploymentService.deploy(id, actor));
+    const stopFile = join(mkdtempSync(join(tmpdir(), 'gg-stuck-')), 'stop');
+    const locker = await mods.pool.connect();
+    await locker.query('BEGIN');
+    await locker.query('SELECT 1 FROM channel_deployments WHERE channel_id = $1 FOR UPDATE', [id]);
+    const child = runStuckScript({ channelId: id, connectionString: databaseUrl(), stopFile });
+    const waiting = async (): Promise<number> => (await mods.pool.query(
+      "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE 'update \"channel_deployments\"%'",
+    )).rows.length;
+
+    await expect.poll(waiting, { timeout: 45_000, interval: 50 }).toBe(1);
+    writeFileSync(stopFile, '');
+    await expect.poll(() => existsSync(`${stopFile}.ended`), { timeout: 10_000, interval: 10 }).toBe(true);
+    const endedAt = Date.now();
+    await locker.query('ROLLBACK');
+    locker.release();
+    const end = await child;
+
+    expect(end).toMatchObject({ timedOut: false, exitedCleanly: false });
+    expect(end.output).toContain('ended by itself after all');
+    expect(end.output.match(/cannot be stopped/g)).toHaveLength(2);
+    const { rows } = await mods.pool.query<{ r: string }>('SELECT held_reason AS r FROM channel_deployments WHERE channel_id = $1', [id]);
+    expect(Date.parse(/ at (\S+Z),/.exec(rows[0]?.r ?? '')?.[1] ?? '')).toBeGreaterThan(endedAt);
+  });
+
+  it('a second hold keeps the first one\'s reason, so releasing it leaves the first', async () => {
+    const { id } = await createChannel("msg = 'c:' + String(msg);");
+    unwrap(await deployment.DeploymentService.deploy(id, actor));
+    const { holdChannel, releaseChannel } = await import('../../src/lib/script-hold.js');
+    const db = { connectionString: databaseUrl(), ssl: false };
+
+    await holdChannel(db, id, 'first');
+    expect(await holdChannel(db, id, 'second')).toBe(true);
+    await releaseChannel(db, id, 'second');
+
+    const { rows } = await mods.pool.query('SELECT held_reason AS r FROM channel_deployments WHERE channel_id = $1', [id]);
+    expect(rows).toEqual([{ r: 'first' }]);
+  });
+
+  it('a released hold is gone, and another channel\'s or a later one stays', async () => {
+    const { id } = await createChannel("msg = 'a:' + String(msg);");
+    const other = await createChannel("msg = 'b:' + String(msg);");
+    for (const ch of [id, other.id]) unwrap(await deployment.DeploymentService.deploy(ch, actor));
+    const { holdChannel, releaseChannel } = await import('../../src/lib/script-hold.js');
+    const db = { connectionString: databaseUrl(), ssl: false };
+    const held = async (): Promise<unknown[]> => (await mods.pool.query(
+      'SELECT held_reason AS r FROM channel_deployments WHERE channel_id = ANY($1) ORDER BY channel_id = $2 DESC', [[id, other.id], id],
+    )).rows.map((r: { r: string | null }) => r.r);
+
+    expect(await holdChannel(db, id, 'first')).toBe(true);
+    expect(await held()).toEqual(['first', null]);
+    await holdChannel(db, other.id, 'first');
+    await releaseChannel(db, id, 'first');
+    expect(await held()).toEqual([null, 'first']);
+    await releaseChannel(db, other.id, 'earlier');
+    expect(await held()).toEqual([null, 'first']);
+  });
+
+  it('undeploying a held channel keeps it off without reporting it at every restart', async () => {
+    const { id } = await createChannel("msg = 'q:' + String(msg);");
+    unwrap(await deployment.DeploymentService.deploy(id, actor));
+    await mods.pool.query("UPDATE channel_deployments SET held_reason = 'stuck' WHERE channel_id = $1", [id]);
+    expect(await restart()).not.toBeNull();
+
+    unwrap(await deployment.DeploymentService.undeploy(id, actor));
+
+    expect(await restart()).toBeNull();
+    expect(isDeployed(id)).toBe(false);
   });
 
   it('refuses a record it cannot read, naming the channel, instead of deploying the saved head', async () => {

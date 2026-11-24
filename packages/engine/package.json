@@ -9,6 +9,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./script-watch": {
+      "import": "./dist/sandbox/script-watch.js",
+      "types": "./dist/sandbox/script-watch.d.ts"
     }
   },
   "scripts": {

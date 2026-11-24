@@ -38,6 +38,7 @@ export interface DeploymentBundle {
 export type RecordedDeployment =
   | { readonly kind: 'deployed'; readonly bundle: DeploymentBundle }
   | { readonly kind: 'undeployed' }
+  | { readonly kind: 'held'; readonly reason: string }
   | { readonly kind: 'unreadable'; readonly reason: string };
 
 /**
@@ -80,8 +81,10 @@ function missingFields(value: unknown, fields: Readonly<Record<string, true>>): 
   return Object.keys(fields).filter((f) => !(f in value));
 }
 
-/** A stored row as a bundle, or why it cannot be deployed. */
+/** A stored row as a bundle, or why it is not deployed. */
 function parseRow(row: ChannelDeploymentRow): RecordedDeployment {
+  if (row.undeployedAt !== null) return { kind: 'undeployed' };
+  if (row.heldReason !== null) return { kind: 'held', reason: row.heldReason };
   if (row.format !== DEPLOYMENT_FORMAT) {
     return { kind: 'unreadable', reason: `its deployment record is in format ${String(row.format)}, which this version does not read` };
   }
@@ -156,7 +159,7 @@ export class DeploymentRecordService {
     return tryCatch(async () => {
       if (channelIds.length === 0) return new Map<string, RecordedDeployment>();
       const rows = await db.select().from(channelDeployments).where(inArray(channelDeployments.channelId, [...channelIds]));
-      return new Map(rows.map((row) => [row.channelId, row.undeployedAt === null ? parseRow(row) : { kind: 'undeployed' as const }]));
+      return new Map(rows.map((row) => [row.channelId, parseRow(row)]));
     });
   }
 
@@ -205,6 +208,7 @@ async function writeRecord(tx: DbTransaction, bundle: DeploymentBundle, deployed
     deployedBy,
     deployedAt,
     undeployedAt: null,
+    heldReason: null,
   };
   await tx.insert(channelDeployments)
     .values({ channelId: bundle.channel.id, ...values })

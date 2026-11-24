@@ -1,7 +1,8 @@
 import app from './app.js';
 import { config } from './config/index.js';
 import logger from './lib/logger.js';
-import { pool } from './lib/db.js';
+import { buildPoolConfig, pool } from './lib/db.js';
+import { startScriptWatchdog } from './lib/script-watchdog.js';
 import { startQueue, stopQueue } from './lib/queue.js';
 import { initializeSocketIO, shutdownSocketIO } from './lib/socket.js';
 import { setLogCaptureStream } from './lib/logger.js';
@@ -51,6 +52,8 @@ const startupDeps = {
   redeployChannels: () => DeploymentService.autoDeployChannels(),
   ensureAuditPartitions,
 };
+// Before any channel can run a script.
+startScriptWatchdog({ logger, db: buildPoolConfig() });
 void runStartupSteps(startupDeps);
 // Audit partitions are kept three months ahead (D-312): at start, then daily.
 setInterval(() => {

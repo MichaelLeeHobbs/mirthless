@@ -86,6 +86,8 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 
 - Upgrades: [Upgrade procedure](upgrade.md). Always back up first.
 - Health, metrics and logs: [Resource sizing & observability](resource-and-observability.md).
+- Keep a restart policy on the server: a script that hangs it ends in a restart
+  ([details](resource-and-observability.md#a-script-that-hangs-the-server)).
 - Capacity: [Soak test](soak-test.md) baseline (memory, latency, database growth at 100 msg/s).
 - Backups: [Backup & restore](backup-restore.md).
 - Before carrying PHI: work through the operator checklist in
