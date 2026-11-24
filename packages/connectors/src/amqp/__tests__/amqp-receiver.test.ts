@@ -512,6 +512,16 @@ describe('headersToRecord', () => {
     });
   });
 
+  it.each([
+    ['text', '{"__proto__":"x","site":"north"}'],
+    ['null', '{"__proto__":null,"site":"north"}'],
+  ])('keeps a header named __proto__ (%s)', (_kind, json) => {
+    // JSON.parse makes it an own property, as amqplib's decoder does.
+    const record = headersToRecord(JSON.parse(json) as Record<string, unknown>);
+    expect(JSON.stringify(record)).toBe(json);
+    expect(Object.getPrototypeOf(record)).toBe(Object.prototype);
+  });
+
   it('gives no headers as an empty record', () => {
     expect(headersToRecord(undefined)).toEqual({});
   });
