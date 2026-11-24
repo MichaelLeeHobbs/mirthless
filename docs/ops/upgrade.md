@@ -399,6 +399,12 @@ A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (d
 
 The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
 
+## Imports keep stored credentials and script timeouts (#334)
+
+Importing a channel with `OVERWRITE`, or restoring a backup with it, used to clear every connector credential the target had, because the file masks them. It now keeps a stored credential while the connector still goes to the same place as the same user, and clears it otherwise ([Credentials](api-automation.md#credentials)). A pipeline that puts the credentials back after each import can stop doing so. A connector an earlier import or restore left without its credential still needs it entered: look for destinations that deploy without one, such as HTTP with an `Authorization` header.
+
+Exports and backups now hold each channel's script timeout. Before, a channel imported as new, or restored onto a fresh server, got 30 seconds whatever it had. If you raised a channel's script timeout before such an import or restore, set it again. A file made before this version has no timeout: a channel it creates gets 30 seconds, and one it overwrites keeps its own.
+
 ## Standard upgrade (Docker)
 
 ```bash

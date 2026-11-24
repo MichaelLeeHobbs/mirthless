@@ -26,7 +26,7 @@ export interface ConnectorKeys {
   readonly credentials: readonly string[];
 }
 
-// sourceCommonProperties and destinationCommonProperties in core-models.
+// Not read from core-models' sourceCommonProperties and destinationCommonProperties: a key added there must be judged here too.
 const SOURCE_COMMON = ['processBatch'];
 const DESTINATION_COMMON = ['template'];
 
