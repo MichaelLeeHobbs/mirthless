@@ -266,6 +266,29 @@ describeIntegration('roles and grant rules (real Postgres)', () => {
       expect((await call(token, 'POST', '/roles', { name: tag(), permissions: [] })).status).toBe(403);
     });
 
+    it('edits a role (200) and answers with the saved role', async () => {
+      const admin = await userWithRole('admin');
+      const token = await tokenFor(admin);
+      const roleId = await createRole(admin, ['channels:read']);
+
+      const edited = await call(token, 'PUT', `/roles/${roleId}`, { permissions: ['messages:read'] });
+
+      expect(edited.status).toBe(200);
+      expect(edited.json.data).toMatchObject({ id: roleId, permissions: ['messages:read'] });
+      expect((await GrantService.getRole(roleId)).permissions).toEqual(['messages:read']);
+    });
+
+    it('refuses to edit or delete the admin role (403 SYSTEM_PROTECTED)', async () => {
+      const token = await tokenFor(await userWithRole('admin'));
+      const adminRole = (await GrantService.listRoles()).find((r) => r.admin)!;
+
+      for (const [method, body] of [['PUT', { name: 'root' }], ['DELETE', undefined]] as const) {
+        const refused = await call(token, method, `/roles/${adminRole.id}`, body);
+        expect(refused.status).toBe(403);
+        expect(refused.json.error?.code).toBe('SYSTEM_PROTECTED');
+      }
+    });
+
     it('deletes an unassigned role (204)', async () => {
       const admin = await userWithRole('admin');
       const roleId = await createRole(admin, []);
