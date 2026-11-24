@@ -8,7 +8,7 @@ import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logge
 import { withTimeout } from '../timeout.js';
 import { assertCharsetAvailable, decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
-import { consumeAmqp, type AmqpConnectionConfig, type AmqpConsume, type AmqpConsumer, type AmqpDelivery } from './amqp-client.js';
+import { consumeAmqp, headersToRecord, type AmqpConnectionConfig, type AmqpConsume, type AmqpConsumer, type AmqpDelivery } from './amqp-client.js';
 
 /** Pause before reconnecting and before requeueing, so a down database is not hammered. */
 const DEFAULT_RETRY_DELAY_MS = 5_000;
@@ -32,7 +32,7 @@ export function toRawMessage(delivery: AmqpDelivery, queue: string, charset: Que
       exchange: delivery.exchange,
       routingKey: delivery.routingKey,
       redelivered: delivery.redelivered,
-      headers: delivery.headers,
+      headers: headersToRecord(delivery.headers),
       ...(delivery.messageId === undefined ? {} : { messageId: delivery.messageId }),
       ...(delivery.contentType === undefined ? {} : { contentType: delivery.contentType }),
     },
