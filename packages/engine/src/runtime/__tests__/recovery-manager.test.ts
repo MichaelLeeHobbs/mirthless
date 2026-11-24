@@ -32,6 +32,8 @@ function makeStore(
   };
 }
 
+const RUNNING = new AbortController().signal;
+
 describe('RecoveryManager', () => {
   it('returns zeros when no unprocessed messages', async () => {
     const store = makeStore([], new Map());
@@ -39,11 +41,11 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual({ recovered: 0, errors: 0, skipped: 0 });
+    expect(result.value).toEqual({ recovered: 0, errors: 0, skipped: 0, interrupted: false });
   });
 
   it('reprocesses source connector with RECEIVED status', async () => {
@@ -56,7 +58,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -77,7 +79,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -96,7 +98,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -118,7 +120,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -136,7 +138,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -156,7 +158,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -183,7 +185,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -202,7 +204,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn();
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(false);
   });
@@ -220,7 +222,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(fail('dispatch failed'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -237,7 +239,7 @@ describe('RecoveryManager', () => {
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, vi.fn());
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(reprocess).toHaveBeenCalledWith(CHANNEL_ID, 20);
     expect(result.ok && result.value.recovered).toBe(1);
@@ -259,7 +261,7 @@ describe('RecoveryManager', () => {
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
-    await mgr.recover(CHANNEL_ID);
+    await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(reprocess).not.toHaveBeenCalled();
     expect(redispatch).toHaveBeenCalledWith(CHANNEL_ID, 21, 2);
@@ -274,7 +276,7 @@ describe('RecoveryManager', () => {
     const store = makeStore(msgs, conns);
     const mgr = new RecoveryManager(store, vi.fn(), vi.fn());
 
-    await mgr.recover(CHANNEL_ID);
+    await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 22);
   });
@@ -290,7 +292,7 @@ describe('RecoveryManager', () => {
       return ok(undefined);
     });
 
-    await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID);
+    await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, RUNNING);
 
     expect(store.finishSource).toHaveBeenCalledWith(CHANNEL_ID, 30, 'SENT');
     expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 30);
@@ -303,7 +305,7 @@ describe('RecoveryManager', () => {
     ]);
     const store = makeStore(msgs, conns);
 
-    await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID);
+    await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID, RUNNING);
 
     expect(store.finishSource).toHaveBeenCalledWith(CHANNEL_ID, 31, 'ERROR');
   });
@@ -315,7 +317,7 @@ describe('RecoveryManager', () => {
     ]);
     const store = makeStore(msgs, conns);
 
-    await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID);
+    await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID, RUNNING);
 
     expect(store.finishSource).not.toHaveBeenCalled();
     expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 32);
@@ -329,7 +331,7 @@ describe('RecoveryManager', () => {
     const store = makeStore(msgs, conns);
     vi.mocked(store.finishSource).mockResolvedValue(fail('db down'));
 
-    const result = await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID);
+    const result = await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID, RUNNING);
 
     expect(store.markProcessed).not.toHaveBeenCalled();
     expect(result.ok && result.value.errors).toBe(1);
@@ -347,7 +349,7 @@ describe('RecoveryManager', () => {
     const store = makeStore(msgs, conns);
     const mgr = new RecoveryManager(store, vi.fn(), vi.fn().mockResolvedValue(fail('down')));
 
-    await mgr.recover(CHANNEL_ID);
+    await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(store.markProcessed).not.toHaveBeenCalled();
   });
@@ -359,7 +361,7 @@ describe('RecoveryManager', () => {
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, vi.fn());
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok && result.value.recovered).toBe(450);
     const calls = (store.getUnprocessedMessages as ReturnType<typeof vi.fn>).mock.calls;
@@ -372,10 +374,63 @@ describe('RecoveryManager', () => {
     const store = makeStore(msgs, conns);
     const mgr = new RecoveryManager(store, vi.fn().mockResolvedValue(fail('still broken')), vi.fn());
 
-    const result = await mgr.recover(CHANNEL_ID);
+    const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(result.ok && result.value.errors).toBe(200);
     expect(store.getUnprocessedMessages).toHaveBeenCalledTimes(2);
+  });
+
+  describe('when the channel stops', () => {
+    const received = (count: number): { readonly msgs: UnprocessedMessage[]; readonly conns: Map<number, ConnectorMessageRecord[]> } => {
+      const msgs = Array.from({ length: count }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
+      return { msgs, conns: new Map(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 1, status: 'RECEIVED' }]])) };
+    };
+
+    it('takes no message after it, and says it was interrupted', async () => {
+      const stop = new AbortController();
+      const { msgs, conns } = received(12);
+      const store = makeStore(msgs, conns);
+      const redispatched: number[] = [];
+      const redispatch = vi.fn(async (_c: string, messageId: number) => {
+        redispatched.push(messageId);
+        if (messageId === 5) stop.abort();
+        return ok(undefined);
+      });
+
+      const result = await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, stop.signal);
+
+      expect(store.getConnectorMessages).toHaveBeenCalledTimes(5);
+      expect(redispatched).toEqual([1, 2, 3, 4, 5]);
+      expect(result.ok && result.value).toMatchObject({ recovered: 5, errors: 0, interrupted: true });
+    });
+
+    it('reads no further page after it', async () => {
+      const stop = new AbortController();
+      const { msgs, conns } = received(450);
+      const store = makeStore(msgs, conns);
+      const redispatch = vi.fn(async (_c: string, messageId: number) => {
+        if (messageId === 200) stop.abort();
+        return ok(undefined);
+      });
+
+      await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, stop.signal);
+
+      expect(store.getUnprocessedMessages).toHaveBeenCalledOnce();
+    });
+
+    it('leaves a message unprocessed when it came between two of its destinations', async () => {
+      const stop = new AbortController();
+      const store = makeStore([{ messageId: 1, channelId: CHANNEL_ID }], new Map([[1, [
+        { messageId: 1, metaDataId: 1, status: 'RECEIVED' }, { messageId: 1, metaDataId: 2, status: 'RECEIVED' },
+      ]]]));
+      const redispatch = vi.fn(async () => { stop.abort(); return ok(undefined); });
+
+      const result = await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, stop.signal);
+
+      expect(redispatch).toHaveBeenCalledOnce();
+      expect(store.markProcessed).not.toHaveBeenCalled();
+      expect(result.ok && result.value.interrupted).toBe(true);
+    });
   });
 
   it('recovers at most a few messages at once', async () => {
@@ -392,7 +447,7 @@ describe('RecoveryManager', () => {
     });
     const mgr = new RecoveryManager(makeStore(msgs, conns), reprocess, vi.fn());
 
-    await mgr.recover(CHANNEL_ID);
+    await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(reprocess).toHaveBeenCalledTimes(40);
     expect(peak).toBeLessThanOrEqual(5);

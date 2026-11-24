@@ -10,6 +10,13 @@ import type { TlsClientOptions } from '../tls.js';
 import { classifyAckResponse, controlIdOf, type SentControlId } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
+/** One start of the dispatcher. */
+interface Run {
+  readonly pool: genericPool.Pool<net.Socket>;
+  /** Aborted by a halt, which ends every send, wait and connect of this run whoever asked for it. */
+  readonly halted: AbortController;
+}
+
 /** Longest wait after a failed connect, so a remote that is down is not hammered. */
 const MAX_CONNECT_PAUSE_MS = 1_000;
 
@@ -34,7 +41,7 @@ export interface TcpMllpDispatcherConfig {
 export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   private readonly config: TcpMllpDispatcherConfig;
   private readonly logger: ConnectorLogger;
-  private pool: genericPool.Pool<net.Socket> | null = null;
+  private run: Run | null = null;
   /** Why the last connect failed; null once one succeeds. */
   private connectFailure: string | null = null;
   private outageLogged = false;
@@ -57,33 +64,39 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
 
   async onStart(): Promise<Result<void>> {
     return tryCatch(async () => {
+      const halted = new AbortController();
       const factory: genericPool.Factory<net.Socket> = {
-        create: () => this.connectOrPause(),
+        create: () => this.connectOrPause(halted.signal),
         destroy: async (socket) => { socket.destroy(); },
         validate: async (socket) => !socket.destroyed && socket.writable,
       };
 
       this.resetOutage();
-      this.pool = genericPool.createPool(factory, {
+      const pool = genericPool.createPool(factory, {
         min: 0,
         max: this.config.maxConnections,
         idleTimeoutMillis: 30_000,
         acquireTimeoutMillis: this.config.acquireTimeoutMs,
         testOnBorrow: true,
       });
+      this.run = { pool, halted };
     });
   }
 
   /** The pool calls this again at once when it fails while a send waits, so a failure is held back. */
-  private async connectOrPause(): Promise<net.Socket> {
+  private async connectOrPause(halted: AbortSignal): Promise<net.Socket> {
+    // The pool has no way to cancel a wait. Given a socket, connected or not, a waiting send finds it was halted.
+    if (halted.aborted) return new net.Socket();
     try {
-      const socket = await this.createConnection();
+      const socket = await this.createConnection(halted);
       this.resetOutage();
       return socket;
     } catch (err) {
+      if (halted.aborted) throw err;
       this.recordFailedConnect(err);
       // At most a quarter of a send's wait, so a send that comes during the pause still gets an attempt of its own.
-      await delay(Math.min(MAX_CONNECT_PAUSE_MS, this.config.acquireTimeoutMs / 4));
+      const pause = Math.min(MAX_CONNECT_PAUSE_MS, this.config.acquireTimeoutMs / 4);
+      await delay(pause, undefined, { signal: halted });
       throw err;
     }
   }
@@ -96,7 +109,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   private recordFailedConnect(err: unknown): void {
     this.connectFailure = connectFailureText(err);
     // With a connection open the remote is there and refuses only more of them, which is no outage.
-    const open = this.pool ? this.pool.borrowed + this.pool.available : 0;
+    const open = this.run ? this.run.pool.borrowed + this.run.pool.available : 0;
     if (this.outageLogged || open > 0) return;
     this.outageLogged = true;
     this.logger.error(
@@ -126,25 +139,27 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
-      if (!this.pool) {
+      if (!this.run) {
         throw new Error('Dispatcher not started');
       }
+      const { pool, halted } = this.run;
+      // Not every send is given the channel's halt signal.
+      const ending = AbortSignal.any([signal, halted.signal]);
 
-      const socket = await this.acquireSocket(signal);
+      const socket = await this.acquireSocket(pool, ending);
       try {
-        const response = await this.sendAndReceive(socket, message.content, signal);
-        await this.pool.release(socket);
+        const response = await this.sendAndReceive(socket, message.content, ending);
+        await pool.release(socket);
         return response;
       } catch (err) {
-        await this.pool.destroy(socket);
+        await pool.destroy(socket);
         throw err;
       }
     });
   }
 
-  private async acquireSocket(signal: AbortSignal): Promise<net.Socket> {
+  private async acquireSocket(pool: genericPool.Pool<net.Socket>, signal: AbortSignal): Promise<net.Socket> {
     if (signal.aborted) throw new Error('Send aborted');
-    const pool = this.pool!;
     const acquirePromise = pool.acquire();
 
     return new Promise<net.Socket>((resolve, reject) => {
@@ -170,48 +185,56 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   }
 
   async onStop(): Promise<Result<void>> {
-    return tryCatch(async () => {
-      if (this.pool) {
-        await this.pool.drain();
-        await this.pool.clear();
-        this.pool = null;
-      }
-    });
+    return tryCatch(() => this.close());
   }
 
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      if (this.pool) {
-        await this.pool.drain();
-        await this.pool.clear();
-        this.pool = null;
-      }
+      this.run?.halted.abort();
+      await this.close();
     });
   }
 
   async onUndeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.pool = null;
+      this.run = null;
     });
   }
 
-  private async createConnection(): Promise<net.Socket> {
+  private async close(): Promise<void> {
+    const { run } = this;
+    if (!run) return;
+    await run.pool.drain();
+    await run.pool.clear();
+    // A halt may have ended this stop, and a start come after it.
+    if (this.run === run) this.run = null;
+  }
+
+  private async createConnection(halted: AbortSignal): Promise<net.Socket> {
     const connectTimeout = Math.min(this.config.responseTimeout, 5_000);
     return new Promise<net.Socket>((resolve, reject) => {
       const socket = this.openSocket(connectTimeout, () => {
-        socket.removeListener('timeout', onTimeout);
+        stopWaiting();
         this.attachIdleHandlers(socket);
         resolve(socket);
       });
 
-      const onTimeout = (): void => {
+      const giveUp = (reason: string): void => {
+        stopWaiting();
         socket.destroy();
-        reject(new Error(`Connect timeout after ${String(connectTimeout)}ms`));
+        reject(new Error(reason));
+      };
+      const onTimeout = (): void => { giveUp(`Connect timeout after ${String(connectTimeout)}ms`); };
+      const onHalt = (): void => { giveUp('Halted'); };
+      const stopWaiting = (): void => {
+        socket.removeListener('timeout', onTimeout);
+        halted.removeEventListener('abort', onHalt);
       };
 
       socket.once('timeout', onTimeout);
+      halted.addEventListener('abort', onHalt);
       socket.once('error', (err) => {
-        socket.removeListener('timeout', onTimeout);
+        stopWaiting();
         reject(err);
       });
     });
@@ -300,6 +323,11 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
         socket.removeListener('close', onClose);
       };
 
+      // It may have come between the socket and here, and an aborted signal tells no new listener.
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
       signal.addEventListener('abort', onAbort, { once: true });
       socket.on('data', onData);
       socket.once('error', onError);

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getEventListeners } from 'node:events';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { ChannelRuntime } from '../channel-runtime.js';
 import type { RuntimeSourceConnector, RuntimeConnector, ChannelRuntimeConfig } from '../channel-runtime.js';
@@ -32,6 +33,16 @@ function makeConfig(overrides?: Partial<ChannelRuntimeConfig>): ChannelRuntimeCo
     onMessage: vi.fn().mockResolvedValue(ok()),
     ...overrides,
   };
+}
+
+function deferred(): { readonly promise: Promise<Result<void>>; readonly finish: () => void } {
+  let finish = (): void => undefined;
+  const promise = new Promise<Result<void>>((resolve) => { finish = () => { resolve(ok()); }; });
+  return { promise, finish };
+}
+
+async function settle(): Promise<void> {
+  await new Promise((resolve) => { setImmediate(resolve); });
 }
 
 let runtime: ChannelRuntime;
@@ -231,12 +242,372 @@ describe('ChannelRuntime', () => {
       expect(runtime.haltSignal.aborted).toBe(false);
     });
 
+    it('overtakes a stop, and the next start waits for it to end', async () => {
+      const source = makeSource();
+      const dest = makeConnector();
+      const hung = deferred();
+      (source.onStop as Mock).mockReturnValueOnce(hung.promise);
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, dest]]) }));
+      await runtime.start();
+
+      const stopped = runtime.stop();
+      expect((await runtime.halt()).ok).toBe(true);
+      const started = runtime.start();
+      await settle();
+      // The old stop's calls would reach a source and destinations started now.
+      expect(dest.onStart).toHaveBeenCalledOnce();
+      hung.finish();
+
+      expect((await stopped).error?.message).toBe('Cannot stop: the channel was halted');
+      expect((await started).ok).toBe(true);
+      expect(runtime.getState()).toBe('STARTED');
+      expect(dest.onStop).not.toHaveBeenCalled();
+
+      // A stop of this run, not the old one's.
+      expect((await runtime.stop()).ok).toBe(true);
+      expect(source.onStop).toHaveBeenCalledTimes(2);
+      expect(dest.onStop).toHaveBeenCalledOnce();
+    });
+
+    it.each(['stop', 'pause', 'resume'] as const)('refuses a start while the %s it overtook does not end, and allows it after', async (action) => {
+      vi.useFakeTimers();
+      try {
+        const source = makeSource();
+        const hung = deferred();
+        await runtime.deploy(makeConfig({ source }));
+        await runtime.start();
+        if (action === 'resume') await runtime.pause();
+        (action === 'resume' ? source.onStart as Mock : source.onStop as Mock).mockReturnValueOnce(hung.promise);
+        const acting = runtime[action]();
+        await runtime.halt();
+
+        const early = runtime.start();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect((await early).error?.message).toMatch(/^Cannot start: the stop, pause or resume that a halt took over has not ended/);
+        expect(runtime.getState()).toBe('STOPPED');
+
+        hung.finish();
+        await acting;
+        expect((await runtime.start()).ok).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a stop it overtook does not mind that the channel is gone', async () => {
+      const source = makeSource();
+      const hung = deferred();
+      (source.onStop as Mock).mockReturnValueOnce(hung.promise);
+      await runtime.deploy(makeConfig({ source }));
+      await runtime.start();
+      const stopped = runtime.stop();
+      await runtime.halt();
+      expect((await runtime.undeploy()).ok).toBe(true);
+
+      hung.finish();
+
+      expect((await stopped).error?.message).toBe('Cannot stop: the channel was halted');
+      expect(runtime.getState()).toBe('UNDEPLOYED');
+    });
+
+    it('a stop it overtook ends only once the halt has', async () => {
+      const source = makeSource();
+      const dest = makeConnector();
+      const hung = deferred();
+      const halting = deferred();
+      (source.onStop as Mock).mockReturnValueOnce(hung.promise);
+      (dest.onHalt as Mock).mockReturnValueOnce(halting.promise);
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, dest]]) }));
+      await runtime.start();
+
+      const states: string[] = [];
+      const stopped = runtime.stop().then(() => { states.push(runtime.getState()); });
+      const halted = runtime.halt();
+      hung.finish();
+      await settle();
+      expect(states).toEqual([]);
+      halting.finish();
+      await Promise.all([stopped, halted]);
+
+      expect(states).toEqual(['STOPPED']);
+    });
+
+    it('is joined by a stop and by a second halt', async () => {
+      const source = makeSource();
+      const dest = makeConnector();
+      const halting = deferred();
+      (dest.onHalt as Mock).mockReturnValueOnce(halting.promise);
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, dest]]) }));
+      await runtime.start();
+
+      const all = Promise.all([runtime.halt(), runtime.halt(), runtime.stop()]);
+      await settle();
+      halting.finish();
+
+      expect((await all).map((result) => result.ok)).toEqual([true, true, true]);
+      expect(source.onHalt).toHaveBeenCalledOnce();
+      expect(source.onStop).not.toHaveBeenCalled();
+      expect(runtime.getState()).toBe('STOPPED');
+    });
+
+    it.each([
+      ['pause', 'PAUSED'],
+      ['resume', 'STARTED'],
+    ] as const)('overtakes a %s, which does not report the channel %s afterwards', async (action, _state) => {
+      const source = makeSource();
+      const hung = deferred();
+      await runtime.deploy(makeConfig({ source }));
+      await runtime.start();
+      if (action === 'resume') await runtime.pause();
+      (action === 'pause' ? source.onStop as Mock : source.onStart as Mock).mockReturnValueOnce(hung.promise);
+
+      const acting = runtime[action]();
+      expect((await runtime.halt()).ok).toBe(true);
+      hung.finish();
+
+      expect((await acting).error?.message).toBe(`Cannot ${action}: the channel is stopping`);
+      expect(runtime.getState()).toBe('STOPPED');
+    });
+
+    it.each(['stop', 'halt'] as const)('a resume that a %s overtook stops the source that had started by then, before the next start', async (action) => {
+      const source = makeSource();
+      const hung = deferred();
+      await runtime.deploy(makeConfig({ source }));
+      await runtime.start();
+      await runtime.pause();
+      const calls: string[] = [];
+      (source.onStart as Mock).mockImplementationOnce(() => { calls.push('start'); return hung.promise; });
+      const resumed = runtime.resume();
+      await runtime[action]();
+      (source.onStop as Mock).mockImplementation(async () => { calls.push('stop'); return ok(); });
+      (source.onStart as Mock).mockImplementation(async () => { calls.push('start again'); return ok(); });
+      const started = runtime.start();
+      await settle();
+
+      hung.finish();
+      expect((await resumed).error?.message).toBe('Cannot resume: the channel is stopping');
+      expect((await started).ok).toBe(true);
+
+      expect(calls).toEqual(['start', 'stop', 'start again']);
+    });
+
+    it('a resume ends a source that started while a stop was still under way', async () => {
+      const source = makeSource();
+      const starting = deferred();
+      const stopping = deferred();
+      await runtime.deploy(makeConfig({ source }));
+      await runtime.start();
+      await runtime.pause();
+      (source.onStart as Mock).mockReturnValueOnce(starting.promise);
+      const resumed = runtime.resume();
+      (source.onStop as Mock).mockClear().mockReturnValueOnce(stopping.promise);
+      const stopped = runtime.stop();
+
+      starting.finish();
+      await resumed;
+      expect(source.onStop).toHaveBeenCalledTimes(2);
+
+      stopping.finish();
+      expect((await stopped).ok).toBe(true);
+    });
+
     it('cannot halt when stopped', async () => {
       await runtime.deploy(makeConfig());
 
       const result = await runtime.halt();
 
       expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('stop', () => {
+    it.each(['stop', 'halt'] as const)('a %s works again after the next start', async (action) => {
+      const source = makeSource();
+      await runtime.deploy(makeConfig({ source }));
+      for (const times of [1, 2]) {
+        await runtime.start();
+        expect((await runtime[action]()).ok).toBe(true);
+        expect(runtime.getState()).toBe('STOPPED');
+        expect(action === 'stop' ? source.onStop : source.onHalt).toHaveBeenCalledTimes(times);
+      }
+    });
+
+    it.each(['start', 'pause', 'resume'] as const)('two %ss at once drive the connectors once', async (action) => {
+      const source = makeSource();
+      await runtime.deploy(makeConfig({ source }));
+      if (action !== 'start') await runtime.start();
+      if (action === 'resume') await runtime.pause();
+      const call = action === 'pause' ? source.onStop as Mock : source.onStart as Mock;
+      call.mockClear();
+
+      const both = await Promise.all([runtime[action](), runtime[action]()]);
+
+      expect(both.map((result) => result.ok)).toEqual([true, true]);
+      expect(call).toHaveBeenCalledOnce();
+    });
+
+    describe('with work in the background', () => {
+      async function withWork(): Promise<{ readonly dest: RuntimeConnector; readonly work: ReturnType<typeof deferred> }> {
+        const dest = makeConnector();
+        const work = deferred();
+        await runtime.deploy(makeConfig({ destinations: new Map([[1, dest]]) }));
+        await runtime.start();
+        runtime.runInBackground(work.promise);
+        return { dest, work };
+      }
+
+      it('lets it end before the destinations stop', async () => {
+        const { dest, work } = await withWork();
+
+        const stopped = runtime.stop();
+        await settle();
+        expect(dest.onStop).not.toHaveBeenCalled();
+        work.finish();
+
+        expect((await stopped).ok).toBe(true);
+        expect(dest.onStop).toHaveBeenCalledOnce();
+      });
+
+      it('goes on without it after a while', async () => {
+        vi.useFakeTimers();
+        try {
+          const { dest } = await withWork();
+          const stopped = runtime.stop();
+          await vi.advanceTimersByTimeAsync(9_999);
+          expect(dest.onStop).not.toHaveBeenCalled();
+
+          await vi.advanceTimersByTimeAsync(1);
+
+          expect((await stopped).ok).toBe(true);
+          expect(dest.onStop).toHaveBeenCalledOnce();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('does not wait for it once it is halted', async () => {
+        const { dest } = await withWork();
+
+        const stopped = runtime.stop();
+        await settle();
+        expect((await runtime.halt()).ok).toBe(true);
+
+        expect((await stopped).error?.message).toBe('Cannot stop: the channel was halted');
+        expect(dest.onStop).not.toHaveBeenCalled();
+      });
+
+      it('does not wait for it when the halt came while the source was stopping', async () => {
+        const source = makeSource();
+        const sourceStop = deferred();
+        (source.onStop as Mock).mockReturnValueOnce(sourceStop.promise);
+        await runtime.deploy(makeConfig({ source }));
+        await runtime.start();
+        runtime.runInBackground(deferred().promise);
+        const stopped = runtime.stop();
+        await runtime.halt();
+
+        sourceStop.finish();
+
+        expect((await stopped).error?.message).toBe('Cannot stop: the channel was halted');
+      });
+
+      it('is not failed by work that failed, and keeps none that has ended', async () => {
+        await runtime.deploy(makeConfig());
+        await runtime.start();
+        runtime.runInBackground(Promise.reject(new Error('broken')));
+        runtime.runInBackground(Promise.resolve());
+        await settle();
+
+        expect((runtime as unknown as { readonly background: Set<unknown> }).background.size).toBe(0);
+        expect((await runtime.stop()).ok).toBe(true);
+      });
+
+      it('leaves nothing on the halt signal', async () => {
+        const { work } = await withWork();
+        const stopped = runtime.stop();
+        await settle();
+        expect(getEventListeners(runtime.haltSignal, 'abort')).toHaveLength(1);
+        work.finish();
+        await stopped;
+
+        expect(getEventListeners(runtime.haltSignal, 'abort')).toEqual([]);
+      });
+
+      it('says whether it ended in time, also when it failed', async () => {
+        const { work } = await withWork();
+        expect(await runtime.backgroundEnds(1)).toBe(false);
+        runtime.runInBackground(Promise.reject(new Error('broken')));
+        work.finish();
+
+        expect(await runtime.backgroundEnds(1_000)).toBe(true);
+      });
+    });
+
+    it('is joined by a second stop, so neither stops what a start after them started', async () => {
+      const source = makeSource();
+      const dest = makeConnector();
+      const hung = deferred();
+      (source.onStop as Mock).mockReturnValueOnce(hung.promise);
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, dest]]) }));
+      await runtime.start();
+
+      const both = Promise.all([runtime.stop(), runtime.stop()]);
+      await settle();
+      hung.finish();
+
+      expect((await both).map((result) => result.ok)).toEqual([true, true]);
+      expect(source.onStop).toHaveBeenCalledOnce();
+      expect(dest.onStop).toHaveBeenCalledOnce();
+    });
+
+    it.each(['pause', 'resume'] as const)('refuses a %s that comes while it is under way', async (action) => {
+      const source = makeSource();
+      const hung = deferred();
+      await runtime.deploy(makeConfig({ source }));
+      await runtime.start();
+      if (action === 'resume') await runtime.pause();
+      (source.onStop as Mock).mockClear().mockReturnValueOnce(hung.promise);
+      (source.onStart as Mock).mockClear();
+
+      const stopped = runtime.stop();
+      const result = await runtime[action]();
+
+      expect(result.error?.message).toBe(`Cannot ${action}: the channel is stopping`);
+      hung.finish();
+      expect((await stopped).ok).toBe(true);
+      expect(runtime.getState()).toBe('STOPPED');
+      expect(source.onStart).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the run signal', () => {
+    it.each(['stop', 'halt'] as const)('is aborted as a %s begins, and not by a pause', async (action) => {
+      const source = makeSource();
+      await runtime.deploy(makeConfig({ source }));
+      await runtime.start();
+      const run = runtime.runSignal;
+      await runtime.pause();
+      await runtime.resume();
+      expect(run.aborted).toBe(false);
+      const atConnector: boolean[] = [];
+      (action === 'stop' ? source.onStop as Mock : source.onHalt as Mock).mockImplementationOnce(async () => { atConnector.push(run.aborted); return ok(); });
+
+      await runtime[action]();
+
+      expect(atConnector).toEqual([true]);
+    });
+
+    it('is a new one for each start, and aborted while the channel is stopped', async () => {
+      await runtime.deploy(makeConfig());
+      expect(runtime.runSignal.aborted).toBe(true);
+      await runtime.start();
+      const first = runtime.runSignal;
+      await runtime.stop();
+      expect(runtime.runSignal.aborted).toBe(true);
+      await runtime.start();
+
+      expect(first.aborted).toBe(true);
+      expect(runtime.runSignal.aborted).toBe(false);
     });
   });
 

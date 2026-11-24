@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { settleWithin, withTimeout, withTimeoutSignal, TimeoutError } from '../timeout.js';
+import { withTimeout, withTimeoutSignal, TimeoutError } from '../timeout.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -21,25 +21,6 @@ describe('withTimeout', () => {
     const assertion = expect(raced).rejects.toBeInstanceOf(TimeoutError);
     await vi.advanceTimersByTimeAsync(1_000);
     await assertion;
-  });
-});
-
-describe('settleWithin', () => {
-  it.each([
-    ['resolves', (): Promise<unknown> => Promise.resolve('x')],
-    ['rejects', (): Promise<unknown> => Promise.reject(new Error('broken'))],
-  ])('ends when the work %s, and keeps no timer', async (_how, work) => {
-    await settleWithin(work(), 1_000);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('ends when the time is up, and not before', async () => {
-    let ended = false;
-    const waiting = settleWithin(new Promise(() => { /* never settles */ }), 1_000).then(() => { ended = true; });
-    await vi.advanceTimersByTimeAsync(999);
-    expect(ended).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    await waiting;
   });
 });
 

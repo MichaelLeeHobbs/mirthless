@@ -25,6 +25,7 @@ const MockAlertManagerCtor = vi.fn().mockImplementation(function () { return moc
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockChannelRuntime = {
+  backgroundEnds: vi.fn().mockResolvedValue(true),
   deploy: mockRuntimeDeploy,
   undeploy: mockRuntimeUndeploy,
   stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
@@ -378,6 +379,7 @@ describe('QueueConsumer wiring', () => {
   describe('DeploymentService lifecycle', () => {
     it('starts queue consumers when channel starts', async () => {
       const mockRuntime = {
+        runSignal: new AbortController().signal,
         getState: vi.fn().mockReturnValue('STARTED'),
         start: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
         stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
@@ -442,7 +444,7 @@ describe('QueueConsumer wiring', () => {
       expect(mockConsumer.stop).toHaveBeenCalledOnce();
     });
 
-    it('stops queue consumers when channel halts', async () => {
+    it('halts queue consumers, which ends their sends, when channel halts', async () => {
       const mockRuntime = {
         getState: vi.fn().mockReturnValue('STOPPED'),
         start: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
@@ -452,8 +454,8 @@ describe('QueueConsumer wiring', () => {
         resume: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
       };
 
-      const mockConsumer1 = { start: vi.fn(), stop: vi.fn().mockResolvedValue(undefined) };
-      const mockConsumer2 = { start: vi.fn(), stop: vi.fn().mockResolvedValue(undefined) };
+      const mockConsumer1 = { start: vi.fn(), halt: vi.fn().mockResolvedValue(undefined) };
+      const mockConsumer2 = { start: vi.fn(), halt: vi.fn().mockResolvedValue(undefined) };
 
       const deployedChannels = new Map<string, unknown>();
       deployedChannels.set(CHANNEL_ID, {
@@ -471,8 +473,8 @@ describe('QueueConsumer wiring', () => {
       const result = await DeploymentService.halt(CHANNEL_ID);
 
       expect(result.ok).toBe(true);
-      expect(mockConsumer1.stop).toHaveBeenCalledOnce();
-      expect(mockConsumer2.stop).toHaveBeenCalledOnce();
+      expect(mockConsumer1.halt).toHaveBeenCalledOnce();
+      expect(mockConsumer2.halt).toHaveBeenCalledOnce();
     });
   });
 });

@@ -49,8 +49,8 @@ interface QueuedMessage {
   readonly sendAttempts: number;
 }
 
-/** RETRY_LATER: it failed and is back on the queue. */
-type Outcome = 'DONE' | 'RETRY_LATER';
+/** RETRY_LATER: it failed and is back on the queue. HALTED: a halt ended its send, and it is back on the queue. */
+type Outcome = 'DONE' | 'RETRY_LATER' | 'HALTED';
 
 export class QueueConsumer {
   private readonly config: QueueConsumerConfig;
@@ -60,6 +60,7 @@ export class QueueConsumer {
   private stopRequested = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<void> | null = null;
+  private haltController = new AbortController();
   private retryNotBefore = 0;
   private queueReadFailing = false;
   private failureAlerted = false;
@@ -78,6 +79,7 @@ export class QueueConsumer {
     if (this.running) return;
     this.running = true;
     this.stopRequested = false;
+    this.haltController = new AbortController();
     this.schedulePoll();
   }
 
@@ -93,6 +95,13 @@ export class QueueConsumer {
       this.timer = null;
     }
     if (this.inFlight) await this.inFlight;
+  }
+
+  /** A stop that ends the send in flight instead of waiting for it. Its message goes back on the queue too. */
+  async halt(): Promise<void> {
+    const stopped = this.stop();
+    this.haltController.abort();
+    await stopped;
   }
 
   /**
@@ -143,7 +152,7 @@ export class QueueConsumer {
     }
   }
 
-  /** No attempt was made, so none is counted. */
+  /** Without counting an attempt: none was made, or a halt ended it. */
   private async putBack(messages: readonly QueuedMessage[]): Promise<void> {
     for (const msg of messages) {
       const released = await this.store.release(this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED');
@@ -172,7 +181,8 @@ export class QueueConsumer {
   }
 
   private async processQueuedMessage(msg: QueuedMessage): Promise<Outcome> {
-    const signal = AbortSignal.timeout(30_000);
+    const halted = this.haltController.signal;
+    const signal = AbortSignal.any([halted, AbortSignal.timeout(30_000)]);
 
     const contentResult = await this.store.loadContent(
       msg.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.SENT,
@@ -218,6 +228,11 @@ export class QueueConsumer {
       this.failureAlerted = false;
       await this.finishSent(msg, sendResult.value.content);
       return 'DONE';
+    }
+    // An answer, even a refusal, came by itself.
+    if (!sendResult.ok && halted.aborted) {
+      await this.putBack([msg]);
+      return 'HALTED';
     }
 
     const attempts = (msg.sendAttempts ?? 0) + 1;

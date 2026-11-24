@@ -10,6 +10,7 @@ const mockRuntime = {
   pause: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   resume: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   undeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  runSignal: new AbortController().signal,
 };
 
 const deployedChannels = new Map<string, unknown>();
@@ -464,6 +465,22 @@ describe('DeploymentService', () => {
       expect(recoverOnce).toHaveBeenCalledOnce();
       finish?.();
       await Promise.resolve();
+    });
+
+    it('starts no consumer on a channel that was halted before it had started', async () => {
+      const consumer = { start: vi.fn(), stop: vi.fn() };
+      const recoverOnce = vi.fn(async () => {});
+      mockRuntime.getState.mockReturnValue('STARTED');
+      const run = new AbortController();
+      // Aborted as a stop or a halt begins, long before the state says so.
+      const resetClaimsOnce = async (): Promise<void> => { run.abort(); };
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: { ...mockRuntime, runSignal: run.signal }, queueConsumers: [consumer], recoverOnce, resetClaimsOnce });
+
+      const result = await DeploymentService.start(CHANNEL_ID);
+
+      expect(result.error?.message).toBe('Cannot start channel: it was stopped before it had started');
+      expect(consumer.start).not.toHaveBeenCalled();
+      expect(recoverOnce).not.toHaveBeenCalled();
     });
 
     it('does not run recovery when the runtime fails to start', async () => {
