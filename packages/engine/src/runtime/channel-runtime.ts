@@ -27,6 +27,9 @@ export class ChannelRuntime {
   private state: ChannelState = 'UNDEPLOYED';
   private config: ChannelRuntimeConfig | null = null;
   private abortController: AbortController | null = null;
+  private runController: AbortController | null = null;
+  private stopping: Promise<Result<void>> | null = null;
+  private halting: Promise<Result<void>> | null = null;
 
   getState(): ChannelState {
     return this.state;
@@ -82,17 +85,27 @@ export class ChannelRuntime {
         started.push(connector);
       }
 
+      this.runController = new AbortController();
       this.state = 'STARTED';
     });
   }
 
+  /** Joins a stop or a halt already under way. A halt that comes while it waits takes over, and it fails. */
   async stop(): Promise<Result<void>> {
+    if (this.halting) return this.halting;
+    this.stopping ??= this.runStop().finally(() => { this.stopping = null; });
+    return this.stopping;
+  }
+
+  private runStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STARTED' && this.state !== 'PAUSED') {
         throw new Error(`Cannot stop: channel is ${this.state}`);
       }
       if (!this.config) throw new Error('Channel not deployed');
 
+      const { haltSignal } = this;
+      this.runController?.abort();
       const failures: string[] = [];
 
       // Stop source first (no new messages)
@@ -100,13 +113,28 @@ export class ChannelRuntime {
       if (!srcResult.ok) failures.push(`Source stop failed: ${srcResult.error.message}`);
 
       for (const [id, dest] of this.config.destinations) {
+        // The halt has it, and a start may have come since.
+        if (haltSignal.aborted) break;
         const result = await dest.onStop();
         if (!result.ok) failures.push(`Destination ${String(id)} stop failed: ${result.error.message}`);
       }
 
+      if (haltSignal.aborted) {
+        await this.halting;
+        throw new Error('Cannot stop: the channel was halted');
+      }
       this.state = 'STOPPED';
       if (failures[0] !== undefined) throw new Error(failures[0]);
     });
+  }
+
+  /**
+   * Aborted when the channel begins to stop or is halted, and while it is not running.
+   * Work that is not a message coming in (crash recovery) takes nothing new after that.
+   * A new signal is issued at each start; read this once per run.
+   */
+  get runSignal(): AbortSignal {
+    return this.runController?.signal ?? AbortSignal.abort();
   }
 
   /**
@@ -119,7 +147,13 @@ export class ChannelRuntime {
     return this.abortController.signal;
   }
 
+  /** Joins a halt already under way. */
   async halt(): Promise<Result<void>> {
+    this.halting ??= this.runHalt().finally(() => { this.halting = null; });
+    return this.halting;
+  }
+
+  private runHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STARTED' && this.state !== 'PAUSED') {
         throw new Error(`Cannot halt: channel is ${this.state}`);
@@ -128,6 +162,7 @@ export class ChannelRuntime {
 
       this.abortController?.abort();
       this.abortController = new AbortController();
+      this.runController?.abort();
 
       await this.config.source.onHalt();
 
@@ -146,7 +181,9 @@ export class ChannelRuntime {
       }
       if (!this.config) throw new Error('Channel not deployed');
 
+      const { runSignal } = this;
       await this.config.source.onStop();
+      if (runSignal.aborted) throw new Error('Cannot pause: the channel is stopping');
 
       this.state = 'PAUSED';
     });
@@ -157,9 +194,16 @@ export class ChannelRuntime {
       if (this.state !== 'PAUSED') {
         throw new Error(`Cannot resume: channel is ${this.state}`);
       }
-      if (!this.config) throw new Error('Channel not deployed');
+      const { config, runSignal } = this;
+      if (!config) throw new Error('Channel not deployed');
+      if (runSignal.aborted) throw new Error('Cannot resume: the channel is stopping');
 
-      const result = await this.config.source.onStart();
+      const result = await config.source.onStart();
+      if (runSignal.aborted) {
+        // The stop reached the source before it had started. After another start it is that one's.
+        if (this.getState() !== 'STARTED') await config.source.onStop();
+        throw new Error('Cannot resume: the channel is stopping');
+      }
       if (!result.ok) throw new Error('Source resume failed');
 
       this.state = 'STARTED';

@@ -362,7 +362,7 @@ export class DeploymentService {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
 
-      await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+      await Promise.all(deployed.queueConsumers.map((c) => c.halt()));
 
       const result = await deployed.runtime.halt();
       if (!result.ok) {

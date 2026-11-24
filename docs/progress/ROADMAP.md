@@ -100,10 +100,10 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 - [ ] **[V1]** Channel-health alerts (queue depth, error rate, schedule-aware silence), webhook alert action, error triage view (MON1, MON2, MON7): #338, #336
 - [ ] **[V2]** Git and CI/CD for channels, revision diff and restore, environment promotion, env-sourced config (OPS1 to OPS4): #337, #346, after #334. Env-sourced config has no issue
 - [ ] **[V3]** Channel tests in CI, live sample-message editing, step-through debugger (TEST2, TEST4, TEST1): #345
-- [ ] **[V4]** SSO, LDAP and MFA; configurable password policy (SEC3, SEC5): #140 to #143, #148, #209, #210. Custom roles (SEC2) shipped in #265
+- [ ] **[V4]** SSO, LDAP and MFA; configurable password policy (SEC3, SEC5): #140 to #143, #148, #209, #210, #362. Custom roles (SEC2) shipped in #265
 - [ ] **[V5]** Dependency/CVE process, SBOM, outside pen test (SEC1, LIC6, SEC12): #341
 - [ ] **[V6]** Free active-active HA (HA1, = B2): notes in #308, with #312 a requirement
-- [ ] **[V7]** Upgrade safety: migration tests per release, published Node LTS policy (UPG2, UPG1): #340
+- [ ] **[V7]** Upgrade safety: migration tests per release, published Node LTS policy (UPG2, UPG1): #340, #363
 - [ ] **[V8]** Standard helper library, repeating-segment iteration, one page on maps and the message model (SCR4, SCR5, SCR8): #343
 - [ ] **[V9]** Bulk and per-destination reprocess with guardrails, dead-letter queue (REC1, REC5): #339
 - [ ] **[V10]** HL7 round-trip corpus test, HL7 viewer with field names, conformance-profile validation (DT1, UI11, DT3): #344, #351, #189 to #191, #194
