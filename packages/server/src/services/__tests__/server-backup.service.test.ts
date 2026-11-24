@@ -488,6 +488,19 @@ describe('ServerBackupService', () => {
       expect(settingsSection?.created).toBe(1);
     });
 
+    it('restores the SMTP host before the password, which changing the host would clear', async () => {
+      const item = (key: string, value: string): ServerBackup['settings'][number] => ({ key, value, type: 'string', description: null, category: 'smtp' });
+      const backup = makeMinimalBackup({ settings: [item('smtp.auth_pass', 'P'), item('smtp.from', 'a@example.test'), item('smtp.host', 'mail.example.test')] });
+      mockSettingsGetByKey.mockImplementation(async (key: string) => okResult({ key, value: 'old' }));
+      mockSettingsUpsert.mockResolvedValue(okResult({}));
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+
+      await ServerBackupService.restoreBackup(backup, 'OVERWRITE');
+
+      expect(mockSettingsUpsert.mock.calls.map(([input]) => (input as { key: string }).key)).toEqual(['smtp.host', 'smtp.auth_pass', 'smtp.from']);
+    });
+
     it.each(['SKIP', 'OVERWRITE'] as const)('keeps a live secret when its setting cannot be read in %s mode', async (mode) => {
       const backup = makeMinimalBackup({
         settings: [{ key: 'smtp.auth_pass', value: '__REDACTED__', type: 'password', description: null, category: 'smtp' }],

@@ -46,6 +46,13 @@ export const defaultSettings: readonly NewSystemSetting[] = [
     description: 'Use TLS for SMTP connection',
   },
   {
+    key: 'smtp.require_tls',
+    value: 'false',
+    type: 'boolean',
+    category: 'smtp',
+    description: 'Require STARTTLS before signing in or sending',
+  },
+  {
     key: 'smtp.from',
     value: '',
     type: 'string',

@@ -16,7 +16,7 @@ the known gaps. Reviewed against the code on 2026-10-09.
 | Set `DATABASE_SSL=true` when Postgres is not on the same host | The example env has it `false` | `.env.production.example` |
 | Turn on TLS for every MLLP/HTTP connector that leaves the host | Connector TLS is opt-in per connector | Channel editor, connector settings |
 | Set **Encrypt data** on every channel that stores message content, and set `CONTENT_ENCRYPTION_KEY` | Encryption at rest is off by default per channel | Channel summary tab; [deployment.md](deployment.md) |
-| Set `secure` or `requireTLS` on SMTP destinations, and `smtp.secure` for alert email, which has no `requireTLS` setting | SMTP defaults allow plaintext, the password included, if the server offers no STARTTLS | Connector settings, system SMTP settings |
+| Set `secure` or `requireTLS` on SMTP destinations, and `smtp.secure` or `smtp.require_tls` for alert email | SMTP defaults allow plaintext if the server offers no STARTTLS, the password of an SMTP destination included. Alert email that signs in always needs TLS | Connector settings, system SMTP settings |
 | Turn on pruning with a retention period that matches your policy | Pruning is off by default per channel | Channel summary tab |
 | Encrypt and access-control backup exports and `pg_dump` files | Backup export is plain JSON; dumps contain PHI | [backup-restore.md](backup-restore.md) |
 | Give each person their own account with the least role that works; use **viewer** sparingly (it can read and export messages) | Accounts are the audit identity | Users page |
