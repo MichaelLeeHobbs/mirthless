@@ -1,10 +1,12 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import * as diagnostics from 'node:diagnostics_channel';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import { TcpMllpDispatcher, type TcpMllpDispatcherConfig } from '../tcp-mllp-dispatcher.js';
 import { wrapMllp, MllpParser } from '../../transmission/mllp-mode.js';
 import type { ConnectorMessage } from '../../base.js';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
+import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
 
 const DEST_PORT = 16662;
 
@@ -303,16 +305,6 @@ describe('TcpMllpDispatcher resilience', () => {
     expect(connectionCount).toBe(2);
   });
 
-  it('fails promptly when the destination host is down (no indefinite hang)', async () => {
-    // Nothing listening on this port → connect refused.
-    dispatcher = new TcpMllpDispatcher(makeConfig({ port: 16689, acquireTimeoutMs: 3_000 }));
-    await dispatcher.onDeploy();
-    await dispatcher.onStart();
-
-    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(10_000));
-    expect(result.ok).toBe(false);
-  });
-
   it('sends over TLS and validates the acknowledgement', async () => {
     const server = tls.createServer({ cert: TEST_CERT_PEM, key: TEST_KEY_PEM }, (socket) => {
       const parser = new MllpParser();
@@ -332,5 +324,84 @@ describe('TcpMllpDispatcher resilience', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
+  });
+});
+
+describe('TcpMllpDispatcher while the remote refuses connections', () => {
+  const RETRY_DELAY_MS = 50;
+
+  /** A port nothing listens on. */
+  async function closedPort(): Promise<number> {
+    const server = net.createServer();
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+    const { port } = server.address() as net.AddressInfo;
+    await new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
+    return port;
+  }
+
+  async function startAgainst(port: number, acquireTimeoutMs: number): Promise<{ send: () => ReturnType<TcpMllpDispatcher['send']>; log: MockLogger }> {
+    const log = makeMockLogger();
+    const started = new TcpMllpDispatcher(makeConfig({ port, acquireTimeoutMs }), log.logger, RETRY_DELAY_MS);
+    dispatcher = started;
+    expect((await started.onStart()).ok).toBe(true);
+    return { send: () => started.send(makeMessage(), AbortSignal.timeout(10_000)), log };
+  }
+
+  const outages = (log: MockLogger): number => log.errors.filter((e) => e.msg.includes('cannot be reached')).length;
+
+  it('waits between connection attempts', async () => {
+    let attempts = 0;
+    const count = (): void => { attempts += 1; };
+    const { send } = await startAgainst(await closedPort(), 300);
+    diagnostics.subscribe('net.client.socket', count);
+    try {
+      expect((await send()).ok).toBe(false);
+    } finally {
+      diagnostics.unsubscribe('net.client.socket', count);
+    }
+    expect(attempts).toBeGreaterThanOrEqual(1);
+    expect(attempts).toBeLessThanOrEqual(1 + 300 / RETRY_DELAY_MS);
+  });
+
+  it('fails with the reason the remote could not be reached', async () => {
+    const port = await closedPort();
+    const { send } = await startAgainst(port, 1_000);
+    const result = await send();
+    expect(result.ok).toBe(false);
+    expect(result.error?.message).toContain(`127.0.0.1:${String(port)}`);
+    expect(result.error?.message).toContain('ECONNREFUSED');
+  });
+
+  it('delivers a waiting message once the remote comes back', async () => {
+    const port = await closedPort();
+    const { send, log } = await startAgainst(port, 10_000);
+    const sending = send();
+    await vi.waitFor(() => { expect(log.errors).toHaveLength(1); }, { timeout: 5_000 });
+    mockServer = createMockServer(port);
+    const result = await sending;
+    expect(result.ok && result.value.status).toBe('SENT');
+  });
+
+  it('logs an outage once, and the next outage again', async () => {
+    const port = await closedPort();
+    const { send, log } = await startAgainst(port, 1_000);
+    expect((await send()).ok).toBe(false);
+    expect((await send()).ok).toBe(false);
+    expect(outages(log)).toBe(1);
+
+    const up = createMockServer(port);
+    const connections = new Set<net.Socket>();
+    up.server.on('connection', (socket) => { connections.add(socket); });
+    expect((await send()).ok).toBe(true);
+    for (const socket of connections) socket.destroy();
+    await up.close();
+
+    // The first send may still be given the pooled connection that just closed.
+    await vi.waitFor(async () => {
+      expect((await send()).ok).toBe(false);
+      expect(outages(log)).toBe(2);
+    }, { timeout: 10_000 });
+    expect((await send()).ok).toBe(false);
+    expect(outages(log)).toBe(2);
   });
 });
