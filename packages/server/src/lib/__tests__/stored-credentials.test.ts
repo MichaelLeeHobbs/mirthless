@@ -11,7 +11,7 @@ import {
   fhirDestinationObjectSchema, sftpSourceObjectSchema, sftpDestinationObjectSchema, kafkaSourceObjectSchema,
   kafkaDestinationObjectSchema, amqpSourcePropertiesSchema, amqpDestinationPropertiesSchema,
 } from '@galvanigraph/core-models';
-import { CONNECTOR_KEYS, overwriteProperties, type ConnectorDirection, type ConnectorKeys } from '../stored-credentials.js';
+import { CONNECTOR_KEYS, overwriteProperties, sameDestination, type ConnectorDirection, type ConnectorKeys } from '../stored-credentials.js';
 import { REDACTED, isSecretPropertyKey, redactConnectorProperties } from '../secret-redaction.js';
 
 const SOURCE_SHAPES: Readonly<Record<SourceConnectorType, object>> = {
@@ -113,6 +113,29 @@ describe.each(ROWS)('the stored credentials of a %s', (_label, direction, connec
     for (const other of others) {
       expect(secretsIn(overwriteProperties(direction, { connectorType, properties: exported }, { connectorType: other, properties: stored }), keys), other).toEqual(none);
     }
+  });
+});
+
+describe('sameDestination', () => {
+  const at = (metaDataId: number, name: string): { readonly metaDataId: number; readonly name: string } => ({ metaDataId, name });
+  const file = [at(1, 'A'), at(2, 'B')];
+
+  it('is the stored one with the same metaDataId and the same name', () => {
+    const stored = [at(2, 'B'), at(1, 'A')];
+    expect(sameDestination(file[0]!, file, stored)).toBe(stored[1]);
+    expect(sameDestination(file[1]!, file, stored)).toBe(stored[0]);
+  });
+
+  it.each([
+    ['they were reordered', file, [at(1, 'B'), at(2, 'A')]],
+    ['one was deleted and the other renumbered', file, [at(1, 'B')]],
+    ['it was renamed', file, [at(1, 'a'), at(2, 'B ')]],
+    ['it is new', file, []],
+    ['another stored one has its name', file, [at(1, 'A'), at(2, 'B'), at(3, 'A'), at(4, 'B')]],
+    ['another in the file has its name', [...file, at(3, 'A'), at(4, 'B')], [at(1, 'A'), at(2, 'B')]],
+  ])('is none when %s', (_what, inFile, stored) => {
+    expect(sameDestination(at(1, 'A'), inFile, stored)).toBeUndefined();
+    expect(sameDestination(at(2, 'B'), inFile, stored)).toBeUndefined();
   });
 });
 

@@ -141,7 +141,25 @@ function sameTarget(merged: unknown, stored: unknown, keys: ConnectorKeys): bool
   return isDeepStrictEqual(withoutKeys(merged, ignored), withoutKeys(stored, ignored));
 }
 
-/** `stored` is the connector the file's one replaces: the source, or the destination with its metaDataId. */
+export interface DestinationIdentity {
+  readonly metaDataId: number;
+  readonly name: string;
+}
+
+/**
+ * The stored destination a file's one is, if that is certain. A metaDataId
+ * alone does not say: every save from the editor renumbers the destinations by
+ * position. Nor does a name that two of them have.
+ */
+export function sameDestination<T extends DestinationIdentity>(
+  imported: DestinationIdentity, inFile: readonly DestinationIdentity[], stored: readonly T[],
+): T | undefined {
+  const named = stored.filter((d) => d.name === imported.name);
+  if (named.length !== 1 || inFile.filter((d) => d.name === imported.name).length !== 1) return undefined;
+  return named.find((d) => d.metaDataId === imported.metaDataId);
+}
+
+/** `stored` is the connector the file's one replaces: the source, or its sameDestination. */
 export function overwriteProperties(
   direction: ConnectorDirection, imported: ConnectorSettings, stored: ConnectorSettings | undefined,
 ): Record<string, unknown> {

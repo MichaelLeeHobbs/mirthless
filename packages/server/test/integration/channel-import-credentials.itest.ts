@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { channelExportSchema, createChannelSchema, serverBackupSchema, type ChannelExportEntry, type CollisionMode, type ImportResult } from '@galvanigraph/core-models';
+import { channelExportSchema, createChannelSchema, serverBackupSchema, updateChannelSchema, type ChannelExportEntry, type CollisionMode, type ImportResult } from '@galvanigraph/core-models';
 import { adminActor, describeIntegration, insertTestGroup, loadServerModules, unwrap, userWithRole, waitForBlocked, type ServerModules, type TestActor } from './_setup.js';
 
 type Properties = Record<string, unknown>;
@@ -71,10 +71,14 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
       { channelId, metaDataId: 1, name: 'Archive', connectorType: 'DATABASE', properties: DATABASE },
       { channelId, metaDataId: 2, name: 'To API', connectorType: 'HTTP', properties: HTTP },
     ]);
-    const exported = JSON.stringify(unwrap(await ChannelExportService.exportChannel(channelId)));
-    for (const secret of SECRETS) expect(exported).not.toContain(secret);
-    file = channelExportSchema.parse(JSON.parse(exported)).channels[0]!;
+    file = await exportedFile();
+    for (const secret of SECRETS) expect(JSON.stringify(file)).not.toContain(secret);
   });
+
+  async function exportedFile(): Promise<ChannelExportEntry> {
+    const exported = unwrap(await ChannelExportService.exportChannel(channelId));
+    return channelExportSchema.parse(JSON.parse(JSON.stringify(exported))).channels[0]!;
+  }
 
   async function stored(id = channelId): Promise<Stored> {
     const detail = unwrap(await mods.ChannelService.getById(id));
@@ -104,7 +108,7 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
 
   it('keeps a credential when only settings that do not decide where it goes changed', async () => {
     const edited = withDestination(1, { query: 'SELECT 2' });
-    await importFile({ ...edited, destinations: edited.destinations.map((d) => ({ ...d, name: `${d.name} renamed`, enabled: false, retryCount: 9 })) });
+    await importFile({ ...edited, destinations: edited.destinations.map((d) => ({ ...d, enabled: false, retryCount: 9 })) });
     expect((await stored()).destinations).toEqual(new Map<number, Properties>([[1, { ...DATABASE, query: 'SELECT 2' }], [2, HTTP]]));
   });
 
@@ -146,9 +150,96 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
     expect(destinations).toEqual(UNCHANGED.destinations);
   });
 
-  it('matches a destination by its metaDataId, not by its settings', async () => {
-    await importFile({ ...file, destinations: file.destinations.map((d) => ({ ...d, metaDataId: d.metaDataId === 1 ? 3 : d.metaDataId })) });
-    expect((await stored()).destinations).toEqual(new Map<number, Properties>([[2, HTTP], [3, omit(DATABASE, 'password')]]));
+  it.each([
+    ['metaDataId', { metaDataId: 3 }],
+    ['name', { name: 'Archive 2' }],
+  ])('drops a destination\'s credential when its %s changed', async (_what, changes) => {
+    await importFile({ ...file, destinations: file.destinations.map((d) => (d.metaDataId === 1 ? { ...d, ...changes } : d)) });
+    const { destinations } = await stored();
+    expect(destinations.get('metaDataId' in changes ? changes.metaDataId : 1)).toEqual(omit(DATABASE, 'password'));
+    expect(destinations.get(2)).toEqual(HTTP);
+  });
+
+  // Every save from the editor numbers the destinations 1 to n by position, so
+  // an older file's metaDataId can name another destination.
+  describe.each([
+    ['an HTTP header key', 'HTTP', { url: HTTP.url }, (secret: string): Properties => ({ headers: { 'X-API-Key': secret } })],
+    ['an HTTP query key', 'HTTP', { url: HTTP.url }, (secret: string): Properties => ({ parameters: { apiKey: secret } })],
+    ['a FHIR bearer token', 'FHIR', { baseUrl: HTTP.url, authType: 'BEARER' }, (secret: string): Properties => ({ authToken: secret })],
+    ['a FHIR API key', 'FHIR', { baseUrl: HTTP.url, authType: 'API_KEY', authHeaderName: 'X-Key' }, (secret: string): Properties => ({ authApiKey: secret })],
+  ])('with two destinations that differ only in %s', (_what, connectorType, shared, withSecret) => {
+    interface Named {
+      readonly name: string;
+      readonly connectorType: string;
+      readonly properties: Properties;
+    }
+    const a: Named = { name: 'A', connectorType, properties: { ...shared, ...withSecret('key-of-a') } };
+    const b: Named = { name: 'B', connectorType, properties: { ...shared, ...withSecret('key-of-b') } };
+
+    async function save(...destinations: readonly Named[]): Promise<void> {
+      const { revision } = unwrap(await mods.ChannelService.getById(channelId));
+      unwrap(await mods.ChannelService.update(channelId, updateChannelSchema.parse({ revision, destinations }), actor));
+    }
+
+    async function storedByName(): Promise<ReadonlyArray<readonly [string, string]>> {
+      const { destinations } = unwrap(await mods.ChannelService.getById(channelId));
+      return destinations.map((d) => [d.name, JSON.stringify(d.properties)] as const);
+    }
+
+    async function expectNoKeys(): Promise<void> {
+      for (const [name, properties] of await storedByName()) expect(properties, name).not.toMatch(/key-of-|__REDACTED__/);
+    }
+
+    it('keeps each one its own key when nothing moved', async () => {
+      await save(a, b);
+      expect(await importFile(await exportedFile())).toMatchObject({ updated: 1, errors: [] });
+      expect(await storedByName()).toEqual([a, b].map((d) => [d.name, expect.stringContaining(`key-of-${d.name.toLowerCase()}`)]));
+    });
+
+    it('gives neither the other\'s key when they were reordered since the export', async () => {
+      await save(a, b);
+      const older = await exportedFile();
+      await save(b, a);
+      expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
+      await expectNoKeys();
+    });
+
+    it('gives a deleted one no key when an older file brings it back', async () => {
+      await save(a, b);
+      const older = await exportedFile();
+      await save(b);
+      expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
+      await expectNoKeys();
+    });
+
+    it('gives neither the other\'s key when a save closed the gaps in their ids', async () => {
+      const { db, eq, schema } = mods;
+      await db.delete(schema.channelConnectors).where(eq(schema.channelConnectors.channelId, channelId));
+      await db.insert(schema.channelConnectors).values([{ channelId, metaDataId: 2, ...a }, { channelId, metaDataId: 5, ...b }]);
+      const older = await exportedFile();
+      await save(a, b);
+      expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
+      await expectNoKeys();
+    });
+
+    it('gives neither any key when both have one name, in the target or only in the file', async () => {
+      const twin = { ...b, name: a.name };
+      await save(a, twin);
+      const older = await exportedFile();
+      await save(twin, a);
+      expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
+      await expectNoKeys();
+
+      await save(a, twin);
+      const both = await exportedFile();
+      await save(twin);
+      expect(await importFile(both)).toMatchObject({ updated: 1, errors: [] });
+      await expectNoKeys();
+
+      await save(a, twin);
+      await importFile({ ...both, destinations: both.destinations.slice(0, 1) });
+      await expectNoKeys();
+    });
   });
 
   it('keeps nothing for a connector whose type changed', async () => {

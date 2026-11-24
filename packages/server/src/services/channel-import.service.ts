@@ -19,7 +19,7 @@ import { GrantService } from './grant.service.js';
 import { assertCertificatesInScope } from './connector-tls-resolver.js';
 import { queryUserStanding } from '../lib/principal.js';
 import { stripRedactedProperties } from '../lib/secret-redaction.js';
-import { overwriteProperties } from '../lib/stored-credentials.js';
+import { overwriteProperties, sameDestination } from '../lib/stored-credentials.js';
 import {
   channels,
   channelScripts,
@@ -220,14 +220,18 @@ async function withStoredCredentials(tx: ImportTx, entry: ChannelExportEntry): P
     .select({ connectorType: channels.sourceConnectorType, properties: channels.sourceConnectorProperties })
     .from(channels).where(eq(channels.id, entry.id));
   const destinations = await tx
-    .select({ metaDataId: channelConnectors.metaDataId, connectorType: channelConnectors.connectorType, properties: channelConnectors.properties })
+    .select({
+      metaDataId: channelConnectors.metaDataId, name: channelConnectors.name,
+      connectorType: channelConnectors.connectorType, properties: channelConnectors.properties,
+    })
     .from(channelConnectors).where(eq(channelConnectors.channelId, entry.id));
-  const stored = new Map(destinations.map((d) => [d.metaDataId, d]));
   const importedSource = { connectorType: entry.sourceConnectorType, properties: entry.sourceConnectorProperties };
   return {
     ...entry,
     sourceConnectorProperties: overwriteProperties('source', importedSource, source),
-    destinations: entry.destinations.map((d) => ({ ...d, properties: overwriteProperties('destination', d, stored.get(d.metaDataId)) })),
+    destinations: entry.destinations.map((d) => ({
+      ...d, properties: overwriteProperties('destination', d, sameDestination(d, entry.destinations, destinations)),
+    })),
   };
 }
 
