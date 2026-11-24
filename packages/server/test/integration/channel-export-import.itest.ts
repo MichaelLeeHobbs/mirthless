@@ -243,12 +243,13 @@ describeIntegration('Channel export and import (real Postgres)', () => {
 
   /** What a file carries: every column but those with a reason not to be in it. */
   function carried(stored: StoredTables, ownChannelColumns: readonly string[] = OWN_ON_IMPORT): StoredTables {
-    const tables = Object.entries<ExportedTable>(EXPORTED_TABLES).map(([name, { notExported }]) => {
+    const tables: Partial<Record<ExportedTableName, readonly Row[]>> = {};
+    for (const [name, { notExported }] of Object.entries<ExportedTable>(EXPORTED_TABLES)) {
       const own = [...Object.keys(notExported), ...(name === 'channels' ? ownChannelColumns : [])];
-      const rows = stored[name as ExportedTableName].map((row) => Object.fromEntries(Object.entries(row).filter(([column]) => !own.includes(column))));
-      return [name, rows] as const;
-    });
-    return Object.fromEntries(tables) as StoredTables;
+      tables[name as ExportedTableName] = stored[name as ExportedTableName]
+        .map((row) => Object.fromEntries(Object.entries(row).filter(([column]) => !own.includes(column))));
+    }
+    return tables as StoredTables;
   }
 
   /** Columns left at the table's default, which would come back without being exported or imported. */
