@@ -5,6 +5,7 @@ import {
   parseHeaderLines,
   DEFAULT_MAX_BODY_BYTES,
 } from '../http-connector.schema.js';
+import { QUEUE_CHARSETS } from '../queue-connector.schema.js';
 
 const SOURCE_DEFAULTS = {
   host: '0.0.0.0',
@@ -14,6 +15,7 @@ const SOURCE_DEFAULTS = {
   responseStatusCode: 200,
   errorStatusCode: 500,
   maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
+  bodyCharset: 'utf-8',
 };
 
 describe('httpSourcePropertiesSchema', () => {
@@ -24,7 +26,7 @@ describe('httpSourcePropertiesSchema', () => {
   it('accepts every key the connector reads', () => {
     const all = {
       host: '127.0.0.1', port: '8080', path: '/api', matchSubpaths: true, method: 'PUT',
-      responseContentType: 'application/json', responseStatusCode: 202, errorStatusCode: 503, maxBodyBytes: 1024,
+      responseContentType: 'application/json', responseStatusCode: 202, errorStatusCode: 503, maxBodyBytes: 1024, bodyCharset: 'base64',
       auth: { type: 'BASIC', username: 'u', password: 'p' }, scheme: 'HTTPS',
       tls: { serverCertId: 'srv', caCertId: 'ca', requireClientCert: true }, processBatch: true,
     };
@@ -34,6 +36,10 @@ describe('httpSourcePropertiesSchema', () => {
   it('accepts a bearer token guard', () => {
     const auth = { type: 'TOKEN', token: 't' };
     expect(httpSourcePropertiesSchema.parse({ port: 8080, auth }).auth).toEqual(auth);
+  });
+
+  it.each(QUEUE_CHARSETS)('accepts bodyCharset %s', (bodyCharset) => {
+    expect(httpSourcePropertiesSchema.parse({ port: 8080, bodyCharset }).bodyCharset).toBe(bodyCharset);
   });
 
   it('rejects a missing port', () => {
@@ -48,6 +54,8 @@ describe('httpSourcePropertiesSchema', () => {
     ['responseStatusCode', 600],
     ['errorStatusCode', '5xx'],
     ['maxBodyBytes', 0],
+    ['bodyCharset', 'shift_jis'],
+    ['bodyCharset', ''],
     ['auth', { type: 'DIGEST' }],
     ['auth', { type: 'TOKEN', secret: 't' }],
     // Missing credentials would let a request with empty ones in (#207).
@@ -87,6 +95,12 @@ describe('httpSourcePropertiesSchema', () => {
       responseContentType: 'text/plain', charset: 'UTF-8',
     };
     expect(httpSourcePropertiesSchema.parse(saved)).toEqual({ ...SOURCE_DEFAULTS, port: 8080 });
+  });
+
+  // No connector read the old charset, so a channel saved with it must not start reading bodies another way.
+  it('does not take the old charset as bodyCharset', () => {
+    expect(httpSourcePropertiesSchema.parse({ port: 8080, charset: 'latin1' })).toEqual({ ...SOURCE_DEFAULTS, port: 8080 });
+    expect(httpSourcePropertiesSchema.parse({ port: 8080, charset: 'base64', bodyCharset: 'latin1' }).bodyCharset).toBe('latin1');
   });
 });
 

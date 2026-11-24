@@ -7,6 +7,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as http from 'node:http';
+import { gzipSync } from 'node:zlib';
 import {
   FileReceiver,
   FileDispatcher,
@@ -88,7 +89,7 @@ describe('File connector (drop a file in → transform → write a file out)', (
 });
 
 describe('HTTP connector (POST in → transform → POST out to a downstream server)', () => {
-  it('receives an HTTP POST, transforms the body, and delivers it to a downstream HTTP server', async () => {
+  it('receives HTTP POSTs, gzip included, transforms the body, delivers it to a downstream HTTP server, and refuses a binary body', async () => {
     const received: string[] = [];
     const downstream = http.createServer((req, res) => {
       let body = '';
@@ -110,6 +111,7 @@ describe('HTTP connector (POST in → transform → POST out to a downstream ser
         responseStatusCode: 200,
         errorStatusCode: 500,
         maxBodyBytes: 1_000_000,
+        bodyCharset: 'utf-8',
       }),
       transformer: 'return String(msg).toUpperCase();',
       destinations: [{
@@ -132,6 +134,16 @@ describe('HTTP connector (POST in → transform → POST out to a downstream ser
     await vi.waitFor(() => { expect(received).toHaveLength(1); }, DELIVERY_WAIT);
     expect(received[0]).toBe('HELLO WORLD');
     expect(channel.store.messageCount()).toBe(1);
+
+    const compressed = await httpPost(HTTP_SRC_PORT, '/in', gzipSync('müller'), { 'Content-Encoding': 'gzip' });
+    expect(compressed.status).toBe(200);
+    await vi.waitFor(() => { expect(received).toEqual(['HELLO WORLD', 'MÜLLER']); }, DELIVERY_WAIT);
+    expect(channel.store.messageCount()).toBe(2);
+
+    // Not UTF-8, so it is refused before a message exists.
+    const binary = await httpPost(HTTP_SRC_PORT, '/in', Buffer.from([0x25, 0x50, 0x44, 0x46, 0xe2, 0xe3]));
+    expect(binary.status).toBe(415);
+    expect(channel.store.messageCount()).toBe(2);
   }, 15_000);
 });
 
@@ -207,10 +219,10 @@ async function listen(server: http.Server, port: number): Promise<void> {
 
 interface HttpResult { readonly status: number; readonly body: string; }
 
-async function httpPost(port: number, urlPath: string, body: string): Promise<HttpResult> {
+async function httpPost(port: number, urlPath: string, body: string | Buffer, headers: Record<string, string> = {}): Promise<HttpResult> {
   return new Promise<HttpResult>((resolve, reject) => {
     const req = http.request(
-      { host: '127.0.0.1', port, path: urlPath, method: 'POST', headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(body) } },
+      { host: '127.0.0.1', port, path: urlPath, method: 'POST', headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(body), ...headers } },
       (res) => {
         let data = '';
         res.on('data', (chunk) => { data += String(chunk); });

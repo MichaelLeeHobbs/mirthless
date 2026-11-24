@@ -47,7 +47,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 - [ ] **[7] Document Writer** (PDF/RTF destination) — 🟡 no workaround for rendered clinical docs.
 - [ ] **[8] DICOM TLS** (cert/key/trust, in #350) — 🟡 secured PACS. (Assoc-rejection bug already fixed, D-181.)
 - [x] **[9] SMTP multi-attachment** — config-driven attachments array (filename/mimeType/content, `${msg}` substitution) alongside the `attachContent` body attachment; dispatcher + registry + web form + tests.
-- [ ] **[10] Binary data type** across TCP/HTTP — 🟡 imaging/PDF/non-text feeds. The HTTP source corrupts such a body today instead of refusing it (#335).
+- [ ] **[10] Binary data type** across TCP/HTTP — 🟡 imaging/PDF/non-text feeds. The HTTP source keeps every body as base64 text when its `bodyCharset` is `base64`, and with the default, UTF-8, refuses a binary one (2026-11-23, D-334). Not yet: base64 by content type, as Mirth's binary MIME types do, the HTTP destination, and TCP.
 - [ ] **[11] JMS connector** — 🟡 defer unless a customer needs it.
 - [ ] **[12] WebDAV File scheme** — 🟢 rare; do last alongside File schemes.
 

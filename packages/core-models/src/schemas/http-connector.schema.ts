@@ -8,13 +8,14 @@
 import { z } from 'zod/v4';
 import {
   connectorPortSchema,
+  trimmedTextSchema,
   wholeNumberSchema,
   optionalTlsSchema,
   withoutKeys,
   sourceCommonProperties,
   destinationCommonProperties,
 } from './connector-property-fields.js';
-import { clientTlsRefSchema } from './queue-connector.schema.js';
+import { clientTlsRefSchema, queueCharsetSchema } from './queue-connector.schema.js';
 
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -23,7 +24,7 @@ export type HttpMethod = (typeof HTTP_METHODS)[number];
 export const HTTP_SCHEMES = ['HTTP', 'HTTPS'] as const;
 export type HttpScheme = (typeof HTTP_SCHEMES)[number];
 
-/** A larger request body gets 413. */
+/** A larger request body, as received or once decompressed, gets 413. */
 export const DEFAULT_MAX_BODY_BYTES = 50 * 1024 * 1024;
 
 export function parseHeaderLines(text: string): Record<string, string> {
@@ -63,6 +64,12 @@ export const httpSourceObjectSchema = z.strictObject({
   responseStatusCode: statusCode.default(200),
   errorStatusCode: statusCode.default(500),
   maxBodyBytes: wholeNumberSchema(1).default(DEFAULT_MAX_BODY_BYTES),
+  /**
+   * For a body whose Content-Type declares no charset, except `base64`, which keeps the
+   * bytes of every body. Not named `charset`: an old value saved under that legacy key
+   * must not start changing how bodies are read.
+   */
+  bodyCharset: queueCharsetSchema,
   /** Every credential is required: a missing one would let a request with an empty one in (#207). */
   auth: z.discriminatedUnion('type', [
     z.strictObject({ type: z.literal('BASIC'), username: z.string().min(1), password: z.string().min(1) }),
@@ -80,7 +87,7 @@ export const httpSourceObjectSchema = z.strictObject({
 
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const httpDestinationObjectSchema = z.strictObject({
-  url: z.string().trim().min(1),
+  url: trimmedTextSchema,
   method,
   headers: headerMapSchema.default({}),
   parameters: textMap.optional(),

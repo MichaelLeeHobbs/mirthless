@@ -14,7 +14,7 @@ export interface DestinationFormValues {
   waitForPrevious: boolean;
   filter: FilterFormValues;
   transformer: TransformerFormValues;
-  /** Runs against the destination's response after a successful send (CT_RESPONSE_TRANSFORMED); empty for none. */
+  /** Runs against the destination's response after a successful send (CONTENT_TYPE.RESPONSE_TRANSFORMED); empty for none. */
   responseTransformer: string;
   responseTransformerLanguage: ScriptLanguageCode;
 }

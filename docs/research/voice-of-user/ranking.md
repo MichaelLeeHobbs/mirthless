@@ -8,7 +8,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 
 | Rank | ID | Theme | Score | Status | Note |
 |---|---|---|---|---|---|
-| 2 | CON4 | HTTP connector flexibility: multipart, headers, binary, status codes, paths, gzip | 56.4 | Partial | #342. matchSubpaths done (D-243); methods, reply status and headers, multipart and binary open. Binary and gzip bodies are corrupted today (#335). |
+| 2 | CON4 | HTTP connector flexibility: multipart, headers, binary, status codes, paths, gzip | 56.4 | Partial | #342. matchSubpaths done (D-243); methods, reply status and headers, multipart and binary open. gzip request bodies are read and binary ones kept as base64 (D-334). |
 | 4 | SCR4 | Thin standard library: dates/timezones, hashing, base64, UUID, identifiers, PDF | 55.3 | Partial | #343, N9. Scripts have no base64, hash, UUID or date helpers. A documented, typed helper library is the most-built community workaround. |
 | 5 | PERF1 | Throughput and memory: large messages, OOM, benchmarks | 55.2 | Partial | Published soak baseline; server stalls under load (#257), worker threads (#348) and streaming large payloads (batch files: #192) open. |
 | 6 | SEC1 | Unpatched dependencies and CVEs; slow security fixes; disclosure process | 54 | Partial | #341. Dependency audit in CI, Dependabot and SECURITY.md exist; SBOM, image scan, scheduled audit and a CVE list per release open. |
@@ -49,7 +49,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 45 | SEC7 | Audit trail: who changed what, PHI access, SIEM forwarding, tamper-resistance | 40.8 | Partial | Append-only audit log, with message reads recorded (D-312). Syslog/webhook forwarding open; configuration changes are still in the purgeable event log. |
 | 46 | HA3 | Official, maintained container images; start with channels preloaded | 40.2 | Partial | Images build to ghcr; add declarative channel import at start. |
 | 47 | UPG1 | Runtime version churn (Java 8/11/17/21) breaks installs | 39.9 | Partial | #340. Node LTS only; publish a runtime support policy and ship in containers. |
-| 49 | DT8 | Binary content: PDFs, images, base64, multipart corruption | 39.3 | Partial | Connector parity [10] binary data type. The HTTP source corrupts binary and gzip bodies (#335); binary over HTTP is in #342. |
+| 49 | DT8 | Binary content: PDFs, images, base64, multipart corruption | 39.3 | Partial | Connector parity [10] binary data type. The HTTP source keeps a binary body as base64 or refuses it (D-334); the rest of binary over HTTP is in #342. |
 | 50 | UI5 | Script editor lacks IDE features (autocomplete, typings, formatting) | 39.2 | Partial | Monaco is bundled (D-283) and the sandbox API and msg are typed; what is left is ranked in doc 19. |
 | 51 | UI8 | Transformer and rule editing ergonomics; mapper too limited | 39 | Partial | Mapper steps do not deploy yet (D-207, #172). Fix before any visual mapper. |
 | 56 | MSG2 | Custom metadata and business-key search (MRN, facility) | 36.5 | Partial | Engine fills columns and API filters on them; UI open (N5). |

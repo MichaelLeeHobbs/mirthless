@@ -881,6 +881,26 @@ describe('ConnectionTestService', () => {
     });
   });
 
+  describe('a host with spaces around it', () => {
+    it.each([
+      ['TCP_MLLP', 'DESTINATION'],
+      ['DICOM', 'DESTINATION'],
+      ['EMAIL', 'SOURCE'],
+    ] as const)('%s connects without them, as deploy does', async (type, mode) => {
+      createFakeSocket('connect');
+      const result = await ConnectionTestService.testConnection(type, mode, { host: ' example.com ', port: 6661 });
+      expect(result.ok && result.value.success).toBe(true);
+      expect(mockConnect.mock.calls[0]?.[0]).toMatchObject({ host: 'example.com' });
+    });
+
+    it('is still checked, and one of only spaces is missing', async () => {
+      const blocked = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', { host: ' localhost ', port: 6661 });
+      expect(blocked.ok ? '' : blocked.error.message).toContain('blocked');
+      const missing = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', { host: '   ', port: 6661 });
+      expect(missing.ok ? '' : missing.error.message).toContain('host');
+    });
+  });
+
   describe('SSRF protection', () => {
     it('blocks localhost connections', async () => {
       const result = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', {

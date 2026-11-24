@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   requiredTextSchema,
+  trimmedTextSchema,
   wholeNumberSchema,
   MAX_TIMER_DELAY_MS,
   withoutKeys,
@@ -36,7 +37,7 @@ export type DicomSourceProperties = z.infer<typeof dicomSourceObjectSchema>;
 
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const dicomDestinationObjectSchema = z.strictObject({
-  host: requiredTextSchema,
+  host: trimmedTextSchema,
   port: connectorPortSchema,
   calledAETitle: aeTitle.default('PACS'),
   callingAETitle: aeTitle.default('GALVANIGRAPH'),

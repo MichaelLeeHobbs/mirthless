@@ -15,6 +15,9 @@ export const connectorPortSchema = z.preprocess(
   }).int().min(1).max(65_535),
 );
 
+/** Surrounding spaces are dropped, for what never means them: a host, a queue, a query (D-337). */
+export const trimmedTextSchema = z.string().trim().min(1, { message: 'required' });
+
 /** Kept as given, not trimmed. */
 export const requiredTextSchema = z.string().refine((value) => value.trim() !== '', { message: 'required' });
 

@@ -27,6 +27,7 @@ const SHARED_HELPERS = [
   { names: 'unescapeControlChars|readEscapes|unescapeMirth', home: '@galvanigraph/core-util (delimited.ts)' },
   { names: 'fillPlaceholders|placeholderText|placeholderNames|recordLookup|hasPlaceholderText', home: '@galvanigraph/core-util (placeholders.ts, D-275)' },
   { names: 'formatTimestampWith', home: 'packages/web/src/lib/format.ts (D-278)' },
+  { names: 'toDateTimeLocal|fromDateTimeLocal|sentDateTimeLocal|toLocalInput', home: 'packages/web/src/lib/datetime-local.ts' },
   { names: 'isSecretSetting|isSecretSettingType|isSecret', home: '@galvanigraph/core-util (secret-setting.ts)' },
   { names: 'containsPattern|likePattern', home: 'packages/server/src/lib/like.ts' },
   { names: 'emitSuccessEvent|emitCollectionEvent|emitDataSourceEvent', home: 'packages/server/src/lib/event-emitter.ts' },
@@ -37,6 +38,7 @@ const SHARED_HELPERS = [
   { names: 'redirectMessage', home: 'packages/connectors/src/redirect.ts' },
   { names: 'regexError|firstInvalidRegex', home: '@galvanigraph/core-models (regex-error.ts)' },
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
+  { names: 'createSlots|withSlot|withHashSlot', home: '@galvanigraph/core-util (slots.ts)' },
 ];
 // A permission check goes through holdsPermission or can (@galvanigraph/core-models
 // authz, D-310), so the move to scoped grants changes one place, not every caller.

@@ -13,6 +13,8 @@ export interface ApiRoute {
 export interface WalkedRoute extends ApiRoute {
   /** Router-wide middleware is not included. */
   readonly handlers: readonly unknown[];
+  /** The path parameters the route's own router handles with router.param, as scopeToChannel does. */
+  readonly paramHandlers: readonly string[];
 }
 
 interface RouteLayer {
@@ -24,13 +26,14 @@ interface RouteLayer {
 }
 
 function routesOf(router: Router, prefix: string): readonly WalkedRoute[] {
+  const paramHandlers = Object.keys((router as unknown as { readonly params: object }).params);
   return (router.stack as unknown as readonly RouteLayer[]).flatMap((layer) => {
     const route = layer.route;
     if (!route) return [];
     const paths = typeof route.path === 'string' ? [route.path] : route.path;
     const handlers = route.stack.map((l) => l.handle);
     return paths.flatMap((p) => Object.keys(route.methods).map((m) => ({
-      method: m.toUpperCase(), path: `${prefix}${p === '/' ? '' : p}`, handlers,
+      method: m.toUpperCase(), path: `${prefix}${p === '/' ? '' : p}`, handlers, paramHandlers,
     })));
   });
 }

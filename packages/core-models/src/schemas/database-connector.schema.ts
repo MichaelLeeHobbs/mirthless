@@ -5,6 +5,7 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   pollingIntervalSchema,
+  trimmedTextSchema,
   withoutKeys,
   sourceCommonProperties,
   destinationCommonProperties,
@@ -23,8 +24,6 @@ export function defaultDatabasePort(vendor: string | undefined): number {
   return vendor === 'mysql' ? 3306 : 5432;
 }
 
-const requiredText = z.string().trim().min(1);
-
 /** A Mirth channel on another database (sqlserver, oracle) keeps its vendor and refuses here, saying which. */
 const vendor = z.enum(DATABASE_VENDORS, {
   error: (issue) => `database "${String(issue.input)}" is not supported (PostgreSQL and MySQL are)`,
@@ -32,9 +31,9 @@ const vendor = z.enum(DATABASE_VENDORS, {
 
 const connection = {
   vendor,
-  host: requiredText,
+  host: trimmedTextSchema,
   port: connectorPortSchema.optional(),
-  database: requiredText,
+  database: trimmedTextSchema,
   /** Empty: PostgreSQL connects as PGUSER or the process's OS user, MySQL with no user name. */
   username: z.string().default(''),
   password: z.string().default(''),
@@ -45,7 +44,7 @@ const connection = {
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const databaseSourceObjectSchema = z.strictObject({
   ...connection,
-  selectQuery: requiredText,
+  selectQuery: trimmedTextSchema,
   updateQuery: z.string().default(''),
   updateMode: z.enum(DATABASE_UPDATE_MODES).default('NEVER'),
   /** The receiver refuses to poll more often than every 100 ms. */
@@ -57,7 +56,7 @@ export const databaseSourceObjectSchema = z.strictObject({
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const databaseDestinationObjectSchema = z.strictObject({
   ...connection,
-  query: requiredText,
+  query: trimmedTextSchema,
   useTransaction: z.boolean().default(false),
   returnGeneratedKeys: z.boolean().default(false),
   ...destinationCommonProperties,

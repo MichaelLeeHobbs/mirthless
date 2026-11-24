@@ -1225,6 +1225,39 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     };
     const warningsWith = (result: MirthConvertResult, needle: string): string[] => result.warnings.filter((w) => w.includes(needle));
 
+    describe('HTTP Listener bodies', () => {
+      const MIRTH_BINARY_TYPES = 'application/.*(?&lt;!json|xml)$|image/.*|video/.*|audio/.*';
+      const listener = (charset: string, binaryMimeTypes: string): MirthConvertResult => convertXml((x) => x.replace(SOURCE, () => `<properties class="com.mirth.connect.connectors.http.HttpReceiverProperties" version="4.5.0"><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>8081</port></listenerConnectorProperties><binaryMimeTypes>${binaryMimeTypes}</binaryMimeTypes><binaryMimeTypesRegex>true</binaryMimeTypesRegex><charset>${charset}</charset><contextPath></contextPath></properties><transformer`));
+
+      it('warns once that Mirth reads text with no declared charset as ISO-8859-1, and once that it keeps binary bodies', () => {
+        const result = listener('UTF-8', MIRTH_BINARY_TYPES);
+        const warnings = warningsWith(result, 'HTTP Listener');
+        expect(warnings).toHaveLength(2);
+        expect(warnings.every((w) => w.includes('Channel "4x Listener"') && w.includes('415') && w.includes('bodyCharset'))).toBe(true);
+        expect(warnings[0]).toContain('ISO-8859-1');
+        expect(warnings[1]).toContain('base64');
+      });
+
+      it('does not warn about binary bodies when Mirth treats none as binary', () => {
+        const warnings = warningsWith(listener('UTF-8', ' '), 'HTTP Listener');
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('ISO-8859-1');
+      });
+
+      // Mirth encodes responses in it; a latin1 bodyCharset would garble the UTF-8 JSON Mirth reads correctly.
+      it.each(['ISO-8859-1', 'windows-1252', 'US-ASCII', 'DEFAULT_ENCODING'])('takes no bodyCharset from the response charset %s', (charset) => {
+        const properties = listener(charset, MIRTH_BINARY_TYPES).channels[0]?.sourceConnectorProperties ?? {};
+        expect(properties).toEqual({ host: '0.0.0.0', port: 8081, path: '/', matchSubpaths: true });
+        expect(validateConnectorProperties('HTTP', 'source', properties)).toMatchObject({ ok: true });
+      });
+
+      it('says nothing of the kind for other connectors', () => {
+        expect(warningsWith(convertXml((x) => x), 'bodyCharset')).toEqual([]);
+        const sender = '<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://lis</host><method>post</method></properties>';
+        expect(warningsWith(convertXml((x) => x.replace(FIRST_DEST, () => sender)), 'bodyCharset')).toEqual([]);
+      });
+    });
+
     describe('DICOM Listener and Sender', () => {
       const listener = (dest: string, tls = 'notls'): string => `<properties class="com.mirth.connect.connectors.dimse.DICOMReceiverProperties" version="4.5.0"><pluginProperties/><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>11104</port></listenerConnectorProperties><sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable></sourceConnectorProperties><soCloseDelay>50</soCloseDelay><releaseTo>5</releaseTo><requestTo>5</requestTo><idleTo>60</idleTo><reaper>10</reaper><rspDelay>0</rspDelay><pdv1>false</pdv1><sndpdulen>16</sndpdulen><rcvpdulen>16</rcvpdulen><async>0</async><bigEndian>false</bigEndian><bufSize>1</bufSize><defts>false</defts><dest>${dest}</dest><nativeData>false</nativeData><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><tcpDelay>true</tcpDelay><keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>${tls}</tls><trustStore></trustStore><trustStorePW></trustStorePW><applicationEntity>HUB_SCP</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity></localApplicationEntity></properties><transformer`;
       const sender = (extra = ''): string => `<properties class="com.mirth.connect.connectors.dimse.DICOMDispatcherProperties" version="4.5.0"><pluginProperties/><host>pacs.example.org</host><port>11112</port><template>\${DICOMMESSAGE}</template><acceptTo>5000</acceptTo><async>0</async><bufSize>1</bufSize><connectTo>0</connectTo><priority>med</priority><passcode></passcode><pdv1>false</pdv1><rcvpdulen>16</rcvpdulen><reaper>10</reaper><releaseTo>5</releaseTo><rspTo>60</rspTo><shutdownDelay>1000</shutdownDelay><sndpdulen>16</sndpdulen><soCloseDelay>50</soCloseDelay><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><stgcmt>false</stgcmt><tcpDelay>true</tcpDelay><ts1>false</ts1><uidnegrsp>false</uidnegrsp><username></username><applicationEntity>PACS_MAIN</applicationEntity><keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>notls</tls><trustStore></trustStore><trustStorePW></trustStorePW><localHost></localHost><localPort></localPort><localApplicationEntity>HUB_SCU</localApplicationEntity>${extra}</properties>`;
