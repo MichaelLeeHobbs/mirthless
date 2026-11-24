@@ -468,6 +468,23 @@ describe('ChannelRuntime', () => {
         expect(dest.onStop).toHaveBeenCalledOnce();
       });
 
+      it('goes on without it after a while', async () => {
+        vi.useFakeTimers();
+        try {
+          const { dest } = await withWork();
+          const stopped = runtime.stop();
+          await vi.advanceTimersByTimeAsync(9_999);
+          expect(dest.onStop).not.toHaveBeenCalled();
+
+          await vi.advanceTimersByTimeAsync(1);
+
+          expect((await stopped).ok).toBe(true);
+          expect(dest.onStop).toHaveBeenCalledOnce();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
       it('does not wait for it once it is halted', async () => {
         const { dest } = await withWork();
 

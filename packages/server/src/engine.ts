@@ -984,10 +984,13 @@ export class EngineManager {
       }
     }
 
-    // A halt does not wait for recovery. The next deployment recovers the same messages, so one
-    // that is still working on them would have them processed twice.
+    // A halt does not wait for recovery, and the next deployment recovers the same messages.
     if (!(await deployed.runtime.backgroundEnds(RECOVERY_ENDS_MS))) {
-      throw new ServiceError('CONFLICT', 'Cannot undeploy yet: crash recovery is still ending a message that the halt could not cancel. Try again shortly.');
+      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message that could not be cancelled; the next deployment may send it again');
+    }
+    // Nothing has been torn down yet.
+    if (deployed.runtime.getState() !== 'STOPPED') {
+      throw new ServiceError('CONFLICT', `Cannot undeploy: channel is ${deployed.runtime.getState()}`);
     }
 
     // A failing undeploy script is logged and the teardown carries on: refusing
@@ -1117,6 +1120,7 @@ export class EngineManager {
         ]);
         return OK_VOID;
       }
+      if (runSignal.aborted) return INTERRUPTED;
       const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.any([haltSignal, AbortSignal.timeout(30_000)]));
       const success = sendResult.ok && sendResult.value.status === 'SENT';
       // A halt ended it. The destination stays as it was, and the next start sends it again.

@@ -10,6 +10,7 @@ const mockRuntime = {
   pause: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   resume: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   undeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  runSignal: new AbortController().signal,
 };
 
 const deployedChannels = new Map<string, unknown>();
@@ -470,8 +471,10 @@ describe('DeploymentService', () => {
       const consumer = { start: vi.fn(), stop: vi.fn() };
       const recoverOnce = vi.fn(async () => {});
       mockRuntime.getState.mockReturnValue('STARTED');
-      const resetClaimsOnce = async (): Promise<void> => { mockRuntime.getState.mockReturnValue('STOPPED'); };
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [consumer], recoverOnce, resetClaimsOnce });
+      const run = new AbortController();
+      // Aborted as a stop or a halt begins, long before the state says so.
+      const resetClaimsOnce = async (): Promise<void> => { run.abort(); };
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: { ...mockRuntime, runSignal: run.signal }, queueConsumers: [consumer], recoverOnce, resetClaimsOnce });
 
       const result = await DeploymentService.start(CHANNEL_ID);
 

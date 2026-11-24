@@ -379,6 +379,7 @@ describe('QueueConsumer wiring', () => {
   describe('DeploymentService lifecycle', () => {
     it('starts queue consumers when channel starts', async () => {
       const mockRuntime = {
+        runSignal: new AbortController().signal,
         getState: vi.fn().mockReturnValue('STARTED'),
         start: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
         stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),

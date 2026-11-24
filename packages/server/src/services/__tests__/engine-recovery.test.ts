@@ -365,20 +365,63 @@ describe('EngineManager recovery', () => {
       await engine.dispose();
     });
 
-    it('an undeploy is refused when that recovery does not end', async () => {
+    it('an undeploy goes on when that recovery does not end, and says so', async () => {
+      const logger = (await import('../../lib/logger.js')).default;
       const { engine, deployed, answer } = await recovering({ ignoresItsSignal: true });
       await deployed.runtime.halt();
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       try {
-        const undeployed = engine.undeploy(CHANNEL_ID).catch((err: unknown) => err);
-        await vi.advanceTimersByTimeAsync(10_000);
-        expect(await undeployed).toMatchObject({ code: 'CONFLICT', message: expect.stringContaining('Cannot undeploy yet') });
+        const undeployed = engine.undeploy(CHANNEL_ID);
+        await vi.advanceTimersByTimeAsync(9_999);
+        expect(engine.getRuntime(CHANNEL_ID)).toBeDefined();
+        await vi.advanceTimersByTimeAsync(1);
+        await undeployed;
       } finally {
         vi.useRealTimers();
       }
-      expect(engine.getRuntime(CHANNEL_ID)).toBeDefined();
+      expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
+      expect(logger.error).toHaveBeenCalledWith({ channelId: CHANNEL_ID }, expect.stringContaining('may send it again'));
       answer({ ok: false, value: null, error: new Error('too late') });
-      await engine.undeploy(CHANNEL_ID);
+      await engine.dispose();
+    });
+
+    it('an undeploy is refused, with nothing torn down, when the channel was started while it waited', async () => {
+      const { engine, deployed, answer } = await recovering({ ignoresItsSignal: true });
+      await deployed.runtime.halt();
+      const clear = vi.spyOn(deployed.globalChannelMap, 'clear');
+
+      const undeployed = engine.undeploy(CHANNEL_ID).catch((err: unknown) => err);
+      await deployed.runtime.start();
+      answer({ ok: false, value: null, error: new Error('too late') });
+
+      expect(await undeployed).toMatchObject({ code: 'CONFLICT', message: 'Cannot undeploy: channel is STARTED' });
+      expect(clear).not.toHaveBeenCalled();
+      expect(engine.getRuntime(CHANNEL_ID)).toBeDefined();
+      await engine.dispose();
+    });
+
+    it.each(['stop', 'halt'] as const)('a message is not sent again once a %s has begun, but after the next start', async (action) => {
+      ms.getUnprocessedMessages.mockResolvedValue(ok([{ id: 7, channelId: CHANNEL_ID }]));
+      ms.getConnectorMessages.mockResolvedValue(ok([{ messageId: 7, metaDataId: 0, status: 'TRANSFORMED' }, READY]));
+      let loaded: (result: unknown) => void = () => undefined;
+      ms.loadContent.mockImplementationOnce(() => new Promise((resolve) => { loaded = resolve; }));
+      const engine = new EngineManager('test-server');
+      await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] })));
+      const deployed = engine.getRuntime(CHANNEL_ID)!;
+      await deployed.runtime.start();
+      const done = deployed.recoverOnce();
+      await vi.waitFor(() => { expect(ms.loadContent).toHaveBeenCalledOnce(); });
+
+      const ended = deployed.runtime[action]();
+      loaded(ok('payload'));
+      await Promise.all([done, ended]);
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(ms.updateConnectorMessageStatus).not.toHaveBeenCalled();
+
+      ms.loadContent.mockResolvedValue(ok('payload'));
+      await deployed.runtime.start();
+      await deployed.recoverOnce();
+      expect(mockSend).toHaveBeenCalledOnce();
       await engine.dispose();
     });
 
@@ -408,11 +451,8 @@ describe('EngineManager recovery', () => {
     });
   });
 
-  it.each([
-    ['cannot read its messages', async (): Promise<unknown> => ({ ok: false, value: null, error: new Error('db gone') })],
-    ['throws', (): never => { throw new Error('db gone'); }],
-  ])('one that %s is tried again at the next start', async (_how, read) => {
-    ms.getUnprocessedMessages.mockImplementationOnce(read);
+  it('one that could not read its messages is tried again at the next start', async () => {
+    ms.getUnprocessedMessages.mockResolvedValueOnce({ ok: false, value: null, error: new Error('db gone') });
     const engine = await deployAndRecover();
     const deployed = engine.getRuntime(CHANNEL_ID)!;
     expect(ms.getUnprocessedMessages).toHaveBeenCalledTimes(1);

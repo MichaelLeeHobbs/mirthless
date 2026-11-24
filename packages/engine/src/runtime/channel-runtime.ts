@@ -31,6 +31,9 @@ const TAKEN_OVER_BY_HALT: readonly Action[] = ['stop', 'pause', 'resume'];
 /** How long a start waits for what a halt took over to end. */
 const EARLIER_ENDS_MS = 10_000;
 
+/** How long a stop waits for work in the background to end. */
+const BACKGROUND_ENDS_MS = 10_000;
+
 export class ChannelRuntime {
   private state: ChannelState = 'UNDEPLOYED';
   private config: ChannelRuntimeConfig | null = null;
@@ -179,7 +182,7 @@ export class ChannelRuntime {
     let onHalt = (): void => undefined;
     const halted = new Promise<void>((resolve) => { onHalt = resolve; });
     haltSignal.addEventListener('abort', onHalt);
-    await Promise.race([Promise.all(this.background), halted]);
+    await Promise.race([this.backgroundEnds(BACKGROUND_ENDS_MS), halted]);
     haltSignal.removeEventListener('abort', onHalt);
   }
 

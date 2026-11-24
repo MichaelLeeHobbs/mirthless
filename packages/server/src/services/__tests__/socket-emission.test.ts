@@ -20,6 +20,7 @@ const mockRuntime = {
   halt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   pause: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   resume: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  runSignal: new AbortController().signal,
 };
 
 const deployedChannels = new Map<string, unknown>();
