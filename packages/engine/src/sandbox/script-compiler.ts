@@ -3,6 +3,7 @@ import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
 import { SCRIPT_BODY_OPEN, scriptBodyPosition, wrapScriptBody } from '@galvanigraph/core-models';
 import type { CompiledScript } from './sandbox-executor.js';
+import { usesDynamicImport } from './dynamic-import.js';
 
 export interface CompileOptions {
   readonly sourcefile?: string;
@@ -76,6 +77,8 @@ export async function compileScript(
     // module, where the script's top-level return is a syntax error.
     const result = await transform(wrapScriptBody(code), transformOptions);
     const body = unwrapBody(result.code);
+    // The sandbox would fail every message on it with a syntax error that does not say why.
+    if (usesDynamicImport(result.code)) throw new Error("Scripts can't load modules: import() is not available");
 
     const compiled: CompiledScript = result.map
       ? { code: body, sourceMap: result.map }

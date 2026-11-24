@@ -14,6 +14,25 @@ exposed** to your scripts, sourced from `packages/engine/src/sandbox/sandbox-exe
 >
 > If you are coming from Mirth Connect or OIE: there, Rhino scripts have full Java access by design (`java.lang.Runtime.getRuntime().exec(...)` works). Here a script has no `require`, `process` or file system and reaches the network and databases only through the functions on this page. That is an improvement, not a guarantee. See [SECURITY.md](../../SECURITY.md).
 
+### What a script does not have
+
+The standard JavaScript objects are there, except these, which the sandbox leaves out because code reached through them can escape it or run past the script's time limit (D-333):
+
+| Not available | What happens | Use instead |
+|---|---|---|
+| `console` | `console is not defined` | `logger` |
+| `Proxy`, `WebAssembly`, `FinalizationRegistry` | `... is not defined` | |
+| `import()` | The script does not deploy: `Scripts can't load modules: import() is not available` | A [code template](#code-templates) |
+| `eval`, `new Function` and the other function constructors | `EvalError` | |
+| `error.stack` | `undefined` | `error.message` and `error.name` |
+| `Error.stackTraceLimit` | Setting it throws a `TypeError` | |
+
+The type check does not know about these, so a script that uses one deploys (all but `import()`) and fails when it reaches it.
+
+The `then`, `catch` and `finally` of a promise subclass give a plain promise, not one of the subclass. They set the promise's own `constructor` to `Promise`, so they throw a `TypeError` on a frozen promise.
+
+The word `import` in a script shows up as `i\u006dport` where a script reads source text: `regex.source`, a function's `toString()`, and the raw strings of a tag function of its own. `String.raw` gives it back unchanged.
+
 ### What a script returns
 
 - **Filter.** Return `true` to accept the message. Anything else rejects it: `false`,

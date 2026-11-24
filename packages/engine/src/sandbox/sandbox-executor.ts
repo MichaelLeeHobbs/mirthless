@@ -10,6 +10,7 @@ import { tryCatch } from '@galvanigraph/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
+import { ESCAPED_IMPORT, withoutDynamicImport } from './dynamic-import.js';
 import { ownString, thrownText } from './sandbox-value.js';
 
 export interface CompiledScript {
@@ -312,6 +313,47 @@ const BOOTSTRAP_SRC = `'use strict';
 // chain would run, and one that throws aborts the process. Writable, so that the assignment (and a
 // script's own) succeeds; not configurable, so that a script can't turn it into an accessor.
 Object.defineProperty(Error.prototype, 'code', { value: undefined, writable: true, enumerable: false, configurable: false });
+// Without a numeric limit V8 captures no stack. Reading a captured one calls Node's formatter, and
+// near the stack limit that call fails with a host-realm error.
+Object.defineProperty(Error, 'stackTraceLimit', { value: undefined, writable: false, enumerable: false, configurable: false });
+// V8 runs a registry's callbacks and settles a compile from tasks of its own, with no time limit.
+// Node reads a private symbol of a rejected promise, also with none, and only a Proxy can catch that.
+delete globalThis.FinalizationRegistry;
+delete globalThis.WebAssembly;
+delete globalThis.Proxy;
+// Its methods convert their arguments in V8's inspector, which loses the stop of a script that
+// goes over its limit there.
+delete globalThis.console;
+// The engine calls a derived promise's resolve function as a job of its own. A script's own
+// function can throw out of that job: Node takes it for the server's own uncaught exception, and
+// V8, describing what was thrown, can lose the stop of a script that goes over its limit there.
+// So then() derives a plain promise whatever the promise says its constructor is.
+(function () {
+  var RealPromise = Promise;
+  var realThen = Promise.prototype.then;
+  var define = Object.defineProperty;
+  var apply = Reflect.apply;
+  var own = { __proto__: null, value: RealPromise, writable: false, enumerable: false, configurable: false };
+  define(RealPromise, Symbol.species, own);
+  define(RealPromise.prototype, 'then', {
+    __proto__: null, writable: true, enumerable: false, configurable: true,
+    value: function then(onFulfilled, onRejected) {
+      define(this, 'constructor', own);
+      return apply(realThen, this, [onFulfilled, onRejected]);
+    }
+  });
+  // The script's text says import with an escape, which only raw text shows.
+  var realRaw = String.raw;
+  define(String, 'raw', {
+    __proto__: null, writable: true, enumerable: false, configurable: true,
+    value: function raw(strings) {
+      var parts = [];
+      for (var i = 0; i < strings.raw.length; i += 1) { parts[i] = ('' + strings.raw[i]).replaceAll(${JSON.stringify(ESCAPED_IMPORT)}, 'import'); }
+      arguments[0] = { raw: parts };
+      return apply(realRaw, this, arguments);
+    }
+  });
+})();
 globalThis.__build = function (hostDispatch, payload) {
   // The host never throws across the boundary (a host Error would hand the script the
   // host realm's Function). It returns errToken instead; the Error is created here,
@@ -322,6 +364,7 @@ globalThis.__build = function (hostDispatch, payload) {
   var S = String;
   var N = Number;
   var stringify = JSON.stringify;
+  var apply = Reflect.apply;
   // Every value handed to the host is converted here, in the sandbox, to a string,
   // a number or a JSON string. The host refuses anything else.
   function text(v) { return v == null ? '' : S(v); }
@@ -336,9 +379,14 @@ globalThis.__build = function (hostDispatch, payload) {
       return (e !== null && typeof e === 'object' && 'message' in e) ? S(e.message) : S(e);
     } catch (ignored) { return 'Script threw a value that could not be read'; }
   }
+  // Near the stack limit a call into the host fails before the host's own try is entered, and the
+  // error is a host-realm one: it must not leave this catch.
+  function callHost() {
+    try { return apply(hostDispatch, null, arguments); } catch (ignored) { throw new Error('Maximum call stack size exceeded'); }
+  }
   function dispatch() {
-    var out = hostDispatch.apply(null, arguments);
-    if (out === errToken) { throw new Error(hostDispatch('err.take')); }
+    var out = apply(callHost, null, arguments);
+    if (out === errToken) { throw new Error(callHost('err.take')); }
     return out;
   }
   // IO bridges: the host returns a ticket id synchronously and later settles the
@@ -348,7 +396,7 @@ globalThis.__build = function (hostDispatch, payload) {
   // post-await code is bounded by the script timeout.
   var pendingIo = {};
   function io() {
-    var id = dispatch.apply(null, arguments);
+    var id = apply(dispatch, null, arguments);
     return new Promise(function (resolve) { pendingIo[id] = resolve; });
   }
   // One result at a time: many large results in one string could pass V8's
@@ -717,6 +765,18 @@ function collect(contextObj: vm.Context, ms: number): CollectedResult {
   return parsed;
 }
 
+/**
+ * Not contextified: node:vm would otherwise look a missing global up on a host object. Without code
+ * from strings, the only code in the context is the bootstrap's and the script's own text, so what
+ * the script may not contain cannot be built at run time either.
+ */
+function createSandboxGlobal(): vm.Context {
+  return vm.createContext(vm.constants.DONT_CONTEXTIFY, {
+    microtaskMode: 'afterEvaluate',
+    codeGeneration: { strings: false, wasm: false },
+  });
+}
+
 /** Hardened node:vm, not isolated-vm (D-018). */
 export class VmSandboxExecutor implements SandboxExecutor {
   private readonly deps: BridgeDependencies | undefined;
@@ -751,7 +811,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
       const hasAsyncBridges = Boolean(
         this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource || this.deps?.collections,
       );
-      const contextObj: Record<string, unknown> = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
+      const contextObj = createSandboxGlobal();
       const run = new AsyncRun(contextObj);
       contextObj['__dispatch'] = makeNonThrowingDispatch(run.wrap(dispatch), errToken);
       contextObj['__payloadJson'] = JSON.stringify(payload);
@@ -768,9 +828,10 @@ export class VmSandboxExecutor implements SandboxExecutor {
       const signal = options.signal ? AbortSignal.any([options.signal, expiry]) : expiry;
       run.start(limit);
 
+      const code = withoutDynamicImport(script.code);
       const wrappedCode = hasAsyncBridges
-        ? `'use strict'; __watch((async function() {\n${script.code}\n})());`
-        : `'use strict'; __run(function() {\n${script.code}\n});`;
+        ? `'use strict'; __watch((async function() {\n${code}\n})());`
+        : `'use strict'; __run(function() {\n${code}\n});`;
 
       try {
         runTimed(wrappedCode, contextObj, limit);

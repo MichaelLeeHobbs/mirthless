@@ -1,5 +1,5 @@
 // Host code must not run a getter or Proxy trap on a value a script made: no time limit covers it.
-// `instanceof` and reading `stack` (which calls the sandbox's Error.prepareStackTrace) both do.
+// `instanceof` and reading `stack` both can.
 
 import { types } from 'node:util';
 
