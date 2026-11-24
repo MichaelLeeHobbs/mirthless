@@ -38,6 +38,7 @@ const SHARED_HELPERS = [
   { names: 'redirectMessage', home: 'packages/connectors/src/redirect.ts' },
   { names: 'regexError|firstInvalidRegex', home: '@galvanigraph/core-models (regex-error.ts)' },
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
+  { names: 'createSlots|withSlot|withHashSlot', home: '@galvanigraph/core-util (slots.ts)' },
 ];
 // A permission check goes through holdsPermission or can (@galvanigraph/core-models
 // authz, D-310), so the move to scoped grants changes one place, not every caller.

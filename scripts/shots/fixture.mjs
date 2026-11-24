@@ -114,6 +114,16 @@ const scriptedDetail = {
   }],
 };
 
+/** An HTTP source that keeps binary bodies (#335). */
+const httpDetail = {
+  ...channelDetail,
+  id: 'c4', name: 'FHIR Patient Sync', inboundDataType: 'JSON', outboundDataType: 'FHIR', sourceConnectorType: 'HTTP',
+  sourceConnectorProperties: {
+    host: '0.0.0.0', port: 8080, path: '/fhir/patient', method: 'POST', responseStatusCode: 200, responseContentType: 'application/json',
+    errorStatusCode: 500, maxBodyBytes: 52428800, bodyCharset: 'base64', scheme: 'HTTP', tls: { serverCertId: '', caCertId: '', requireClientCert: false },
+  },
+};
+
 /** A DICOM Listener forwarding to a PACS, for the DICOM connector forms (#154, #313). */
 const dicomDetail = {
   ...channelDetail,
@@ -333,6 +343,7 @@ export function route(pathname, search) {
   if (p === '/channels/c6') return billingDetail;
   if (p === '/channels/c9') return scriptedDetail;
   if (p === '/channels/c5') return dicomDetail;
+  if (p === '/channels/c4') return httpDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;
