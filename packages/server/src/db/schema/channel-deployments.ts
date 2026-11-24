@@ -28,7 +28,7 @@ export const channelDeployments = pgTable('channel_deployments', {
   deployedAt: timestamp('deployed_at', { withTimezone: true }).notNull().defaultNow(),
   /** Set when someone undeploys the channel: a restart does not bring it back. Cleared by the next deploy. */
   undeployedAt: timestamp('undeployed_at', { withTimezone: true }),
-  /** Set by the script watchdog: a restart does not bring the channel back, and reports it (D-335). Cleared by the next deploy. */
+  /** Set by the script watchdog: a restart does not bring the channel back, and reports it (D-340). Cleared by the next deploy. */
   heldReason: text('held_reason'),
 });
 

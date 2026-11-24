@@ -1,5 +1,5 @@
 // node:vm's time limit does not stop every script, and one it does not stop holds the main thread
-// for good. This thread ends the process then, so that the supervisor starts it again (D-335).
+// for good. This thread ends the process then, so that the supervisor starts it again (D-340).
 
 import * as inspector from 'node:inspector';
 import { Worker } from 'node:worker_threads';

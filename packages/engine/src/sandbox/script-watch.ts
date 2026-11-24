@@ -1,5 +1,5 @@
 // What the main thread's sandbox is running, in memory another thread can read while the main
-// thread is stuck in it: node:vm's time limit does not stop every script (D-335).
+// thread is stuck in it: node:vm's time limit does not stop every script (D-340).
 
 /** [0] sequence, [1] the running script's limit in ms (0: none), [2] 1 while a debugger is open, then the script's channel id. */
 const HEADER_BYTES = 12;

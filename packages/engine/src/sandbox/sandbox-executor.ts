@@ -22,7 +22,7 @@ export interface ExecutionOptions {
   /** Wall-clock milliseconds, covering synchronous and async work. */
   readonly timeout: number;
   readonly signal?: AbortSignal | undefined;
-  /** Whose script it is, for the watchdog (D-335). */
+  /** Whose script it is, for the watchdog (D-340). */
   readonly channelId?: string | undefined;
 }
 
