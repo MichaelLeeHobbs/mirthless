@@ -34,13 +34,17 @@ function createMockDeps(overrides?: Partial<ShutdownDeps>): ShutdownDeps {
 }
 
 describe('createShutdownHandler', () => {
+  let listeners: readonly NodeJS.BeforeExitListener[] = [];
+
   beforeEach(() => {
     vi.useFakeTimers();
     mockExit.mockClear();
+    listeners = process.listeners('beforeExit');
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    for (const added of process.listeners('beforeExit').filter((l) => !listeners.includes(l))) process.removeListener('beforeExit', added);
   });
 
   it('calls cleanup steps in correct order', async () => {
@@ -234,13 +238,14 @@ const SERVER_DIR = fileURLToPath(new URL('../../../', import.meta.url));
 /** Past the 30 s force timer, so a child it holds open ends with the timer's exit code. */
 const CHILD_LIMIT_MS = 60_000;
 
-/** A shutdown stuck on its first step: the force timer is all that could keep the process alive. */
-const STUCK_SHUTDOWN = `
+/** A shutdown whose first step never finishes. `meanwhile` is code run along with it. */
+const stuckShutdown = (meanwhile: string): string => `
   import { writeSync } from 'node:fs';
   import { createShutdownHandler } from ${JSON.stringify(new URL('../shutdown.ts', import.meta.url).href)};
   const say = (text) => { writeSync(1, text + '\\n'); };
   const logger = { info: () => {}, error: (_fields, message) => { say(message); } };
   const stopSocketIO = () => { say('stuck'); return new Promise(() => {}); };
+  ${meanwhile}
   createShutdownHandler({ logger, stopSocketIO })('SIGTERM');
 `;
 
@@ -258,10 +263,16 @@ function runChild(code: string): Promise<ChildRun> {
 }
 
 describe('in a process of its own', () => {
-  it('force timer does not prevent process exit (unref)', async () => {
-    const { exitCode, stdout, stderr } = await runChild(STUCK_SHUTDOWN);
+  it('says so and fails at once when a step can never finish, because nothing is left to finish it', async () => {
+    const { exitCode, stdout, stderr } = await runChild(stuckShutdown(''));
 
-    expect({ exitCode, stdout }, stderr).toEqual({ exitCode: 0, stdout: 'stuck\n' });
+    expect({ exitCode, stdout }, stderr).toEqual({ exitCode: 1, stdout: 'stuck\nGraceful shutdown cannot finish, forcing exit\n' });
+  }, CHILD_LIMIT_MS + 5_000);
+
+  it('says nothing of it while something is left that could finish the step', async () => {
+    const { exitCode, stdout, stderr } = await runChild(stuckShutdown(`setTimeout(() => { say('still here'); process.exit(7); }, 1_000);`));
+
+    expect({ exitCode, stdout }, stderr).toEqual({ exitCode: 7, stdout: 'stuck\nstill here\n' });
   }, CHILD_LIMIT_MS + 5_000);
 });
 

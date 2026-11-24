@@ -18,3 +18,11 @@ export function tooLarge(): RefusedBodyError {
 export function tooLargeStillArriving(): RefusedBodyError {
   return new RefusedBodyError(413, 'Payload Too Large', { Connection: 'close' }, true);
 }
+
+export function stopping(): RefusedBodyError {
+  return new RefusedBodyError(503, 'The source is stopping', { Connection: 'close' });
+}
+
+export function stoppingStillArriving(): RefusedBodyError {
+  return new RefusedBodyError(503, 'The source is stopping', { Connection: 'close' }, true);
+}
