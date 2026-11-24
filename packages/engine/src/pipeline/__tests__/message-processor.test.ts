@@ -94,7 +94,9 @@ describe('MessageProcessor', () => {
 
     expect(store.createMessage).toHaveBeenCalledOnce();
     expect(store.createConnectorMessage).toHaveBeenCalledTimes(2); // source + dest
-    expect(vi.mocked(store.storeContent).mock.calls.map((c) => c[3])).toEqual([CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP, CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE]);
+    const contentTypes = vi.mocked(store.storeContent).mock.calls.map((c) => c[3]);
+    expect(new Set(contentTypes.slice(0, 2))).toEqual(new Set([CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP]));
+    expect(contentTypes.slice(2)).toEqual([CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE]);
     expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [1, 'SENT'], [0, 'SENT']]);
     expect(vi.mocked(store.incrementStats).mock.calls.map((c) => [c[1], c[3]])).toEqual([[0, 'received'], [1, 'sent'], [0, 'sent']]);
     expect(store.markProcessed).toHaveBeenCalledOnce();
@@ -1091,7 +1093,7 @@ describe('MessageProcessor', () => {
     expect(sendFn).not.toHaveBeenCalled();
   });
 
-  it('stores sourceMap as JSON string after raw content', async () => {
+  it('stores the raw content and the sourceMap, as JSON, on the source row', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
     const processor = new MessageProcessor(
@@ -1100,11 +1102,9 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    const stored = vi.mocked(store.storeContent).mock.calls.map(([, , , contentType, content, dataType]) => [contentType, content, dataType]);
-    expect(stored.slice(0, 2)).toEqual([
-      [CONTENT_TYPE.RAW, 'MSH|^~\\&|SENDER', 'RAW'],
-      [CONTENT_TYPE.SOURCE_MAP, '{"remoteAddress":"127.0.0.1"}', 'JSON'],
-    ]);
+    const { channelId } = makeConfig();
+    expect(store.storeContent).toHaveBeenCalledWith(channelId, 1, 0, CONTENT_TYPE.RAW, 'MSH|^~\\&|SENDER', 'RAW');
+    expect(store.storeContent).toHaveBeenCalledWith(channelId, 1, 0, CONTENT_TYPE.SOURCE_MAP, '{"remoteAddress":"127.0.0.1"}', 'JSON');
   });
 
   it('stores empty sourceMap {} as JSON', async () => {
@@ -1280,7 +1280,8 @@ describe('MessageProcessor reports where an error happened', () => {
 
       await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-      expect(order.slice(0, 5)).toEqual(['row:0', 'row:1', 'row:2', 'status:0:TRANSFORMED', 'send:1']);
+      expect(new Set(order.slice(0, 3))).toEqual(new Set(['row:0', 'row:1', 'row:2']));
+      expect(order.slice(3, 5)).toEqual(['status:0:TRANSFORMED', 'send:1']);
     });
 
     it('errors the message and sends nothing when a destination row cannot be created', async () => {

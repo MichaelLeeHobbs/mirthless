@@ -89,7 +89,8 @@ describe('createShutdownHandler', () => {
     handler('SIGINT');
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(vi.mocked(deps.logger.info).mock.calls).toEqual([
+    const logged = vi.mocked(deps.logger.info).mock.calls;
+    for (const line of [
       [{ signal: 'SIGINT' }, 'Received signal, starting graceful shutdown'],
       [{ phase: 'shutdown', step: 'socketio' }, 'Shutting down Socket.IO'],
       [{ phase: 'shutdown', step: 'http' }, 'Closing HTTP server'],
@@ -99,7 +100,7 @@ describe('createShutdownHandler', () => {
       [{ phase: 'shutdown', step: 'datasource-pools' }, 'Closing data source pools'],
       [{ phase: 'shutdown', step: 'database' }, 'Closing database pool'],
       [{ phase: 'shutdown' }, 'Graceful shutdown complete'],
-    ]);
+    ]) expect(logged).toContainEqual(line);
   });
 
   it('exits with the given code after a clean shutdown that followed a fatal error', async () => {

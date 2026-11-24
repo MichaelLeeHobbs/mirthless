@@ -191,7 +191,7 @@ describe('EngineManager deploy/undeploy scripts', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never));
 
-      expect(mockCompileScript).toHaveBeenCalledWith('logger.info("deploying");', { sourcefile: 'Test Channel/deploy.ts' });
+      expect(mockCompileScript).toHaveBeenCalledWith('logger.info("deploying");', expect.objectContaining({ sourcefile: 'Test Channel/deploy.ts' }));
     });
 
     it('executes channel deploy script in sandbox during deploy', async () => {

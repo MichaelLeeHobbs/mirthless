@@ -138,6 +138,12 @@ const RULE = {
   field: 'MSH.9', condition: 'EQUALS', values: ['ADT', 'ORU'],
 };
 
+/** As a JavaScript rule is stored: the Rule Builder's fields are null. */
+const SCRIPT_RULE = {
+  enabled: true, name: 'By script', operator: 'AND', type: 'JAVASCRIPT', script: 'return true;', language: 'JAVASCRIPT',
+  field: null, condition: null, values: null,
+};
+
 const TRANSFORMER = {
   inboundDataType: 'JSON', outboundDataType: 'XML', inboundProperties: { in: 1 }, outboundProperties: { out: 2 },
   inboundTemplate: 'in template', outboundTemplate: 'out template',
@@ -533,6 +539,8 @@ describe('ChannelService.clone', () => {
       filters: [{ id: 'f1', connectorId: null }],
       filterRules: [{
         id: 'r1', filterId: 'f1', sequenceNumber: 0, ...RULE,
+      }, {
+        id: 'r2', filterId: 'f1', sequenceNumber: 1, ...SCRIPT_RULE,
       }],
       transformers: [{
         id: 't1', connectorId: 'd3', ...TRANSFORMER,
@@ -567,7 +575,10 @@ describe('ChannelService.clone', () => {
 
     expect(inserted.get(channelFilters)).toEqual([{ channelId: CLONED_ID, connectorId: null }]);
     // Every field travels, the language too: a TypeScript rule must stay type-checked on the clone.
-    expect(inserted.get(filterRules)).toEqual([[{ filterId: 'new-f1', sequenceNumber: 0, ...RULE }]]);
+    expect(inserted.get(filterRules)).toEqual([[
+      { filterId: 'new-f1', sequenceNumber: 0, ...RULE },
+      { filterId: 'new-f1', sequenceNumber: 1, ...SCRIPT_RULE },
+    ]]);
     // Destination transformer: on the clone's second destination, not the source's d3.
     expect(inserted.get(channelTransformers)).toEqual([{ channelId: CLONED_ID, connectorId: 'new-d2', ...TRANSFORMER }]);
     expect(inserted.get(transformerSteps)).toEqual([[{ transformerId: 'new-t1', sequenceNumber: 0, ...STEP }]]);
