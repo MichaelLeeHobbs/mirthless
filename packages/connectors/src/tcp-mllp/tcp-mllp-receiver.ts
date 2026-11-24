@@ -1,6 +1,6 @@
 import * as net from 'node:net';
 import * as tls from 'node:tls';
-import { tryCatch, type Result } from '@galvanigraph/core-util';
+import { settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
 import type {
   SourceConnectorRuntime,
   MessageDispatcher,
@@ -12,7 +12,6 @@ import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js
 import type { TlsServerOptions } from '../tls.js';
 import { buildAck, type AckCode } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
-import { settleWithin } from '../timeout.js';
 
 const IDLE_SOCKET_TIMEOUT_MS = 300_000;
 

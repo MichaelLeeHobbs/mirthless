@@ -115,8 +115,10 @@ export class HttpReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      this.listener = new HttpListener(this.createServer(), (exchange) => this.handle(exchange));
-      await this.listener.listen(this.config.port, this.config.host);
+      const listener = new HttpListener(this.createServer(), (exchange) => this.handle(exchange));
+      await listener.listen(this.config.port, this.config.host);
+      // Not before: one that could not listen would take the place of the one that does.
+      this.listener = listener;
     });
   }
 

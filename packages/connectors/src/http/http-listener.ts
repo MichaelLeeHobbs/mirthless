@@ -1,13 +1,13 @@
 import type * as http from 'node:http';
 import * as https from 'node:https';
 import type * as net from 'node:net';
-import { settleWithin } from '../timeout.js';
+import { settleWithin } from '@galvanigraph/core-util';
 
 /** How long a stop waits for bodies that are still arriving. */
 const STOP_ARRIVAL_MS = 5_000;
 
-/** How long a stop waits for its last answers to be read. Longer than the linger after a refused body. */
-const STOP_CLOSE_MS = 3_000;
+/** How long a stop waits for answers to be read. Over TLS Node does not say whether a sender is reading one, only slowly. */
+const STOP_READ_MS = 15_000;
 
 export interface Exchange {
   readonly req: http.IncomingMessage;
@@ -37,6 +37,8 @@ export class HttpListener {
   private readonly inProgress = new Set<Promise<void>>();
   private readonly arrival = new AbortController();
   private stopping = false;
+  private markHalted = (): void => undefined;
+  private readonly halted = new Promise<void>((resolve) => { this.markHalted = resolve; });
 
   /** `handle` never rejects, and settles once it has answered. */
   constructor(server: http.Server | https.Server, handle: (exchange: Exchange) => Promise<void>) {
@@ -46,7 +48,11 @@ export class HttpListener {
     server.on('connection', (socket: net.Socket) => { keepWhileOpen(this.connections, socket); });
     if (overTls) server.on('secureConnection', (socket) => { keepWhileOpen(this.requestSockets, socket); });
     server.on('request', (req: http.IncomingMessage, res: http.ServerResponse) => {
-      if (this.takenNoMore.has(req.socket)) return;
+      if (this.takenNoMore.has(req.socket)) {
+        // Left unread, its bytes would reset the connection and take the refusal before it along.
+        req.resume();
+        return;
+      }
       this.lastAnswers.set(req.socket, res);
       const work = handle(this.exchange(req, res)).finally(() => { this.inProgress.delete(work); });
       this.inProgress.add(work);
@@ -63,22 +69,31 @@ export class HttpListener {
     });
   }
 
-  /** Answers the requests that came before it. A message in the pipeline is waited for however long it takes. */
+  /**
+   * Answers the requests that came before it. A message in the pipeline is waited for however
+   * long it takes, until a halt.
+   */
   async stop(): Promise<void> {
     this.stopping = true;
+    // `close` calls this, and it cuts off an answer that was ended and is not sent yet.
+    this.server.closeIdleConnections = (): void => undefined;
     const closed = new Promise<void>((resolve) => { this.server.close(() => { resolve(); }); });
-    const arrival = setTimeout(() => { this.arrival.abort(); }, STOP_ARRIVAL_MS);
-    await Promise.all(this.inProgress);
-    clearTimeout(arrival);
+    for (const socket of this.requestSockets) this.announceClose(socket);
 
-    for (const socket of this.requestSockets) this.closeOnceAnswered(socket);
-    await settleWithin(closed, STOP_CLOSE_MS);
+    const arrival = setTimeout(() => { this.arrival.abort(); }, STOP_ARRIVAL_MS);
+    await Promise.race([Promise.all(this.inProgress), this.halted]);
+    clearTimeout(arrival);
+    // Any body still arriving came after the stop.
+    this.arrival.abort();
+
+    await settleWithin(Promise.all([...this.requestSockets].map((socket) => this.closeOnceAnswered(socket))), STOP_READ_MS);
     this.destroyConnections();
     await closed;
   }
 
   halt(): void {
     this.server.close();
+    this.markHalted();
     this.destroyConnections();
   }
 
@@ -92,11 +107,20 @@ export class HttpListener {
     };
   }
 
-  /** Answers on one connection go out in order, so with the last of them the sender has them all. */
-  private closeOnceAnswered(socket: net.Socket): void {
+  /** Told with its answer, a sender does not send again on a connection that is about to close. */
+  private announceClose(socket: net.Socket): void {
     const last = this.lastAnswers.get(socket);
-    if (!last || last.writableFinished) socket.destroySoon();
-    else last.once('finish', () => { socket.destroySoon(); });
+    if (last && !last.headersSent) last.shouldKeepAlive = false;
+  }
+
+  /** Answers on one connection go out in order, so with the last of them the sender has them all. */
+  private closeOnceAnswered(socket: net.Socket): Promise<void> {
+    return new Promise((resolve) => {
+      socket.once('close', () => { resolve(); });
+      const last = this.lastAnswers.get(socket);
+      if (!last || last.writableFinished) socket.destroySoon();
+      else last.once('finish', () => { socket.destroySoon(); });
+    });
   }
 
   private destroyConnections(): void {

@@ -61,7 +61,6 @@ function readBytes({ req, arrivalEnded }: BodyOnTheWay, maxBytes: number): Promi
     let drain: ReturnType<typeof setTimeout> | undefined;
     const giveUp = (): void => {
       givenUp = true;
-      chunks.length = 0;
       stopWaiting();
       reject(size > maxBytes ? tooLargeStillArriving() : stoppingStillArriving());
     };

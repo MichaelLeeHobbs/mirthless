@@ -99,8 +99,9 @@ export interface DeployedChannel {
    * Recover messages a prior crash left unprocessed. Runs on the first start
    * after deploy (call it after the runtime has started): destination
    * dispatchers only accept sends once started, so recovering at deploy time
-   * marked every pending destination ERROR. One that a stop or a halt interrupts
-   * goes on at the next start; after one that ended, calls are no-ops.
+   * marked every pending destination ERROR. One that failed, or that a stop or
+   * a halt interrupted, goes on at the next start; after one that went through
+   * every message, calls are no-ops.
    */
   readonly recoverOnce: () => Promise<void>;
   /** Releases queue claims left by a server stop. Run before the queue consumers start. */
@@ -251,6 +252,7 @@ export interface StorageConfig {
 }
 
 const OK_VOID = { ok: true as const, value: undefined, error: null } as Result<void>;
+const INTERRUPTED = { ok: false as const, value: null, error: new Error('Interrupted: the channel stopped') } as Result<void>;
 
 function fail<T>(error: Result<T>['error'] & object): Result<T> {
   return { ok: false, value: null, error } as Result<T>;
@@ -462,6 +464,8 @@ const routeDepthStore = new AsyncLocalStorage<number>();
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
+/** How long an undeploy waits for crash recovery to end the messages it was working on. */
+const RECOVERY_ENDS_MS = 10_000;
 const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destination ran. Reprocess the message to deliver it.';
 
 type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
@@ -870,13 +874,11 @@ export class EngineManager {
     const recoverOnce = (): Promise<void> => {
       const { runSignal, haltSignal } = runtime;
       const run = async (): Promise<void> => {
-        if (recovered) return;
-        // Set first, so one that throws is not tried again.
-        recovered = true;
-        recovered = await this.recoverChannel({ channel, store, processMessage, sendFn, horizon: recoveryHorizon, runSignal, haltSignal });
+        if (!recovered) recovered = await this.recoverChannel({ channel, store, processMessage, sendFn, horizon: recoveryHorizon, runSignal, haltSignal });
       };
       // An interrupted one may still be ending its sends.
       recovering = recovering.then(run, run);
+      runtime.runInBackground(recovering);
       return recovering;
     };
 
@@ -982,6 +984,15 @@ export class EngineManager {
       }
     }
 
+    // A halt does not wait for recovery, and the next deployment recovers the same messages.
+    if (!(await deployed.runtime.backgroundEnds(RECOVERY_ENDS_MS))) {
+      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message that could not be cancelled; the next deployment may send it again');
+    }
+    // Nothing has been torn down yet.
+    if (deployed.runtime.getState() !== 'STOPPED') {
+      throw new ServiceError('CONFLICT', `Cannot undeploy: channel is ${deployed.runtime.getState()}`);
+    }
+
     // A failing undeploy script is logged and the teardown carries on: refusing
     // to undeploy would leave a channel nobody can stop.
     const maps: ChannelMaps = { gcm: deployed.globalChannelMap, globalMap: deployed.globalMapProxy, configMap: deployed.configMap };
@@ -1015,7 +1026,7 @@ export class EngineManager {
    * - RECEIVED source messages are reprocessed from their stored raw content.
    * - RECEIVED destination messages are re-dispatched from their stored SENT content.
    * QUEUED messages are left for the queue consumers. All failures are logged only.
-   * Resolves false when a stop or a halt interrupted it.
+   * Resolves false when it is to go on at the next start.
    */
   private async recoverChannel({ channel, store, processMessage, sendFn, horizon, runSignal, haltSignal }: ChannelRecovery): Promise<boolean> {
     // Without the horizon there is no telling a leftover message from one the
@@ -1061,7 +1072,9 @@ export class EngineManager {
       if (!raw.ok || raw.value === null) {
         return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
       }
-      const processed = await processMessage(raw.value, await loadSourceMap(channelId, messageId));
+      const sourceMap = await loadSourceMap(channelId, messageId);
+      if (runSignal.aborted) return INTERRUPTED;
+      const processed = await processMessage(raw.value, sourceMap);
       if (!processed.ok) {
         // Do NOT mark processed on failure — the original still holds recoverable
         // raw content and must remain eligible for recovery on the next deploy.
@@ -1107,12 +1120,11 @@ export class EngineManager {
         ]);
         return OK_VOID;
       }
+      if (runSignal.aborted) return INTERRUPTED;
       const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.any([haltSignal, AbortSignal.timeout(30_000)]));
       const success = sendResult.ok && sendResult.value.status === 'SENT';
-      if (!success && runSignal.aborted) {
-        // Its destination was stopped under the send. It stays as it was and is sent after the next start.
-        return { ok: false, value: null, error: new Error('Interrupted by a stop') } as Result<void>;
-      }
+      // A halt ended it. The destination stays as it was, and the next start sends it again.
+      if (!sendResult.ok && haltSignal.aborted) return INTERRUPTED;
       await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, success ? 'SENT' : 'ERROR');
       await store.incrementStats(channelId, metaDataId, this.serverId, success ? 'sent' : 'errored');
       return success ? OK_VOID : ({ ok: false, value: null, error: new Error('Redispatch send failed') } as Result<void>);
@@ -1121,8 +1133,8 @@ export class EngineManager {
     const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
     const recovered = await manager.recover(channel.id, runSignal);
     if (!recovered.ok) {
-      logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed');
-      return true;
+      logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed; it goes on at the next start');
+      return false;
     }
     const { interrupted, ...summary } = recovered.value;
     if (interrupted) {

@@ -310,7 +310,12 @@ export class DeploymentService {
 
       // Start queue consumers after runtime starts, and only once claims left
       // by a server stop have been released.
+      const { runSignal } = deployed.runtime;
       await deployed.resetClaimsOnce();
+      // A stop or halt that came meanwhile has stopped the consumers, and stops the destinations they send to.
+      if (runSignal.aborted) {
+        throw new ServiceError('CONFLICT', 'Cannot start channel: it was stopped before it had started');
+      }
       deployed.queueConsumers.forEach((c) => c.start());
 
       // Crash recovery needs started destination dispatchers, so it runs here

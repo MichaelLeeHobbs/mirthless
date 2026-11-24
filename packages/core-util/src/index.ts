@@ -9,4 +9,5 @@ export * from './secret-setting.js';
 export * from './placeholders.js';
 export * from './throttle.js';
 export * from './slots.js';
+export * from './settle-within.js';
 export * from './csv.js';

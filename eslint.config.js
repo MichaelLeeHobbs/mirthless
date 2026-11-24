@@ -39,6 +39,7 @@ const SHARED_HELPERS = [
   { names: 'regexError|firstInvalidRegex', home: '@galvanigraph/core-models (regex-error.ts)' },
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
   { names: 'createSlots|withSlot|withHashSlot', home: '@galvanigraph/core-util (slots.ts)' },
+  { names: 'settleWithin', home: '@galvanigraph/core-util (settle-within.ts)' },
   { names: 'freePort|closedPort|getFreePort', home: 'packages/connectors/src/__fixtures__/free-port.ts' },
 ];
 // A run of the same test in another checkout holds a fixed port at the same time (#376).

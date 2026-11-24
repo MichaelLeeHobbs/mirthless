@@ -22,14 +22,6 @@ export async function withTimeout<T>(
   }
 }
 
-/** Waits for the work to end either way, or for the time. */
-export async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
-  await Promise.race([work.then(() => undefined, () => undefined), timeout]);
-  clearTimeout(timer);
-}
-
 export async function withTimeoutSignal<T>(
   promise: Promise<T>,
   ms: number,
