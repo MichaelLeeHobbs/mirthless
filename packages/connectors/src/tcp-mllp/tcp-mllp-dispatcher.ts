@@ -5,6 +5,7 @@ import * as genericPool from 'generic-pool';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
+import { nestedErrorMessages } from '../nested-errors.js';
 import type { TlsClientOptions } from '../tls.js';
 import { classifyAckResponse, controlIdOf, type SentControlId } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -15,8 +16,7 @@ const MAX_CONNECT_PAUSE_MS = 1_000;
 /** A host with several addresses fails with an AggregateError, whose own message is empty. */
 function connectFailureText(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  if (!(err instanceof AggregateError)) return err.message;
-  return (err.errors as readonly unknown[]).map((e) => (e instanceof Error ? e.message : String(e))).join('; ');
+  return err.message || nestedErrorMessages(err).join('; ');
 }
 
 export interface TcpMllpDispatcherConfig {
@@ -35,8 +35,9 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   private readonly config: TcpMllpDispatcherConfig;
   private readonly logger: ConnectorLogger;
   private pool: genericPool.Pool<net.Socket> | null = null;
-  /** Why the last connect failed, until the remote is reached again. */
+  /** Why the last connect failed; null once one succeeds. */
   private connectFailure: string | null = null;
+  private outageLogged = false;
 
   constructor(config: TcpMllpDispatcherConfig, logger?: ConnectorLogger) {
     this.config = config;
@@ -62,7 +63,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
         validate: async (socket) => !socket.destroyed && socket.writable,
       };
 
-      this.connectFailure = null;
+      this.resetOutage();
       this.pool = genericPool.createPool(factory, {
         min: 0,
         max: this.config.maxConnections,
@@ -77,7 +78,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   private async connectOrPause(): Promise<net.Socket> {
     try {
       const socket = await this.createConnection();
-      this.connectFailure = null;
+      this.resetOutage();
       return socket;
     } catch (err) {
       this.recordFailedConnect(err);
@@ -87,15 +88,21 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     }
   }
 
+  private resetOutage(): void {
+    this.connectFailure = null;
+    this.outageLogged = false;
+  }
+
   private recordFailedConnect(err: unknown): void {
-    const errMsg = connectFailureText(err);
-    if (this.connectFailure === null) {
-      this.logger.error(
-        { ...errorInfo(err), errMsg, host: this.config.host, port: this.config.port },
-        'MLLP destination cannot be reached; retrying while a message waits, and not logging again until it is reached',
-      );
-    }
-    this.connectFailure = errMsg;
+    this.connectFailure = connectFailureText(err);
+    // With a connection open the remote is there and refuses only more of them, which is no outage.
+    const open = this.pool ? this.pool.borrowed + this.pool.available : 0;
+    if (this.outageLogged || open > 0) return;
+    this.outageLogged = true;
+    this.logger.error(
+      { ...errorInfo(err), errMsg: this.connectFailure, host: this.config.host, port: this.config.port },
+      'MLLP destination cannot be reached; retrying while a message waits, and not logging again until it is reached',
+    );
   }
 
   private get remote(): string {
@@ -106,8 +113,9 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   private acquireError(err: unknown): Error {
     const error = err instanceof Error ? err : new Error(String(err));
     if (error.name !== 'TimeoutError') return error;
-    const reason = this.connectFailure === null ? '' : `: ${this.connectFailure}`;
-    return new Error(`No connection to ${this.remote} within ${String(this.config.acquireTimeoutMs)}ms${reason}`, { cause: error });
+    const waited = `to ${this.remote} within ${String(this.config.acquireTimeoutMs)}ms`;
+    const text = this.connectFailure === null ? `No free connection ${waited}` : `No connection ${waited}: ${this.connectFailure}`;
+    return new Error(text, { cause: error });
   }
 
   /** A queued destination aborts its send after 30 s, which comes before a long acquire timeout. */
@@ -125,7 +133,6 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
       const socket = await this.acquireSocket(signal);
       try {
         const response = await this.sendAndReceive(socket, message.content, signal);
-        this.connectFailure = null;
         await this.pool.release(socket);
         return response;
       } catch (err) {

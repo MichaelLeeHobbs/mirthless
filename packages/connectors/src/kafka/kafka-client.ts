@@ -2,6 +2,7 @@
 
 import { Admin, Consumer, Producer, ProduceAcks, type SASLOptions } from '@platformatic/kafka';
 import type { ConnectionOptions as TlsConnectionOptions } from 'node:tls';
+import { nestedErrorMessages } from '../nested-errors.js';
 import type { TlsClientOptions } from '../tls.js';
 
 export const KAFKA_SASL_MECHANISM = {
@@ -169,18 +170,8 @@ export type KafkaProducerFactory = (config: KafkaConnectionConfig) => KafkaProdu
  */
 export function describeKafkaError(err: unknown): Error {
   if (!(err instanceof Error)) return new Error(String(err));
-  const reasons: string[] = [];
-  const pending: unknown[] = [err];
-  while (pending.length > 0 && reasons.length < 10) {
-    const next = pending.shift();
-    if (!(next instanceof Error)) continue;
-    if (next !== err && next.message) reasons.push(next.message);
-    const nested = (next as { errors?: unknown }).errors;
-    if (Array.isArray(nested)) pending.push(...(nested as unknown[]));
-    if (next.cause !== undefined) pending.push(next.cause);
-  }
-  const unique = [...new Set(reasons)].filter((r) => r !== err.message);
-  return unique.length === 0 ? err : new Error(`${err.message} ${unique.join('; ')}`, { cause: err });
+  const reasons = nestedErrorMessages(err);
+  return reasons.length === 0 ? err : new Error(`${err.message} ${reasons.join('; ')}`, { cause: err });
 }
 
 export const createKafkaProducer: KafkaProducerFactory = (config) => {

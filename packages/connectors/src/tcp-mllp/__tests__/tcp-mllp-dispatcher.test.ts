@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as diagnostics from 'node:diagnostics_channel';
+import dns from 'node:dns';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import { TcpMllpDispatcher, type TcpMllpDispatcherConfig } from '../tcp-mllp-dispatcher.js';
@@ -400,37 +401,60 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     expect(result.error?.message).toMatch(new RegExp(`^No connection to 127\\.0\\.0\\.1:${String(port)} within 400ms: .*ECONNREFUSED`));
   });
 
-  it('gives the reason for a host with several addresses, in the error and the log', async () => {
-    const { send, log } = await startAgainst(await closedPort(), { host: 'localhost' });
-    const result = await send();
-    expect(result.error?.message).toMatch(/within 400ms: .*ECONNREFUSED/);
-    expect(log.errors[0]?.obj['errMsg']).toContain('ECONNREFUSED');
+  it('gives each address\'s reason for a host with several, in the error and the log', async () => {
+    const addresses = [{ address: '127.0.0.1', family: 4 }, { address: '127.0.0.2', family: 4 }];
+    const lookup = vi.spyOn(dns, 'lookup').mockImplementation(((_host: string, _options: unknown, done: (err: null, found: unknown) => void) => {
+      done(null, addresses);
+    }) as unknown as typeof dns.lookup);
+    try {
+      const port = await closedPort();
+      const { send, log, dispatcher: started } = await startAgainst(port, { host: 'partner.example', acquireTimeoutMs: 5_000 });
+      const aborter = new AbortController();
+      const sending = send(aborter.signal);
+      await vi.waitFor(() => { expect(outages(log)).toBe(1); }, { timeout: 4_000 });
+      aborter.abort();
+      const refused = new RegExp(`127\\.0\\.0\\.1:${String(port)}.*; .*127\\.0\\.0\\.2:${String(port)}`);
+      expect((await sending).error?.message).toMatch(refused);
+      expect(log.errors[0]?.obj['errMsg']).toMatch(refused);
+      // The aborted send keeps its place in the pool, so let it have a connection or the stop waits for it.
+      await listenOn(port);
+      expect((await started.onStop()).ok).toBe(true);
+    } finally {
+      lookup.mockRestore();
+    }
   });
 
   it('gives the reason when the send is aborted before its acquire timeout, as a queued one is', async () => {
     const port = await closedPort();
-    const { send, log } = await startAgainst(port, { acquireTimeoutMs: 1_000 });
+    const { send, log } = await startAgainst(port, { acquireTimeoutMs: 5_000 });
     const aborter = new AbortController();
     const sending = send(aborter.signal);
-    await vi.waitFor(() => { expect(outages(log)).toBe(1); });
+    await vi.waitFor(() => { expect(outages(log)).toBe(1); }, { timeout: 4_000 });
     aborter.abort();
     expect((await sending).error?.message).toMatch(new RegExp(`^Send aborted while 127\\.0\\.0\\.1:${String(port)} could not be reached: .*ECONNREFUSED`));
+    await listenOn(port);
   });
 
-  it('delivers a waiting message once the remote comes back', async () => {
+  it('delivers a waiting message once the remote comes back, within seconds however long it may wait', async () => {
     const port = await closedPort();
-    const { send, log } = await startAgainst(port, { acquireTimeoutMs: 2_000 });
+    const { send, log } = await startAgainst(port, { acquireTimeoutMs: 30_000 });
     const sending = send();
-    await vi.waitFor(() => { expect(outages(log)).toBe(1); });
+    await vi.waitFor(() => { expect(outages(log)).toBe(1); }, { timeout: 4_000 });
     await listenOn(port);
+    const back = performance.now();
     const result = await sending;
     expect(result.ok && result.value.status).toBe('SENT');
+    expect(performance.now() - back).toBeLessThan(6_000);
   });
 
   it('tries again for a send that comes during the pause, however short its wait', async () => {
     const port = await closedPort();
-    const { send } = await startAgainst(port, { acquireTimeoutMs: 200 });
-    expect((await send()).ok).toBe(false);
+    const { send, log } = await startAgainst(port);
+    const aborter = new AbortController();
+    const first = send(aborter.signal);
+    await vi.waitFor(() => { expect(outages(log)).toBe(1); });
+    aborter.abort();
+    expect((await first).ok).toBe(false);
     await listenOn(port);
     expect((await send()).ok).toBe(true);
   });
@@ -454,23 +478,52 @@ describe('TcpMllpDispatcher while the remote refuses connections', () => {
     }, { timeout: 5_000 });
   });
 
-  it('logs an outage that follows a refused extra connection, once a send got through between them', async () => {
+  it('does not take a refused extra connection for an outage, and logs the outage that follows', async () => {
     const port = await closedPort();
     const { send, log } = await startAgainst(port, { acquireTimeoutMs: 1_000 });
     const remote = await listenOn(port);
     expect((await send()).ok).toBe(true);
 
     remote.stopListening();
-    const both = await Promise.all([send(), send()]);
-    expect(both.map((r) => r.ok)).toEqual([true, true]);
-    await vi.waitFor(() => { expect(outages(log)).toBe(1); });
-    expect((await send()).ok).toBe(true);
+    let attempts = 0;
+    const count = (): void => { attempts += 1; };
+    diagnostics.subscribe('net.client.socket', count);
+    try {
+      const both = await Promise.all([send(), send()]);
+      expect(both.map((r) => r.ok)).toEqual([true, true]);
+    } finally {
+      diagnostics.unsubscribe('net.client.socket', count);
+    }
+    expect(attempts).toBeGreaterThanOrEqual(1);
+    expect(outages(log)).toBe(0);
 
     await remote.dropConnections();
     await vi.waitFor(async () => {
       expect((await send()).ok).toBe(false);
-      expect(outages(log)).toBe(2);
+      expect(outages(log)).toBe(1);
     }, { timeout: 5_000 });
+  });
+
+  it('says no connection was free when the remote is up and all are busy', async () => {
+    const silent = net.createServer();
+    await new Promise<void>((resolve) => { silent.listen(0, '127.0.0.1', resolve); });
+    const { port } = silent.address() as net.AddressInfo;
+    const sockets: net.Socket[] = [];
+    silent.on('connection', (socket) => { sockets.push(socket); });
+    const { send } = await startAgainst(port, { maxConnections: 1 });
+    const first = send();
+    await vi.waitFor(() => { expect(sockets).toHaveLength(1); });
+    expect((await send()).error?.message).toBe(`No free connection to 127.0.0.1:${String(port)} within 400ms`);
+    for (const socket of sockets) socket.destroy();
+    expect((await first).ok).toBe(false);
+    await new Promise<void>((resolve) => { silent.close(() => { resolve(); }); });
+  });
+
+  it('keeps the pool\'s own error for a send during a stop', async () => {
+    const { send, dispatcher: started } = await startAgainst(await closedPort());
+    const stopping = started.onStop();
+    expect((await send()).error?.message).toContain('draining');
+    expect((await stopping).ok).toBe(true);
   });
 
   it('takes a connection as reaching the remote, even when the send then fails', async () => {
