@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, onTestFinished, vi } from 'vitest';
 import * as diagnostics from 'node:diagnostics_channel';
 import { getEventListeners } from 'node:events';
 import * as http from 'node:http';
@@ -21,7 +21,7 @@ const PORT = await freePort();
 const TLS = { cert: TEST_CERT_PEM, key: TEST_KEY_PEM };
 
 const STOP_ARRIVAL_MS = 5_000;
-const STOP_CLOSE_MS = 3_000;
+const STOP_READ_MS = 15_000;
 const LINGER_MS = 2_000;
 
 let receiver: HttpReceiver | null = null;
@@ -157,7 +157,7 @@ describe('HttpReceiver stop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('keeps nothing of a body it has given up on', async () => {
+  it('starts no time for a body it has given up on to go over the limit', async () => {
     fakeTimers();
     const requests = watchRequests();
     try {
@@ -174,7 +174,6 @@ describe('HttpReceiver stop', () => {
       stalled.socket.write('x'.repeat(2_000));
       await until(() => { expect(more).toBe(2_000); });
 
-      // Over the limit by now, which would start the time a body over it may take.
       expect(vi.getTimerCount()).toBe(timers);
       await vi.advanceTimersByTimeAsync(LINGER_MS);
       expect((await stopped).ok).toBe(true);
@@ -211,20 +210,18 @@ describe('HttpReceiver stop', () => {
     expect(seen.map((raw) => raw.content)).toEqual(['MSH|LAB']);
   });
 
-  it('answers what is in the pipeline, and refuses what comes after on the same connection', async () => {
+  it('answers what is in the pipeline, and says that the connection will close', async () => {
     const { dispatch, letGo } = holding();
     const seen = await start({}, dispatch);
-    const kept = await connect(`${head(5)}first`);
-    await until(() => { expect(seen).toHaveLength(1); });
+    const kept = await connect(`${head(5)}first${head(6)}second`);
+    await until(() => { expect(seen).toHaveLength(2); });
 
     const stopped = receiver!.onStop();
     letGo();
-    await until(() => { expect(kept.received()).toMatch(/^HTTP\/1\.1 200 /); });
-    if (kept.socket.writable) kept.socket.write(`${head(6)}second`);
 
     expect((await stopped).ok).toBe(true);
-    await kept.closed;
-    expect(seen.map((raw) => raw.content)).toEqual(['first']);
+    const answers = (await kept.closed).split('HTTP/1.1 200 OK').slice(1);
+    expect(answers.map((answer) => /^Connection: (.*)$/im.exec(answer)?.[1])).toEqual(['keep-alive', 'close']);
   });
 
   it('answers 503 and closes the connection for a request that comes while it waits for another', async () => {
@@ -233,12 +230,10 @@ describe('HttpReceiver stop', () => {
     const working = await connect(`${head(5)}first`);
     const kept = await connect('');
     await until(() => { expect(seen).toHaveLength(1); });
-    // Not idle when the stop begins, so the stop leaves it open.
-    kept.socket.write(head(6).slice(0, 10));
     await settled();
 
     const stopped = receiver!.onStop();
-    kept.socket.write(`${head(6).slice(10)}second`);
+    kept.socket.write(`${head(6)}second`);
 
     expect(await kept.closed).toMatch(/^HTTP\/1\.1 503 [\s\S]*\r\nConnection: close\r\n/i);
     letGo();
@@ -315,15 +310,12 @@ describe('HttpReceiver stop', () => {
     ['not begun', ''],
     ['half done', '\x16\x03\x01'],
   ])('ends although a TLS handshake is %s', async (_what, sends) => {
-    fakeTimers();
     await start({ tls: TLS });
     const connection = await connect(sends);
     await settledOverTls();
 
-    const stopped = receiver!.onStop();
-    await vi.advanceTimersByTimeAsync(STOP_CLOSE_MS);
+    await stopsAtOnce();
 
-    expect((await stopped).ok).toBe(true);
     expect(await connection.closed).toBe('');
   });
 
@@ -362,6 +354,54 @@ describe('HttpReceiver stop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it.each([
+    ['HTTP', {}],
+    ['HTTPS', { tls: TLS }],
+  ])('cuts no %s answer short that was given before it and not read yet', async (_scheme, config) => {
+    const held = new Map<string, () => void>();
+    const seen = await start(config, async (raw) => {
+      if (raw.content === 'L') await new Promise<void>((resolve) => { held.set('L', resolve); });
+      return answered(raw.content === 'L' ? 'LAST' : 'Z'.repeat(LARGE));
+    });
+    const address = { host: '127.0.0.1', port: PORT };
+    const socket = 'tls' in config ? tls.connect({ ...address, rejectUnauthorized: false }) : net.connect(address);
+    opened.push(socket);
+    const answers: Buffer[] = [];
+    socket.on('data', (data: Buffer) => { answers.push(data); });
+    const closed = new Promise<void>((resolve) => { socket.on('close', () => { resolve(); }); });
+    socket.on('error', () => undefined);
+    socket.write(`${MORE_THAN_IS_BUFFERED}${head(1)}L`);
+    await until(() => { expect(seen).toHaveLength(5); });
+    socket.pause();
+    await delay(100);
+
+    const stopped = receiver!.onStop();
+    socket.resume();
+    await delay(100);
+    held.get('L')?.();
+
+    expect((await stopped).ok).toBe(true);
+    await closed;
+    const all = Buffer.concat(answers);
+    expect(all.filter((byte) => byte === 0x5a)).toHaveLength(4 * LARGE);
+    expect(all.subarray(-20).toString()).toContain('LAST');
+  });
+
+  it('closes a connection once the answers given before it have been read', async () => {
+    const seen = await start({}, async () => answered('Z'.repeat(LARGE)));
+    const reader = await connect('');
+    reader.socket.write(MORE_THAN_IS_BUFFERED);
+    reader.socket.pause();
+    await until(() => { expect(seen).toHaveLength(4); });
+    await delay(100);
+
+    const stopped = receiver!.onStop();
+    reader.socket.resume();
+
+    // Before Node would close a connection kept alive.
+    expect(await Promise.race([Promise.all([stopped, reader.closed]).then(() => 'closed'), delay(2_500, 'left open')])).toBe('closed');
+  });
+
   it('ends although a sender does not read its answers', async () => {
     fakeTimers();
     const { dispatch, letGo } = holding('Z'.repeat(LARGE));
@@ -374,11 +414,45 @@ describe('HttpReceiver stop', () => {
     let ended = false;
     const stopped = receiver!.onStop().then(() => { ended = true; });
     letGo();
-    await delay(100);
+    await until(() => { expect(vi.getTimerCount()).toBe(1); });
+    await delay(50);
+    await vi.advanceTimersByTimeAsync(STOP_READ_MS - 1);
+    await delay(50);
     expect(ended).toBe(false);
-    await vi.advanceTimersByTimeAsync(STOP_CLOSE_MS);
+    await vi.advanceTimersByTimeAsync(1);
 
     await stopped;
+  });
+
+  it('ends at a halt, although a message is stuck in the pipeline', async () => {
+    const { dispatch, letGo } = holding();
+    const seen = await start({}, dispatch);
+    await connect(`${head(5)}first`);
+    await until(() => { expect(seen).toHaveLength(1); });
+
+    const stopped = receiver!.onStop();
+    await receiver!.onHalt();
+
+    expect((await withTimeout(stopped, 2_000, 'Stop after a halt')).ok).toBe(true);
+    letGo();
+  });
+
+  it('keeps nothing of the connections and requests that are done', async () => {
+    const seen = await start();
+    for (let i = 0; i < 3; i++) await (await connect(`${head(3)}MSH`)).socket.end();
+    await until(() => { expect(seen).toHaveLength(3); });
+    const { listener } = receiver as unknown as { readonly listener: { readonly connections: Set<unknown>; readonly inProgress: Set<unknown> } };
+
+    await until(() => { expect([listener.connections.size, listener.inProgress.size]).toEqual([0, 0]); });
+  });
+
+  it('stops the running source after another start could not listen', async () => {
+    await start();
+    expect((await receiver!.onStart()).error?.message).toContain('EADDRINUSE');
+
+    await stopsAtOnce();
+
+    await expect(connect('')).rejects.toThrow('ECONNREFUSED');
   });
 
   it('that a halt overtook leaves the next start alone', async () => {
@@ -486,6 +560,26 @@ describe('HttpReceiver after a body over the limit that keeps arriving', () => {
     await large.closed;
 
     expect(seen).toEqual([]);
+  });
+
+  it('does not lose the 413 to what the sender has pipelined behind that body', async () => {
+    fakeTimers();
+    const requests = watchRequests();
+    onTestFinished(requests.end);
+    await start({ maxBodyBytes: 4 });
+    const large = await connect(`${head(20)}MSH|LAB`);
+    await until(() => { expect(vi.getTimerCount()).toBe(1); });
+    await vi.advanceTimersByTimeAsync(DRAIN_MS);
+    await until(() => { expect(large.received()).toMatch(/^HTTP\/1\.1 413 /); });
+
+    large.socket.write(`${'x'.repeat(13)}${head(LARGE)}`);
+    await until(() => { expect(requests.all).toHaveLength(2); });
+    large.socket.write('A'.repeat(LARGE));
+
+    // Read to its end, though nothing is done with it: what is unread when the connection closes resets it.
+    await until(() => { expect(requests.all[1]?.complete).toBe(true); });
+    await vi.advanceTimersByTimeAsync(LINGER_MS);
+    await large.closed;
   });
 
   it.each([
