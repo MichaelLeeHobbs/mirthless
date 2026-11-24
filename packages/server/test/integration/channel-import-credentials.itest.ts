@@ -139,6 +139,19 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
     expect(source).toEqual(SOURCE);
   });
 
+  it('drops an AMQP destination\'s credentials when a header a headers exchange routes by changed', async () => {
+    const { db, eq, schema } = mods;
+    const amqp = { host: 'mq.example.org', exchange: 'lab', username: 'svc', password: 'queue-secret', headers: { dest: 'ehr', apiToken: 'header-secret' } };
+    await db.update(schema.channelConnectors).set({ connectorType: 'AMQP', properties: amqp }).where(eq(schema.channelConnectors.channelId, channelId));
+    file = await exportedFile();
+    await importFile(file);
+    expect((await stored()).destinations).toEqual(new Map<number, Properties>([[1, amqp], [2, amqp]]));
+    await importFile(withDestination(1, { headers: { dest: 'elsewhere', apiToken: '__REDACTED__' } }));
+    const { destinations } = await stored();
+    expect(destinations.get(1)).toEqual({ ...omit(amqp, 'password'), headers: { dest: 'elsewhere' } });
+    expect(destinations.get(2)).toEqual(amqp);
+  });
+
   it.each([
     ['port', { port: 18_082 }],
     ['user name', { auth: { type: 'BASIC', username: 'other', password: '__REDACTED__' } }],

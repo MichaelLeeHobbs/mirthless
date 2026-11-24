@@ -111,15 +111,15 @@ const DESTINATION_KEYS: Readonly<Record<DestinationConnectorType, ConnectorKeys>
     'host', 'port', 'calledAETitle', 'callingAETitle', 'maxRetries', 'retryDelayMs', 'timeoutMs', ...DESTINATION_COMMON,
   ),
   SFTP: { ...SFTP_LOGIN, free: ['remoteDirectory', 'fileNameTemplate', 'appendMode', ...DESTINATION_COMMON] },
-  // A message header can hold a credential too, and it goes where the message goes.
+  // A message header can hold a credential too, and it goes where the message goes. A headers exchange routes by the headers.
   KAFKA: {
     deciding: [...KAFKA_LOGIN.deciding, 'topic'],
     free: ['messageKey', 'headers', ...DESTINATION_COMMON],
     credentials: KAFKA_LOGIN.credentials,
   },
   AMQP: {
-    deciding: [...AMQP_LOGIN.deciding, 'exchange', 'routingKey'],
-    free: ['headers', 'contentType', ...DESTINATION_COMMON],
+    deciding: [...AMQP_LOGIN.deciding, 'exchange', 'routingKey', 'headers'],
+    free: ['contentType', ...DESTINATION_COMMON],
     credentials: AMQP_LOGIN.credentials,
   },
 };
