@@ -274,7 +274,7 @@ describe('EngineManager deploy/undeploy scripts', () => {
 
       await engine.undeploy(CHANNEL_ID);
 
-      expect(callOrder.indexOf('sandbox')).toBeLessThan(callOrder.indexOf('clear'));
+      expect(callOrder).toEqual(['sandbox', 'clear']);
     });
   });
 
