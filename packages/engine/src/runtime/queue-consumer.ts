@@ -49,8 +49,8 @@ interface QueuedMessage {
   readonly sendAttempts: number;
 }
 
-/** RETRY_LATER: it failed and is back on the queue. */
-type Outcome = 'DONE' | 'RETRY_LATER';
+/** RETRY_LATER: it failed and is back on the queue. HALTED: a halt ended its send, and it is back on the queue. */
+type Outcome = 'DONE' | 'RETRY_LATER' | 'HALTED';
 
 export class QueueConsumer {
   private readonly config: QueueConsumerConfig;
@@ -229,9 +229,10 @@ export class QueueConsumer {
       await this.finishSent(msg, sendResult.value.content);
       return 'DONE';
     }
-    if (halted.aborted) {
+    // An answer, even a refusal, came by itself.
+    if (!sendResult.ok && halted.aborted) {
       await this.putBack([msg]);
-      return 'RETRY_LATER';
+      return 'HALTED';
     }
 
     const attempts = (msg.sendAttempts ?? 0) + 1;

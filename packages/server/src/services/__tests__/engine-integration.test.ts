@@ -21,6 +21,7 @@ const mockChannelRuntime = {
   stop: mockRuntimeStop,
   halt: mockRuntimeHalt,
   getState: mockRuntimeGetState,
+  backgroundEnds: vi.fn().mockResolvedValue(true),
 };
 const MockChannelRuntime = vi.fn().mockImplementation(function () { return mockChannelRuntime; });
 

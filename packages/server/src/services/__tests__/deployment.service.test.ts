@@ -466,6 +466,20 @@ describe('DeploymentService', () => {
       await Promise.resolve();
     });
 
+    it('starts no consumer on a channel that was halted before it had started', async () => {
+      const consumer = { start: vi.fn(), stop: vi.fn() };
+      const recoverOnce = vi.fn(async () => {});
+      mockRuntime.getState.mockReturnValue('STARTED');
+      const resetClaimsOnce = async (): Promise<void> => { mockRuntime.getState.mockReturnValue('STOPPED'); };
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [consumer], recoverOnce, resetClaimsOnce });
+
+      const result = await DeploymentService.start(CHANNEL_ID);
+
+      expect(result.error?.message).toBe('Cannot start channel: it was stopped before it had started');
+      expect(consumer.start).not.toHaveBeenCalled();
+      expect(recoverOnce).not.toHaveBeenCalled();
+    });
+
     it('does not run recovery when the runtime fails to start', async () => {
       mockRuntime.start.mockResolvedValueOnce({ ok: false, value: null, error: new Error('port in use') });
       const recoverOnce = vi.fn(async () => {});

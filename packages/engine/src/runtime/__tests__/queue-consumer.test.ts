@@ -723,6 +723,46 @@ describe('QueueConsumer', () => {
       expect((store.release as Mock).mock.calls.map((c: unknown[]) => c.slice(1))).toEqual([[10, 1, 'QUEUED'], [11, 1, 'QUEUED']]);
     });
 
+    it.each([
+      ['a refusal that comes as the channel is halted', 'halt', ok({ status: 'ERROR' as const, content: 'NAK', errorMessage: 'refused' }), 'refused'],
+      ['a failure that comes as the channel is stopped', 'stop', fail('Connection refused'), 'Connection refused'],
+    ] as const)('%s counts as an attempt', async (_what, action, result, reason) => {
+      const store = makeStore();
+      (store.dequeue as Mock).mockResolvedValueOnce(ok([{ channelId: 'ch', messageId: 10, metaDataId: 1, sendAttempts: 0 }]));
+      let answer = (): void => undefined;
+      const sendFn = vi.fn(() => new Promise<Result<DestinationResponse>>((resolve) => { answer = (): void => { resolve(result); }; }));
+      const onError = vi.fn().mockResolvedValue(undefined);
+      consumer = new QueueConsumer(makeConfig({ pollIntervalMs: 1, onError }), store, sendFn);
+      consumer.start();
+      await vi.waitFor(() => { expect(sendFn).toHaveBeenCalledOnce(); });
+
+      const ended = consumer[action]();
+      answer();
+      await ended;
+
+      expect(store.updateConnectorMessageStatus).toHaveBeenCalledExactlyOnceWith(expect.anything(), 10, 1, 'QUEUED');
+      expect((store.storeContent as Mock).mock.calls.map((c: unknown[]) => c[4])).toEqual([reason]);
+      expect(onError).toHaveBeenCalledOnce();
+      expect(store.release).not.toHaveBeenCalled();
+    });
+
+    it('sends at once again after a halt and a start, however long the retry interval', async () => {
+      const store = makeStore();
+      (store.dequeue as Mock).mockResolvedValue(ok([{ channelId: 'ch', messageId: 10, metaDataId: 1, sendAttempts: 0 }]));
+      const sendFn = vi.fn((...[, , , signal]: Parameters<SendToDestination>) => new Promise<Result<DestinationResponse>>((resolve) => {
+        signal.addEventListener('abort', () => { resolve(fail('Send aborted')); });
+      }));
+      consumer = new QueueConsumer(makeConfig({ pollIntervalMs: 1, retryIntervalMs: 60_000 }), store, sendFn);
+      consumer.start();
+      await vi.waitFor(() => { expect(sendFn).toHaveBeenCalledOnce(); });
+      await consumer.halt();
+
+      consumer.start();
+
+      await vi.waitFor(() => { expect(sendFn).toHaveBeenCalledTimes(2); });
+      await consumer.halt();
+    });
+
     it('a halt keeps the delivery of a send that had gone through', async () => {
       const store = makeStore();
       (store.dequeue as Mock).mockResolvedValueOnce(ok([{ channelId: 'ch', messageId: 10, metaDataId: 1, sendAttempts: 0 }]));

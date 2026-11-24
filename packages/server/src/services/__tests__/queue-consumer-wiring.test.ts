@@ -25,6 +25,7 @@ const MockAlertManagerCtor = vi.fn().mockImplementation(function () { return moc
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockChannelRuntime = {
+  backgroundEnds: vi.fn().mockResolvedValue(true),
   deploy: mockRuntimeDeploy,
   undeploy: mockRuntimeUndeploy,
   stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
