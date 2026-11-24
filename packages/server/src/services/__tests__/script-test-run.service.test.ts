@@ -20,6 +20,7 @@ vi.mock('../../engine.js', () => ({
 }));
 
 const { ScriptTestRunService, TEST_RUN_TIMEOUT_MS } = await import('../script-test-run.service.js');
+const { ServiceError } = await import('../../lib/service-error.js');
 
 const ADT = 'MSH|^~\\&|EPIC|HOSP|GF|HOSP|20261115093000||ADT^A01|MSG1|P|2.5.1\rPID|1||4821193^^^HOSP^MR||NGUYEN^AVERY';
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
@@ -121,7 +122,7 @@ describe('ScriptTestRunService.run', () => {
   });
 
   it('refuses a channel that does not exist', async () => {
-    mockChannelService.getById.mockResolvedValue({ ok: false, value: null, error: new Error('missing') });
+    mockChannelService.getById.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'Channel not found') });
     const result = await ScriptTestRunService.run({
       kind: 'script', destinationSet: false, channelId: CHANNEL_ID, sample: '', script: 'return 1;',
     }, undefined, BOTH_READS);
@@ -130,6 +131,18 @@ describe('ScriptTestRunService.run', () => {
     expect(result.error).toHaveProperty('code', 'NOT_FOUND');
     expect(recordOrRefuse).not.toHaveBeenCalled();
     expect(emitAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('reports a channel that could not be read as the read failure, not as missing', async () => {
+    mockChannelService.getById.mockResolvedValue({ ok: false, value: null, error: new Error('connection refused') });
+    const result = await ScriptTestRunService.run({
+      kind: 'script', destinationSet: false, channelId: CHANNEL_ID, sample: '', script: 'return 1;',
+    }, undefined, BOTH_READS);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe('connection refused');
+    expect(result.error).not.toHaveProperty('code', 'NOT_FOUND');
+    expect(recordOrRefuse).not.toHaveBeenCalled();
   });
 
   it('uses every template when no channel is given', async () => {

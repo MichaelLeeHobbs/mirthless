@@ -43,19 +43,9 @@ const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
-const mockTransaction = vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-  const txOnConflictDoUpdate = vi.fn().mockReturnValue({ returning: mockReturning });
-  const txInsertValues = vi.fn().mockReturnValue({ onConflictDoUpdate: txOnConflictDoUpdate });
-  const txInsert = vi.fn().mockReturnValue({ values: txInsertValues });
+const mockTransaction = vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
 
-  return fn({
-    insert: txInsert,
-    select: mockSelect,
-    delete: mockDelete,
-  });
-});
-
-const mockDb = {
+const mockDb: Record<string, unknown> = {
   select: mockSelect,
   insert: mockInsert,
   delete: mockDelete,
@@ -69,6 +59,7 @@ vi.mock('../../lib/db.js', () => ({
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
+  inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
 }));
 
 vi.mock('../../lib/event-emitter.js', () => ({
@@ -186,17 +177,16 @@ describe('SettingsService', () => {
     });
   });
 
-  describe('getStoredValue', () => {
-    it('returns a secret unmasked, for the server to use', async () => {
-      pushResponse([makeSettingRow({ key: 'smtp.auth_pass', type: 'password', value: 'hunter2', category: 'smtp' })]);
+  describe('getStoredValues', () => {
+    it('returns secrets unmasked, for the server to use, and leaves out a key that is not set', async () => {
+      pushResponse([
+        makeSettingRow({ key: 'smtp.auth_pass', type: 'password', value: 'hunter2', category: 'smtp' }),
+        makeSettingRow({ key: 'smtp.from', value: null }),
+      ]);
 
-      expect(await SettingsService.getStoredValue('smtp.auth_pass')).toMatchObject({ ok: true, value: 'hunter2' });
-    });
+      const result = await SettingsService.getStoredValues(['smtp.auth_pass', 'smtp.from', 'smtp.host']);
 
-    it('returns null for a key that is not set', async () => {
-      pushResponse([]);
-
-      expect(await SettingsService.getStoredValue('smtp.auth_pass')).toMatchObject({ ok: true, value: null });
+      expect(result).toMatchObject({ ok: true, value: new Map([['smtp.auth_pass', 'hunter2']]) });
     });
   });
 

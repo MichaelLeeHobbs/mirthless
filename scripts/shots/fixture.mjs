@@ -253,6 +253,7 @@ const settings = [
   ['s3', 'smtp.host', 'smtp.hospital.example', 'string', 'SMTP server hostname', 'smtp'],
   ['s4', 'smtp.port', '587', 'number', 'SMTP server port', 'smtp'],
   ['s5', 'smtp.secure', 'false', 'boolean', null, 'smtp'],
+  ['s13', 'smtp.require_tls', 'true', 'boolean', null, 'smtp'],
   ['s6', 'smtp.from', 'galvanigraph@hospital.example', 'string', null, 'smtp'],
   ['s7', 'smtp.auth_user', 'galvanigraph', 'string', null, 'smtp'],
   ['s8', 'smtp.auth_pass', '__REDACTED__', 'password', null, 'smtp'],

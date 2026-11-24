@@ -128,6 +128,14 @@ describe('SettingsPage', () => {
     });
   });
 
+  it('says the saved SMTP password goes when the SMTP server changes, until a new one is typed', () => {
+    renderPage();
+    fireEvent.change(field('SMTP server'), { target: { value: 'mail.example.test' } });
+    expect(field('Password').placeholder).toBe('Cleared when you save. Type it again.');
+    fireEvent.change(field('SMTP server'), { target: { value: '' } });
+    expect(field('Password').placeholder).toBe('Saved. Type to replace.');
+  });
+
   it('saves pruner settings through the pruner schedule so the schedule changes at once', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('switch', { name: 'Prune on a schedule' }));

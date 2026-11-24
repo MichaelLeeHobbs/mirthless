@@ -318,7 +318,9 @@ async function restoreSettings(
   let created = 0; let updated = 0; let skipped = 0;
   const errors: string[] = [];
 
-  for (const item of items) {
+  // The host first: changing it clears the stored password, so a password the backup holds goes in after it (D-332).
+  const hostFirst = [...items].sort((a, b) => Number(b.key === 'smtp.host') - Number(a.key === 'smtp.host'));
+  for (const item of hostFirst) {
     try {
       const existing = foundOrThrow(await SettingsService.getByKey(item.key));
       // A backup masks secrets as REDACTED. Never write the marker back as a live

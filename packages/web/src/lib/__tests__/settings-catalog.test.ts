@@ -44,6 +44,7 @@ describe('groupSettings', () => {
 describe('fieldFor', () => {
   it('returns the catalog label for a known key', () => {
     expect(fieldFor('smtp.host').label).toBe('SMTP server');
+    expect(fieldFor('smtp.require_tls').label).toBe('Require STARTTLS');
   });
 
   it('makes a readable label from an unknown key', () => {

@@ -399,6 +399,10 @@ A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (d
 
 The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
 
+## Alert email signs in over TLS only (#358)
+
+With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
+
 ## The Email source's Include Attachments setting is gone (#154)
 
 The receiver never read it: an email arrives as the mail server holds it, attachments included, with the box ticked or not. If you left it off to keep attachments out of message storage, they have been stored all along (#369). A saved channel that has `includeAttachments` keeps deploying; validation drops the key, whatever its value. Nothing in the database is rewritten.

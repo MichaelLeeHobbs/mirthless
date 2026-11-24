@@ -19,7 +19,7 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import type { SettingDetail } from '../api/client.js';
 import { FONT_FAMILY_MONO } from '../styles/tokens.js';
-import { fieldFor, groupSettings, isSecret, settingTypeForSave, validateSetting, PRUNER_KEYS, REDACTED, type GroupedSection } from '../lib/settings-catalog.js';
+import { fieldFor, groupSettings, isSecret, settingTypeForSave, validateSetting, PRUNER_KEYS, REDACTED, SMTP_KEYS, type GroupedSection } from '../lib/settings-catalog.js';
 
 /** A secret starts empty: its stored value never reaches the browser. */
 function savedValue(s: SettingDetail): string {
@@ -31,11 +31,12 @@ interface RowProps {
   readonly value: string;
   readonly edited: boolean;
   readonly error: string | null;
+  readonly placeholder: string | undefined;
   readonly canWrite: boolean;
   readonly onChange: (key: string, value: string) => void;
 }
 
-function SettingRow({ setting, value, edited, error, canWrite, onChange }: RowProps): ReactNode {
+function SettingRow({ setting, value, edited, error, placeholder, canWrite, onChange }: RowProps): ReactNode {
   const field = fieldFor(setting.key);
   const id = `setting-${setting.key}`;
   const help = field.help || setting.description || '';
@@ -71,7 +72,7 @@ function SettingRow({ setting, value, edited, error, canWrite, onChange }: RowPr
           disabled={!canWrite}
           error={error}
           {...(secret ? { secretStored: setting.value === REDACTED } : {})}
-          {...(field.placeholder ? { placeholder: field.placeholder } : {})}
+          {...(placeholder === undefined ? {} : { placeholder })}
           onChange={(v) => { onChange(setting.key, v); }}
         />
       </Box>
@@ -79,14 +80,15 @@ function SettingRow({ setting, value, edited, error, canWrite, onChange }: RowPr
   );
 }
 
-interface SectionProps extends Omit<RowProps, 'setting' | 'value' | 'edited' | 'error'> {
+interface SectionProps extends Omit<RowProps, 'setting' | 'value' | 'edited' | 'error' | 'placeholder'> {
   readonly group: GroupedSection<SettingDetail>;
   readonly valueOf: (s: SettingDetail) => string;
   readonly isEdited: (s: SettingDetail) => boolean;
   readonly errorOf: (s: SettingDetail) => string | null;
+  readonly placeholderOf: (s: SettingDetail) => string | undefined;
 }
 
-function SettingsSection({ group, valueOf, isEdited, errorOf, canWrite, onChange }: SectionProps): ReactNode {
+function SettingsSection({ group, valueOf, isEdited, errorOf, placeholderOf, canWrite, onChange }: SectionProps): ReactNode {
   const { section, settings } = group;
   return (
     <Paper component="section" id={`settings-${section.id}`} aria-labelledby={`settings-${section.id}-title`} sx={{ mb: 2, scrollMarginTop: 80 }}>
@@ -95,7 +97,7 @@ function SettingsSection({ group, valueOf, isEdited, errorOf, canWrite, onChange
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>{section.intro}</Typography>
       </Box>
       {settings.map((s) => (
-        <SettingRow key={s.key} setting={s} value={valueOf(s)} edited={isEdited(s)} error={errorOf(s)} canWrite={canWrite} onChange={onChange} />
+        <SettingRow key={s.key} setting={s} value={valueOf(s)} edited={isEdited(s)} error={errorOf(s)} placeholder={placeholderOf(s)} canWrite={canWrite} onChange={onChange} />
       ))}
     </Paper>
   );
@@ -116,6 +118,11 @@ export function SettingsPage(): ReactNode {
   const valueOf = (s: SettingDetail): string => edits[s.key] ?? savedValue(s);
   const isEdited = (s: SettingDetail): boolean => s.key in edits && edits[s.key] !== savedValue(s);
   const errorOf = (s: SettingDetail): string | null => (isEdited(s) ? validateSetting(s.type, valueOf(s), fieldFor(s.key).check) : null);
+
+  const hostChanges = all.some((s) => s.key === SMTP_KEYS.host && isEdited(s));
+  const placeholderOf = (s: SettingDetail): string | undefined => (
+    s.key === SMTP_KEYS.password && s.value === REDACTED && hostChanges ? 'Cleared when you save. Type it again.' : fieldFor(s.key).placeholder
+  );
 
   const changed = all.filter(isEdited);
   const invalid = changed.filter((s) => errorOf(s) !== null);
@@ -204,6 +211,7 @@ export function SettingsPage(): ReactNode {
             valueOf={valueOf}
             isEdited={isEdited}
             errorOf={errorOf}
+            placeholderOf={placeholderOf}
             canWrite={canWrite}
             onChange={handleChange}
           />
