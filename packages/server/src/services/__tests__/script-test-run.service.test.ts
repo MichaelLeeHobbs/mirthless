@@ -134,8 +134,16 @@ describe('ScriptTestRunService.run', () => {
   });
 
   it('uses every template when no channel is given', async () => {
-    await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, undefined, BOTH_READS);
-    expect(mockTemplates.listTemplates).toHaveBeenCalled();
+    const template = (code: string): object => ({ type: 'FUNCTION', contexts: ['SOURCE_FILTER_TRANSFORMER'], code });
+    mockTemplates.listTemplates.mockResolvedValue(ok([
+      template("function one(): string { return 'one'; }"), template("function two(): string { return 'two'; }"),
+    ]));
+
+    const result = await ScriptTestRunService.run({
+      kind: 'script', templateContext: 'SOURCE_FILTER_TRANSFORMER', destinationSet: false, sample: '', script: 'logger.info(one() + two());',
+    }, undefined, BOTH_READS);
+
+    expect(result.ok && result.value.logs.map((l) => l.message)).toEqual(['onetwo']);
     expect(mockChannelService.getById).not.toHaveBeenCalled();
   });
 });
