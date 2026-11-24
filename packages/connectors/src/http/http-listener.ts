@@ -6,7 +6,7 @@ import { settleWithin } from '../timeout.js';
 /** How long a stop waits for bodies that are still arriving. */
 const STOP_ARRIVAL_MS = 5_000;
 
-/** How long a stop waits for answers to be read. Node does not say whether a sender is reading one, only slowly. */
+/** How long a stop waits for answers to be read. Over TLS Node does not say whether a sender is reading one, only slowly. */
 const STOP_READ_MS = 15_000;
 
 export interface Exchange {
@@ -83,6 +83,8 @@ export class HttpListener {
     const arrival = setTimeout(() => { this.arrival.abort(); }, STOP_ARRIVAL_MS);
     await Promise.race([Promise.all(this.inProgress), this.halted]);
     clearTimeout(arrival);
+    // Any body still arriving came after the stop.
+    this.arrival.abort();
 
     await settleWithin(Promise.all([...this.requestSockets].map((socket) => this.closeOnceAnswered(socket))), STOP_READ_MS);
     this.destroyConnections();

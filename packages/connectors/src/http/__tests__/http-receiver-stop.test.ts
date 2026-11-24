@@ -195,6 +195,29 @@ describe('HttpReceiver stop', () => {
 
     expect((await stopped).ok).toBe(true);
     expect(seen).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('gives a body that comes after it no time once the messages before it are answered', async () => {
+    fakeTimers();
+    const requests = watchRequests();
+    onTestFinished(requests.end);
+    const { dispatch, letGo } = holding();
+    const seen = await start({}, dispatch);
+    const working = await connect(`${head(5)}first`);
+    const late = await connect('');
+    await until(() => { expect(seen).toHaveLength(1); });
+    const stopped = receiver!.onStop();
+    late.socket.write(`${head(100)}MSH|`);
+    await until(() => { expect(requests.all).toHaveLength(2); });
+
+    letGo();
+
+    await until(() => { expect(late.received()).toMatch(/^HTTP\/1\.1 503 /); });
+    await vi.advanceTimersByTimeAsync(LINGER_MS);
+    expect((await stopped).ok).toBe(true);
+    expect(await working.closed).toMatch(/^HTTP\/1\.1 200 /);
+    expect(seen.map((raw) => raw.content)).toEqual(['first']);
   });
 
   it('takes a body that arrives in time, and answers it', async () => {
@@ -400,6 +423,7 @@ describe('HttpReceiver stop', () => {
 
     // Before Node would close a connection kept alive.
     expect(await Promise.race([Promise.all([stopped, reader.closed]).then(() => 'closed'), delay(2_500, 'left open')])).toBe('closed');
+    expect(reader.received().split('Z')).toHaveLength(4 * LARGE + 1);
   });
 
   it('ends although a sender does not read its answers', async () => {
@@ -532,6 +556,21 @@ describe('readRequestBody', () => {
     finish(sender);
 
     expect(await body.then((read) => read.text, (err: Error) => err.message)).toBe(outcome);
+    expect(getEventListeners(stop.signal, 'abort')).toEqual([]);
+  });
+
+  it('leaves nothing on the stop signal of a body over the limit that was answered before its end', async () => {
+    fakeTimers();
+    const stop = new AbortController();
+    const { sender, body } = arriving(stop.signal);
+    const refused = expect(body).rejects.toMatchObject({ status: 413, stillArriving: true });
+    sender.write('x'.repeat(17));
+    await until(() => { expect(vi.getTimerCount()).toBe(1); });
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await refused;
+    // Node ends such a request without an event, so nothing else would take it off.
     expect(getEventListeners(stop.signal, 'abort')).toEqual([]);
   });
 
