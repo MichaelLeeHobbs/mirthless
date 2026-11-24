@@ -1,7 +1,7 @@
 import type * as http from 'node:http';
 import * as https from 'node:https';
 import type * as net from 'node:net';
-import { settleWithin } from '../timeout.js';
+import { settleWithin } from '@galvanigraph/core-util';
 
 /** How long a stop waits for bodies that are still arriving. */
 const STOP_ARRIVAL_MS = 5_000;
