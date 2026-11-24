@@ -317,7 +317,7 @@ These queries also list the Mirth keys the schema drops; compare what they print
 An EMAIL channel now fails to deploy when it has:
 
 - any other key its table doesn't list. Before, such a key was ignored.
-- a `secure` or `includeAttachments` that is not `true` or `false`. Before, any text, `"false"` included, turned `secure` on.
+- a `secure` that is not `true` or `false`. Before, any text, `"false"` included, turned it on.
 - a `postAction` other than `DELETE`, `MARK_READ` or `MOVE`, or a `pollingIntervalMs` above 2147483647.
 - a `host`, `username`, `password` or `folder` of only spaces. An empty one, `POP3`, a polling interval below 1000 ms, and `MOVE` without `moveToFolder` failed before as well, when the connector deployed, without naming the key.
 
@@ -398,6 +398,14 @@ A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (d
 ## DICOM settings that did nothing are gone (#154)
 
 The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
+
+## The Email source's Include Attachments setting is gone (#154)
+
+The receiver never read it: an email arrives as the mail server holds it, attachments included, with the box ticked or not. If you left it off to keep attachments out of message storage, they have been stored all along (#369). A saved channel that has `includeAttachments` keeps deploying; validation drops the key, whatever its value. Nothing in the database is rewritten.
+
+## An alert's regex must compile (#133)
+
+An alert whose regex filter does not compile never fired, and nothing said so. Saving one is now refused with the reason. One saved earlier is kept, still never fires, and logs a warning when a channel it covers deploys: look for "its regex filter does not compile" after the upgrade. Restoring a backup reports such an alert and restores the others.
 
 ## Standard upgrade (Docker)
 

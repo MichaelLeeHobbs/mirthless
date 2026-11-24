@@ -182,16 +182,6 @@ export function EmailSourceForm({ properties, onChange }: SourceConnectorFormPro
           sx={{ mb: 2 }}
         />
 
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={getBool(properties, 'includeAttachments', false)}
-              onChange={handleCheck('includeAttachments')}
-            />
-          }
-          label="Include Attachments"
-          sx={{ mb: 2, display: 'block' }}
-        />
       </Grid>
 
       <Grid size={12}>
