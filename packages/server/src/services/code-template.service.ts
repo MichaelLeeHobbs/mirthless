@@ -17,7 +17,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
 import { codeTemplateLibraries, codeTemplates, type CodeTemplate } from '../db/schema/index.js';
-import { actorGrants, holdsOver, lockAccess } from './grant.service.js';
+import { actorGrants, holdsOver, lockAccess, lockAccessFor } from './grant.service.js';
 
 export interface LibrarySummary {
   readonly id: string;
@@ -304,7 +304,7 @@ export class CodeTemplateService {
     const { id, name, description, channelIds } = library;
     await db.transaction(async (tx) => {
       const existing = await lockLibrary(tx, id, 'update');
-      await lockAccess(tx);
+      await lockAccessFor(tx, context?.userId ?? null, PERMISSIONS.SYSTEM_RESTORE);
       if (narrowsLinks(existing.channelIds ?? null, channelIds)) {
         const lasting = await actorGrants(tx, context?.userId ?? null, null);
         if (!holdsOver(lasting, PERMISSIONS.SYSTEM_RESTORE, null)) {

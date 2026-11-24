@@ -113,6 +113,21 @@ describeIntegration('the access lock (real Postgres)', () => {
     return result;
   }
 
+  /** A refused section answers 200 with an error for the library. */
+  async function restoreLibrary(who: TestUser, id: string, channelIds: readonly string[] | null): Promise<number> {
+    const answer = await call<{ sections: Array<{ section: string; errors: string[] }> }>(who, 'POST', '/system/backup', {
+      backup: {
+        version: 1, exportedAt: new Date().toISOString(), channels: [], codeTemplates: [], alerts: [], users: [], settings: [], resources: [], channelGroups: [], tags: [],
+        globalMap: [], configMap: [], groupMemberships: [], tagAssignments: [], channelDependencies: [],
+        globalScripts: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '' },
+        codeTemplateLibraries: [{ id, name: `itest-lib-${id.slice(0, 8)}`, description: null, channelIds }],
+      },
+      collisionMode: 'OVERWRITE',
+    });
+    const errors = answer.json.data?.sections.find((s) => s.section === 'codeTemplateLibraries')?.errors ?? [];
+    return errors.some((e) => e.includes('system:restore')) ? 403 : errors.length > 0 ? 500 : answer.status;
+  }
+
   interface Prepared { readonly run: () => Promise<number> }
   /**
    * `route` is what the route asks for and `needs` what the change gives or reaches. `lasting`:
@@ -205,6 +220,38 @@ describeIntegration('the access lock (real Postgres)', () => {
       prepare: async (who) => {
         const target = await user();
         return { run: () => status(call(who, 'POST', `/users/${target.id}/password`, { newPassword: 'Itest-password-2!' })) };
+      },
+    },
+    {
+      name: 'restoring a membership that gives nothing', route: 'system:restore', needs: 'system:restore', lasting: false,
+      prepare: async (who) => {
+        const unused = await group();
+        await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
+        return {
+          run: () => grants.restoreMembership(CHANNEL, unused, { userId: who.id })
+            .then(() => 200, (err: unknown) => ((err as { code?: string }).code === 'FORBIDDEN' ? 403 : 500)),
+        };
+      },
+    },
+    ...([
+      ['with fewer channels', [CHANNEL], true],
+      ['with the same channels', null, false],
+    ] as const).map(([what, channelIds, lasting]): Action => ({
+      name: `restoring a library ${what}`, route: 'system:restore', needs: 'system:restore', lasting,
+      prepare: async (who) => {
+        const shared = await library(null);
+        return { run: () => restoreLibrary(who, shared, channelIds) };
+      },
+    })),
+    {
+      name: 'taking over a leaver\'s API key', route: 'api_keys:manage', needs: 'api_keys:manage', lasting: false,
+      prepare: async (who) => {
+        const leaver = await userWithRole(mods.pool, (await customRole(['api_keys:manage', 'channels:read'])).name, null);
+        users.push(leaver.id);
+        const issued = await call<IssuedApiKey>(leaver, 'POST', '/api-keys', {
+          name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + HOUR_MS / 2).toISOString(),
+        });
+        return { run: () => status(call(who, 'DELETE', `/users/${leaver.id}?takeOwnership=${issued.json.data!.key.id}`)) };
       },
     },
     ...([
@@ -388,7 +435,10 @@ describeIntegration('the access lock (real Postgres)', () => {
       const spareId = spare.json.data!.key.id;
       const asKey: TestUser = { id: '', token: key.json.data!.token };
       const scopes = round % 2 === 0 ? [used, other] : [other, used];
+      const shared = await library(null);
       const statuses = await Promise.all([
+        restoreLibrary(two.who, shared, [CHANNEL]).then((s) => ({ status: s })),
+        call(one.who, 'PUT', `/code-templates/libraries/${shared}`, { channelIds: [CHANNEL], revision: 1 }),
         call(admin, 'PUT', `/users/${one.who.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds: scopes }] }),
         call(two.who, 'PUT', `/users/${target.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds: scopes }] }),
         call(one.who, 'PUT', `/roles/${two.roleId}`, { permissions: [...EVERYTHING] }),
