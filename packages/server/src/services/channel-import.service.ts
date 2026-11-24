@@ -131,7 +131,7 @@ async function importSingleChannel(
   }
 }
 
-/** Drizzle's message lists the statement's parameters, which can hold stored credentials. Its cause is the database's own error. */
+/** A failed statement is reported in the database's own words: no value from the channel belongs in an import's answer. */
 function importErrorText(err: unknown): string {
   const reported = err instanceof DrizzleQueryError ? err.cause ?? 'a database statement failed' : err;
   return reported instanceof Error ? reported.message : String(reported);

@@ -26,7 +26,7 @@
 |---|---|---|---|---|
 | 12 | Import new channels | POST /api/channels/import with valid export JSON and collisionMode=SKIP | Response: created=N, updated=0, skipped=0, errors=[] | |
 | 13 | Import with SKIP collision mode | Import channels where IDs already exist, collisionMode=SKIP | Existing channels unchanged, skipped count incremented | |
-| 14 | Import with OVERWRITE collision mode | Import channels where IDs already exist, collisionMode=OVERWRITE | Existing channels overwritten with import data, updated count incremented. Credentials masked in the file keep their stored values unless the connector's target or user changed (`packages/server/test/integration/channel-import-credentials.itest.ts`) | |
+| 14 | Import with OVERWRITE collision mode | Import channels where IDs already exist, collisionMode=OVERWRITE | Existing channels overwritten with import data, updated count incremented. Credentials masked in the file keep their stored values unless the connector's target or user, or a destination's name or position, changed (`packages/server/test/integration/channel-import-credentials.itest.ts`) | |
 | 15 | Import with CREATE_NEW collision mode | Import channels where IDs already exist, collisionMode=CREATE_NEW | New channels created with fresh UUIDs, created count incremented | |
 | 16 | OVERWRITE replaces relations | Import with OVERWRITE, channel has different destinations/scripts | Old destinations, scripts, filters, transformers, metadata columns deleted and replaced | |
 | 17 | CREATE_NEW assigns new UUID | Import with CREATE_NEW on existing ID | Imported channel gets randomUUID, original channel untouched | |
