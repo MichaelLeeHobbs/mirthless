@@ -23,14 +23,15 @@ import type {
 } from '@galvanigraph/engine';
 import { createInMemoryStore, toDispatchResult } from './support/e2e-harness.js';
 import { mllpSource, mllpDestination, sendMllp } from './support/tcp-helpers.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
 function makeScript(code: string): CompiledScript {
   return { code };
 }
 
 // Unique across e2e files: vitest runs them in parallel.
-const SOURCE_PORT = 17691;
-const DEST_PORT = 17692;
+const SOURCE_PORT = await freePort();
+const DEST_PORT = await freePort();
 const CHANNEL_ID = '00000000-0000-0000-0000-e2e000000042';
 const SERVER_ID = 'e2e-dest-scripts-server';
 const DEST_META_ID = 1;

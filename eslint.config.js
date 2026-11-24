@@ -39,6 +39,14 @@ const SHARED_HELPERS = [
   { names: 'regexError|firstInvalidRegex', home: '@galvanigraph/core-models (regex-error.ts)' },
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
   { names: 'createSlots|withSlot|withHashSlot', home: '@galvanigraph/core-util (slots.ts)' },
+  { names: 'freePort|closedPort|getFreePort', home: 'packages/connectors/src/__fixtures__/free-port.ts' },
+];
+// A run of the same test in another checkout holds a fixed port at the same time (#376).
+const FIXED_PORT = 'Listen on port 0 and read the port back, or take one from freePort (packages/connectors/src/__fixtures__/free-port.ts).';
+const fixedPortSelectors = [
+  { selector: 'VariableDeclarator[id.name=/PORT/i] > Literal[value>0]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.property.name="listen"] > Literal[value>0]', message: FIXED_PORT },
+  { selector: 'CallExpression[callee.name=/Mllp|^mllp/] > Literal[value>0]:first-child', message: FIXED_PORT },
 ];
 // A permission check goes through holdsPermission or can (@galvanigraph/core-models
 // authz, D-310), so the move to scoped grants changes one place, not every caller.
@@ -69,6 +77,10 @@ export default tseslint.config(
       'no-console': 'warn',
       'no-restricted-syntax': ['error', ...sharedHelperSelectors],
     },
+  },
+  {
+    files: ['packages/connectors/src/**/__tests__/**/*.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...sharedHelperSelectors, ...fixedPortSelectors] },
   },
   {
     files: ['packages/web/**/*.{ts,tsx}'],

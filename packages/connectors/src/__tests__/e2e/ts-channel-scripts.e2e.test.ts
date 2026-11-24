@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { clearChannelRegistry } from '../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
 const HL7 = [
   'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|1|P|2.5',
@@ -16,7 +17,8 @@ afterEach(async () => {
   clearChannelRegistry();
 });
 
-async function runScriptChannel(channelId: string, port: number, transformer: string): Promise<CaptureDestination> {
+async function runScriptChannel(channelId: string, transformer: string): Promise<CaptureDestination> {
+  const port = await freePort();
   const sink = new CaptureDestination();
   const channel = await deployChannel({
     channelId,
@@ -47,7 +49,7 @@ describe('TypeScript channel scripts run through a real channel', () => {
       'return JSON.stringify(p);',
     ].join('\n');
 
-    const sink = await runScriptChannel('00000000-0000-0000-0000-tsscript0001', 17711, transformer);
+    const sink = await runScriptChannel('00000000-0000-0000-0000-tsscript0001', transformer);
     expect(sink.received).toHaveLength(1);
     const out = JSON.parse(sink.lastContent() ?? '{}') as { mrn: string; name: string };
     expect(out.mrn).toBe('99887');
@@ -64,7 +66,7 @@ describe('TypeScript channel scripts run through a real channel', () => {
       "return kind + '|' + String(at(seg.split('|'), 9) ?? '');",
     ].join('\n');
 
-    const sink = await runScriptChannel('00000000-0000-0000-0000-tsscript0002', 17712, transformer);
+    const sink = await runScriptChannel('00000000-0000-0000-0000-tsscript0002', transformer);
     expect(sink.received).toHaveLength(1);
     expect(sink.lastContent()).toContain('ADT|');
   });

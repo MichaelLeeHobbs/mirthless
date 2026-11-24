@@ -18,9 +18,10 @@ import type {
 } from '@galvanigraph/engine';
 import { createInMemoryStore, toDispatchResult } from './support/e2e-harness.js';
 import { mllpSource, mllpDestination, sendMllp } from './support/tcp-helpers.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
-const SOURCE_PORT = 17661;
-const DEST_PORT = 17662;
+const SOURCE_PORT = await freePort();
+const DEST_PORT = await freePort();
 const CHANNEL_ID = '00000000-0000-0000-0000-e2e000000001';
 const SERVER_ID = 'e2e-server';
 

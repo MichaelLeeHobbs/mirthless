@@ -11,8 +11,9 @@ import type { RawMessage, DispatchResult } from '../../base.js';
 import { DISPATCH_STATUS } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
-const TEST_PORT = 16661;
+const TEST_PORT = await freePort();
 
 const VALID_HL7 = 'MSH|^~\\&|SEND|FAC|RECV|RFAC|20240101||ADT^A01|MSGID123|P|2.5.1';
 

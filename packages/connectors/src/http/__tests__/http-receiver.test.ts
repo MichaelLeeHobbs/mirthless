@@ -16,8 +16,9 @@ import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
 import { Decompressor } from '../decompression.js';
 import { withTimeout } from '../../timeout.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
-const TEST_PORT = 18661;
+const TEST_PORT = await freePort();
 
 /** Holds the source's gunzip engines while closed, so a test can act while bodies are being decompressed. */
 const gunzipGate = vi.hoisted(() => ({ closed: false, held: [] as (() => void)[], started: 0, running: 0, mostRunning: 0 }));

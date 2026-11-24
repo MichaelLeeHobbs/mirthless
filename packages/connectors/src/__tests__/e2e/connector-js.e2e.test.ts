@@ -11,6 +11,7 @@ import type { Result } from '@galvanigraph/core-util';
 import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS, createSandboxContext } from '@galvanigraph/engine';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
 let deployed: DeployedChannel[] = [];
 const sandbox = new VmSandboxExecutor();
@@ -73,15 +74,16 @@ describe('JavaScript destination connector (a script transforms the message)', (
       return { ok: true, value: output, error: null } as Result<unknown>;
     });
 
+    const port = await freePort();
     const channel = await deployChannel({
       channelId: '00000000-0000-0000-0000-connjs0dst01',
       dataType: 'RAW',
-      source: mllpSource(17721, { maxConnections: 10 }),
+      source: mllpSource(port, { maxConnections: 10 }),
       destinations: [{ metaDataId: 1, name: 'JS Dest', connector: dispatcher }],
     });
     deployed.push(channel);
 
-    await sendMllp(17721, 'MSH|^~\\&|abc');
+    await sendMllp(port, 'MSH|^~\\&|abc');
     for (let i = 0; i < 200 && seen.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 10));
     }

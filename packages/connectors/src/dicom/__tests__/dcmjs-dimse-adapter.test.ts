@@ -12,12 +12,13 @@ import pkg from 'dcmjs-dimse';
 import { createDimseReceiver } from '../dcmjs-dimse-adapter.js';
 import type { DcmtkFileData, DcmtkReceiver } from '../dicom-receiver.js';
 import type { FileRoots } from '../../file/file-roots.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
 const { Client, Dataset, constants, requests } = pkg;
 const { CStoreRequest } = requests;
 const { TransferSyntax, Status } = constants;
 
-const PORT = 11121;
+const PORT = await freePort();
 const SECONDARY_CAPTURE = '1.2.840.10008.5.1.4.1.1.7';
 
 let base: string;

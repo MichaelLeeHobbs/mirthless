@@ -14,11 +14,12 @@ import {
 import { createDimseSender } from '../../dicom/dcmjs-dimse-adapter.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
+import { freePort } from '../../__fixtures__/free-port.js';
 
-const SCP_PORT = 11114;
-const TCP_PORT = 17762;
-const QUEUE_LISTENER_PORT = 11115;
-const QUEUE_PACS_PORT = 11116;
+const SCP_PORT = await freePort();
+const TCP_PORT = await freePort();
+const QUEUE_LISTENER_PORT = await freePort();
+const QUEUE_PACS_PORT = await freePort();
 /** Where a test's DICOM Listeners may write (FILE_CONNECTOR_ROOTS). */
 const TMP_ROOTS = { allowed: [os.tmpdir()], denied: [] };
 const SAMPLE_DCM = fileURLToPath(new URL('./fixtures/sample.dcm', import.meta.url));
