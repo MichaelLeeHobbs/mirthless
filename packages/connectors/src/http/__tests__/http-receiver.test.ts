@@ -2,6 +2,9 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as zlib from 'node:zlib';
+import * as diagnostics from 'node:diagnostics_channel';
+import * as v8 from 'node:v8';
+import * as vm from 'node:vm';
 import {
   HttpReceiver,
   DEFAULT_MAX_BODY_BYTES,
@@ -905,6 +908,106 @@ describe('HttpReceiver refusals reach the sender', () => {
       await withTimeout(receiver!.onStop(), 2_000, 'HTTP source stop');
     } finally {
       agent.destroy();
+    }
+  });
+});
+
+describe('HttpReceiver bodies over the limit that keep arriving', () => {
+  const DRAIN_MS = 10_000;
+  const LINGER_MS = 2_000;
+
+  /**
+   * Sends body until the connection closes, and resolves with all the server sent. `leaves`:
+   * like an HTTP client, it closes the connection once it has its answer.
+   */
+  function sendEndless(leaves: boolean): Promise<string> {
+    const chunk = `10000\r\n${'A'.repeat(0x10000)}\r\n`;
+    return new Promise((resolve) => {
+      let answer = '';
+      const socket = net.connect(TEST_PORT, '127.0.0.1', () => {
+        socket.write('POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n');
+        const more = (): void => {
+          let room = true;
+          while (room && socket.writable) room = socket.write(chunk);
+        };
+        socket.on('drain', more);
+        more();
+      });
+      socket.on('data', (data: Buffer) => {
+        answer += data.toString('utf8');
+        if (leaves && answer.endsWith('Payload Too Large')) socket.destroy();
+      });
+      // A close follows every error.
+      socket.on('error', () => undefined);
+      socket.on('close', () => { resolve(answer); });
+    });
+  }
+
+  /** Only the source's own timers are faked; Node's are not the global ones. */
+  async function startOverLimit(leaves: boolean): Promise<{ readonly seen: RawMessage[]; readonly answer: Promise<string> }> {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { seen } = await startRecording({ maxBodyBytes: 1024 });
+    const answer = sendEndless(leaves);
+    await vi.waitFor(() => { expect(vi.getTimerCount()).toBe(1); }, { timeout: 5_000 });
+    return { seen, answer };
+  }
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('get their 413 and a closed connection while the source runs', async () => {
+    const { seen, answer } = await startOverLimit(true);
+
+    vi.advanceTimersByTime(DRAIN_MS);
+
+    expect(await answer).toMatch(/^HTTP\/1\.1 413 [\s\S]*\r\nConnection: close\r\n/i);
+    expect(seen).toEqual([]);
+  }, 15_000);
+
+  it('do not hold up a stop, whatever the sender does', async () => {
+    const { seen, answer } = await startOverLimit(false);
+
+    const stopped = receiver!.onStop();
+    await vi.advanceTimersByTimeAsync(DRAIN_MS + LINGER_MS);
+
+    expect((await stopped).ok).toBe(true);
+    await answer;
+    expect(seen).toEqual([]);
+  }, 15_000);
+
+  it('are not kept while they arrive', async () => {
+    v8.setFlagsFromString('--expose-gc');
+    const collectGarbage = vm.runInNewContext('gc') as () => void;
+    const received: WeakRef<Buffer>[] = [];
+    let bytes = 0;
+    const watch = (message: unknown): void => {
+      (message as { request: http.IncomingMessage }).request.on('data', (chunk: Buffer) => {
+        received.push(new WeakRef(chunk));
+        bytes += chunk.length;
+      });
+    };
+    diagnostics.subscribe('http.server.request.start', watch);
+    const limit = 2 * 1024 * 1024;
+    await startRecording({ maxBodyBytes: limit });
+
+    const req = http.request({ host: '127.0.0.1', port: TEST_PORT, method: 'POST', headers: { connection: 'close', 'content-length': String(limit * 2 + 1) } });
+    const status = new Promise<number>((resolve, reject) => {
+      req.on('response', (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on('error', reject);
+    });
+    try {
+      req.write(Buffer.alloc(limit * 2, 0x41));
+      await vi.waitFor(() => { expect(bytes).toBe(limit * 2); }, { timeout: 10_000 });
+      await new Promise((resolve) => { setImmediate(resolve); });
+      collectGarbage();
+
+      expect(received.length).toBeGreaterThan(20);
+      // The stream may still refer to the last one it passed on.
+      expect(received.filter((chunk) => chunk.deref() !== undefined).length).toBeLessThanOrEqual(2);
+      req.end('A');
+      expect(await status).toBe(413);
+    } finally {
+      diagnostics.unsubscribe('http.server.request.start', watch);
+      req.destroy();
     }
   });
 });

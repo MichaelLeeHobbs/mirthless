@@ -56,6 +56,9 @@ export interface HttpReceiverConfig {
   readonly tls?: TlsServerOptions | undefined;
 }
 
+/** How long a sender still sending has to read its answer before the connection is closed. */
+const LINGER_MS = 2_000;
+
 const CREDENTIAL_HEADERS: ReadonlySet<string> = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
 
 /**
@@ -264,8 +267,19 @@ export class HttpReceiver implements SourceConnectorRuntime {
     }
     const context = { remoteAddress: req.socket.remoteAddress, contentType: req.headers['content-type'], status: err.status };
     this.logger.warn(context, `Refused a request body: ${err.message}`);
-    res.writeHead(err.status, { 'Content-Type': 'text/plain', ...err.headers });
-    res.end(err.message);
+    res.writeHead(err.status, { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(err.message), ...err.headers });
+    res.write(err.message);
+    if (err.stillArriving) this.endLater(res);
+    else res.end();
+  }
+
+  /**
+   * Closed with bytes unread, the connection would reset and take the answer with it. They go
+   * on being read and dropped until the sender closes or the time is up.
+   */
+  private endLater(res: http.ServerResponse): void {
+    const linger = setTimeout(() => { res.end(); }, LINGER_MS);
+    res.once('close', () => { clearTimeout(linger); });
   }
 
   private buildRawMessage(req: http.IncomingMessage, body: string, reqPath: string): RawMessage {
