@@ -14,6 +14,7 @@ describeIntegration('system reads and Test Connection under a scope (real Postgr
   const users: string[] = [];
   const groups: string[] = [];
   const roleIds: string[] = [];
+  const newChannels: string[] = [];
   const LAB_CHANNEL = randomUUID();
   const RAD_CHANNEL = randomUUID();
   const USED_CERT = randomUUID();
@@ -68,6 +69,7 @@ describeIntegration('system reads and Test Connection under a scope (real Postgr
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     if (roleIds.length > 0) await mods.pool.query('DELETE FROM roles WHERE id = ANY($1::uuid[])', [roleIds]);
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = ANY($1::uuid[])', [[LAB_CHANNEL, RAD_CHANNEL]]);
+    for (const id of newChannels) await deleteTestChannel(mods, id);
     await deleteTestChannel(mods, LAB_CHANNEL);
     await deleteTestChannel(mods, RAD_CHANNEL);
     if (groups.length > 0) await mods.pool.query('DELETE FROM channel_groups WHERE id = ANY($1::uuid[])', [groups]);
@@ -119,5 +121,33 @@ describeIntegration('system reads and Test Connection under a scope (real Postgr
     expect(refused.status).toBe(403);
     const kept = await call('PUT', `/channels/${LAB_CHANNEL}`, { revision: await revision(), sourceConnectorProperties: { tls: { clientCertId: USED_CERT, caCertId: CA_ONLY_CERT } } });
     expect(kept.status).toBe(200);
+  });
+
+  it('lets a group-scoped writer save, export, import, clone and test a database connector with TLS on', async () => {
+    const database = { vendor: 'postgresql', host: '169.254.169.254', port: 5432, database: 'lab', username: 'svc', password: 'p', tls: true, query: 'SELECT 1' };
+    const made = await call<{ id: string; revision: number; name: string }>('POST', '/channels', {
+      name: `itest-dbtls-${randomUUID().slice(0, 8)}`, inboundDataType: 'RAW', outboundDataType: 'RAW',
+      sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
+      destinations: [{ name: 'Archive', connectorType: 'DATABASE', properties: database }],
+    });
+    expect(made.status, JSON.stringify(made.json.error)).toBe(201);
+    const { id, revision, name } = made.json.data!;
+    newChannels.push(id);
+
+    const saved = await call('PUT', `/channels/${id}`, { revision, destinations: [{ name: 'Archive', connectorType: 'DATABASE', properties: { ...database, query: 'SELECT 2' } }] });
+    expect(saved.status, JSON.stringify(saved.json.error)).toBe(200);
+
+    const exported = await call<{ channels: unknown[] }>('GET', `/channels/${id}/export`);
+    const imported = await call('POST', '/channels/import', { ...exported.json.data, collisionMode: 'OVERWRITE' });
+    expect(imported.json.data).toEqual({ created: 0, updated: 1, skipped: 0, errors: [] });
+
+    const cloned = await call<{ id: string }>('POST', `/channels/${id}/clone`, { name: `${name}-clone` });
+    expect(cloned.status, JSON.stringify(cloned.json.error)).toBe(201);
+    newChannels.push(cloned.json.data!.id);
+
+    // The test gets as far as refusing the host, which is reserved.
+    const tested = await call('POST', '/connectors/test', { connectorType: 'DATABASE', mode: 'DESTINATION', channelId: id, properties: database });
+    expect(JSON.stringify(tested.json)).toContain('169.254.169.254');
+    expect(JSON.stringify(tested.json)).not.toContain('tls');
   });
 });

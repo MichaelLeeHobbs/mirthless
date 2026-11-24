@@ -131,6 +131,15 @@ describe('ChannelImportService.importChannels', () => {
     }
   });
 
+  it('imports a database connector with TLS on for a caller scoped to some groups', async () => {
+    const database: ChannelExportEntry['destinations'][number] = {
+      metaDataId: 1, name: 'Archive', enabled: true, connectorType: 'DATABASE', properties: { host: 'db', tls: true }, queueMode: 'NEVER',
+      retryCount: 0, retryIntervalMs: 0, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+    };
+    const result = await ChannelImportService.importChannels([makeEntry({ destinations: [database] })], 'SKIP');
+    expect(result.ok && result.value).toEqual({ created: 1, updated: 0, skipped: 0, errors: [] });
+  });
+
   it('checks the group for new channels once before importing, and refuses the whole import when it fails', async () => {
     const actor = { userId: 'user-1', ipAddress: null };
     vi.mocked(GrantService.newChannelGroup).mockRejectedValueOnce(new Error('You can only put a new channel in a group where you can change channels'));
