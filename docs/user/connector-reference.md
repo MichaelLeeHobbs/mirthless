@@ -592,7 +592,7 @@ Set `useTls` to connect over TLS. The broker's certificate is verified against `
 
 ### AMQP: what it does
 
-The source consumes an existing queue on an AMQP 0-9-1 broker such as RabbitMQ and sends each delivery as a message. The source map holds `queue`, `exchange`, `routingKey`, `redelivered` and `headers`, `messageId` and `contentType` when the message has them, and `charsetError` when a UTF-8 body had invalid bytes. The destination publishes each message to an existing exchange as a persistent message, encoded as UTF-8.
+The source consumes an existing queue on an AMQP 0-9-1 broker such as RabbitMQ and sends each delivery as a message. The source map holds `queue`, `exchange`, `routingKey`, `redelivered` and `headers`, `messageId` and `contentType` when the message has them, and `charsetError` when a UTF-8 body had invalid bytes. A header that is a table or an array becomes JSON text, however deeply it is nested. The destination publishes each message to an existing exchange as a persistent message, encoded as UTF-8.
 
 A message the pipeline fails to store goes back to the queue. After `maxStoreAttempts` failures to store the same message, the source stops the channel, records an ERROR `CHANNEL_STOPPED` event and fires a `SOURCE_CONNECTOR` alert. The message is neither acked nor dead-lettered; it stays on the queue for when the channel is started again. Failures are counted per AMQP `messageId`. A message without one is counted as failures in a row, which assumes it comes straight back before the messages behind it: true for a classic queue with prefetch 1, not promised by a quorum queue, so set a `messageId` on messages sent to a quorum queue.
 

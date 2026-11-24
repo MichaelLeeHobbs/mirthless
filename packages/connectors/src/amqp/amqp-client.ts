@@ -1,6 +1,7 @@
 // Queues, exchanges and bindings are the broker administrator's: check them, never declare them (D-266).
 
 import { connect, type ChannelModel, type ConfirmChannel, type ConsumeMessage, type Options, type SocketOptions } from 'amqplib';
+import { isPlainObject } from '@galvanigraph/core-util';
 import type { TlsClientOptions } from '../tls.js';
 
 export interface AmqpConnectionConfig {
@@ -51,6 +52,59 @@ async function open(config: AmqpConnectionConfig): Promise<ChannelModel> {
   return connect(connectOptions(config), socketOptions(config));
 }
 
+interface OpenContainer {
+  readonly entries: Iterator<readonly [prefix: string, value: unknown]>;
+  readonly end: string;
+  comma: string;
+}
+
+function* arrayEntries(items: readonly unknown[]): Generator<readonly [string, unknown]> {
+  for (const item of items) yield ['', item];
+}
+
+function* tableEntries(table: Readonly<Record<string, unknown>>): Generator<readonly [string, unknown]> {
+  for (const name of Object.keys(table)) yield [`${JSON.stringify(name)}:`, table[name]];
+}
+
+/** Null for a value with nothing nested in it. */
+function openContainer(value: unknown): OpenContainer | null {
+  if (Array.isArray(value)) return { entries: arrayEntries(value), end: ']', comma: '' };
+  if (!isPlainObject(value) || Buffer.isBuffer(value) || value instanceof Date) return null;
+  return { entries: tableEntries(value), end: '}', comma: '' };
+}
+
+/**
+ * Not JSON.stringify, which overflows the stack a few thousand levels down when it has a replacer
+ * (big integers need one) or meets bytes (D-331).
+ */
+function nestedHeaderJson(header: unknown): string {
+  const parts: string[] = [];
+  const containers: OpenContainer[] = [];
+  const write = (value: unknown): void => {
+    const container = openContainer(value);
+    if (container) {
+      containers.push(container);
+      parts.push(container.end === ']' ? '[' : '{');
+    } else {
+      parts.push(JSON.stringify(typeof value === 'bigint' ? value.toString() : value ?? null));
+    }
+  };
+  write(header);
+  for (let current = containers.at(-1); current; current = containers.at(-1)) {
+    const entry = current.entries.next();
+    if (entry.done) {
+      parts.push(current.end);
+      containers.pop();
+      continue;
+    }
+    const [prefix, value] = entry.value;
+    parts.push(current.comma + prefix);
+    current.comma = ',';
+    write(value);
+  }
+  return parts.join('');
+}
+
 export function headersToRecord(headers: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(headers ?? {})) {
@@ -58,7 +112,7 @@ export function headersToRecord(headers: Readonly<Record<string, unknown>> | und
     else if (typeof value === 'bigint') result[name] = value.toString();
     else if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) result[name] = value;
     else if (value instanceof Date) result[name] = value.toISOString();
-    else result[name] = JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
+    else result[name] = nestedHeaderJson(value);
   }
   return result;
 }
@@ -69,7 +123,8 @@ export interface AmqpDelivery {
   readonly exchange: string;
   readonly routingKey: string;
   readonly redelivered: boolean;
-  readonly headers: Readonly<Record<string, unknown>>;
+  /** As decoded; {@link headersToRecord} makes them fit a source map. */
+  readonly headers: Readonly<Record<string, unknown>> | undefined;
   readonly messageId: string | undefined;
   readonly contentType: string | undefined;
   /** Throws when the channel has closed. */
@@ -88,6 +143,7 @@ export interface AmqpConsumer {
   close(): Promise<void>;
 }
 
+/** A throw from `onDelivery` closes the channel, and the message is delivered again without end: do fallible work after it returns. */
 export type AmqpConsume = (options: AmqpConsumeOptions, onDelivery: (delivery: AmqpDelivery) => void) => Promise<AmqpConsumer>;
 
 function toDelivery(channel: { ack(m: ConsumeMessage): void; nack(m: ConsumeMessage, all: boolean, requeue: boolean): void }, msg: ConsumeMessage): AmqpDelivery {
@@ -96,7 +152,7 @@ function toDelivery(channel: { ack(m: ConsumeMessage): void; nack(m: ConsumeMess
     exchange: msg.fields.exchange,
     routingKey: msg.fields.routingKey,
     redelivered: msg.fields.redelivered,
-    headers: headersToRecord(msg.properties.headers),
+    headers: msg.properties.headers,
     messageId: typeof msg.properties.messageId === 'string' ? msg.properties.messageId : undefined,
     contentType: typeof msg.properties.contentType === 'string' ? msg.properties.contentType : undefined,
     ack: (): void => { channel.ack(msg); },
