@@ -18,26 +18,30 @@ import { withTimeout } from '../../timeout.js';
 
 const TEST_PORT = 18661;
 
-/** Holds the source's gunzip calls while closed, so a test can act while bodies are being decompressed. */
+/** Holds the source's gunzip engines while closed, so a test can act while bodies are being decompressed. */
 const gunzipGate = vi.hoisted(() => ({ closed: false, held: [] as (() => void)[], started: 0, running: 0, mostRunning: 0 }));
 
 vi.mock('node:zlib', async (importOriginal) => {
   const original = await importOriginal<typeof zlib>();
-  const gunzip = (bytes: zlib.InputType, options: zlib.ZlibOptions, callback: zlib.CompressCallback): void => {
+  const createGunzip = (options?: zlib.ZlibOptions): zlib.Gunzip => {
+    const engine = original.createGunzip(options);
     gunzipGate.started += 1;
     gunzipGate.running += 1;
     gunzipGate.mostRunning = Math.max(gunzipGate.mostRunning, gunzipGate.running);
-    const go = (): void => {
-      original.gunzip(bytes, options, (err, result) => {
-        gunzipGate.running -= 1;
-        callback(err, result);
-      });
-    };
-    if (gunzipGate.closed) gunzipGate.held.push(go);
-    else go();
+    engine.once('close', () => { gunzipGate.running -= 1; });
+    const end = engine.end.bind(engine) as (bytes: Buffer) => unknown;
+    engine.end = ((bytes: Buffer) => {
+      if (gunzipGate.closed) gunzipGate.held.push(() => { end(bytes); });
+      else end(bytes);
+      return engine;
+    }) as typeof engine.end;
+    return engine;
   };
-  return { ...original, gunzip };
+  return { ...original, createGunzip };
 });
+
+/** Connections and decompression take as long as the machine makes them. */
+const WAIT = { timeout: 10_000 } as const;
 
 function closeGunzipGate(): void {
   Object.assign(gunzipGate, { closed: true, held: [], started: 0, running: 0, mostRunning: 0 });
@@ -51,7 +55,7 @@ function openGunzipGate(): void {
 /** Lets what is held finish, and everything that follows from it in the source run. */
 async function finishGunzip(): Promise<void> {
   openGunzipGate();
-  await vi.waitFor(() => { expect(gunzipGate.running).toBe(0); });
+  await vi.waitFor(() => { expect(gunzipGate.running).toBe(0); }, WAIT);
   await new Promise((resolve) => { setImmediate(resolve); });
 }
 
@@ -130,7 +134,7 @@ function post(body: Buffer, headers: Record<string, string>, agent?: http.Agent)
       res.resume();
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, headers: res.headers, port }); });
     });
-    req.setTimeout(5_000, () => { req.destroy(new Error('no answer')); });
+    req.setTimeout(10_000, () => { req.destroy(new Error('no answer')); });
     req.on('error', reject);
     req.end(body);
   });
@@ -743,11 +747,13 @@ describe('HttpReceiver compressed bodies', () => {
 });
 
 describe('HttpReceiver limits what compressed bodies can hold', () => {
-  const LIMIT = 64 * 1024;
+  /** Four of these are the 64 MiB a source may always hold. */
+  const LIMIT = 16 * 1024 * 1024;
   const GZIP = { 'content-encoding': 'gzip' };
-  /** Under a hundred bytes that decompress to exactly the limit. */
-  const FULL = zlib.brotliCompressSync(Buffer.alloc(LIMIT, 0x41));
   const BR = { 'content-encoding': 'br' };
+  const brotli = (size: number): Buffer => zlib.brotliCompressSync(Buffer.alloc(size, 0x41), { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } });
+  /** Under a hundred bytes that decompress to exactly the limit. */
+  const FULL = brotli(LIMIT);
 
   /** A dispatcher that answers only when told to, so the messages it holds stay unanswered. */
   async function startHolding(config: Partial<HttpReceiverConfig>): Promise<{ readonly held: number[]; readonly letGo: () => void }> {
@@ -764,33 +770,37 @@ describe('HttpReceiver limits what compressed bodies can hold', () => {
     return { held, letGo };
   }
 
-  it('answers 503 with Retry-After once unanswered bodies fill four times maxBodyBytes, and takes bodies again after', async () => {
-    const { held, letGo } = await startHolding({ maxBodyBytes: LIMIT });
-    expect(FULL.length).toBeLessThan(100);
+  it.each([
+    [4, 'four bodies, which the larger limit allows', LIMIT],
+    [8, 'eight bodies, the 64 MiB a smaller limit allows', LIMIT / 2],
+  ])('holds at most %i of %s, answers the rest 503 with Retry-After, and takes bodies again after', async (most, _what, maxBodyBytes) => {
+    const { held, letGo } = await startHolding({ maxBodyBytes });
+    const full = brotli(maxBodyBytes);
+    expect(full.length).toBeLessThan(100);
     const refused: PostResult[] = [];
-    const answers = Array.from({ length: 12 }, () => post(FULL, BR).then((answer) => {
+    const answers = Array.from({ length: 12 }, () => post(full, BR).then((answer) => {
       if (answer.status === 503) refused.push(answer);
       return answer.status;
     }));
 
-    await vi.waitFor(() => { expect(refused.length + held.length).toBe(12); });
-    expect(held).toEqual([LIMIT, LIMIT, LIMIT, LIMIT]);
+    await vi.waitFor(() => { expect(refused.length + held.length).toBe(12); }, WAIT);
+    expect(held).toEqual(Array<number>(most).fill(maxBodyBytes));
     expect(refused.every((answer) => answer.headers['retry-after'] === '1')).toBe(true);
 
     letGo();
-    expect((await Promise.all(answers)).sort()).toEqual([...Array<number>(4).fill(200), ...Array<number>(8).fill(503)]);
-    expect((await post(FULL, BR)).status).toBe(200);
+    expect((await Promise.all(answers)).sort()).toEqual([...Array<number>(most).fill(200), ...Array<number>(12 - most).fill(503)]);
+    expect((await post(full, BR)).status).toBe(200);
   });
 
   it('answers 503, not 413, to a body that would fit but for the ones already held, and takes a smaller one', async () => {
     const { held, letGo } = await startHolding({ maxBodyBytes: LIMIT });
     const half = zlib.gzipSync(Buffer.alloc(LIMIT / 2, 0x41));
     const answers = [post(FULL, BR), post(FULL, BR), post(FULL, BR), post(half, GZIP)];
-    await vi.waitFor(() => { expect(held).toHaveLength(4); });
+    await vi.waitFor(() => { expect(held).toHaveLength(4); }, WAIT);
 
     expect((await post(FULL, BR)).status).toBe(503);
     answers.push(post(half, GZIP));
-    await vi.waitFor(() => { expect(held).toHaveLength(5); });
+    await vi.waitFor(() => { expect(held).toHaveLength(5); }, WAIT);
 
     letGo();
     expect((await Promise.all(answers)).map((answer) => answer.status)).toEqual([200, 200, 200, 200, 200]);
@@ -798,7 +808,7 @@ describe('HttpReceiver limits what compressed bodies can hold', () => {
 
   it('answers 413 to every one of a burst of bombs, and holds nothing for them after', async () => {
     const { seen } = await startRecording({ maxBodyBytes: LIMIT });
-    const bomb = zlib.brotliCompressSync(Buffer.alloc(LIMIT * 16, 0x41));
+    const bomb = brotli(LIMIT * 4);
 
     const statuses = await Promise.all(Array.from({ length: 12 }, () => post(bomb, BR).then((answer) => answer.status)));
 
@@ -811,7 +821,7 @@ describe('HttpReceiver limits what compressed bodies can hold', () => {
     const { seen } = await startRecording();
     closeGunzipGate();
     const answers = Array.from({ length: 6 }, (_, i) => post(zlib.gzipSync(`MSH|${String(i)}`), GZIP));
-    await vi.waitFor(() => { expect(gunzipGate.started).toBe(2); });
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(2); }, WAIT);
 
     await finishGunzip();
 
@@ -820,14 +830,19 @@ describe('HttpReceiver limits what compressed bodies can hold', () => {
     expect(seen.map((raw) => raw.content).sort()).toEqual(['MSH|0', 'MSH|1', 'MSH|2', 'MSH|3', 'MSH|4', 'MSH|5']);
   });
 
-  it('answers 200 to fifty small gzip messages held at once', async () => {
-    const { held, letGo } = await startHolding({});
-    const answers = Array.from({ length: 50 }, () => post(zlib.gzipSync(HL7), GZIP).then((answer) => answer.status));
+  it.each([
+    [50, HL7.length, DEFAULT_MAX_BODY_BYTES],
+    [40, 10 * 1024, 64 * 1024],
+    [80, 100 * 1024, 1024 * 1024],
+  ])('answers 200 to %i gzip messages of %i bytes held at once, with maxBodyBytes %i', async (count, size, maxBodyBytes) => {
+    const { held, letGo } = await startHolding({ maxBodyBytes });
+    const body = zlib.gzipSync(HL7.repeat(Math.ceil(size / HL7.length)).slice(0, size));
+    const answers = Array.from({ length: count }, () => post(body, GZIP).then((answer) => answer.status));
 
-    await vi.waitFor(() => { expect(held).toHaveLength(50); }, { timeout: 10_000 });
+    await vi.waitFor(() => { expect(held).toHaveLength(count); }, WAIT);
     letGo();
 
-    expect(await Promise.all(answers)).toEqual(Array<number>(50).fill(200));
+    expect(await Promise.all(answers)).toEqual(Array<number>(count).fill(200));
   });
 
   it.each([
@@ -848,7 +863,7 @@ describe('HttpReceiver limits what compressed bodies can hold', () => {
     for (let i = 0; i < 3; i++) {
       closeGunzipGate();
       const answers = Promise.allSettled(Array.from({ length: 4 }, () => post(body, GZIP)));
-      await vi.waitFor(() => { expect(gunzipGate.started).toBe(2); });
+      await vi.waitFor(() => { expect(gunzipGate.started).toBe(2); }, WAIT);
       await receiver!.onHalt();
       await answers;
       await finishGunzip();
@@ -867,14 +882,14 @@ describe('HttpReceiver limits what compressed bodies can hold', () => {
         socket.write(`POST / HTTP/1.1\r\nHost: localhost\r\nContent-Encoding: br\r\nContent-Length: ${String(FULL.length)}\r\n\r\n`);
         socket.write(FULL);
       });
-      await vi.waitFor(() => { expect(held).toHaveLength(i); });
+      await vi.waitFor(() => { expect(held).toHaveLength(i); }, WAIT);
       socket.destroy();
     }
     // Still in the pipeline, so still held.
     expect((await post(FULL, BR)).status).toBe(503);
 
     letGo();
-    await vi.waitFor(async () => { expect((await post(FULL, BR)).status).toBe(200); });
+    await vi.waitFor(async () => { expect((await post(FULL, BR)).status).toBe(200); }, WAIT);
   });
 });
 
@@ -948,7 +963,7 @@ describe('HttpReceiver bodies over the limit that keep arriving', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { seen } = await startRecording({ maxBodyBytes: 1024 });
     const answer = sendEndless(leaves);
-    await vi.waitFor(() => { expect(vi.getTimerCount()).toBe(1); }, { timeout: 5_000 });
+    await vi.waitFor(() => { expect(vi.getTimerCount()).toBe(1); }, WAIT);
     return { seen, answer };
   }
 
@@ -996,7 +1011,7 @@ describe('HttpReceiver bodies over the limit that keep arriving', () => {
     });
     try {
       req.write(Buffer.alloc(limit * 2, 0x41));
-      await vi.waitFor(() => { expect(bytes).toBe(limit * 2); }, { timeout: 10_000 });
+      await vi.waitFor(() => { expect(bytes).toBe(limit * 2); }, WAIT);
       await new Promise((resolve) => { setImmediate(resolve); });
       collectGarbage();
 
@@ -1196,7 +1211,7 @@ describe('HttpReceiver stopped while a body is being decompressed', () => {
     const { seen, log } = await startRecording();
     closeGunzipGate();
     const answer = post(zlib.gzipSync(HL7), GZIP);
-    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); });
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); }, WAIT);
 
     await stop();
     await expect(answer).rejects.toThrow();
@@ -1214,7 +1229,7 @@ describe('HttpReceiver stopped while a body is being decompressed', () => {
       socket.write(`POST / HTTP/1.1\r\nHost: localhost\r\nContent-Encoding: gzip\r\nContent-Length: ${String(body.length)}\r\n\r\n`);
       socket.write(body);
     });
-    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); });
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); }, WAIT);
 
     socket.destroy();
     // The server has seen the close once a stop has nothing left to wait for.
@@ -1228,7 +1243,7 @@ describe('HttpReceiver stopped while a body is being decompressed', () => {
     const { seen } = await startRecording();
     closeGunzipGate();
     const answer = post(zlib.gzipSync(HL7), GZIP);
-    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); });
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); }, WAIT);
 
     const stopped = receiver!.onStop();
     await finishGunzip();
