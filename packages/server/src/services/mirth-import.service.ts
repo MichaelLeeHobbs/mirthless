@@ -1087,7 +1087,7 @@ function httpListenerProperties(propsNode: Record<string, unknown>): Record<stri
  */
 function httpListenerWarnings(propsNode: Record<string, unknown>, channelName: string): string[] {
   const prefix = `Channel "${channelName}": the HTTP Listener`;
-  const warnings = [`${prefix} reads text that declares no charset as ISO-8859-1 in Mirth (JSON as UTF-8); GalvaniGraph reads UTF-8 and refuses the rest (415) unless bodyCharset is set`];
+  const warnings = [`${prefix} refuses (415) text that is not UTF-8 unless its charset is declared or bodyCharset is set; Mirth reads it as ISO-8859-1`];
   if ((getString(propsNode, 'binaryMimeTypes') ?? '').trim() !== '') {
     warnings.push(`${prefix} keeps binary bodies as base64 in Mirth; GalvaniGraph refuses them (415) unless bodyCharset is base64, which applies to every body`);
   }
