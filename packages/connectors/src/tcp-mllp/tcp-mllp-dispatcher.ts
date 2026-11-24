@@ -103,25 +103,26 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
-      if (!this.pool) {
+      // A halt clears this.pool while a send is in progress.
+      const pool = this.pool;
+      if (!pool) {
         throw new Error('Dispatcher not started');
       }
 
-      const socket = await this.acquireSocket(signal);
+      const socket = await this.acquireSocket(pool, signal);
       try {
         const response = await this.sendAndReceive(socket, message.content, signal);
-        await this.pool.release(socket);
+        await pool.release(socket);
         return response;
       } catch (err) {
-        await this.pool.destroy(socket);
+        await pool.destroy(socket);
         throw err;
       }
     });
   }
 
-  private async acquireSocket(signal: AbortSignal): Promise<net.Socket> {
+  private async acquireSocket(pool: genericPool.Pool<net.Socket>, signal: AbortSignal): Promise<net.Socket> {
     if (signal.aborted) throw new Error('Send aborted');
-    const pool = this.pool!;
     const acquirePromise = pool.acquire();
 
     return new Promise<net.Socket>((resolve, reject) => {
@@ -156,14 +157,22 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
+  /** The pool closes behind the halt: draining waits out the acquire timeout of a send the halt has already aborted. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      if (this.pool) {
-        await this.pool.drain();
-        await this.pool.clear();
-        this.pool = null;
-      }
+      const pool = this.pool;
+      this.pool = null;
+      if (pool) void this.closePool(pool);
     });
+  }
+
+  private async closePool(pool: genericPool.Pool<net.Socket>): Promise<void> {
+    try {
+      await pool.drain();
+      await pool.clear();
+    } catch (err) {
+      this.logger.warn(errorInfo(err), 'Error closing the MLLP connections of a halted destination');
+    }
   }
 
   async onUndeploy(): Promise<Result<void>> {
