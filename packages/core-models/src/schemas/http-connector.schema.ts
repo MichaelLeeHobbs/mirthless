@@ -8,6 +8,7 @@
 import { z } from 'zod/v4';
 import {
   connectorPortSchema,
+  trimmedTextSchema,
   wholeNumberSchema,
   optionalTlsSchema,
   withoutKeys,
@@ -80,7 +81,7 @@ export const httpSourceObjectSchema = z.strictObject({
 
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const httpDestinationObjectSchema = z.strictObject({
-  url: z.string().trim().min(1),
+  url: trimmedTextSchema,
   method,
   headers: headerMapSchema.default({}),
   parameters: textMap.optional(),

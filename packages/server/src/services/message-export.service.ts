@@ -3,11 +3,10 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { sql } from 'drizzle-orm';
-import type { MessageExportQuery } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, type MessageExportQuery } from '@galvanigraph/core-models';
 import { db } from '../lib/db.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { escapeCsvField } from '../lib/csv.js';
-import { CONTENT_TYPE } from '../db/schema/message-content.js';
 
 export interface MessageExportRow {
   readonly messageId: number;

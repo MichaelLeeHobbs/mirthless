@@ -3,6 +3,7 @@
 import { z } from 'zod/v4';
 import {
   requiredTextSchema,
+  trimmedTextSchema,
   wholeNumberSchema,
   MAX_TIMER_DELAY_MS,
   destinationCommonProperties,
@@ -24,7 +25,7 @@ function isUrl(value: string): boolean {
 
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const fhirDestinationObjectSchema = z.strictObject({
-  baseUrl: requiredTextSchema.refine(isUrl, { message: 'must be an absolute URL' }),
+  baseUrl: trimmedTextSchema.refine(isUrl, { message: 'must be an absolute URL' }),
   resourceType: requiredTextSchema.default('Patient'),
   method: z.enum(FHIR_METHODS).default('POST'),
   authType: z.enum(FHIR_AUTH_TYPES).default('NONE'),

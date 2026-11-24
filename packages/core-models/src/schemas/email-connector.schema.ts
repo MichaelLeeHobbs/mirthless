@@ -4,7 +4,9 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   requiredTextSchema,
+  trimmedTextSchema,
   pollingIntervalSchema,
+  withoutKeys,
   sourceCommonProperties,
 } from './connector-property-fields.js';
 
@@ -14,7 +16,7 @@ export const EMAIL_POST_ACTIONS = ['DELETE', 'MARK_READ', 'MOVE'] as const;
 
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const emailSourceObjectSchema = z.strictObject({
-  host: requiredTextSchema,
+  host: trimmedTextSchema,
   port: connectorPortSchema.default(993),
   /** Implicit TLS. */
   secure: z.boolean().default(true),
@@ -28,16 +30,21 @@ export const emailSourceObjectSchema = z.strictObject({
   moveToFolder: z.string().default(''),
   /** Only mail whose subject contains this text is read. */
   subjectFilter: z.string().default(''),
-  includeAttachments: z.boolean().default(false),
   ...sourceCommonProperties,
 });
 export type EmailSourceProperties = z.infer<typeof emailSourceObjectSchema>;
 
-export const emailSourcePropertiesSchema = emailSourceObjectSchema.superRefine((props, ctx) => {
-  if (props.protocol !== 'IMAP') {
-    ctx.addIssue({ code: 'custom', path: ['protocol'], message: 'only IMAP is supported' });
-  }
-  if (props.postAction === 'MOVE' && props.moveToFolder.trim() === '') {
-    ctx.addIssue({ code: 'custom', path: ['moveToFolder'], message: 'required when postAction is MOVE' });
-  }
-});
+/** Saved by this app's editor until #154; the receiver never read it. */
+const SOURCE_LEGACY_KEYS: ReadonlySet<string> = new Set(['includeAttachments']);
+
+export const emailSourcePropertiesSchema = z.preprocess(
+  (value) => withoutKeys(value, SOURCE_LEGACY_KEYS),
+  emailSourceObjectSchema.superRefine((props, ctx) => {
+    if (props.protocol !== 'IMAP') {
+      ctx.addIssue({ code: 'custom', path: ['protocol'], message: 'only IMAP is supported' });
+    }
+    if (props.postAction === 'MOVE' && props.moveToFolder.trim() === '') {
+      ctx.addIssue({ code: 'custom', path: ['moveToFolder'], message: 'required when postAction is MOVE' });
+    }
+  }),
+);

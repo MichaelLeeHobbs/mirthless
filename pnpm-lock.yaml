@@ -176,7 +176,6 @@ overrides:
   ip-address@10: '>=10.7.4 <11'
   adm-zip@0.5: 0.6.1
   dcmjs@0.50: '>=0.52.0 <0.53'
-  minimatch@10: '>=11.0.1 <12'
 
 patchedDependencies:
   monaco-editor@0.55.1: 294d418a7d30f9cf34771f8a957eacef264958f156ad6c193f40dc0e21812101

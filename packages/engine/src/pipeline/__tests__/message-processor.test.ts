@@ -642,7 +642,7 @@ describe('MessageProcessor', () => {
 
   it('errors the destination when the SENT content write fails (before send)', async () => {
     const store = makeStore();
-    // Fail only the CT_SENT (5) write; other content writes succeed.
+    // Fail only the CONTENT_TYPE.SENT (5) write; other content writes succeed.
     (store.storeContent as ReturnType<typeof vi.fn>).mockImplementation(
       (_c: string, _m: number, _md: number, contentType: number) =>
         contentType === 5

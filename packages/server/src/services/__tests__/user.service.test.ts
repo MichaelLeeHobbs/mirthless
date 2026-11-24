@@ -35,7 +35,9 @@ function nextResponse(): unknown {
 }
 
 const mockSelectWhere = vi.fn().mockImplementation(nextResponse);
-const mockSelectFrom = vi.fn().mockImplementation(() => ({ where: mockSelectWhere, orderBy: vi.fn().mockImplementation(nextResponse) }));
+const mockSelectFrom = vi.fn().mockImplementation(() => ({
+  where: mockSelectWhere, orderBy: vi.fn().mockImplementation(nextResponse), innerJoin: () => ({ where: mockSelectWhere }),
+}));
 const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
 const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
@@ -110,6 +112,12 @@ function standingRow(id: string, permissions: readonly string[]): Record<string,
 function pushTargetRule(targetPermissions: readonly string[], actorPermissions: readonly string[]): void {
   pushResponse([standingRow(USER_ID, targetPermissions)]);
   pushResponse([standingRow(ADMIN_ID, actorPermissions)]);
+}
+
+/** The lock, then the actor, read again for the route's permission. */
+function pushAccessLock(): void {
+  pushResponse([{ id: 'admin-role' }], { forUpdate: true });
+  pushResponse([standingRow(ADMIN_ID, ['channels:read', 'users:write'])]);
 }
 
 beforeEach(() => {
@@ -208,7 +216,8 @@ describe('UserService', () => {
   });
 
   describe('updateUser', () => {
-    it('updates user fields without touching roles or the admin lock', async () => {
+    it('updates user fields without touching roles', async () => {
+      pushAccessLock();
       pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([{ id: USER_ID }], { forUpdate: true }); // the target, under lock
       pushResponse([makeUser({ email: 'updated@test.com' })]); // getUser after update
@@ -222,6 +231,7 @@ describe('UserService', () => {
     });
 
     it('returns NOT_FOUND for missing user', async () => {
+      pushAccessLock();
       pushResponse([]); // the target rule finds no such user
 
       const result = await UserService.updateUser('nonexistent', { email: 'x@y.com' }, ADMIN_ID);
@@ -235,6 +245,7 @@ describe('UserService', () => {
 
   describe('updateUser: the target rule', () => {
     it('refuses a change to a user who holds more than the actor, and writes nothing', async () => {
+      pushAccessLock();
       pushTargetRule(['channels:read', 'channels:deploy'], ['channels:read', 'users:write']);
 
       const result = await UserService.updateUser(USER_ID, { email: 'x@y.com' }, ADMIN_ID);
@@ -261,6 +272,8 @@ describe('UserService', () => {
     it('lets an actor who may manage users change another user\'s password', async () => {
       pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([{ id: USER_ID }]);
+      pushAccessLock();
+      pushResponse([], { orderable: true }); // the target's assignments
 
       const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, true);
 

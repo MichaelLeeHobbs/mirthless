@@ -5,7 +5,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { channelGroups, channelGroupMembers, channels } from '../db/schema/index.js';
-import { GrantService } from './grant.service.js';
+import { GrantService, lockAccess } from './grant.service.js';
 
 export interface ChannelGroupSummary {
   readonly id: string;
@@ -56,6 +56,7 @@ async function assertGroupsExist(tx: GroupTx, groupIds: readonly string[]): Prom
     .select({ id: channelGroups.id })
     .from(channelGroups)
     .where(inArray(channelGroups.id, [...groupIds]))
+    .orderBy(asc(channelGroups.id))
     .for('key share');
   const foundIds = new Set(found.map((g) => g.id));
   const missing = groupIds.filter((id) => !foundIds.has(id));
@@ -318,6 +319,8 @@ export class ChannelGroupService {
       const wanted = [...new Set(groupIds)];
       const previous = await db.transaction(async (tx) => {
         await lockLiveChannel(tx, channelId);
+        // Removing narrows what others reach, so every membership change takes it.
+        await lockAccess(tx);
         await assertGroupsExist(tx, wanted);
         return GrantService.applyChannelGroups(tx, channelId, wanted, { userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null });
       });

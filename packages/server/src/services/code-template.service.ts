@@ -17,6 +17,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
 import { codeTemplateLibraries, codeTemplates, type CodeTemplate } from '../db/schema/index.js';
+import { actorGrants, holdsOver, lockAccess, lockAccessFor } from './grant.service.js';
 
 export interface LibrarySummary {
   readonly id: string;
@@ -85,6 +86,27 @@ async function assertLinksHeld(reader: DbReader, grants: FoldedGrants, permissio
   throw new ServiceError('FORBIDDEN', `This needs ${permission} on every channel the library links to, and it links to ${reach}`);
 }
 
+type Links = readonly string[] | null;
+
+/** Linked to every channel or to none, a library can be changed only by someone holding it on every channel. */
+function needsEveryChannel(links: Links): boolean {
+  return links === null || links.length === 0;
+}
+
+/** Whether someone could change the library after who could not before. */
+function narrowsLinks(before: Links, after: Links): boolean {
+  if (needsEveryChannel(after)) return false;
+  return needsEveryChannel(before) || (before ?? []).some((id) => !(after ?? []).includes(id));
+}
+
+/** Taking links out has no end, so what the writer held over them must have none (D-333). */
+async function assertNarrowingLasts(reader: DbReader, before: Links, after: Links, context?: AuditContext): Promise<void> {
+  if (!narrowsLinks(before, after)) return;
+  const lasting = await actorGrants(reader, context?.userId ?? null, null);
+  if (await holdsOnEveryChannel(lasting, PERMISSIONS.CODE_TEMPLATES_WRITE, before, reader)) return;
+  throw new ServiceError('FORBIDDEN', 'Linking a library to fewer channels needs code_templates:write, with no end time, on every channel it links to now');
+}
+
 async function lockLibrary(tx: Tx, id: string, mode: 'update' | 'share'): Promise<typeof codeTemplateLibraries.$inferSelect> {
   const [row] = await tx.select().from(codeTemplateLibraries).where(eq(codeTemplateLibraries.id, id)).for(mode);
   if (!row) throw new ServiceError('NOT_FOUND', `Library ${id} not found`);
@@ -104,11 +126,16 @@ async function findTemplate(reader: DbReader, id: string): Promise<CodeTemplate>
 }
 
 export class CodeTemplateService {
-  /** For an import, which must check all its libraries before writing any. */
-  static async assertCanWriteLinks(linkSets: ReadonlyArray<readonly string[] | null>, context?: AuditContext): Promise<Result<void>> {
+  /** For an import, which must check all its libraries before writing any. `before` is left out when the links stay or the library is new. */
+  static async assertCanWriteLinks(changes: ReadonlyArray<{ readonly before?: Links; readonly after: Links }>, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const grants = await writerGrants(db, context);
-      for (const links of linkSets) await assertLinksHeld(db, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, links);
+      for (const { before, after } of changes) {
+        await assertLinksHeld(db, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, after);
+        if (before === undefined) continue;
+        await assertLinksHeld(db, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, before);
+        await assertNarrowingLasts(db, before, after, context);
+      }
     });
   }
 
@@ -207,9 +234,14 @@ export class CodeTemplateService {
           throw new ServiceError('CONFLICT', 'Library has been modified by another user');
         }
 
+        // Neither the writer's access nor a channel's groups change before the links are saved.
+        if (input.channelIds !== undefined) await lockAccess(tx);
         const grants = await writerGrants(tx, context);
         await assertLinksHeld(tx, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, existing.channelIds ?? null);
-        if (input.channelIds !== undefined) await assertLinksHeld(tx, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, input.channelIds);
+        if (input.channelIds !== undefined) {
+          await assertLinksHeld(tx, grants, PERMISSIONS.CODE_TEMPLATES_WRITE, input.channelIds);
+          await assertNarrowingLasts(tx, existing.channelIds ?? null, input.channelIds, context);
+        }
 
         if (input.name && input.name !== existing.name) {
           const [dup] = await tx
@@ -261,6 +293,25 @@ export class CodeTemplateService {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       };
+    });
+  }
+
+  /**
+   * For a backup restore, which needs system:restore rather than code_templates:write. Shrinking
+   * the links lasts, so like a restored membership it needs that with no end (D-333).
+   */
+  static async overwriteLibrary(library: { readonly id: string; readonly name: string; readonly description: string | null; readonly channelIds: Links }, context?: AuditContext): Promise<void> {
+    const { id, name, description, channelIds } = library;
+    await db.transaction(async (tx) => {
+      const existing = await lockLibrary(tx, id, 'update');
+      await lockAccessFor(tx, context?.userId ?? null, PERMISSIONS.SYSTEM_RESTORE);
+      if (narrowsLinks(existing.channelIds ?? null, channelIds)) {
+        const lasting = await actorGrants(tx, context?.userId ?? null, null);
+        if (!holdsOver(lasting, PERMISSIONS.SYSTEM_RESTORE, null)) {
+          throw new ServiceError('FORBIDDEN', 'Restoring a library with fewer channels needs system:restore with no end time', { missing: [PERMISSIONS.SYSTEM_RESTORE] });
+        }
+      }
+      await tx.update(codeTemplateLibraries).set({ name, description, channelIds: channelIds === null ? null : [...channelIds] }).where(eq(codeTemplateLibraries.id, id));
     });
   }
 

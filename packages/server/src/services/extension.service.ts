@@ -1,6 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { EXTENSION_TYPE, type ExtensionType } from '@galvanigraph/core-models';
-import { ServiceError } from '../lib/service-error.js';
+import { ServiceError, foundOrThrow } from '../lib/service-error.js';
 import { SettingsService } from './settings.service.js';
 
 export interface ExtensionInfo {
@@ -38,9 +38,8 @@ function settingsKey(extId: string): string {
 }
 
 async function isEnabled(extId: string): Promise<boolean> {
-  const result = await SettingsService.getByKey(settingsKey(extId));
-  if (!result.ok) return true;
-  return result.value.value !== 'false';
+  const setting = foundOrThrow(await SettingsService.getByKey(settingsKey(extId)));
+  return setting?.value !== 'false';
 }
 
 export class ExtensionService {
@@ -49,10 +48,9 @@ export class ExtensionService {
       // Fetch all extension settings in one query instead of N+1
       const settingsResult = await SettingsService.list({ category: 'extensions' });
       const enabledMap = new Map<string, string>();
-      if (settingsResult.ok) {
-        for (const s of settingsResult.value) {
-          enabledMap.set(s.key, s.value ?? 'true');
-        }
+      if (!settingsResult.ok) throw settingsResult.error;
+      for (const s of settingsResult.value) {
+        enabledMap.set(s.key, s.value ?? 'true');
       }
 
       return BUILTIN_EXTENSIONS.map((ext) => ({

@@ -40,7 +40,6 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
         postAction: 'MARK_READ',
         moveToFolder: '',
         subjectFilter: 'E2E-MAIL',
-        includeAttachments: false,
       }),
       transformer: "return String(msg).trim() + '::mail';",
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
@@ -97,7 +96,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
           host: cfg.host, port: cfg.imapPort, secure: false,
           username: cfg.username, password: cfg.password, protocol: 'IMAP',
           folder: 'INBOX', pollingIntervalMs: 1000, postAction: 'MOVE',
-          moveToFolder: 'Does-Not-Exist', subjectFilter: subject, includeAttachments: false,
+          moveToFolder: 'Does-Not-Exist', subjectFilter: subject,
         }),
         destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
       });

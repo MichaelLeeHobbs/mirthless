@@ -83,7 +83,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `port` | Yes | Partner port. |
 | `maxConnections` | No | Size of the connection pool. |
 | `responseTimeout` | No | Milliseconds to wait for the acknowledgement before the send is an ERROR. |
-| `acquireTimeoutMs` | No | Milliseconds to wait for a free pooled connection. |
+| `acquireTimeoutMs` | No | Milliseconds a message waits for a connection, a free pooled one or a new one. A queued message waits at most 30 seconds. While the partner refuses connections, each connection in the pool is tried again after a second (or a quarter of this, if that is shorter), and the outage is logged once. |
 | `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. |
 | `frameStart` | No | Start bytes in hex. API or Mirth import only. |
 | `frameEnd` | No | End bytes in hex. API or Mirth import only. |
@@ -431,7 +431,7 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 
 EMAIL can only receive; it cannot send messages. Use [SMTP](#smtp) to send email.
 
-It polls an IMAP mailbox folder for unread messages and sends each message body, with subject, from, to, date and the attachment count in the source map. Afterwards it marks the email read, deletes it or moves it.
+It polls an IMAP mailbox folder for unread messages and sends each one as the mail server holds it: the raw email, headers and MIME parts and attachments included, read as UTF-8. The subject, from, to and date are in the source map. Afterwards it marks the email read, deletes it or moves it.
 
 ### EMAIL security
 
@@ -452,12 +452,11 @@ It polls an IMAP mailbox folder for unread messages and sends each message body,
 | `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. |
 | `moveToFolder` | No | Folder for `MOVE`. Required when `postAction` is `MOVE`. |
 | `subjectFilter` | No | Only read emails whose subject contains this text, ignoring case. |
-| `includeAttachments` | No | Read but not used: attachments are never read, whatever this says. |
 
 ### EMAIL limits
 
 - IMAP only; POP3 is refused at deploy.
-- Attachments are not read; the message is the email body. `includeAttachments` has no effect.
+- The email is not parsed: attachments arrive as MIME parts of the raw email and are stored with it, and `attachmentCount` in the source map is always 0 (#369). `includeAttachments`, which earlier versions saved and never used, is dropped when a channel is validated (#154).
 - No OAuth sign-in; the mailbox needs a username and password.
 
 ## SMTP
