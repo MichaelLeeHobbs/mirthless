@@ -158,6 +158,22 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     expect((await resend([one, two])).status).toBe(403);
   });
 
+  it('lets an every-channel assignment it did not give shrink to a group, but not a group one grow to every channel', async () => {
+    const manager = await user();
+    const one = await group();
+    const reader = await customRole(['channels:read']);
+    await assign(manager, (await customRole(['users:read', 'users:write'])).id);
+    await assign(manager, reader.id, { until: inAnHour() });
+    const target = await user();
+    await assign(target, reader.id);
+    const resend = (groupIds: readonly string[] | null): Promise<ApiAnswer<unknown>> =>
+      call(manager, 'PUT', `/users/${target.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds }] });
+
+    expect((await resend(null)).status).toBe(200);
+    expect((await resend([one])).status).toBe(200);
+    expect((await resend(null)).status).toBe(403);
+  });
+
   it('lets someone put a permission held until a time in a role nobody holds, but not assign that role past it', async () => {
     const editor = await user();
     const until = inAnHour();
@@ -280,6 +296,8 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     expect(rows.map((r) => r.id)).toEqual([open]);
 
     await GrantService.restoreMembership(CHANNEL, used, { userId: (await user('admin')).id });
+    const restored = await mods.pool.query<{ id: string }>('SELECT channel_group_id AS id FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
+    expect(restored.rows.map((r) => r.id).sort()).toEqual([open, used].sort());
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
   });
 });
