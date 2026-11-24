@@ -35,6 +35,8 @@ export interface RecoveryResult {
   readonly recovered: number;
   readonly errors: number;
   readonly skipped: number;
+  /** The channel began to stop first, so messages may be left for the next start. */
+  readonly interrupted: boolean;
 }
 
 const PAGE_SIZE = 200;
@@ -55,20 +57,23 @@ export class RecoveryManager {
     this.redispatchDestination = redispatchDestination;
   }
 
-  /** A page at a time and a few messages at once, so a large backlog cannot exhaust memory or the database pool. */
-  async recover(channelId: string): Promise<Result<RecoveryResult>> {
+  /**
+   * A page at a time and a few messages at once, so a large backlog cannot exhaust memory or the database pool.
+   * Takes no message once `stop` is aborted: a stopped destination fails every send.
+   */
+  async recover(channelId: string, stop: AbortSignal): Promise<Result<RecoveryResult>> {
     return tryCatch(async () => {
       const total = { recovered: 0, errors: 0, skipped: 0 };
       let afterMessageId = 0;
       let more = true;
-      while (more) {
+      while (more && !stop.aborted) {
         const page = await this.store.getUnprocessedMessages(channelId, afterMessageId, PAGE_SIZE);
         if (!page.ok) {
           throw new Error(`Failed to get unprocessed messages: ${page.error.message}`);
         }
-        for (let i = 0; i < page.value.length; i += CONCURRENCY) {
+        for (let i = 0; i < page.value.length && !stop.aborted; i += CONCURRENCY) {
           const results = await Promise.all(
-            page.value.slice(i, i + CONCURRENCY).map(async (msg) => this.recoverMessage(channelId, msg.messageId)),
+            page.value.slice(i, i + CONCURRENCY).map(async (msg) => this.recoverMessage(channelId, msg.messageId, stop)),
           );
           for (const r of results) {
             total.recovered += r.recovered;
@@ -81,7 +86,7 @@ export class RecoveryManager {
         afterMessageId = page.value.at(-1)?.messageId ?? afterMessageId;
         more = page.value.length === PAGE_SIZE;
       }
-      return total;
+      return { ...total, interrupted: stop.aborted };
     });
   }
 
@@ -97,6 +102,7 @@ export class RecoveryManager {
   private async recoverMessage(
     channelId: string,
     messageId: number,
+    stop: AbortSignal,
   ): Promise<{ recovered: number; errors: number; skipped: number }> {
     const connResult = await this.store.getConnectorMessages(channelId, messageId);
     if (!connResult.ok) {
@@ -112,6 +118,10 @@ export class RecoveryManager {
     let skipped = 0;
 
     for (const conn of connectors) {
+      if (stop.aborted) {
+        pending = true;
+        break;
+      }
       const outcome = await this.recoverConnector(channelId, messageId, conn, hasDestinations);
       if (outcome === 'reprocessed') { reprocessed = true; messageRecovered = true; }
       else if (outcome === 'recovered') messageRecovered = true;

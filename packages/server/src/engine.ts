@@ -65,6 +65,16 @@ import { emitToChannelAudience } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
 import type { DeploymentBundle } from './services/deployment-record.service.js';
 
+interface ChannelRecovery {
+  readonly channel: ChannelDetail;
+  readonly store: MessageStore;
+  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
+  readonly sendFn: SendToDestination;
+  readonly horizon: Result<number>;
+  readonly runSignal: AbortSignal;
+  readonly haltSignal: AbortSignal;
+}
+
 /** The maps a channel's own scripts (deploy, undeploy, JavaScript connectors) share with its pipeline. */
 interface ChannelMaps {
   readonly gcm: GlobalChannelMap;
@@ -86,10 +96,11 @@ export interface DeployedChannel {
   readonly scripts: ChannelScripts;
   readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<SourceDispatchOutcome>>;
   /**
-   * Recover messages a prior crash left unprocessed. Runs once, on the first
-   * start after deploy (call it after the runtime has started): destination
+   * Recover messages a prior crash left unprocessed. Runs on the first start
+   * after deploy (call it after the runtime has started): destination
    * dispatchers only accept sends once started, so recovering at deploy time
-   * marked every pending destination ERROR. Later calls are no-ops.
+   * marked every pending destination ERROR. One that a stop or a halt interrupts
+   * goes on at the next start; after one that ended, calls are no-ops.
    */
   readonly recoverOnce: () => Promise<void>;
   /** Releases queue claims left by a server stop. Run before the queue consumers start. */
@@ -855,10 +866,18 @@ export class EngineManager {
     };
 
     let recovered = false;
-    const recoverOnce = async (): Promise<void> => {
-      if (recovered) return;
-      recovered = true;
-      await this.recoverChannel(channel, store, processMessage, sendFn, recoveryHorizon);
+    let recovering = Promise.resolve();
+    const recoverOnce = (): Promise<void> => {
+      const { runSignal, haltSignal } = runtime;
+      const run = async (): Promise<void> => {
+        if (recovered) return;
+        // Set first, so one that throws is not tried again.
+        recovered = true;
+        recovered = await this.recoverChannel({ channel, store, processMessage, sendFn, horizon: recoveryHorizon, runSignal, haltSignal });
+      };
+      // An interrupted one may still be ending its sends.
+      recovering = recovering.then(run, run);
+      return recovering;
     };
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, recoverOnce, resetClaimsOnce, activity });
@@ -996,20 +1015,15 @@ export class EngineManager {
    * - RECEIVED source messages are reprocessed from their stored raw content.
    * - RECEIVED destination messages are re-dispatched from their stored SENT content.
    * QUEUED messages are left for the queue consumers. All failures are logged only.
+   * Resolves false when a stop or a halt interrupted it.
    */
-  private async recoverChannel(
-    channel: ChannelDetail,
-    store: MessageStore,
-    processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>,
-    sendFn: SendToDestination,
-    horizon: Result<number>,
-  ): Promise<void> {
+  private async recoverChannel({ channel, store, processMessage, sendFn, horizon, runSignal, haltSignal }: ChannelRecovery): Promise<boolean> {
     // Without the horizon there is no telling a leftover message from one the
     // running channel is working on right now, and recovering the latter would
     // process it twice. Skip, and say so.
     if (!horizon.ok) {
       logger.error({ channelId: channel.id, errMsg: horizon.error.message }, 'Channel recovery skipped: could not read the newest message id at deploy');
-      return;
+      return true;
     }
     const maxId = horizon.value;
 
@@ -1093,23 +1107,30 @@ export class EngineManager {
         ]);
         return OK_VOID;
       }
-      const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.timeout(30_000));
+      const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.any([haltSignal, AbortSignal.timeout(30_000)]));
       const success = sendResult.ok && sendResult.value.status === 'SENT';
+      if (!success && runSignal.aborted) {
+        // Its destination was stopped under the send. It stays as it was and is sent after the next start.
+        return { ok: false, value: null, error: new Error('Interrupted by a stop') } as Result<void>;
+      }
       await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, success ? 'SENT' : 'ERROR');
       await store.incrementStats(channelId, metaDataId, this.serverId, success ? 'sent' : 'errored');
       return success ? OK_VOID : ({ ok: false, value: null, error: new Error('Redispatch send failed') } as Result<void>);
     };
 
     const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
-    const recovered = await manager.recover(channel.id);
+    const recovered = await manager.recover(channel.id, runSignal);
     if (!recovered.ok) {
       logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed');
-      return;
+      return true;
     }
-    const summary = recovered.value;
-    if (summary.recovered > 0 || summary.errors > 0) {
+    const { interrupted, ...summary } = recovered.value;
+    if (interrupted) {
+      logger.info({ channelId: channel.id, ...summary }, 'Channel recovery interrupted by a stop; it goes on at the next start');
+    } else if (summary.recovered > 0 || summary.errors > 0) {
       logger.info({ channelId: channel.id, ...summary }, 'Channel recovery complete');
     }
+    return !interrupted;
   }
 
   private async compileWithTemplates(

@@ -83,7 +83,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `port` | Yes | Partner port. |
 | `maxConnections` | No | Size of the connection pool. |
 | `responseTimeout` | No | Milliseconds to wait for the acknowledgement before the send is an ERROR. |
-| `acquireTimeoutMs` | No | Milliseconds a message waits for a connection, a free pooled one or a new one. A queued message waits at most 30 seconds. While the partner refuses connections, each connection in the pool is tried again after a second (or a quarter of this, if that is shorter), and the outage is logged once. |
+| `acquireTimeoutMs` | No | Milliseconds a message waits for a connection, a free pooled one or a new one. A queued message waits at most 30 seconds. While the partner refuses connections, each connection in the pool is tried again after a second (or a quarter of this, if that is shorter), and the outage is logged once. A stop waits for the messages that wait; a halt ends their sends at once. |
 | `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. |
 | `frameStart` | No | Start bytes in hex. API or Mirth import only. |
 | `frameEnd` | No | End bytes in hex. API or Mirth import only. |
