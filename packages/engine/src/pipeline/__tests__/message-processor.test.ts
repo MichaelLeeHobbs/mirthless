@@ -196,7 +196,7 @@ describe('MessageProcessor', () => {
     expect(sendFn).toHaveBeenCalledWith(1, 1,'dest_modified', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
-  it('routes to 2 destinations in parallel', async () => {
+  it('routes to 2 destinations', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
     const config = makeConfig({
@@ -644,23 +644,23 @@ describe('MessageProcessor', () => {
   });
 
   it('preprocessor and postprocessor scripts execute', async () => {
-    const store = makeStore();
     const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
     const config = makeConfig({
       scripts: {
-        preprocessor: { code: 'logger.info("pre"); return rawData;' },
-        postprocessor: { code: 'logger.info("post"); return true;' },
+        preprocessor: { code: 'return rawData + "_PRE";' },
+        postprocessor: { code: 'globalChannelMap["post"] = msg;' },
       },
+      globalChannelMap: gcm,
     });
     const processor = new MessageProcessor(
-      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+      sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe('SENT');
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MSG_PRE', expect.any(AbortSignal), expect.any(String), undefined);
+    expect(gcm.get('post')).toBe('MSG_PRE');
   });
 
   it('skips disabled destinations', async () => {
@@ -887,8 +887,8 @@ describe('MessageProcessor', () => {
     const sendFn = makeSendFn();
     const config = makeConfig({
       scripts: {
-        globalPreprocessor: { code: 'return rawData + "_GLOBAL";' },
-        preprocessor: { code: 'return rawData + "_CHANNEL";' },
+        globalPreprocessor: { code: 'return msg + "_GLOBAL";' },
+        preprocessor: { code: 'return msg + "_CHANNEL";' },
       },
     });
     const processor = new MessageProcessor(
@@ -897,47 +897,44 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1,expect.any(String), expect.any(AbortSignal), expect.any(String), undefined);
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MSG_GLOBAL_CHANNEL', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('global postprocessor runs after channel postprocessor', async () => {
-    const store = makeStore();
-    const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
+    const ranAs = (name: string): { code: string } => ({ code: `globalChannelMap["ran"] = (globalChannelMap["ran"] || []).concat("${name}");` });
     const config = makeConfig({
-      scripts: {
-        postprocessor: { code: 'logger.info("channel_post"); return true;' },
-        globalPostprocessor: { code: 'logger.info("global_post"); return true;' },
-      },
+      scripts: { postprocessor: ranAs('channel'), globalPostprocessor: ranAs('global') },
+      globalChannelMap: gcm,
     });
     const processor = new MessageProcessor(
-      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+      sandbox, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe('SENT');
+    expect(gcm.get('ran')).toEqual(['channel', 'global']);
   });
 
   it('works with only global scripts (no channel scripts)', async () => {
-    const store = makeStore();
     const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
     const config = makeConfig({
       scripts: {
         globalPreprocessor: { code: 'return rawData + "_GP";' },
-        globalPostprocessor: { code: 'logger.info("done"); return true;' },
+        globalPostprocessor: { code: 'globalChannelMap["post"] = msg;' },
       },
+      globalChannelMap: gcm,
     });
     const processor = new MessageProcessor(
-      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+      sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    const result = await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe('SENT');
+    expect(result.ok && result.value.status).toBe('SENT');
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MSG_GP', expect.any(AbortSignal), expect.any(String), undefined);
+    expect(gcm.get('post')).toBe('MSG_GP');
   });
 
   it('global preprocessor modifies content for downstream stages', async () => {
