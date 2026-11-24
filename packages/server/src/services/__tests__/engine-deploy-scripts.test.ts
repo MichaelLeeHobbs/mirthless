@@ -40,9 +40,10 @@ const MockVmSandboxExecutor = vi.fn().mockImplementation(function () {
   };
 });
 
-const mockCompileScript = vi.fn().mockResolvedValue({
-  ok: true, value: { code: 'compiled-code' }, error: null,
-});
+/** A script's own text stands in for its compiled code, so what the sandbox ran can be told apart. */
+const mockCompileScript = vi.fn().mockImplementation(async (source: string) => ({
+  ok: true, value: { code: source }, error: null,
+}));
 
 vi.mock('@galvanigraph/engine', () => ({
   ChannelRuntime: MockChannelRuntime,
@@ -168,6 +169,8 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+const ranScripts = (): readonly string[] => mockSandboxExecute.mock.calls.map((call) => (call[0] as { code: string }).code);
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -284,25 +287,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
     });
 
     it('executes global deploy before channel deploy', async () => {
-      const executionOrder: string[] = [];
-
-      let compileCallIndex = 0;
-      mockCompileScript.mockImplementation(async () => {
-        const idx = compileCallIndex++;
-        return {
-          ok: true, value: { code: `compiled-${String(idx)}` }, error: null,
-        };
-      });
-
-      mockSandboxExecute.mockImplementation(async (script: { code: string }) => {
-        executionOrder.push(script.code);
-        return {
-          ok: true,
-          value: { returnValue: undefined, mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
-          error: null,
-        };
-      });
-
       const channel = makeChannel({
         scripts: [{ scriptType: 'DEPLOY', script: 'channel deploy' }],
       });
@@ -310,10 +294,7 @@ describe('EngineManager deploy/undeploy scripts', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never, { globalScripts: { deploy: 'global deploy' } }));
 
-      expect(executionOrder.length).toBeGreaterThanOrEqual(2);
-      // Global deploy should execute before channel deploy
-      const globalIdx = executionOrder.findIndex((c) => c.includes('compiled'));
-      expect(globalIdx).toBeGreaterThanOrEqual(0);
+      expect(ranScripts()).toEqual(['global deploy', 'channel deploy']);
     });
   });
 
@@ -329,37 +310,17 @@ describe('EngineManager deploy/undeploy scripts', () => {
     });
 
     it('executes channel undeploy before global undeploy', async () => {
-      const executionOrder: string[] = [];
-
-      let compileCallIndex = 0;
-      mockCompileScript.mockImplementation(async () => {
-        const idx = compileCallIndex++;
-        return {
-          ok: true, value: { code: `compiled-${String(idx)}` }, error: null,
-        };
-      });
-
-      mockSandboxExecute.mockImplementation(async (script: { code: string }) => {
-        executionOrder.push(script.code);
-        return {
-          ok: true,
-          value: { returnValue: undefined, mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
-          error: null,
-        };
-      });
-
       const channel = makeChannel({
         scripts: [{ scriptType: 'UNDEPLOY', script: 'channel undeploy' }],
       });
 
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never, { globalScripts: { undeploy: 'global undeploy' } }));
-      executionOrder.length = 0;
+      mockSandboxExecute.mockClear();
 
       await engine.undeploy(CHANNEL_ID);
 
-      // Channel undeploy should run before global undeploy
-      expect(executionOrder.length).toBe(2);
+      expect(ranScripts()).toEqual(['channel undeploy', 'global undeploy']);
     });
   });
 

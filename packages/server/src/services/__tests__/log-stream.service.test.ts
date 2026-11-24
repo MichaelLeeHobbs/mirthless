@@ -96,15 +96,18 @@ describe('LogStreamService', () => {
 
   describe('ring buffer', () => {
     it('wraps around when exceeding max entries', () => {
-      // Add more than MAX_ENTRIES (10,000 by default)
-      // We'll test with a smaller number using direct _addEntry
-      for (let i = 0; i < 50; i++) {
+      /** What docs/user/capabilities.md says the log viewer keeps. */
+      const cap = 10_000;
+      const extra = 25;
+      for (let i = 0; i < cap + extra; i++) {
         LogStreamService._addEntry(makeEntry({ message: `msg-${String(i)}` }));
       }
 
-      expect(LogStreamService.getBufferSize()).toBe(50);
-      const result = LogStreamService.query({ limit: 50 });
-      expect(result.total).toBe(50);
+      expect(LogStreamService.getBufferSize()).toBe(cap);
+      const result = LogStreamService.query({ limit: cap + extra });
+      expect(result.total).toBe(cap);
+      const newestFirst = Array.from({ length: cap }, (_, i) => `msg-${String(cap + extra - 1 - i)}`);
+      expect(result.entries.map((e) => e.message)).toEqual(newestFirst);
     });
   });
 

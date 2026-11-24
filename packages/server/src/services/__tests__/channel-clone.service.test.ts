@@ -216,17 +216,18 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
   mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
     let insertCallCount = 0;
     const tx = {
-      insert: vi.fn().mockImplementation(() => {
+      insert: vi.fn().mockImplementation((table: unknown) => {
         insertCallCount++;
         // Channel insert (call 1) returns the created row; later inserts return
         // []. Every .values() supports both `.returning()` and direct await.
         const rows = insertCallCount === 1 ? [channel] : [];
         return {
-          values: vi.fn().mockReturnValue(
-            Object.assign(Promise.resolve(rows), {
+          values: (values: unknown) => {
+            txInserts.push({ table, values });
+            return Object.assign(Promise.resolve(rows), {
               returning: vi.fn().mockResolvedValue(rows),
-            }),
-          ),
+            });
+          },
         };
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
@@ -235,6 +236,8 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
     return fn(tx);
   });
 }
+
+let txInserts: { table: unknown; values: unknown }[] = [];
 
 interface RecordedUpdate { table: unknown; values: Record<string, unknown>; condition: unknown }
 let txUpdates: RecordedUpdate[] = [];
@@ -250,6 +253,7 @@ const txUpdate = vi.fn((table: unknown) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
+  txInserts = [];
   txUpdates = [];
   mockSet.mockReturnValue({ where: mockUpdateWhere });
   mockUpdateWhere.mockResolvedValue(undefined);
@@ -290,9 +294,8 @@ describe('ChannelService.clone', () => {
     const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    // Shows only that create ran; 'copies channel properties from source' checks enabled: false.
-    expect(mockTransaction).toHaveBeenCalledOnce();
+    expect(txInserts.filter((i) => i.table === channels).map((i) => i.values))
+      .toEqual([expect.objectContaining({ name: 'Cloned Channel', enabled: false })]);
   });
 
   it('copies channel properties from source', async () => {
