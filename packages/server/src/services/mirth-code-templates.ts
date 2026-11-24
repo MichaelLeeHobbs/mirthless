@@ -117,8 +117,8 @@ export async function importCodeTemplateLibraries(
     // a refused one does not leave the others half applied (D-310).
     const touched = libraries.flatMap((lib) => {
       const found = existingLibraries.value.find((l) => l.name === lib.name);
-      if (!found) return [lib.channelIds];
-      return overwrite ? [found.channelIds, lib.channelIds] : [found.channelIds];
+      if (!found) return [{ after: lib.channelIds }];
+      return overwrite ? [{ before: found.channelIds, after: lib.channelIds }] : [{ after: found.channelIds }];
     });
     const allowed = await CodeTemplateService.assertCanWriteLinks(touched, context);
     if (!allowed.ok) throw allowed.error;
