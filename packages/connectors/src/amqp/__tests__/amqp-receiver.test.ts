@@ -5,6 +5,7 @@ import { DISPATCH_STATUS } from '../../base.js';
 import { AmqpReceiver, toRawMessage, type AmqpReceiverConfig } from '../amqp-receiver.js';
 import { headersToRecord } from '../amqp-client.js';
 import { FakeAmqpQueue } from '../../__fixtures__/fake-amqp.js';
+import { nestedTables, nestedTablesJson } from '../../__fixtures__/nested-headers.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 const config: AmqpReceiverConfig = { host: 'rabbit', port: 5672, vhost: '/', username: 'u', password: 'p', queue: 'adt' };
@@ -123,6 +124,20 @@ describe('a message the pipeline never stores', () => {
     receiver.setFatalHandler((error) => { fatal.push(error); });
     return { log, fatal, started: receiver.onStart() };
   }
+
+  it('counts headers that cannot be converted toward the cap', async () => {
+    const queue = new FakeAmqpQueue();
+    const headers = { get site(): string { throw new Error('cannot convert this header'); } };
+    queue.publish('MSH|poison', headers);
+    const p = pipeline();
+    const { fatal } = startCapped(queue, p.dispatch, 3);
+
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    expect(fatal[0]?.message).toContain('after 3 attempts (cannot convert this header)');
+    expect(p.offered).toEqual([]);
+    expect(queue.connectCount).toBe(1);
+    await vi.waitFor(() => { expect(queue.messages.map((m) => m.body)).toEqual(['MSH|poison']); });
+  });
 
   it('stops retrying after the cap, reports a fatal error, and neither acks nor dead-letters it', async () => {
     const queue = new FakeAmqpQueue();
@@ -499,5 +514,38 @@ describe('headersToRecord', () => {
 
   it('gives no headers as an empty record', () => {
     expect(headersToRecord(undefined)).toEqual({});
+  });
+
+  it.each([
+    ['an empty table', {}],
+    ['an empty array', []],
+    ['arrays in tables in arrays', [{ a: [1, { b: [] }], c: {} }, [], 'x']],
+    ['every scalar', { s: 'a"b\\\n\u2028', n: -1.5, t: true, f: false, v: null, nan: NaN }],
+    ['a name that needs escaping', { 'a"b\n': { '': 1 } }],
+    ['a decimal and a timestamp', { d: { '!': 'decimal', value: { places: 2, digits: 314 } }, t: { '!': 'timestamp', value: 1 } }],
+    ['bytes and a date inside a table', { bytes: Buffer.from('xyz'), when: new Date('2026-11-14T00:00:00Z') }],
+    ['a table with a __proto__ name', JSON.parse('{"__proto__":{"a":1}}')],
+    ['a table with a toJSON name', { toJSON: 'text' }],
+  ])('writes %s as JSON.stringify does', (_name, value: unknown) => {
+    expect(headersToRecord({ x: value })).toEqual({ x: JSON.stringify(value) });
+  });
+
+  it('writes a big integer inside a table as text', () => {
+    expect(headersToRecord({ x: [{ big: 12345678901234567890n }] })).toEqual({ x: '[{"big":"12345678901234567890"}]' });
+  });
+
+  // The most the default 128 KB frame can carry.
+  it('keeps every level of tables and arrays nested tens of thousands deep', () => {
+    let arrays: unknown = 'leaf';
+    for (let i = 0; i < 26_000; i += 1) arrays = [arrays];
+    expect(headersToRecord({ tables: nestedTables(26_000), arrays })).toEqual({
+      tables: nestedTablesJson(26_000),
+      arrays: `${'['.repeat(26_000)}"leaf"${']'.repeat(26_000)}`,
+    });
+  });
+
+  it('keeps every item of an array with 131,072 items', () => {
+    const wide = Array.from({ length: 131_072 }, () => null);
+    expect(headersToRecord({ wide })).toEqual({ wide: JSON.stringify(wide) });
   });
 });

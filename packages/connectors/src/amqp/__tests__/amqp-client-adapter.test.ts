@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { nestedTables, nestedTablesJson } from '../../__fixtures__/nested-headers.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 class FakeChannel extends EventEmitter {
   calls: [string, ...unknown[]][] = [];
@@ -50,6 +52,7 @@ vi.mock('amqplib', () => ({
 }));
 
 const { consumeAmqp, createAmqpPublisher, testAmqpConnection } = await import('../amqp-client.js');
+const { AmqpReceiver, toRawMessage } = await import('../amqp-receiver.js');
 
 const config = { host: 'rabbit', port: 5672, vhost: '/', username: 'u', password: 'p' };
 const lastModel = (): FakeModel => lib.models.at(-1) as FakeModel;
@@ -70,17 +73,47 @@ describe('consumeAmqp', () => {
   });
 
   it('hands over deliveries whose ack and nack reach the channel', async () => {
-    const seen: { ack(): void; nack(requeue: boolean): void; routingKey: string; headers: unknown; messageId: unknown }[] = [];
+    const seen: Parameters<Parameters<typeof consumeAmqp>[1]>[0][] = [];
     await consumeAmqp({ ...config, queue: 'adt' }, (d) => { seen.push(d); });
     const msg = {
       content: Buffer.from('MSH'), fields: { exchange: 'hl7', routingKey: 'adt.a01', redelivered: true },
       properties: { headers: { site: Buffer.from('north') }, messageId: 'm-1', contentType: 'text/plain' },
     };
     lastModel().channel.consumer?.(msg);
-    expect(seen[0]).toMatchObject({ routingKey: 'adt.a01', headers: { site: 'north' }, messageId: 'm-1' });
-    seen[0]?.ack();
-    seen[0]?.nack(true);
+    const delivery = seen[0];
+    if (!delivery) throw new Error('no delivery');
+    expect(delivery).toMatchObject({ routingKey: 'adt.a01', messageId: 'm-1' });
+    expect(toRawMessage(delivery, 'adt').sourceMap['headers']).toEqual({ site: 'north' });
+    delivery.ack();
+    delivery.nack(true);
     expect(lastModel().channel.calls.slice(-2)).toEqual([['ack', msg], ['nack', msg, false, true]]);
+  });
+
+  it('takes a message whose headers are nested 5,000 deep, and the message behind it', async () => {
+    const log = makeMockLogger();
+    const offered: { content: string; headers: unknown }[] = [];
+    const receiver = new AmqpReceiver({ ...config, queue: 'adt' }, consumeAmqp, log.logger, 5);
+    receiver.setDispatcher(async (raw) => {
+      offered.push({ content: raw.content, headers: raw.sourceMap['headers'] });
+      return { ok: true, value: { messageId: offered.length }, error: null };
+    });
+    await receiver.onStart();
+    const message = (body: string, headers: Record<string, unknown>): unknown => ({
+      content: Buffer.from(body), fields: { exchange: 'hl7', routingKey: 'adt.a01', redelivered: false }, properties: { headers },
+    });
+
+    // amqplib closes the channel when its consume callback throws.
+    const channel = lastModel().channel;
+    expect(() => channel.consumer?.(message('deep', { site: 'north', x: nestedTables(5_000) }))).not.toThrow();
+    channel.consumer?.(message('behind', { site: 'south' }));
+
+    await vi.waitFor(() => { expect(channel.calls.filter(([name]) => name === 'ack')).toHaveLength(2); });
+    expect(offered).toEqual([
+      { content: 'deep', headers: { site: 'north', x: nestedTablesJson(5_000) } },
+      { content: 'behind', headers: { site: 'south' } },
+    ]);
+    expect(log.errors).toEqual([]);
+    await receiver.onStop();
   });
 
   it('settles closed when the broker cancels the consumer', async () => {

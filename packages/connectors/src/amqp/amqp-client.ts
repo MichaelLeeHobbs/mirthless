@@ -1,6 +1,7 @@
 // Queues, exchanges and bindings are the broker administrator's: check them, never declare them (D-266).
 
 import { connect, type ChannelModel, type ConfirmChannel, type ConsumeMessage, type Options, type SocketOptions } from 'amqplib';
+import { isPlainObject } from '@galvanigraph/core-util';
 import type { TlsClientOptions } from '../tls.js';
 
 export interface AmqpConnectionConfig {
@@ -51,6 +52,41 @@ async function open(config: AmqpConnectionConfig): Promise<ChannelModel> {
   return connect(connectOptions(config), socketOptions(config));
 }
 
+type JsonStep = { readonly text: string } | { readonly value: unknown };
+
+/** The steps that write a table or array, last one first, or null for a value with nothing nested in it. */
+function nestedSteps(value: unknown): JsonStep[] | null {
+  const isArray = Array.isArray(value);
+  if (!isArray && (!isPlainObject(value) || Buffer.isBuffer(value) || value instanceof Date)) return null;
+  const steps: JsonStep[] = [{ text: isArray ? '[' : '{' }];
+  for (const [name, item] of Object.entries(value)) {
+    const comma = steps.length > 1 ? ',' : '';
+    steps.push({ text: isArray ? comma : `${comma}${JSON.stringify(name)}:` }, { value: item });
+  }
+  steps.push({ text: isArray ? ']' : '}' });
+  return steps.reverse();
+}
+
+/** What JSON.stringify writes for a decoded header. JSON.stringify itself overflows the stack on one nested a few thousand deep (D-331). */
+function nestedHeaderJson(header: unknown): string {
+  const parts: string[] = [];
+  const pending: JsonStep[] = [{ value: header }];
+  for (let step = pending.pop(); step; step = pending.pop()) {
+    if ('text' in step) {
+      parts.push(step.text);
+      continue;
+    }
+    const nested = nestedSteps(step.value);
+    if (nested) {
+      // One at a time: a wide array spread into push overflows the stack too.
+      for (const next of nested) pending.push(next);
+    } else {
+      parts.push(JSON.stringify(typeof step.value === 'bigint' ? step.value.toString() : step.value));
+    }
+  }
+  return parts.join('');
+}
+
 export function headersToRecord(headers: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(headers ?? {})) {
@@ -58,7 +94,7 @@ export function headersToRecord(headers: Readonly<Record<string, unknown>> | und
     else if (typeof value === 'bigint') result[name] = value.toString();
     else if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) result[name] = value;
     else if (value instanceof Date) result[name] = value.toISOString();
-    else result[name] = JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
+    else result[name] = nestedHeaderJson(value);
   }
   return result;
 }
@@ -69,7 +105,8 @@ export interface AmqpDelivery {
   readonly exchange: string;
   readonly routingKey: string;
   readonly redelivered: boolean;
-  readonly headers: Readonly<Record<string, unknown>>;
+  /** As decoded; {@link headersToRecord} makes them fit a source map. */
+  readonly headers: Readonly<Record<string, unknown>> | undefined;
   readonly messageId: string | undefined;
   readonly contentType: string | undefined;
   /** Throws when the channel has closed. */
@@ -88,6 +125,7 @@ export interface AmqpConsumer {
   close(): Promise<void>;
 }
 
+/** A throw from `onDelivery` closes the channel, and the message is delivered again without end: do fallible work after it returns. */
 export type AmqpConsume = (options: AmqpConsumeOptions, onDelivery: (delivery: AmqpDelivery) => void) => Promise<AmqpConsumer>;
 
 function toDelivery(channel: { ack(m: ConsumeMessage): void; nack(m: ConsumeMessage, all: boolean, requeue: boolean): void }, msg: ConsumeMessage): AmqpDelivery {
@@ -96,7 +134,7 @@ function toDelivery(channel: { ack(m: ConsumeMessage): void; nack(m: ConsumeMess
     exchange: msg.fields.exchange,
     routingKey: msg.fields.routingKey,
     redelivered: msg.fields.redelivered,
-    headers: headersToRecord(msg.properties.headers),
+    headers: msg.properties.headers,
     messageId: typeof msg.properties.messageId === 'string' ? msg.properties.messageId : undefined,
     contentType: typeof msg.properties.contentType === 'string' ? msg.properties.contentType : undefined,
     ack: (): void => { channel.ack(msg); },
