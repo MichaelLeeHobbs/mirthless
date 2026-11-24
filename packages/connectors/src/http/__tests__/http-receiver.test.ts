@@ -1,4 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import * as http from 'node:http';
+import * as zlib from 'node:zlib';
 import {
   HttpReceiver,
   DEFAULT_MAX_BODY_BYTES,
@@ -7,6 +9,7 @@ import {
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
+import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
 
 const TEST_PORT = 18661;
 
@@ -20,6 +23,7 @@ function makeConfig(overrides?: Partial<HttpReceiverConfig>): HttpReceiverConfig
     responseStatusCode: 200,
     errorStatusCode: 500,
     maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
+    bodyCharset: 'utf-8',
     ...overrides,
   };
 }
@@ -491,5 +495,284 @@ describe('HttpReceiver request character set', () => {
 
     expect(res.status).toBe(415);
     expect(dispatched).toBe(0);
+  });
+});
+
+/** Records every dispatched message, so a test can also show that nothing was. */
+async function startRecording(config?: Partial<HttpReceiverConfig>): Promise<{ readonly seen: RawMessage[]; readonly log: MockLogger }> {
+  const seen: RawMessage[] = [];
+  const log = makeMockLogger();
+  receiver = new HttpReceiver(makeConfig(config), log.logger);
+  receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw); return { messageId: 1, response: 'ACK' }; }));
+  expect((await receiver.onDeploy()).ok).toBe(true);
+  expect((await receiver.onStart()).ok).toBe(true);
+  return { seen, log };
+}
+
+const HL7 = 'MSH|^~\\&|LAB|HOSP|EHR|HOSP|20261123||ORU^R01|1|P|2.5\rPID|1||123||Müller^Jörg\r';
+const EVERY_BYTE = Buffer.from(Array.from({ length: 256 }, (_, byte) => byte));
+/** The comment after a PDF's header has four bytes over 0x7F, which are not UTF-8. */
+const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n%'), Buffer.from([0xe2, 0xe3, 0xcf, 0xd3]), Buffer.from('\n1 0 obj\n')]);
+
+const CODINGS = [
+  ['gzip', zlib.gzipSync],
+  ['x-gzip', zlib.gzipSync],
+  ['deflate', zlib.deflateSync],
+  ['br', zlib.brotliCompressSync],
+] as const;
+
+describe('HttpReceiver compressed bodies', () => {
+  it.each(CODINGS)('reads a %s body as the text that was compressed', async (coding, compress) => {
+    const { seen } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, { body: compress(HL7), headers: { 'content-encoding': coding } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual([HL7]);
+  });
+
+  it.each(CODINGS)('keeps every byte of a binary %s body with base64', async (coding, compress) => {
+    const { seen } = await startRecording({ bodyCharset: 'base64' });
+
+    const res = await sendRequest(TEST_PORT, { body: compress(EVERY_BYTE), headers: { 'content-encoding': coding } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual([EVERY_BYTE.toString('base64')]);
+  });
+
+  it('reads a gzip body of several members as all of them', async () => {
+    const { seen } = await startRecording();
+
+    const body = Buffer.concat([zlib.gzipSync('MSH|1\r'), zlib.gzipSync('PID|1\r')]);
+    const res = await sendRequest(TEST_PORT, { body, headers: { 'content-encoding': 'gzip' } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual(['MSH|1\rPID|1\r']);
+  });
+
+  it('reads the coding in any case, and decodes the decompressed text in its declared charset', async () => {
+    const { seen } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, {
+      body: zlib.gzipSync(Buffer.from('PID|1||Müller', 'latin1')),
+      headers: { 'content-encoding': 'GZIP', 'content-type': 'text/plain; charset=ISO-8859-1' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual(['PID|1||Müller']);
+  });
+
+  it('reads an identity body as sent', async () => {
+    const { seen } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, { body: HL7, headers: { 'content-encoding': 'identity' } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual([HL7]);
+  });
+
+  // `constructor` is a property every object has, so a plain-object lookup would find a coding by that name.
+  it.each(['zstd', 'compress', 'gzip, gzip', 'gzip, br', 'identity, gzip', 'constructor'])('refuses Content-Encoding %s and names the codings it takes', async (coding) => {
+    const { seen, log } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, { body: zlib.gzipSync(HL7), headers: { 'content-encoding': coding, 'content-type': 'text/plain' } });
+
+    expect(res.status).toBe(415);
+    expect(res.headers['accept-encoding']).toBe('gzip, deflate, br');
+    expect(seen).toEqual([]);
+    expect(log.warnings).toHaveLength(1);
+    expect(log.warnings[0]?.obj).toMatchObject({ remoteAddress: '127.0.0.1', contentType: 'text/plain' });
+  });
+
+  it('refuses two Content-Encoding headers as two codings', async () => {
+    const { seen } = await startRecording();
+
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: TEST_PORT, method: 'POST', headers: { connection: 'close' } }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.setHeader('content-encoding', ['gzip', 'br']);
+      req.on('error', reject);
+      req.end(zlib.gzipSync(HL7));
+    });
+
+    expect(status).toBe(415);
+    expect(seen).toEqual([]);
+  });
+
+  it('answers a refused coding and then takes the next message on the same connection', async () => {
+    const { seen } = await startRecording();
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    const post = (body: Buffer, headers: Record<string, string>): Promise<{ status: number; port: number | undefined }> => new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: TEST_PORT, method: 'POST', agent, headers }, (res) => {
+        const port = req.socket?.localPort;
+        res.resume();
+        res.on('end', () => { resolve({ status: res.statusCode ?? 0, port }); });
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+
+    try {
+      const refused = await post(Buffer.alloc(1024 * 1024, 0x41), { 'content-encoding': 'zstd' });
+      const accepted = await post(Buffer.from(HL7), {});
+      expect([refused.status, accepted.status]).toEqual([415, 200]);
+      expect(accepted.port).toBe(refused.port);
+      expect(seen.map((raw) => raw.content)).toEqual([HL7]);
+    } finally {
+      agent.destroy();
+    }
+  });
+
+  it.each(CODINGS)('refuses a truncated %s body', async (coding, compress) => {
+    const { seen, log } = await startRecording();
+    const whole = compress(HL7);
+
+    const res = await sendRequest(TEST_PORT, { body: whole.subarray(0, whole.length - 4), headers: { 'content-encoding': coding } });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toContain(coding);
+    expect(seen).toEqual([]);
+    expect(log.warnings).toHaveLength(1);
+  });
+
+  it.each(CODINGS)('refuses a body that is not the %s it claims to be', async (coding) => {
+    const { seen } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, { body: HL7, headers: { 'content-encoding': coding } });
+
+    expect(res.status).toBe(400);
+    expect(seen).toEqual([]);
+  });
+
+  // zlib and brotli stop at the end of the stream without an error, which would drop the second message.
+  it.each(CODINGS.filter(([coding]) => !coding.includes('gzip')))('refuses bytes after the end of a %s body instead of dropping them', async (coding, compress) => {
+    const { seen } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, { body: Buffer.concat([compress('MSH|1\r'), compress('MSH|2\r')]), headers: { 'content-encoding': coding } });
+
+    expect(res.status).toBe(400);
+    expect(seen).toEqual([]);
+  });
+
+  it.each(CODINGS)('refuses a small %s body that decompresses past maxBodyBytes', async (coding, compress) => {
+    const { seen } = await startRecording({ maxBodyBytes: 16 * 1024 });
+    const bomb = compress(Buffer.alloc(1024 * 1024, 0x41));
+    expect(bomb.length).toBeLessThan(16 * 1024);
+
+    const res = await sendRequest(TEST_PORT, { body: bomb, headers: { 'content-encoding': coding } });
+
+    expect(res.status).toBe(413);
+    expect(seen).toEqual([]);
+  });
+
+  it('limits the bytes received as well as the decompressed size', async () => {
+    const { seen } = await startRecording({ maxBodyBytes: 16 });
+    const body = zlib.gzipSync('x'.repeat(16));
+    expect(body.length).toBeGreaterThan(16);
+
+    const res = await sendRequest(TEST_PORT, { body, headers: { 'content-encoding': 'gzip' } });
+
+    expect(res.status).toBe(413);
+    expect(seen).toEqual([]);
+  });
+
+  it('accepts a body that decompresses to exactly maxBodyBytes', async () => {
+    const { seen } = await startRecording({ maxBodyBytes: 4096 });
+
+    const res = await sendRequest(TEST_PORT, { body: zlib.gzipSync('x'.repeat(4096)), headers: { 'content-encoding': 'gzip' } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content.length)).toEqual([4096]);
+  });
+});
+
+describe('HttpReceiver bodies that are not valid in their charset', () => {
+  it('refuses a PDF, says how to accept it, and dispatches nothing', async () => {
+    const { seen, log } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, { body: PDF, headers: { 'content-type': 'application/pdf' } });
+
+    expect(res.status).toBe(415);
+    expect(res.body).toContain('utf-8');
+    expect(res.body).toContain('Content-Type');
+    expect(res.body).toContain('bodyCharset');
+    expect(res.headers['accept-encoding']).toBeUndefined();
+    expect(seen).toEqual([]);
+    expect(log.warnings).toHaveLength(1);
+    expect(log.warnings[0]?.obj).toMatchObject({ remoteAddress: '127.0.0.1', contentType: 'application/pdf' });
+  });
+
+  it('never logs the body it refuses', async () => {
+    const { log } = await startRecording();
+
+    await sendRequest(TEST_PORT, { body: Buffer.from('PID|1||123||Müller', 'latin1') });
+
+    expect(log.warnings).toHaveLength(1);
+    expect(JSON.stringify([log.warnings, log.errors])).not.toMatch(/PID|123|ller/);
+  });
+
+  it.each([undefined, 'application/pdf', 'text/plain; charset=utf-8', 'text/plain; charset=klingon'])('keeps the same PDF with base64 under Content-Type %s', async (contentType) => {
+    const { seen } = await startRecording({ bodyCharset: 'base64' });
+
+    const res = await sendRequest(TEST_PORT, { body: PDF, ...(contentType ? { headers: { 'content-type': contentType } } : {}) });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => Buffer.from(raw.content, 'base64').equals(PDF))).toEqual([true]);
+  });
+
+  it('refuses Latin-1 text that declares no charset', async () => {
+    const { seen } = await startRecording();
+
+    const res = await sendRequest(TEST_PORT, { body: Buffer.from('PID|1||Müller', 'latin1'), headers: { 'content-type': 'text/plain' } });
+
+    expect(res.status).toBe(415);
+    expect(seen).toEqual([]);
+  });
+
+  it.each([
+    ['latin1', Buffer.from('PID|1||Müller', 'latin1'), 'PID|1||Müller'],
+    ['windows-1252', Buffer.from([0x93, 0x4d, 0xfc, 0x6c, 0x6c, 0x65, 0x72, 0x94]), '\u201cMüller\u201d'],
+  ] as const)('reads text that declares no charset in bodyCharset %s', async (bodyCharset, body, text) => {
+    const { seen } = await startRecording({ bodyCharset });
+
+    const res = await sendRequest(TEST_PORT, { body, headers: { 'content-type': 'text/plain' } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual([text]);
+  });
+
+  it('reads a declared charset over bodyCharset', async () => {
+    const { seen } = await startRecording({ bodyCharset: 'latin1' });
+
+    const res = await sendRequest(TEST_PORT, { body: 'PID|1||Müller', headers: { 'content-type': 'text/plain; charset=utf-8' } });
+
+    expect(res.status).toBe(200);
+    expect(seen.map((raw) => raw.content)).toEqual(['PID|1||Müller']);
+  });
+
+  it.each([
+    ['utf-8', Buffer.from('PID|1||Müller', 'latin1')],
+    ['shift_jis', Buffer.from([0x41, 0x81])],
+    ['utf-16le', Buffer.from([0x41, 0x00, 0x42])],
+  ])('refuses a body that is not valid in the %s it declares, whatever bodyCharset says', async (declared, body) => {
+    const { seen } = await startRecording({ bodyCharset: 'latin1' });
+
+    const res = await sendRequest(TEST_PORT, { body, headers: { 'content-type': `text/plain; charset=${declared}` } });
+
+    expect(res.status).toBe(415);
+    expect(res.body).toContain(declared);
+    expect(seen).toEqual([]);
+  });
+
+  it('keeps a byte order mark, declared charset or not', async () => {
+    const { seen } = await startRecording();
+    const text = '\ufeffMSH|1';
+
+    await sendRequest(TEST_PORT, { body: Buffer.from(text), headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    await sendRequest(TEST_PORT, { body: Buffer.from(text) });
+
+    expect(seen.map((raw) => raw.content)).toEqual([text, text]);
   });
 });

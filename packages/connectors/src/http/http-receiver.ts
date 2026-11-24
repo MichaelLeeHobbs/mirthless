@@ -1,13 +1,14 @@
 import * as http from 'node:http';
 import * as https from 'node:https';
-import { TextDecoder } from 'node:util';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-import { DEFAULT_MAX_BODY_BYTES } from '@galvanigraph/core-models';
+import { DEFAULT_MAX_BODY_BYTES, type QueueCharset } from '@galvanigraph/core-models';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { assertCharsetAvailable } from '../encoding.js';
+import { readRequestBody, RefusedBodyError } from './request-body.js';
 
 /** Hashing first keeps the length from leaking and meets timingSafeEqual's equal-length rule. */
 function constantTimeEqual(a: string, b: string): boolean {
@@ -47,34 +48,10 @@ export interface HttpReceiverConfig {
   /** Only for a failed pipeline dispatch. */
   readonly errorStatusCode: number;
   readonly maxBodyBytes: number;
+  /** For a body whose Content-Type declares no charset, except `base64`, which keeps the bytes of every body. */
+  readonly bodyCharset: QueueCharset;
   readonly auth?: HttpAuthConfig | undefined;
   readonly tls?: TlsServerOptions | undefined;
-}
-
-class UnsupportedCharsetError extends Error {
-  constructor(contentType: string) {
-    super(`Unsupported character set in Content-Type: ${contentType}`);
-  }
-}
-
-/**
- * Null for an unknown charset, which is refused (415): decoding in the wrong one
- * corrupts every non-ASCII character without any error. A byte order mark is kept.
- */
-export function decoderFor(contentType: string | undefined): TextDecoder | null {
-  const match = /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType ?? '');
-  try {
-    return new TextDecoder(match?.[1] ?? 'utf-8', { ignoreBOM: true });
-  } catch {
-    return null;
-  }
-}
-
-class BodyTooLargeError extends Error {
-  constructor() {
-    super('Request body exceeds maximum size');
-    this.name = 'BodyTooLargeError';
-  }
 }
 
 const CREDENTIAL_HEADERS: ReadonlySet<string> = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
@@ -120,6 +97,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
       }
       const authError = missingCredential(this.config.auth);
       if (authError) throw new Error(authError);
+      assertCharsetAvailable(this.config.bodyCharset);
     });
   }
 
@@ -224,20 +202,9 @@ export class HttpReceiver implements SourceConnectorRuntime {
   ): Promise<void> {
     let body: string;
     try {
-      body = await this.readBody(req);
+      body = await readRequestBody(req, this.config);
     } catch (err) {
-      if (err instanceof UnsupportedCharsetError) {
-        this.logger.warn({ remoteAddress: req.socket.remoteAddress, contentType: req.headers['content-type'] }, 'Rejected a body in a character set this server cannot decode');
-        this.writePlain(res, 415, err.message);
-        return;
-      }
-      if (err instanceof BodyTooLargeError) {
-        this.logger.warn({ remoteAddress: req.socket.remoteAddress }, 'Rejected oversized body');
-        this.writePlain(res, 413, 'Payload Too Large');
-        return;
-      }
-      this.logger.error(errorInfo(err), 'Failed reading request body');
-      this.writePlain(res, 400, 'Bad Request');
+      this.refuseBody(req, res, err);
       return;
     }
 
@@ -256,6 +223,18 @@ export class HttpReceiver implements SourceConnectorRuntime {
     this.logger.error(errorInfo(failure), 'Pipeline dispatch failed');
     res.writeHead(this.config.errorStatusCode, { 'Content-Type': this.config.responseContentType });
     res.end();
+  }
+
+  private refuseBody(req: http.IncomingMessage, res: http.ServerResponse, err: unknown): void {
+    if (!(err instanceof RefusedBodyError)) {
+      this.logger.error(errorInfo(err), 'Failed reading request body');
+      this.writePlain(res, 400, 'Bad Request');
+      return;
+    }
+    const context = { remoteAddress: req.socket.remoteAddress, contentType: req.headers['content-type'], status: err.status };
+    this.logger.warn(context, `Refused a request body: ${err.message}`);
+    res.writeHead(err.status, { 'Content-Type': 'text/plain', ...err.headers });
+    res.end(err.message);
   }
 
   private buildRawMessage(req: http.IncomingMessage, body: string, reqPath: string): RawMessage {
@@ -294,34 +273,5 @@ export class HttpReceiver implements SourceConnectorRuntime {
   private writePlain(res: http.ServerResponse, status: number, message: string): void {
     res.writeHead(status, { 'Content-Type': 'text/plain' });
     res.end(message);
-  }
-
-  private readBody(req: http.IncomingMessage): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-      const decoder = decoderFor(req.headers['content-type']);
-      if (decoder === null) {
-        req.resume();
-        reject(new UnsupportedCharsetError(req.headers['content-type'] ?? ''));
-        return;
-      }
-      const chunks: Buffer[] = [];
-      let size = 0;
-      let rejected = false;
-      req.on('data', (chunk: Buffer) => {
-        if (rejected) return;
-        size += chunk.length;
-        if (size > this.config.maxBodyBytes) {
-          rejected = true;
-          // Stop reading but do NOT destroy the socket — the caller still needs
-          // to flush a 413 response back to the sender.
-          req.pause();
-          reject(new BodyTooLargeError());
-          return;
-        }
-        chunks.push(chunk);
-      });
-      req.on('end', () => { resolve(decoder.decode(Buffer.concat(chunks))); });
-      req.on('error', reject);
-    });
   }
 }

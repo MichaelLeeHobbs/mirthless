@@ -26,7 +26,7 @@ const headers = z.record(z.string(), z.string()).default({});
 export const QUEUE_CHARSETS = ['utf-8', 'latin1', 'windows-1252', 'base64'] as const;
 export type QueueCharset = (typeof QUEUE_CHARSETS)[number];
 
-const charset = z.enum(QUEUE_CHARSETS).default('utf-8');
+export const queueCharsetSchema = z.enum(QUEUE_CHARSETS).default('utf-8');
 
 /**
  * Failures in a row to store the same message before a queue source stops the
@@ -70,7 +70,7 @@ export const kafkaSourceObjectSchema = z.strictObject({
   topic: required,
   groupId: required,
   startFrom: z.enum(KAFKA_START_FROM).default('EARLIEST'),
-  charset,
+  charset: queueCharsetSchema,
   maxStoreAttempts,
   ...sourceCommonProperties,
 });
@@ -108,7 +108,7 @@ export const amqpSourcePropertiesSchema = z.strictObject({
   ...amqpConnection,
   /** An existing queue; the connector never declares one. */
   queue: required,
-  charset,
+  charset: queueCharsetSchema,
   maxStoreAttempts,
   ...sourceCommonProperties,
 });

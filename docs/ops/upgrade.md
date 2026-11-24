@@ -96,6 +96,16 @@ After that start:
 - An enabled channel that has never been deployed is not deployed at startup; the log and a `CHANNEL_NOT_REDEPLOYED` event name it. This includes channels restored from a backup onto a new server: deploy them after the restore.
 - Enabling or disabling a channel needs `channels:deploy`.
 
+## HTTP sources refuse bodies they used to store damaged (#335)
+
+An HTTP source used to decode every request body without checking it, so text in another charset, a compressed body or a binary one was stored with its bytes replaced by U+FFFD and answered with the success status. It now keeps a body whole or refuses it (D-334):
+
+- A body that is not valid UTF-8 and whose Content-Type declares no charset gets 415 and is not stored. A sender of ISO-8859-1 or Windows-1252 text must declare it (`Content-Type: text/plain; charset=ISO-8859-1`), or the source's Body Charset (`bodyCharset`) must be set to `latin1` or `windows-1252` and the channel deployed again. A body that is not valid in the charset it declares gets 415 as well.
+- A binary body (a PDF, an image, a form with a file in it) is not valid UTF-8, so it gets 415. To keep it, set `bodyCharset` to `base64`; every message of that channel is then base64 text, so its scripts and destinations must expect that.
+- A body with `Content-Encoding` `gzip`, `deflate` or `br` is decompressed, and `maxBodyBytes` also limits its decompressed size. Any other coding gets 415, and a body that does not decompress gets 400.
+
+A channel whose stored messages contain U+FFFD likely has such a sender. A refused sender gets the reason in the response, and the server logs a warning that starts `Refused a request body` with its address and Content-Type. The version before this one refuses to deploy a channel that has `bodyCharset`, so set it after upgrading, and remove it before going back. A `charset` saved by an older editor is still ignored.
+
 ## Stricter connector properties (#115)
 
 Connector properties moved, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
