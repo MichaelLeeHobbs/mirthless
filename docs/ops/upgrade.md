@@ -102,9 +102,17 @@ An HTTP source used to decode every request body without checking it, so text in
 
 - A body that is not valid UTF-8 and whose Content-Type declares no charset gets 415 and is not stored. A sender of ISO-8859-1 or Windows-1252 text must declare it (`Content-Type: text/plain; charset=ISO-8859-1`), or the source's Body Charset (`bodyCharset`) must be set to `latin1` or `windows-1252` and the channel deployed again. A body that is not valid in the charset it declares gets 415 as well.
 - A binary body (a PDF, an image, a form with a file in it) is not valid UTF-8, so it gets 415. To keep it, set `bodyCharset` to `base64`; every message of that channel is then base64 text, so its scripts and destinations must expect that.
-- A body with `Content-Encoding` `gzip`, `deflate` or `br` is decompressed, and `maxBodyBytes` also limits its decompressed size. Any other coding gets 415, and a body that does not decompress gets 400.
+- A body with `Content-Encoding` `gzip`, `deflate` or `br` is decompressed, and `maxBodyBytes` also limits its decompressed size. Any other coding gets 415, a `Transfer-Encoding` other than `chunked` gets 501, and a body that does not decompress gets 400.
+- Text that holds U+0000 gets 415. Before, PostgreSQL refused it, the sender got `errorStatusCode` and tried again.
 
-A channel whose stored messages contain U+FFFD likely has such a sender. A refused sender gets the reason in the response, and the server logs a warning that starts `Refused a request body` with its address and Content-Type. The version before this one refuses to deploy a channel that has `bodyCharset`, so set it after upgrading, and remove it before going back. A `charset` saved by an older editor is still ignored.
+A channel whose stored messages contain U+FFFD likely has such a sender. A refused sender gets the reason in the response, and the server logs a warning that starts `Refused a request body` with its address and Content-Type. A `charset` saved by an older editor is still ignored.
+
+**Going back** to a version before this one: it refuses to deploy a channel that has `bodyCharset`, and the editor writes `bodyCharset` into every HTTP source created after the upgrade, `utf-8` included. The editor cannot remove a property, so before going back remove `bodyCharset` from those channels' `sourceConnectorProperties` through the API (`PUT /api/v1/channels/:id`) and deploy them, since a restart deploys what was last deployed. This lists them:
+
+```sql
+SELECT id, name, source_connector_properties->>'bodyCharset' AS body_charset
+FROM channels WHERE source_connector_type = 'HTTP' AND source_connector_properties ? 'bodyCharset';
+```
 
 ## Stricter connector properties (#115)
 
@@ -152,7 +160,7 @@ Before upgrading, list the keys the schema would refuse:
 SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
 WHERE source_connector_type = 'HTTP'
   AND k NOT IN ('host','port','path','matchSubpaths','method','responseContentType','responseStatusCode','errorStatusCode',
-                'maxBodyBytes','auth','scheme','tls','processBatch','contextPath','methods','charset');
+                'maxBodyBytes','bodyCharset','auth','scheme','tls','processBatch','contextPath','methods','charset');
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'HTTP'
   AND k NOT IN ('url','method','headers','parameters','basicAuth','contentType','responseTimeout','scheme','tls','template','charset');
