@@ -17,7 +17,7 @@ export default defineConfig({
       // does not collect; script-test-isolated and script-type-checker tests run them.
       exclude: ['src/**/*.test.ts', 'src/**/__tests__/support/**', 'src/index.ts', 'src/sandbox/script-test-worker.ts', 'src/sandbox/script-type-worker.ts'],
       // About 1 point under measured coverage; only ever raised, toward the 95% target (D-193).
-      thresholds: { statements: 93, branches: 89, functions: 96, lines: 96 },
+      thresholds: { statements: 94, branches: 89, functions: 96, lines: 96 },
     },
   },
 });

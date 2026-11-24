@@ -12,7 +12,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/index.ts'],
       // ~1 point under measured coverage; only raise, toward the 95% target (D-193).
-      thresholds: { statements: 93, branches: 83, functions: 92, lines: 96 },
+      thresholds: { statements: 95, branches: 89, functions: 96, lines: 97 },
     },
   },
 });

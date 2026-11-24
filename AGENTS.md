@@ -150,9 +150,9 @@ Tests are mandatory, not optional. This is healthcare software.
 
 | Package | Statements | Branches | Functions | Lines |
 |---|---|---|---|---|
-| engine | 93 | 89 | 96 | 96 |
-| core-util | 93 | 83 | 92 | 96 |
-| connectors | 89 | 78 | 85 | 91 |
+| engine | 94 | 89 | 96 | 96 |
+| core-util | 95 | 89 | 96 | 97 |
+| connectors | 92 | 89 | 90 | 94 |
 | server | 57 | 58 | 71 | 57 |
 | core-models | 79 | 87 | 90 | 79 |
 | web | 26 | 29 | 23 | 26 |
