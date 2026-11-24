@@ -411,6 +411,16 @@ describe('toRawMessage', () => {
     });
   });
 
+  it('keeps a header named __proto__', () => {
+    const record = new FakeKafkaTopic();
+    record.produce('MSH|1');
+    const raw = toRawMessage({
+      ...record.record(0),
+      headers: new Map([[Buffer.from('__proto__'), Buffer.from('x')], [Buffer.from('site'), Buffer.from('north')]]),
+    });
+    expect(JSON.stringify(raw.sourceMap['headers'])).toBe('{"__proto__":"x","site":"north"}');
+  });
+
   it('gives a record with no key a null key', () => {
     const topic = new FakeKafkaTopic();
     topic.produce('x');
