@@ -3,6 +3,8 @@ import { amqpDestinationPropertiesSchema, amqpSourcePropertiesSchema } from '../
 import { databaseDestinationPropertiesSchema, databaseSourcePropertiesSchema } from '../database-connector.schema.js';
 import { dicomDestinationPropertiesSchema } from '../dicom-connector.schema.js';
 import { emailSourcePropertiesSchema } from '../email-connector.schema.js';
+import { fhirDestinationPropertiesSchema } from '../fhir-connector.schema.js';
+import { httpDestinationPropertiesSchema } from '../http-connector.schema.js';
 import { sftpDestinationPropertiesSchema, sftpSourcePropertiesSchema } from '../sftp-connector.schema.js';
 import { smtpDestinationPropertiesSchema } from '../smtp-connector.schema.js';
 import { tcpMllpDestinationPropertiesSchema } from '../tcp-mllp-connector.schema.js';
@@ -22,6 +24,13 @@ const CONNECTORS = [
   ['SMTP destination', smtpDestinationPropertiesSchema, { from: 'a@example.test', to: 'b@example.test' }],
   ['TCP_MLLP destination', tcpMllpDestinationPropertiesSchema, { port: 2575 }],
 ] as const;
+
+describe('the URL of a connector', () => {
+  it('loses its surrounding spaces', () => {
+    expect(fhirDestinationPropertiesSchema.parse({ baseUrl: ' https://fhir.example/r4 ' })).toMatchObject({ baseUrl: 'https://fhir.example/r4' });
+    expect(httpDestinationPropertiesSchema.parse({ url: ' https://lab.example/in ' })).toMatchObject({ url: 'https://lab.example/in' });
+  });
+});
 
 describe('the host of a connector', () => {
   it.each(CONNECTORS)('%s: loses its surrounding spaces', (_name, schema, rest) => {

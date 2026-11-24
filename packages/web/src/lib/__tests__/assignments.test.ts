@@ -28,11 +28,19 @@ describe('assignment drafts', () => {
     expect(expired.expired).toBe(true);
     expect(toSend([toDraft(VIEW), expired])).toEqual([toInput(toDraft(VIEW))]);
     const renewed = { ...expired, expiresAt: toDateTimeLocal('2030-01-01T00:00:00.000Z'), expired: false };
-    expect(toSend([renewed])).toHaveLength(1);
+    expect(toSend([renewed]).map((a) => a.expiresAt)).toEqual(['2030-01-01T00:00:00.000Z']);
   });
 
-  it('treats an unparseable time as no expiry rather than sending it', () => {
-    expect(toInput({ ...toDraft(VIEW), expiresAt: 'nonsense' }).expiresAt).toBeNull();
+  it('sends a changed or cleared end time, not the stored one', () => {
+    const draft = toDraft({ ...VIEW, expiresAt: '2027-01-02T03:04:05.678Z' });
+    const shortened = { ...draft, expiresAt: toDateTimeLocal('2026-12-01T00:00:00.000Z') };
+    expect(toInput(shortened).expiresAt).toBe('2026-12-01T00:00:00.000Z');
+    expect(toInput({ ...draft, expiresAt: '' }).expiresAt).toBeNull();
+    expect(sameAssignments([draft], [shortened])).toBe(false);
+  });
+
+  it('sends a time it cannot read as typed, for the server to refuse, and never as no end', () => {
+    expect(toInput({ ...toDraft(VIEW), expiresAt: '20266-11-23T10:20' }).expiresAt).toBe('20266-11-23T10:20');
   });
 
   it('compares lists by what they would send, not by row keys', () => {

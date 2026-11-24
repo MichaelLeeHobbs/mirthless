@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fromDateTimeLocal, toDateTimeLocal } from '../datetime-local.js';
+import { fromDateTimeLocal, sentDateTimeLocal, toDateTimeLocal } from '../datetime-local.js';
 
 describe('toDateTimeLocal', () => {
   it('gives a datetime-local value in local time, with its seconds', () => {
@@ -41,5 +41,18 @@ describe('fromDateTimeLocal', () => {
 
   it('returns undefined for a value it cannot read', () => {
     expect(fromDateTimeLocal('not a date')).toBeUndefined();
+  });
+});
+
+describe('sentDateTimeLocal', () => {
+  it('sends the instant, the stored time while it still shows, and nothing for a blank', () => {
+    expect(sentDateTimeLocal('2026-10-07T04:05')).toBe(new Date(2026, 9, 7, 4, 5).toISOString());
+    const saved = '2026-10-27T14:05:42.987Z';
+    expect(sentDateTimeLocal(toDateTimeLocal(saved), saved)).toBe(saved);
+    expect(sentDateTimeLocal('', saved)).toBeNull();
+  });
+
+  it('sends a value it cannot read as typed', () => {
+    expect(sentDateTimeLocal('20266-11-23T10:20')).toBe('20266-11-23T10:20');
   });
 });

@@ -1,7 +1,7 @@
 import { transform } from 'esbuild';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
-import { SCRIPT_BODY_OPEN, scriptBodyPosition, wrapScriptBody } from '@galvanigraph/core-models';
+import { SCRIPT_BODY_OPEN, regexError, scriptBodyPosition, wrapScriptBody } from '@galvanigraph/core-models';
 import type { CompiledScript } from './sandbox-executor.js';
 
 export interface CompileOptions {
@@ -158,18 +158,6 @@ const RULE_BUILDER_CONDITIONS: Readonly<Record<string, string>> = {
 
 const CONDITIONS_WITHOUT_VALUES: ReadonlySet<string> = new Set(['EXISTS', 'NOT_EXISTS']);
 
-/** Reject a Rule Builder regex at deploy time instead of on the first message. */
-function firstInvalidRegex(values: ReadonlyArray<string>): string | null {
-  for (const value of values) {
-    try {
-      new RegExp(value);
-    } catch {
-      return value;
-    }
-  }
-  return null;
-}
-
 /** User text is embedded only as JSON literals. */
 function ruleBuilderBody(rule: FilterRuleInput, position: number): Result<string> {
   const field = rule.field?.trim() ?? '';
@@ -181,9 +169,10 @@ function ruleBuilderBody(rule: FilterRuleInput, position: number): Result<string
   if (!CONDITIONS_WITHOUT_VALUES.has(condition) && values.length === 0) {
     return unsupported(`Filter rule ${String(position)} (Rule Builder) needs at least one value for ${condition}`);
   }
+  // Refused at deploy instead of on the first message.
   if (condition === 'REGEX') {
-    const bad = firstInvalidRegex(values);
-    if (bad !== null) return unsupported(`Filter rule ${String(position)} (Rule Builder) has an invalid regular expression "${bad}"`);
+    const bad = values.find((value) => regexError(value) !== null);
+    if (bad !== undefined) return unsupported(`Filter rule ${String(position)} (Rule Builder) has an invalid regular expression "${bad}"`);
   }
   const body =
     `var f = ${JSON.stringify(field)}; var vals = ${JSON.stringify(values)};` +

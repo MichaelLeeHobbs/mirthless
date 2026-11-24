@@ -1,5 +1,5 @@
 import { PERMISSION_CATALOG, allChannelsOnly, type AssignmentInput, type AssignmentView, type Permission } from '@galvanigraph/core-models';
-import { fromDateTimeLocal, toDateTimeLocal } from './datetime-local.js';
+import { sentDateTimeLocal, toDateTimeLocal } from './datetime-local.js';
 
 export interface AssignmentDraft {
   readonly key: string;
@@ -34,7 +34,7 @@ export function toInput(draft: AssignmentDraft): AssignmentInput {
   return {
     roleId: draft.roleId,
     groupIds: draft.groupIds === null ? null : [...draft.groupIds],
-    expiresAt: fromDateTimeLocal(draft.expiresAt, draft.savedExpiresAt) ?? null,
+    expiresAt: sentDateTimeLocal(draft.expiresAt, draft.savedExpiresAt),
     reason: draft.reason.trim() === '' ? null : draft.reason.trim(),
   };
 }

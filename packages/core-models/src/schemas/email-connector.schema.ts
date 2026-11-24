@@ -6,6 +6,7 @@ import {
   requiredTextSchema,
   trimmedTextSchema,
   pollingIntervalSchema,
+  withoutKeys,
   sourceCommonProperties,
 } from './connector-property-fields.js';
 
@@ -29,16 +30,21 @@ export const emailSourceObjectSchema = z.strictObject({
   moveToFolder: z.string().default(''),
   /** Only mail whose subject contains this text is read. */
   subjectFilter: z.string().default(''),
-  includeAttachments: z.boolean().default(false),
   ...sourceCommonProperties,
 });
 export type EmailSourceProperties = z.infer<typeof emailSourceObjectSchema>;
 
-export const emailSourcePropertiesSchema = emailSourceObjectSchema.superRefine((props, ctx) => {
-  if (props.protocol !== 'IMAP') {
-    ctx.addIssue({ code: 'custom', path: ['protocol'], message: 'only IMAP is supported' });
-  }
-  if (props.postAction === 'MOVE' && props.moveToFolder.trim() === '') {
-    ctx.addIssue({ code: 'custom', path: ['moveToFolder'], message: 'required when postAction is MOVE' });
-  }
-});
+/** Saved by this app's editor until #154; the receiver never read it. */
+const SOURCE_LEGACY_KEYS: ReadonlySet<string> = new Set(['includeAttachments']);
+
+export const emailSourcePropertiesSchema = z.preprocess(
+  (value) => withoutKeys(value, SOURCE_LEGACY_KEYS),
+  emailSourceObjectSchema.superRefine((props, ctx) => {
+    if (props.protocol !== 'IMAP') {
+      ctx.addIssue({ code: 'custom', path: ['protocol'], message: 'only IMAP is supported' });
+    }
+    if (props.postAction === 'MOVE' && props.moveToFolder.trim() === '') {
+      ctx.addIssue({ code: 'custom', path: ['moveToFolder'], message: 'required when postAction is MOVE' });
+    }
+  }),
+);

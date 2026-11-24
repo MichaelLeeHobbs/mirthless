@@ -18,3 +18,13 @@ export function fromDateTimeLocal(value: string, saved: string | null = null): s
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? undefined : new Date(time).toISOString();
 }
+
+/**
+ * As {@link fromDateTimeLocal}, but a value it cannot read goes as typed, for the
+ * server to refuse. Left out, a year of five digits would widen a search or make
+ * access permanent.
+ */
+export function sentDateTimeLocal(value: string, saved: string | null = null): string | null {
+  const iso = fromDateTimeLocal(value, saved);
+  return iso === undefined ? value : iso;
+}

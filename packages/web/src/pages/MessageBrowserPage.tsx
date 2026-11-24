@@ -26,7 +26,7 @@ import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
 import { usePermissions } from '../hooks/use-permissions.js';
-import { fromDateTimeLocal } from '../lib/datetime-local.js';
+import { sentDateTimeLocal } from '../lib/datetime-local.js';
 import { PERMISSION } from '../lib/permissions.js';
 
 export function MessageBrowserPage(): ReactNode {
@@ -104,8 +104,8 @@ export function MessageBrowserPage(): ReactNode {
 
   useThrottledSocketEvent(SOCKET_EVENT.MESSAGE_NEW, handleNewMessage, channelId);
 
-  const fromIso = fromDateTimeLocal(receivedFrom);
-  const toIso = fromDateTimeLocal(receivedTo);
+  const fromIso = sentDateTimeLocal(receivedFrom);
+  const toIso = sentDateTimeLocal(receivedTo);
   const searchParams: MessageSearchParams = {
     channelId,
     ...(statuses.length > 0 ? { status: statuses } : {}),

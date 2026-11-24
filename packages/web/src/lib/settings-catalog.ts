@@ -44,9 +44,10 @@ export const SETTING_SECTIONS: readonly SettingSection[] = [
     label: 'Email',
     intro: 'The mail server alerts use to send email. A change applies to the next email sent.',
     fields: [
-      { key: 'smtp.host', label: 'SMTP server', help: 'Host name of the outgoing mail server. Email alerts fail while this is empty.', placeholder: 'smtp.hospital.example' },
+      { key: 'smtp.host', label: 'SMTP server', help: 'Host name of the outgoing mail server. Email alerts fail while this is empty. Changing it clears the saved password.', placeholder: 'smtp.hospital.example' },
       { key: 'smtp.port', label: 'Port', help: 'Usually 587 for STARTTLS, 465 for TLS, or 25 for plain SMTP.', check: 'port' },
       { key: 'smtp.secure', label: 'Use TLS', help: 'Connect with TLS from the start. Turn on for port 465.' },
+      { key: 'smtp.require_tls', label: 'Require STARTTLS', help: 'Send nothing until the server upgrades the connection to TLS. Always required when a username is set, unless Use TLS is on.' },
       { key: 'smtp.from', label: 'From address', help: 'The sender address on every email.', check: 'email', placeholder: 'galvanigraph@hospital.example' },
       { key: 'smtp.auth_user', label: 'Username', help: 'Leave empty if the server does not need a sign-in.' },
       { key: 'smtp.auth_pass', label: 'Password', help: 'Write-only: once saved it is never shown again. Type a new one to replace it.' },
@@ -95,6 +96,9 @@ export const SETTING_SECTIONS: readonly SettingSection[] = [
 
 /** Saving these must also reschedule the pruner. */
 export const PRUNER_KEYS = { enabled: 'pruner.enabled', cron: 'pruner.cron_expression' } as const;
+
+/** Saving a new host clears the stored password (D-332). */
+export const SMTP_KEYS = { host: 'smtp.host', password: 'smtp.auth_pass' } as const;
 
 /** The value the server sends in place of a stored secret. */
 export const REDACTED = '__REDACTED__';

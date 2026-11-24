@@ -19,7 +19,7 @@ import { TrafficSummary } from '../components/traffic/TrafficSummary.js';
 import { MessageResultsTable } from '../components/traffic/MessageResultsTable.js';
 import { useNotification } from '../stores/notification.store.js';
 import { usePermissions } from '../hooks/use-permissions.js';
-import { fromDateTimeLocal } from '../lib/datetime-local.js';
+import { sentDateTimeLocal } from '../lib/datetime-local.js';
 import { PERMISSION } from '../lib/permissions.js';
 
 const STATUS_OPTIONS = Object.values(MESSAGE_STATUS);
@@ -38,8 +38,8 @@ export function TrafficPage(): ReactNode {
   const [dateTo, setDateTo] = useState('');
   const [searchLimit, setSearchLimit] = useState(25);
   const [searchOffset, setSearchOffset] = useState(0);
-  const fromIso = fromDateTimeLocal(dateFrom);
-  const toIso = fromDateTimeLocal(dateTo);
+  const fromIso = sentDateTimeLocal(dateFrom);
+  const toIso = sentDateTimeLocal(dateTo);
   const searchFilters: CrossChannelFilters = {
     limit: searchLimit,
     offset: searchOffset,
