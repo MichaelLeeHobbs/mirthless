@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   requiredTextSchema,
+  trimmedTextSchema,
   pollingIntervalSchema,
   sourceCommonProperties,
 } from './connector-property-fields.js';
@@ -14,7 +15,7 @@ export const EMAIL_POST_ACTIONS = ['DELETE', 'MARK_READ', 'MOVE'] as const;
 
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const emailSourceObjectSchema = z.strictObject({
-  host: requiredTextSchema,
+  host: trimmedTextSchema,
   port: connectorPortSchema.default(993),
   /** Implicit TLS. */
   secure: z.boolean().default(true),

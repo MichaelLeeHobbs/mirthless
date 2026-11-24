@@ -8,6 +8,8 @@ export interface AssignmentDraft {
   readonly groupIds: readonly string[] | null;
   /** A `datetime-local` value (local time, no zone), or '' for no expiry. */
   readonly expiresAt: string;
+  /** The stored end time `expiresAt` was made from; null for a new row. */
+  readonly savedExpiresAt: string | null;
   readonly reason: string;
   /**
    * Already expired on the server, and not renewed here: it grants nothing, and
@@ -24,7 +26,7 @@ export function toSend(drafts: readonly AssignmentDraft[]): AssignmentInput[] {
 export function toDraft(view: AssignmentView): AssignmentDraft {
   return {
     key: view.id, roleId: view.roleId, groupIds: view.groupIds,
-    expiresAt: toDateTimeLocal(view.expiresAt), reason: view.reason ?? '', expired: !view.live,
+    expiresAt: toDateTimeLocal(view.expiresAt), savedExpiresAt: view.expiresAt, reason: view.reason ?? '', expired: !view.live,
   };
 }
 
@@ -32,7 +34,7 @@ export function toInput(draft: AssignmentDraft): AssignmentInput {
   return {
     roleId: draft.roleId,
     groupIds: draft.groupIds === null ? null : [...draft.groupIds],
-    expiresAt: fromDateTimeLocal(draft.expiresAt) ?? null,
+    expiresAt: fromDateTimeLocal(draft.expiresAt, draft.savedExpiresAt) ?? null,
     reason: draft.reason.trim() === '' ? null : draft.reason.trim(),
   };
 }

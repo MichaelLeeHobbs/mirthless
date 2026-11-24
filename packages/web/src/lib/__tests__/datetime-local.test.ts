@@ -15,8 +15,20 @@ describe('toDateTimeLocal', () => {
 
 describe('fromDateTimeLocal', () => {
   it('gives back the instant toDateTimeLocal was given, to the second', () => {
-    const iso = '2026-10-27T14:05:42.000Z';
-    expect(fromDateTimeLocal(toDateTimeLocal(iso))).toBe(iso);
+    expect(fromDateTimeLocal(toDateTimeLocal('2026-10-27T14:05:42.987Z'))).toBe('2026-10-27T14:05:42.000Z');
+  });
+
+  // A host whose clocks change sees one local time twice that day, and cannot tell which instant it was.
+  it.each(['2026-10-27T14:05:42.987Z', '2026-11-01T05:30:00.000Z', '2026-11-01T06:30:00.000Z', 'not a time'])(
+    'gives back %s itself while the value still shows it', (saved) => {
+      expect(fromDateTimeLocal(toDateTimeLocal(saved), saved)).toBe(saved);
+    },
+  );
+
+  it('reads a value that no longer shows what was saved', () => {
+    const saved = '2026-10-27T14:05:42.987Z';
+    expect(fromDateTimeLocal('2026-10-07T04:05:06', saved)).toBe(new Date(2026, 9, 7, 4, 5, 6).toISOString());
+    expect(fromDateTimeLocal('', saved)).toBeNull();
   });
 
   it('reads a value without seconds', () => {

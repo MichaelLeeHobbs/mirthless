@@ -13,8 +13,8 @@ describe('assignment drafts', () => {
     expect(toInput(toDraft(VIEW))).toEqual({ roleId: 'r-1', groupIds: ['g-1'], expiresAt: null, reason: 'on call' });
   });
 
-  it('sends an untouched expiry back as the same instant, to the second', () => {
-    const iso = '2027-01-02T03:04:05.000Z';
+  it('sends an untouched expiry back as the same instant', () => {
+    const iso = '2027-01-02T03:04:05.678Z';
     expect(toInput(toDraft({ ...VIEW, expiresAt: iso })).expiresAt).toBe(iso);
   });
 

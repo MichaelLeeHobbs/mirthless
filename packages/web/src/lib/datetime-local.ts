@@ -1,8 +1,4 @@
-/**
- * An `<input type="datetime-local">` value: local time, no zone, with its
- * seconds, so saving a time nobody changed does not move it. '' for no time or
- * one it cannot read.
- */
+/** An `<input type="datetime-local">` value: local time, no zone, to the second. '' for no time or one it cannot read. */
 export function toDateTimeLocal(iso: string | null): string {
   if (iso === null) return '';
   const date = new Date(iso);
@@ -11,8 +7,13 @@ export function toDateTimeLocal(iso: string | null): string {
   return local.toISOString().slice(0, 19);
 }
 
-/** null when blank, undefined when unreadable. */
-export function fromDateTimeLocal(value: string): string | null | undefined {
+/**
+ * null when blank, undefined when unreadable. A value that still shows `saved`
+ * is `saved` itself: the input has no milliseconds, and when the clocks go back
+ * one local time is two instants.
+ */
+export function fromDateTimeLocal(value: string, saved: string | null = null): string | null | undefined {
+  if (saved !== null && value === toDateTimeLocal(saved)) return saved;
   if (value.trim() === '') return null;
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? undefined : new Date(time).toISOString();

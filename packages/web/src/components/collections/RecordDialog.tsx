@@ -54,7 +54,7 @@ export function RecordDialog({ collection, record, readOnly, isPending, error, o
   const [formError, setFormError] = useState<string | null>(null);
 
   const handleSave = (): void => {
-    const expireAt = fromDateTimeLocal(expires);
+    const expireAt = fromDateTimeLocal(expires, record?.expireAt ?? null);
     if (expireAt === undefined) {
       setFormError('Expires must be a date and time, or blank.');
       return;

@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   requiredTextSchema,
+  trimmedTextSchema,
   destinationCommonProperties,
 } from './connector-property-fields.js';
 
@@ -18,7 +19,7 @@ const attachmentSchema = z.strictObject({
 
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const smtpDestinationObjectSchema = z.strictObject({
-  host: requiredTextSchema,
+  host: trimmedTextSchema,
   port: connectorPortSchema.default(587),
   /** Implicit TLS. */
   secure: z.boolean().default(false),

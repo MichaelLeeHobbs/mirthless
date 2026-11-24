@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
+import { MAX_TIMER_DELAY_MS } from '@galvanigraph/core-models';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { checkAccess } from '../../api/client.js';
-import { MAX_TIMER_DELAY_MS } from '@galvanigraph/core-models';
 import { expiryState, nextTimerDelay } from '../../lib/access-expiry.js';
 import { formatTimestamp } from '../../lib/format.js';
 

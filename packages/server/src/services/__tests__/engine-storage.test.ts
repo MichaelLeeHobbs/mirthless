@@ -141,7 +141,7 @@ describe('storageModeSupportsQueue', () => {
   });
 
   it('RAW, METADATA, DISABLED cannot support queued destinations', () => {
-    // These do not persist CT_SENT, so a queued destination would reload null
+    // These do not persist CONTENT_TYPE.SENT, so a queued destination would reload null
     // content and error 100% of messages.
     expect(storageModeSupportsQueue('RAW')).toBe(false);
     expect(storageModeSupportsQueue('METADATA')).toBe(false);
