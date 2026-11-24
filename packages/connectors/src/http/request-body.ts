@@ -6,11 +6,17 @@ import { TextDecoder } from 'node:util';
 import type { QueueCharset } from '@galvanigraph/core-models';
 import { decodePayload } from '../encoding.js';
 import { contentCoding, type Decompressor } from './decompression.js';
-import { RefusedBodyError, tooLarge, tooLargeStillArriving } from './refused-body.js';
+import { RefusedBodyError, stoppingStillArriving, tooLarge, tooLargeStillArriving } from './refused-body.js';
 
 export interface RequestBodyConfig {
   readonly maxBodyBytes: number;
   readonly bodyCharset: QueueCharset;
+}
+
+export interface BodyOnTheWay {
+  readonly req: IncomingMessage;
+  /** Aborted to give up on a body that has not arrived. */
+  readonly arrivalEnded: AbortSignal;
 }
 
 export interface RequestBody {
@@ -21,18 +27,16 @@ export interface RequestBody {
 
 type BodyDecoder = (bytes: Buffer) => string;
 
-/**
- * How long a body may go on arriving once it is over the limit. Node's own request timeout
- * does not bound it: that is five minutes, and `server.close` turns it off.
- */
+/** How long a body may go on arriving once it is over the limit. Node's own request timeout is five minutes. */
 const DRAIN_MS = 10_000;
 
 /**
  * The whole body is read before any of it is judged: an answer sent with bytes unread
  * reaches the sender as a reset connection, or leaves a kept-alive one stuck on them.
  */
-export async function readRequestBody(req: IncomingMessage, config: RequestBodyConfig, decompressor: Decompressor): Promise<RequestBody> {
-  const received = await readBytes(req, config.maxBodyBytes);
+export async function readRequestBody(body: BodyOnTheWay, config: RequestBodyConfig, decompressor: Decompressor): Promise<RequestBody> {
+  const { req } = body;
+  const received = await readBytes(body, config.maxBodyBytes);
   refuseTransferCoding(req.headers['transfer-encoding']);
   // Nothing to decode: a GET may name a coding it has no body for.
   if (received.length === 0) return { text: '', release: () => undefined };
@@ -49,29 +53,42 @@ export async function readRequestBody(req: IncomingMessage, config: RequestBodyC
 }
 
 /** Past the limit the chunks are dropped, and the rest of the body is read for at most {@link DRAIN_MS}. */
-function readBytes(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
+function readBytes({ req, arrivalEnded }: BodyOnTheWay, maxBytes: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let givenUp = false;
     let drain: ReturnType<typeof setTimeout> | undefined;
+    const giveUp = (): void => {
+      givenUp = true;
+      stopWaiting();
+      reject(size > maxBytes ? tooLargeStillArriving() : stoppingStillArriving());
+    };
+    const stopWaiting = (): void => {
+      clearTimeout(drain);
+      arrivalEnded.removeEventListener('abort', giveUp);
+    };
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
+      if (givenUp) return;
       if (size <= maxBytes) {
         chunks.push(chunk);
         return;
       }
       chunks.length = 0;
-      drain ??= setTimeout(() => { reject(tooLargeStillArriving()); }, DRAIN_MS);
+      drain ??= setTimeout(giveUp, DRAIN_MS);
     });
     req.on('end', () => {
-      clearTimeout(drain);
+      stopWaiting();
       if (size > maxBytes) reject(tooLarge());
       else resolve(Buffer.concat(chunks));
     });
     req.on('error', (err) => {
-      clearTimeout(drain);
+      stopWaiting();
       reject(err);
     });
+    if (arrivalEnded.aborted) giveUp();
+    else arrivalEnded.addEventListener('abort', giveUp);
   });
 }
 

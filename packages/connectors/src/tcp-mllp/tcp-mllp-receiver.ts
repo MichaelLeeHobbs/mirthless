@@ -12,19 +12,13 @@ import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js
 import type { TlsServerOptions } from '../tls.js';
 import { buildAck, type AckCode } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { settleWithin } from '../timeout.js';
 
 const IDLE_SOCKET_TIMEOUT_MS = 300_000;
 
 const STOP_DRAIN_MS = 5_000;
 
 const STOP_CLOSE_MS = 2_000;
-
-async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
-  await Promise.race([work.then(() => undefined, () => undefined), timeout]);
-  clearTimeout(timer);
-}
 
 /** PASSTHROUGH returns the pipeline response verbatim; AUTO_ACK builds an HL7 ACK/NAK from the inbound MSH. */
 export const MLLP_RESPONSE_MODE = {
