@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as zlib from 'node:zlib';
@@ -14,6 +14,43 @@ import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.
 import { withTimeout } from '../../timeout.js';
 
 const TEST_PORT = 18661;
+
+/** Holds the source's gunzip calls while closed, so a test can act while bodies are being decompressed. */
+const gunzipGate = vi.hoisted(() => ({ closed: false, held: [] as (() => void)[], started: 0, running: 0, mostRunning: 0 }));
+
+vi.mock('node:zlib', async (importOriginal) => {
+  const original = await importOriginal<typeof zlib>();
+  const gunzip = (bytes: zlib.InputType, options: zlib.ZlibOptions, callback: zlib.CompressCallback): void => {
+    gunzipGate.started += 1;
+    gunzipGate.running += 1;
+    gunzipGate.mostRunning = Math.max(gunzipGate.mostRunning, gunzipGate.running);
+    const go = (): void => {
+      original.gunzip(bytes, options, (err, result) => {
+        gunzipGate.running -= 1;
+        callback(err, result);
+      });
+    };
+    if (gunzipGate.closed) gunzipGate.held.push(go);
+    else go();
+  };
+  return { ...original, gunzip };
+});
+
+function closeGunzipGate(): void {
+  Object.assign(gunzipGate, { closed: true, held: [], started: 0, running: 0, mostRunning: 0 });
+}
+
+function openGunzipGate(): void {
+  gunzipGate.closed = false;
+  for (const go of gunzipGate.held.splice(0)) go();
+}
+
+/** Lets what is held finish, and everything that follows from it in the source run. */
+async function finishGunzip(): Promise<void> {
+  openGunzipGate();
+  await vi.waitFor(() => { expect(gunzipGate.running).toBe(0); });
+  await new Promise((resolve) => { setImmediate(resolve); });
+}
 
 function makeConfig(overrides?: Partial<HttpReceiverConfig>): HttpReceiverConfig {
   return {
@@ -99,6 +136,7 @@ function post(body: Buffer, headers: Record<string, string>, agent?: http.Agent)
 let receiver: HttpReceiver | null = null;
 
 afterEach(async () => {
+  openGunzipGate();
   if (receiver) {
     await receiver.onStop();
     await receiver.onUndeploy();
@@ -867,6 +905,62 @@ describe('HttpReceiver request target', () => {
   });
 });
 
+describe('HttpReceiver stopped while a body is being decompressed', () => {
+  const GZIP = { 'content-encoding': 'gzip' };
+
+  it.each([
+    ['halted', async (): Promise<void> => { await receiver?.onHalt(); }],
+    ['halted and undeployed', async (): Promise<void> => {
+      await receiver?.onHalt();
+      await receiver?.onUndeploy();
+    }],
+  ])('dispatches nothing once %s', async (_what, stop) => {
+    const { seen, log } = await startRecording();
+    closeGunzipGate();
+    const answer = post(zlib.gzipSync(HL7), GZIP);
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); });
+
+    await stop();
+    await expect(answer).rejects.toThrow();
+    await finishGunzip();
+
+    expect(seen).toEqual([]);
+    expect(log.warnings.map((w) => w.obj)).toEqual([{ remoteAddress: '127.0.0.1' }]);
+  });
+
+  it('dispatches nothing for a sender whose connection closed, who will send it again', async () => {
+    const { seen } = await startRecording();
+    closeGunzipGate();
+    const body = zlib.gzipSync(HL7);
+    const socket = net.connect(TEST_PORT, '127.0.0.1', () => {
+      socket.write(`POST / HTTP/1.1\r\nHost: localhost\r\nContent-Encoding: gzip\r\nContent-Length: ${String(body.length)}\r\n\r\n`);
+      socket.write(body);
+    });
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); });
+
+    socket.destroy();
+    // The server has seen the close once a stop has nothing left to wait for.
+    await withTimeout(receiver!.onStop(), 2_000, 'HTTP source stop');
+    await finishGunzip();
+
+    expect(seen).toEqual([]);
+  });
+
+  it('a stop waits for the message and answers it', async () => {
+    const { seen } = await startRecording();
+    closeGunzipGate();
+    const answer = post(zlib.gzipSync(HL7), GZIP);
+    await vi.waitFor(() => { expect(gunzipGate.started).toBe(1); });
+
+    const stopped = receiver!.onStop();
+    await finishGunzip();
+
+    expect((await answer).status).toBe(200);
+    expect((await stopped).ok).toBe(true);
+    expect(seen.map((raw) => raw.content)).toEqual([HL7]);
+  });
+});
+
 describe('HttpReceiver answers every request', () => {
   it.each([
     ['rejects', (): Promise<never> => Promise.reject(new Error('pipeline gone'))],
@@ -895,7 +989,7 @@ describe('HttpReceiver answers every request', () => {
     expect(log.errors).toHaveLength(1);
   });
 
-  it('dispatches a request whose body was still arriving when the channel was undeployed', async () => {
+  it('answers 503 to a request whose body was still arriving when the channel was undeployed', async () => {
     const { seen } = await startRecording();
 
     const head = 'POST / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n';
@@ -904,8 +998,8 @@ describe('HttpReceiver answers every request', () => {
       return 'hello';
     });
 
-    expect(answer).toContain('HTTP/1.1 200 ');
-    expect(seen.map((raw) => raw.content)).toEqual(['hello']);
+    expect(answer).toContain('HTTP/1.1 503 ');
+    expect(seen).toEqual([]);
   });
 
   it('answers 503 to a request that arrives after the channel was undeployed', async () => {

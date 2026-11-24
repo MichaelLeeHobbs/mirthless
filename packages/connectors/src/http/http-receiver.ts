@@ -180,14 +180,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
       return;
     }
 
-    // Taken before the body is read, which an undeploy can overtake.
-    const { dispatcher } = this;
-    if (!dispatcher) {
-      this.writePlain(res, 503, 'Service Unavailable');
-      return;
-    }
-
-    await this.dispatchRequest(req, res, reqPath, dispatcher);
+    await this.dispatchRequest(req, res, reqPath);
   }
 
   /** A request left unanswered would hold its sender until a timeout, without saying whether to send again. */
@@ -212,13 +205,26 @@ export class HttpReceiver implements SourceConnectorRuntime {
     req: http.IncomingMessage,
     res: http.ServerResponse,
     reqPath: string,
-    dispatcher: MessageDispatcher,
   ): Promise<void> {
+    // Undefined once the connection has closed.
+    const { remoteAddress } = req.socket;
     let body: string;
     try {
       body = await readRequestBody(req, this.config);
     } catch (err) {
       this.refuseBody(req, res, err);
+      return;
+    }
+
+    // A halt destroys every connection, so this covers one too. The sender got no answer and
+    // sends again: dispatching now would take the message twice.
+    if (req.socket.destroyed) {
+      this.logger.warn({ remoteAddress }, 'Request not dispatched: its connection closed while the body was being read');
+      return;
+    }
+    const { dispatcher } = this;
+    if (!dispatcher) {
+      this.writePlain(res, 503, 'Service Unavailable');
       return;
     }
 
