@@ -46,6 +46,7 @@ describe('compileScript', () => {
     "if (msg.a) { return import('./x'); }",
     "const m = await import('node:fs'); return m;",
     'return async () => { await import(msg.name); };',
+    'class A { static x = import(`y`); } return 1;',
   ])('refuses a script that loads a module: %s', async (code) => {
     const result = await compileScript(code);
 
@@ -58,6 +59,7 @@ describe('compileScript', () => {
     "// import('x') is gone\nreturn 1;",
     "return 'import (x)';",
     "return msg.import('x');",
+    'return /import(x)/.source + `import(${1})`;',
     'return /\\cimport/u.test(msg);',
     'function importAll() { return 1; } return importAll();',
   ])('compiles a script that only mentions import: %s', async (code) => {

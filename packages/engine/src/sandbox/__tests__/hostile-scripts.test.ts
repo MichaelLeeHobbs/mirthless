@@ -107,11 +107,15 @@ function afterAwait(e: Expected): Expected {
 
 const CASES: Readonly<Record<HostileRun['mode'], readonly Expected[]>> = {
   sync: [...STACK_CASES, ...LATE_CASES, ...JOB_CASES],
-  async: [...STACK_CASES, ...LATE_CASES, ...JOB_CASES].map(afterAwait),
+  async: [...STACK_CASES, ...LATE_CASES, ...JOB_CASES, returns(
+    'an IO bridge call through a replaced apply',
+    "var seen = 'sandbox'; Function.prototype.apply = function () { seen = 'LEAKED'; }; await getResource('b'); return seen;",
+    'sandbox',
+  )].map(afterAwait),
   // Each starts a worker, so only what differs there: its stack size, and Node's own copies in it.
   isolated: [...STACK_CASES, ...LATE_CASES, ...JOB_CASES].filter((e) => [
     'at the stack limit: a log call', 'at the stack limit: an error stack', 'at the stack limit: a captured stack',
-    'a compile that finishes after the script', 'a rejected promise under a looping object', 'an own job and then a loop',
+    'a compile that finishes after the script', 'a rejected promise under a looping object',
   ].includes(e.case.name)),
 };
 

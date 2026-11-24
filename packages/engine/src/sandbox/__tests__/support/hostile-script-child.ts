@@ -49,7 +49,8 @@ async function attempt(c: HostileCase, async: boolean, timeout: number): Promise
   const executor = new VmSandboxExecutor(async ? { getResource: async () => 'r' } : undefined);
   let begun = false;
   const context = { ...createSandboxContext({}, ''), extras: { destinationSet: { removeAll: (): void => { begun = true; } } } };
-  const result = await executor.execute({ code: `destinationSet.removeAll(); ${c.script}` }, context, { timeout });
+  const code = c.script.replace(/^(await getResource\('a'\);)?/, '$1 destinationSet.removeAll();');
+  const result = await executor.execute({ code }, context, { timeout });
   if (result.ok) return { begun, ran: { error: null, returned: result.value.returnValue } };
   // As if it had run with the case's own limit; a message that names any other time stays as it is.
   const error = result.error.message.replace(`after ${String(timeout)}ms`, `after ${String(c.timeout)}ms`);

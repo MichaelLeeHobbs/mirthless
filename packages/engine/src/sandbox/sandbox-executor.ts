@@ -348,7 +348,7 @@ delete globalThis.console;
     __proto__: null, writable: true, enumerable: false, configurable: true,
     value: function raw(strings) {
       var parts = [];
-      for (var i = 0; i < strings.raw.length; i += 1) { parts[i] = ('' + strings.raw[i]).replaceAll(${JSON.stringify(ESCAPED_IMPORT)}, 'import'); }
+      for (var i = 0; i < strings.raw.length; i += 1) { parts[i] = ''.concat(strings.raw[i]).replaceAll(${JSON.stringify(ESCAPED_IMPORT)}, 'import'); }
       arguments[0] = { raw: parts };
       return apply(realRaw, this, arguments);
     }

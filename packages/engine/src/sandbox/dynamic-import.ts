@@ -1,8 +1,6 @@
 // Node refuses a script's `import()` with an error of the host realm, whatever callback it is
 // given, so a script must not be able to run one at all.
 
-import * as vm from 'node:vm';
-
 /** What the sandbox's String.raw puts back. */
 export const ESCAPED_IMPORT = 'i\\u006dport';
 
@@ -14,18 +12,4 @@ export const ESCAPED_IMPORT = 'i\\u006dport';
  */
 export function withoutDynamicImport(code: string): string {
   return code.replaceAll('import', ESCAPED_IMPORT);
-}
-
-function parses(code: string): boolean {
-  try {
-    new vm.Script(code);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Whether the code holds an `import()`. Only parsed, never run. */
-export function usesDynamicImport(code: string): boolean {
-  return code.includes('import') && parses(code) && !parses(withoutDynamicImport(code));
 }
