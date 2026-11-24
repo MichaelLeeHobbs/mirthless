@@ -38,10 +38,14 @@ const DECOMPRESSORS: ReadonlyMap<string, Decompress> = new Map<string, Decompres
   ['br', brotliDecompress],
 ]);
 
+/**
+ * The whole body is read before any of it is judged: an answer sent with bytes unread
+ * reaches the sender as a reset connection, or leaves a kept-alive one stuck on them.
+ */
 export async function readRequestBody(req: IncomingMessage, config: RequestBodyConfig): Promise<string> {
+  const received = await readBytes(req, config.maxBodyBytes);
   const coding = contentCoding(req.headers['content-encoding']);
   const decode = bodyDecoder(req.headers['content-type'], config.bodyCharset);
-  const received = await readBytes(req, config.maxBodyBytes);
   return decode(coding ? await decompressed(coding, received, config.maxBodyBytes) : received);
 }
 
@@ -95,25 +99,20 @@ function tooLarge(): RefusedBodyError {
   return new RefusedBodyError(413, 'Payload Too Large');
 }
 
+/** Past the limit the chunks are dropped; the server's request timeout ends a body that never does. */
 function readBytes(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
-    let rejected = false;
     req.on('data', (chunk: Buffer) => {
-      if (rejected) return;
       size += chunk.length;
-      if (size > maxBytes) {
-        rejected = true;
-        // Stop reading but do not destroy the socket: the caller still needs
-        // to flush a 413 response back to the sender.
-        req.pause();
-        reject(tooLarge());
-        return;
-      }
-      chunks.push(chunk);
+      if (size > maxBytes) chunks.length = 0;
+      else chunks.push(chunk);
     });
-    req.on('end', () => { resolve(Buffer.concat(chunks)); });
+    req.on('end', () => {
+      if (size > maxBytes) reject(tooLarge());
+      else resolve(Buffer.concat(chunks));
+    });
     req.on('error', reject);
   });
 }

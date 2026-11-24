@@ -11,6 +11,7 @@ import type { RawMessage, DispatchResult } from '../../base.js';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
+import { withTimeout } from '../../timeout.js';
 
 const TEST_PORT = 18661;
 
@@ -71,6 +72,28 @@ async function sendRequest(
   });
 
   return { status: response.status, body: responseBody, headers: responseHeaders };
+}
+
+interface PostResult {
+  readonly status: number;
+  readonly headers: http.IncomingHttpHeaders;
+  /** The client's own port, which tells a reused connection from a new one. */
+  readonly port: number | undefined;
+}
+
+/** Without an agent the request asks for `Connection: close`. */
+function post(body: Buffer, headers: Record<string, string>, agent?: http.Agent): Promise<PostResult> {
+  return new Promise((resolve, reject) => {
+    const connection: Record<string, string> = agent ? {} : { connection: 'close' };
+    const req = http.request({ host: '127.0.0.1', port: TEST_PORT, method: 'POST', headers: { ...connection, ...headers }, ...(agent ? { agent } : {}) }, (res) => {
+      const port = req.socket?.localPort;
+      res.resume();
+      res.on('end', () => { resolve({ status: res.statusCode ?? 0, headers: res.headers, port }); });
+    });
+    req.setTimeout(5_000, () => { req.destroy(new Error('no answer')); });
+    req.on('error', reject);
+    req.end(body);
+  });
 }
 
 let receiver: HttpReceiver | null = null;
@@ -602,30 +625,6 @@ describe('HttpReceiver compressed bodies', () => {
     expect(seen).toEqual([]);
   });
 
-  it('answers a refused coding and then takes the next message on the same connection', async () => {
-    const { seen } = await startRecording();
-    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
-    const post = (body: Buffer, headers: Record<string, string>): Promise<{ status: number; port: number | undefined }> => new Promise((resolve, reject) => {
-      const req = http.request({ host: '127.0.0.1', port: TEST_PORT, method: 'POST', agent, headers }, (res) => {
-        const port = req.socket?.localPort;
-        res.resume();
-        res.on('end', () => { resolve({ status: res.statusCode ?? 0, port }); });
-      });
-      req.on('error', reject);
-      req.end(body);
-    });
-
-    try {
-      const refused = await post(Buffer.alloc(1024 * 1024, 0x41), { 'content-encoding': 'zstd' });
-      const accepted = await post(Buffer.from(HL7), {});
-      expect([refused.status, accepted.status]).toEqual([415, 200]);
-      expect(accepted.port).toBe(refused.port);
-      expect(seen.map((raw) => raw.content)).toEqual([HL7]);
-    } finally {
-      agent.destroy();
-    }
-  });
-
   it.each(CODINGS)('refuses a truncated %s body', async (coding, compress) => {
     const { seen, log } = await startRecording();
     const whole = compress(HL7);
@@ -686,6 +685,40 @@ describe('HttpReceiver compressed bodies', () => {
 
     expect(res.status).toBe(200);
     expect(seen.map((raw) => raw.content.length)).toEqual([4096]);
+  });
+});
+
+describe('HttpReceiver refusals reach the sender', () => {
+  const LARGE = Buffer.alloc(20 * 1024 * 1024, 0x41);
+
+  it.each([
+    ['an unknown coding', { 'content-encoding': 'zstd' }, {}, 415],
+    ['an unknown charset', { 'content-type': 'text/plain; charset=klingon' }, {}, 415],
+    ['a body over the limit', {}, { maxBodyBytes: 1024 }, 413],
+  ] as const)('answers %s with a large body on a connection that closes', async (_what, headers, config, status) => {
+    const { seen } = await startRecording(config);
+
+    expect((await post(LARGE, headers)).status).toBe(status);
+    expect(seen).toEqual([]);
+  });
+
+  it.each([
+    ['an unknown coding', { 'content-encoding': 'zstd' }, {}, 415],
+    ['a body over the limit', {}, { maxBodyBytes: 1024 }, 413],
+  ] as const)('takes the next message on the connection after %s, and a stop does not wait for it', async (_what, headers, config, status) => {
+    const { seen } = await startRecording(config);
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+
+    try {
+      const refused = await post(LARGE, headers, agent);
+      const accepted = await post(Buffer.from(HL7), {}, agent);
+      expect([refused.status, accepted.status]).toEqual([status, 200]);
+      expect(accepted.port).toBe(refused.port);
+      expect(seen.map((raw) => raw.content)).toEqual([HL7]);
+      await withTimeout(receiver!.onStop(), 2_000, 'HTTP source stop');
+    } finally {
+      agent.destroy();
+    }
   });
 });
 
