@@ -1,9 +1,8 @@
 // D-310. Times are milliseconds since the epoch.
 
-export const EXPIRY_WARNING_MS = 60 * 60 * 1000;
+import { MAX_TIMER_DELAY_MS } from '@galvanigraph/core-models';
 
-/** The longest delay setTimeout honours; a later moment is waited for in steps. */
-export const MAX_TIMER_MS = 2_147_483_647;
+export const EXPIRY_WARNING_MS = 60 * 60 * 1000;
 
 export function expiryState(nextExpiryAt: string | null | undefined, now: number): { readonly endsAt: number; readonly warn: boolean } | null {
   if (!nextExpiryAt) return null;
@@ -12,8 +11,9 @@ export function expiryState(nextExpiryAt: string | null | undefined, now: number
   return { endsAt, warn: endsAt - now <= EXPIRY_WARNING_MS };
 }
 
+/** A moment past the longest delay a timer honours is waited for in steps. */
 export function nextTimerDelay(endsAt: number, now: number): number {
   const warnAt = endsAt - EXPIRY_WARNING_MS;
   const target = now < warnAt ? warnAt : endsAt;
-  return Math.min(Math.max(target - now, 1000), MAX_TIMER_MS);
+  return Math.min(Math.max(target - now, 1000), MAX_TIMER_DELAY_MS);
 }

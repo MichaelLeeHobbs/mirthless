@@ -7,6 +7,7 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   requiredTextSchema,
+  trimmedTextSchema,
   wholeNumberSchema,
   pollingIntervalSchema,
   charsetSchema,
@@ -17,7 +18,7 @@ import {
 export const SFTP_POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
 
 const connection = {
-  host: requiredTextSchema,
+  host: trimmedTextSchema,
   port: connectorPortSchema.default(22),
   username: requiredTextSchema,
   password: z.string().optional(),

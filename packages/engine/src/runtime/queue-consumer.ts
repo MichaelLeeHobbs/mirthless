@@ -1,4 +1,5 @@
 import type { Result } from '@galvanigraph/core-util';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler } from '../pipeline/message-processor.js';
 
 export interface QueueConsumerConfig {
@@ -30,14 +31,6 @@ export interface QueueConsumerConfig {
    */
   readonly onMessageDelivered?: ((messageId: number, rawContent: string) => Promise<void>) | undefined;
 }
-
-/** Content types read or written by the consumer (see CONTENT_TYPE in core-models). */
-const CT_RAW = 1;
-const CT_SENT = 5;
-const CT_RESPONSE = 6;
-/** Holds a destination's stored variables, not only its channel map. */
-const CT_CHANNEL_MAP = 10;
-const CT_ERROR = 11;
 
 function parseVariables(stored: string | null): Record<string, unknown> | undefined | 'INVALID' {
   if (stored === null) return undefined;
@@ -182,7 +175,7 @@ export class QueueConsumer {
     const signal = AbortSignal.timeout(30_000);
 
     const contentResult = await this.store.loadContent(
-      msg.channelId, msg.messageId, msg.metaDataId, CT_SENT,
+      msg.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.SENT,
     );
 
     if (!contentResult.ok) {
@@ -202,7 +195,7 @@ export class QueueConsumer {
 
     // The variables the destination saw when the message was routed (a
     // database writer binds its parameters from them). Absent when there were none.
-    const variablesResult = await this.store.loadContent(msg.channelId, msg.messageId, msg.metaDataId, CT_CHANNEL_MAP);
+    const variablesResult = await this.store.loadContent(msg.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.CHANNEL_MAP);
     if (!variablesResult.ok) {
       await this.putBack([msg]);
       await this.alertOnce(
@@ -246,7 +239,7 @@ export class QueueConsumer {
 
     // Keep the latest reason with the message, so the message browser says why
     // it is still queued.
-    const reasonStored = await this.store.storeContent(this.config.channelId, msg.messageId, msg.metaDataId, CT_ERROR, reason, 'TEXT');
+    const reasonStored = await this.store.storeContent(this.config.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR, reason, 'TEXT');
     if (!reasonStored.ok) await this.alertOnce(`Queued destination ${String(msg.metaDataId)} could not save why message ${String(msg.messageId)} failed: ${reasonStored.error.message}`);
 
     // Re-queue for retry. Transitioning back to QUEUED persists an incremented
@@ -263,11 +256,11 @@ export class QueueConsumer {
     const { channelId, serverId } = this.config;
     // Keep the destination's response, as the direct-send path does, so the
     // message browser shows it for queued deliveries too.
-    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_RESPONSE, response, 'TEXT');
+    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT');
     if (!stored.ok) await this.reportUnrecorded(msg, 'response content', stored.error.message);
     // An earlier attempt left why it failed; a delivered message must not show it.
     if (this.store.removeContent) {
-      const cleared = await this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CT_ERROR);
+      const cleared = await this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR);
       if (!cleared.ok) {
         await this.alert(
           `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but the reason an ` +
@@ -297,7 +290,7 @@ export class QueueConsumer {
       return;
     }
     if (!delivered.value) return;
-    const raw = await this.store.loadContent(this.config.channelId, msg.messageId, 0, CT_RAW);
+    const raw = await this.store.loadContent(this.config.channelId, msg.messageId, 0, CONTENT_TYPE.RAW);
     if (!raw.ok) {
       await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} did not run: ${raw.error.message}`);
       return;
@@ -352,7 +345,7 @@ export class QueueConsumer {
   /** Keeps the reason and alerts, so a message the queue gives up on is never silently dropped. */
   private async giveUp(msg: QueuedMessage, reason: string): Promise<void> {
     const { channelId, serverId } = this.config;
-    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_ERROR, reason, 'TEXT');
+    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR, reason, 'TEXT');
     if (!stored.ok) await this.reportUnrecorded(msg, 'the error reason', stored.error.message);
     const released = await this.store.release(channelId, msg.messageId, msg.metaDataId, 'ERROR');
     if (!released.ok) {

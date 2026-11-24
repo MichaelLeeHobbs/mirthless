@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createShutdownHandler, type ShutdownDeps } from '../shutdown.js';
 
 const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
@@ -87,16 +89,18 @@ describe('createShutdownHandler', () => {
     handler('SIGINT');
     await vi.advanceTimersByTimeAsync(0);
 
-    const infoCalls = (deps.logger.info as ReturnType<typeof vi.fn>).mock.calls;
-    const messages = infoCalls.map((c: unknown[]) => (typeof c[0] === 'string' ? c[0] : c[1]));
-
-    expect(messages).toContain('Closing HTTP server');
-    expect(messages).toContain('Stopping engine');
-    expect(messages).toContain('Shutting down Socket.IO');
-    expect(messages).toContain('Stopping pruner scheduler');
-    expect(messages).toContain('Stopping job queue');
-    expect(messages).toContain('Closing database pool');
-    expect(messages).toContain('Graceful shutdown complete');
+    const logged = vi.mocked(deps.logger.info).mock.calls;
+    for (const line of [
+      [{ signal: 'SIGINT' }, 'Received signal, starting graceful shutdown'],
+      [{ phase: 'shutdown', step: 'socketio' }, 'Shutting down Socket.IO'],
+      [{ phase: 'shutdown', step: 'http' }, 'Closing HTTP server'],
+      [{ phase: 'shutdown', step: 'engine' }, 'Stopping engine'],
+      [{ phase: 'shutdown', step: 'pruner' }, 'Stopping pruner scheduler'],
+      [{ phase: 'shutdown', step: 'queue' }, 'Stopping job queue'],
+      [{ phase: 'shutdown', step: 'datasource-pools' }, 'Closing data source pools'],
+      [{ phase: 'shutdown', step: 'database' }, 'Closing database pool'],
+      [{ phase: 'shutdown' }, 'Graceful shutdown complete'],
+    ]) expect(logged).toContainEqual(line);
   });
 
   it('exits with the given code after a clean shutdown that followed a fatal error', async () => {
@@ -201,6 +205,7 @@ describe('createShutdownHandler', () => {
     expect(deps.stopAccepting).toHaveBeenCalledTimes(1);
     expect(deps.stopPrunerScheduler).not.toHaveBeenCalled();
     expect(deps.stopQueue).not.toHaveBeenCalled();
+    expect(deps.stopDataSourcePools).not.toHaveBeenCalled();
     expect(deps.closePool).not.toHaveBeenCalled();
   });
 
@@ -212,6 +217,7 @@ describe('createShutdownHandler', () => {
       stopSocketIO: vi.fn().mockImplementation(async () => { callOrder.push('stopSocketIO'); }),
       stopPrunerScheduler: vi.fn().mockImplementation(async () => { callOrder.push('stopPrunerScheduler'); }),
       stopQueue: vi.fn().mockImplementation(async () => { callOrder.push('stopQueue'); }),
+      stopDataSourcePools: vi.fn().mockImplementation(async () => { callOrder.push('stopDataSourcePools'); }),
       closePool: vi.fn().mockImplementation(async () => { callOrder.push('closePool'); }),
     });
 
@@ -221,20 +227,42 @@ describe('createShutdownHandler', () => {
 
     expect(callOrder[callOrder.length - 1]).toBe('closePool');
   });
+});
 
-  it('force timer does not prevent process exit (unref)', async () => {
-    // We verify by checking that the successful shutdown exits with 0,
-    // not 1 from the force timer. If unref() were missing, the timer
-    // would keep the event loop alive after process.exit(0).
-    const deps = createMockDeps();
-    const handler = createShutdownHandler(deps);
+const SERVER_DIR = fileURLToPath(new URL('../../../', import.meta.url));
 
-    handler('SIGTERM');
-    await vi.advanceTimersByTimeAsync(0);
+/** Past the 30 s force timer, so a child it holds open ends with the timer's exit code. */
+const CHILD_LIMIT_MS = 60_000;
 
-    expect(mockExit).toHaveBeenCalledWith(0);
-    expect(mockExit).not.toHaveBeenCalledWith(1);
+/** A shutdown stuck on its first step: the force timer is all that could keep the process alive. */
+const STUCK_SHUTDOWN = `
+  import { writeSync } from 'node:fs';
+  import { createShutdownHandler } from ${JSON.stringify(new URL('../shutdown.ts', import.meta.url).href)};
+  const say = (text) => { writeSync(1, text + '\\n'); };
+  const logger = { info: () => {}, error: (_fields, message) => { say(message); } };
+  const stopSocketIO = () => { say('stuck'); return new Promise(() => {}); };
+  createShutdownHandler({ logger, stopSocketIO })('SIGTERM');
+`;
+
+interface ChildRun { readonly exitCode: unknown; readonly stdout: string; readonly stderr: string }
+
+function runChild(code: string): Promise<ChildRun> {
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      ['--import', 'tsx', '--input-type=module', '--eval', code],
+      { cwd: SERVER_DIR, timeout: CHILD_LIMIT_MS, killSignal: 'SIGKILL' },
+      (err, stdout, stderr) => { resolve({ exitCode: err === null ? 0 : err.code, stdout, stderr }); },
+    );
   });
+}
+
+describe('in a process of its own', () => {
+  it('force timer does not prevent process exit (unref)', async () => {
+    const { exitCode, stdout, stderr } = await runChild(STUCK_SHUTDOWN);
+
+    expect({ exitCode, stdout }, stderr).toEqual({ exitCode: 0, stdout: 'stuck\n' });
+  }, CHILD_LIMIT_MS + 5_000);
 });
 
 describe('undeployAll', () => {

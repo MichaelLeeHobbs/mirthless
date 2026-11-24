@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { AssignmentView } from '@galvanigraph/core-models';
-import { groupScopeBlocked, sameAssignments, toDraft, toInput, toLocalInput, toSend } from '../assignments.js';
+import { groupScopeBlocked, sameAssignments, toDraft, toInput, toSend } from '../assignments.js';
+import { toDateTimeLocal } from '../datetime-local.js';
 
 const VIEW: AssignmentView = {
   id: 'a-1', roleId: 'r-1', roleName: 'channel-viewer', groupIds: ['g-1'],
@@ -12,9 +13,8 @@ describe('assignment drafts', () => {
     expect(toInput(toDraft(VIEW))).toEqual({ roleId: 'r-1', groupIds: ['g-1'], expiresAt: null, reason: 'on call' });
   });
 
-  it('sends an untouched expiry back as the same instant, to the second', () => {
-    const iso = '2027-01-02T03:04:05.000Z';
-    expect(toLocalInput(iso)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:05$/);
+  it('sends an untouched expiry back as the same instant', () => {
+    const iso = '2027-01-02T03:04:05.678Z';
     expect(toInput(toDraft({ ...VIEW, expiresAt: iso })).expiresAt).toBe(iso);
   });
 
@@ -27,13 +27,20 @@ describe('assignment drafts', () => {
     const expired = toDraft({ ...VIEW, id: 'a-2', expiresAt: '2020-01-01T00:00:00.000Z', live: false });
     expect(expired.expired).toBe(true);
     expect(toSend([toDraft(VIEW), expired])).toEqual([toInput(toDraft(VIEW))]);
-    const renewed = { ...expired, expiresAt: toLocalInput('2030-01-01T00:00:00.000Z'), expired: false };
-    expect(toSend([renewed])).toHaveLength(1);
+    const renewed = { ...expired, expiresAt: toDateTimeLocal('2030-01-01T00:00:00.000Z'), expired: false };
+    expect(toSend([renewed]).map((a) => a.expiresAt)).toEqual(['2030-01-01T00:00:00.000Z']);
   });
 
-  it('treats an unparseable time as no expiry rather than sending it', () => {
-    expect(toLocalInput('not a time')).toBe('');
-    expect(toInput({ ...toDraft(VIEW), expiresAt: 'nonsense' }).expiresAt).toBeNull();
+  it('sends a changed or cleared end time, not the stored one', () => {
+    const draft = toDraft({ ...VIEW, expiresAt: '2027-01-02T03:04:05.678Z' });
+    const shortened = { ...draft, expiresAt: toDateTimeLocal('2026-12-01T00:00:00.000Z') };
+    expect(toInput(shortened).expiresAt).toBe('2026-12-01T00:00:00.000Z');
+    expect(toInput({ ...draft, expiresAt: '' }).expiresAt).toBeNull();
+    expect(sameAssignments([draft], [shortened])).toBe(false);
+  });
+
+  it('sends a time it cannot read as typed, for the server to refuse, and never as no end', () => {
+    expect(toInput({ ...toDraft(VIEW), expiresAt: '20266-11-23T10:20' }).expiresAt).toBe('20266-11-23T10:20');
   });
 
   it('compares lists by what they would send, not by row keys', () => {

@@ -96,6 +96,24 @@ After that start:
 - An enabled channel that has never been deployed is not deployed at startup; the log and a `CHANNEL_NOT_REDEPLOYED` event name it. This includes channels restored from a backup onto a new server: deploy them after the restore.
 - Enabling or disabling a channel needs `channels:deploy`.
 
+## HTTP sources refuse bodies they used to store damaged (#335)
+
+An HTTP source used to decode every request body without checking it, so text in another charset, a compressed body or a binary one was stored with its bytes replaced by U+FFFD and answered with the success status. It now keeps a body whole or refuses it (D-334):
+
+- A body that is not valid UTF-8 and whose Content-Type declares no charset gets 415 and is not stored. A sender of ISO-8859-1 or Windows-1252 text must declare it (`Content-Type: text/plain; charset=ISO-8859-1`), or the source's Body Charset (`bodyCharset`) must be set to `latin1` or `windows-1252` and the channel deployed again. A body that is not valid in the charset it declares gets 415 as well.
+- A binary body (a PDF, an image, a form with a file in it) is not valid UTF-8, so it gets 415. To keep it, set `bodyCharset` to `base64`; every message of that channel is then base64 text, so its scripts and destinations must expect that.
+- A body with `Content-Encoding` `gzip`, `deflate` or `br` is decompressed, and `maxBodyBytes` also limits its decompressed size. Any other coding gets 415, a `Transfer-Encoding` other than `chunked` gets 501, and a body that does not decompress gets 400.
+- Text that holds U+0000 is taken, as before. PostgreSQL cannot store it in plain, so a channel that stores its content without encryption still answers `errorStatusCode` to it; a binary body needs `base64`, not `latin1` or `windows-1252`.
+
+A channel whose stored messages contain U+FFFD likely has such a sender. A refused sender gets the reason in the response, and the server logs a warning that starts `Refused a request body` with its address and Content-Type. A `charset` saved by an older editor is still ignored.
+
+**Going back** to a version before this one: it refuses to deploy a channel that has `bodyCharset`, and the editor writes `bodyCharset` into every HTTP source created after the upgrade, `utf-8` included. The editor cannot remove a property, so before going back remove `bodyCharset` from those channels' `sourceConnectorProperties` through the API (`PUT /api/v1/channels/:id`) and deploy them, since a restart deploys what was last deployed. This lists them:
+
+```sql
+SELECT id, name, source_connector_properties->>'bodyCharset' AS body_charset
+FROM channels WHERE source_connector_type = 'HTTP' AND source_connector_properties ? 'bodyCharset';
+```
+
 ## Stricter connector properties (#115)
 
 Connector properties moved, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
@@ -142,7 +160,7 @@ Before upgrading, list the keys the schema would refuse:
 SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
 WHERE source_connector_type = 'HTTP'
   AND k NOT IN ('host','port','path','matchSubpaths','method','responseContentType','responseStatusCode','errorStatusCode',
-                'maxBodyBytes','auth','scheme','tls','processBatch','contextPath','methods','charset');
+                'maxBodyBytes','bodyCharset','auth','scheme','tls','processBatch','contextPath','methods','charset');
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'HTTP'
   AND k NOT IN ('url','method','headers','parameters','basicAuth','contentType','responseTimeout','scheme','tls','template','charset');
@@ -409,7 +427,7 @@ The receiver never read it: an email arrives as the mail server holds it, attach
 
 ## An alert's regex must compile (#133)
 
-An alert whose regex filter does not compile never fired, and nothing said so. Saving one is now refused with the reason. One saved earlier is kept, still never fires, and logs a warning when a channel it covers deploys: look for "its regex filter does not compile" after the upgrade. Restoring a backup that would create or overwrite such an alert reports it and restores the others; one the server already has is skipped as before.
+An alert whose regex filter does not compile never fired, and nothing said so. Saving one is now refused with the reason. One saved earlier is kept, still never fires, and logs a warning when a channel it covers deploys: look for "its regex filter does not compile" after the upgrade. Restoring a backup that would create or overwrite such an alert reports it and restores the others; in Skip mode, one the server already has is skipped as before.
 
 ## Standard upgrade (Docker)
 

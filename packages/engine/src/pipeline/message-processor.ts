@@ -1,4 +1,5 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import type { SandboxContext } from '../sandbox/sandbox-context.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
@@ -230,19 +231,6 @@ interface PipelineMapState {
   connectorMap: Record<string, unknown>;
 }
 
-// ----- Content Type Constants (duplicated to avoid cross-package import) -----
-
-const CT_RAW = 1;
-const CT_TRANSFORMED = 3;
-const CT_SENT = 5;
-const CT_RESPONSE = 6;
-const CT_RESPONSE_TRANSFORMED = 7;
-const CT_SOURCE_MAP = 9;
-/** Holds a destination's merged map variables, not only its channel map. */
-const CT_CHANNEL_MAP = 10;
-const CT_ERROR = 11;
-const CT_PROCESSING_ERROR = 13;
-
 /**
  * A boolean return (the filter-style `return true`) is a common mistake that must
  * not overwrite the message with the string "true". Boolean and empty returns
@@ -335,8 +323,8 @@ export class MessageProcessor {
       let correlationId: string;
       if (this.store.initializeMessage) {
         const initResult = await this.store.initializeMessage(channelId, serverId, 'Source', [
-          { metaDataId: 0, contentType: CT_RAW, content: input.rawContent, dataType },
-          { metaDataId: 0, contentType: CT_SOURCE_MAP, content: JSON.stringify(input.sourceMap), dataType: 'JSON' },
+          { metaDataId: 0, contentType: CONTENT_TYPE.RAW, content: input.rawContent, dataType },
+          { metaDataId: 0, contentType: CONTENT_TYPE.SOURCE_MAP, content: JSON.stringify(input.sourceMap), dataType: 'JSON' },
         ], input.correlationId);
         if (!initResult.ok) throw new Error('Failed to initialize message');
         messageId = initResult.value.messageId;
@@ -348,8 +336,8 @@ export class MessageProcessor {
         correlationId = createResult.value.correlationId;
         const initial = await Promise.all([
           this.store.createConnectorMessage(channelId, messageId, 0, 'Source', 'RECEIVED'),
-          this.store.storeContent(channelId, messageId, 0, CT_RAW, input.rawContent, dataType),
-          this.store.storeContent(channelId, messageId, 0, CT_SOURCE_MAP, JSON.stringify(input.sourceMap), 'JSON'),
+          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.RAW, input.rawContent, dataType),
+          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.SOURCE_MAP, JSON.stringify(input.sourceMap), 'JSON'),
           this.store.incrementStats(channelId, 0, serverId, 'received'),
         ]);
         // A message whose raw content was not stored cannot be recovered or
@@ -371,7 +359,7 @@ export class MessageProcessor {
         const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
         // Use inline error-out since errorOut helper isn't defined yet
         await Promise.all([
-          this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, `Invalid ${dataType}: ${parseMsg}`, 'TEXT'),
+          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, `Invalid ${dataType}: ${parseMsg}`, 'TEXT'),
           this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
           this.store.incrementStats(channelId, 0, serverId, 'errored'),
           this.store.markProcessed(channelId, messageId),
@@ -389,7 +377,7 @@ export class MessageProcessor {
 
       const errorOut = async (stage: string, errMsg: string): Promise<ProcessedMessage> => {
         await this.saved(messageId, 0, 'the ERROR status of a failed message', [
-          this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, errMsg, 'TEXT'),
+          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, errMsg, 'TEXT'),
           this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
           this.store.incrementStats(channelId, 0, serverId, 'errored'),
           this.store.markProcessed(channelId, messageId),
@@ -473,7 +461,7 @@ export class MessageProcessor {
         .filter((d) => d.enabled && (!activeIds || activeIds.has(d.metaDataId)));
       const prepared = await Promise.all([
         this.config.scripts.sourceTransformer
-          ? this.store.storeContent(channelId, messageId, 0, CT_TRANSFORMED, content, dataType)
+          ? this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.TRANSFORMED, content, dataType)
           : Promise.resolve({ ok: true as const, value: undefined, error: null }),
         ...activeDests.map((d) => this.store.createConnectorMessage(channelId, messageId, d.metaDataId, d.name, 'RECEIVED')),
         this.storeSourceMetadata(messageId, mapState, input.sourceMap),
@@ -616,7 +604,7 @@ export class MessageProcessor {
     const { channelId, serverId } = this.config;
     const errorMessage = `Unexpected error while processing: ${reason}`;
     await this.saved(messageId, 0, 'the ERROR status of a failed message', [
-      this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, errorMessage, 'TEXT'),
+      this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, errorMessage, 'TEXT'),
       this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
       this.store.incrementStats(channelId, 0, serverId, 'errored'),
       this.store.markProcessed(channelId, messageId),
@@ -695,7 +683,7 @@ export class MessageProcessor {
       // row, and crash recovery redispatches from it. If the write fails, error now
       // rather than silently lose the message or deliver un-persisted PHI.
       const storeSentResult = await this.store.storeContent(
-        channelId, messageId, dest.metaDataId, CT_SENT, destContent, dataType,
+        channelId, messageId, dest.metaDataId, CONTENT_TYPE.SENT, destContent, dataType,
       );
       if (!storeSentResult.ok) {
         return this.destErrorOut(messageId, dest, 'storeSentContent', storeSentResult.error.message);
@@ -728,7 +716,7 @@ export class MessageProcessor {
         // What the destination answered is in its own format (an ACK, an HTTP
         // body, a file path), not the channel's inbound data type.
         await this.store.storeContent(
-          channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, 'TEXT',
+          channelId, messageId, dest.metaDataId, CONTENT_TYPE.RESPONSE, response.content, 'TEXT',
         );
 
         mapState.responseMap[dest.name] = { status: response.status, content: response.content };
@@ -745,11 +733,11 @@ export class MessageProcessor {
             const transformed = scriptReplacement(rtResult.value.returnValue, rtResult.value.msg);
             responseContent = serializeFromSandbox(transformed, dataType, response.content, this.config.dataTypeOptions);
             await this.store.storeContent(
-              channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
+              channelId, messageId, dest.metaDataId, CONTENT_TYPE.RESPONSE_TRANSFORMED, responseContent, dataType,
             );
           } else {
             await this.store.storeContent(
-              channelId, messageId, dest.metaDataId, CT_PROCESSING_ERROR,
+              channelId, messageId, dest.metaDataId, CONTENT_TYPE.PROCESSING_ERROR,
               `Script error in responseTransformer: ${rtResult.error.message}`, 'TEXT',
             );
             if (this.config.onError) {
@@ -804,8 +792,8 @@ export class MessageProcessor {
     const { channelId } = this.config;
     const text = reason.trim() === '' ? 'The destination reported a failure without a reason' : reason;
     await this.saved(messageId, metaDataId, 'why a destination failed', [
-      this.store.storeContent(channelId, messageId, metaDataId, CT_ERROR, text, 'TEXT'),
-      ...(response ? [this.store.storeContent(channelId, messageId, metaDataId, CT_RESPONSE, response, 'TEXT')] : []),
+      this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.ERROR, text, 'TEXT'),
+      ...(response ? [this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT')] : []),
     ]);
   }
 
@@ -830,7 +818,7 @@ export class MessageProcessor {
   ): Promise<DestinationResult> {
     const { channelId, serverId } = this.config;
     await this.saved(messageId, dest.metaDataId, 'the ERROR status of a failed destination', [
-      this.store.storeContent(channelId, messageId, dest.metaDataId, CT_PROCESSING_ERROR, `Script error in ${stage}: ${errMsg}`, 'TEXT'),
+      this.store.storeContent(channelId, messageId, dest.metaDataId, CONTENT_TYPE.PROCESSING_ERROR, `Script error in ${stage}: ${errMsg}`, 'TEXT'),
       this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
       this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
     ]);
@@ -840,7 +828,7 @@ export class MessageProcessor {
   private async storeAndAlertPostError(messageId: number, errorMessage: string): Promise<void> {
     const { channelId } = this.config;
     await this.saved(messageId, 0, 'a postprocessor error', [
-      this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, errorMessage, 'TEXT'),
+      this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, errorMessage, 'TEXT'),
     ]);
     if (this.config.onError) {
       await this.config.onError({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage, timestamp: Date.now() });
@@ -875,7 +863,7 @@ export class MessageProcessor {
     if (dest.queueMode === 'NEVER' || Object.keys(variables).length === 0) {
       return Promise.resolve({ ok: true, value: undefined, error: null } as Result<void>);
     }
-    return this.store.storeContent(this.config.channelId, messageId, dest.metaDataId, CT_CHANNEL_MAP, JSON.stringify(variables), 'JSON');
+    return this.store.storeContent(this.config.channelId, messageId, dest.metaDataId, CONTENT_TYPE.CHANNEL_MAP, JSON.stringify(variables), 'JSON');
   }
 
   private storeSourceMetadata(

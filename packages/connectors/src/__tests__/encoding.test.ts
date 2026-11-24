@@ -66,7 +66,7 @@ describe('decodePayload on a Node without windows-1252 (no full ICU)', () => {
     expect(() => decodePayload(Buffer.from([0x93]), 'windows-1252')).toThrow('windows-1252');
   });
 
-  it('fails to build a Kafka or AMQP source set to windows-1252, so the deploy fails', async () => {
+  it('fails the deploy of a Kafka, AMQP or HTTP source set to windows-1252', async () => {
     const Real = globalThis.TextDecoder;
     vi.stubGlobal('TextDecoder', class extends Real {
       constructor(label?: string, options?: DecoderOptions) {
@@ -81,5 +81,8 @@ describe('decodePayload on a Node without windows-1252 (no full ICU)', () => {
     expect(() => createSourceConnector('KAFKA', { ...kafka, charset: 'windows-1252' })).toThrow(/windows-1252.*not available/);
     expect(() => createSourceConnector('AMQP', { ...amqp, charset: 'windows-1252' })).toThrow(/windows-1252.*not available/);
     expect(() => createSourceConnector('AMQP', { ...amqp, charset: 'latin1' })).not.toThrow();
+    const http = await createSourceConnector('HTTP', { port: 8080, bodyCharset: 'windows-1252' }).onDeploy();
+    expect(http.ok ? null : http.error.message).toMatch(/windows-1252.*not available/);
+    expect((await createSourceConnector('HTTP', { port: 8080, bodyCharset: 'latin1' }).onDeploy()).ok).toBe(true);
   }, 30_000); // a fresh import of the registry loads every connector
 });

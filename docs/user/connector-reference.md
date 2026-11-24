@@ -101,7 +101,19 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 
 ### HTTP: what it does
 
-The source runs an HTTP or HTTPS server on its own port and accepts requests on one path and one method. A wrong method gets 405, a wrong path 404, failed authentication 401, a body over `maxBodyBytes` 413, and a Content-Type charset the server cannot decode 415. An accepted request answers `responseStatusCode` (a filtered message counts as accepted) and a pipeline failure answers `errorStatusCode`.
+The source runs an HTTP or HTTPS server on its own port and accepts requests on one path and one method. A wrong method gets 405, a wrong path 404, failed authentication 401, a body over `maxBodyBytes` 413, and a request to a channel that has just been undeployed 503. An accepted request answers `responseStatusCode` (a filtered message counts as accepted); a pipeline failure, or any other error in handling it, answers `errorStatusCode`.
+
+The source keeps a body whole or refuses it, and a refused body is never stored (D-334 in [DECISIONS.md](../progress/DECISIONS.md)):
+
+- A body with `Content-Encoding` `gzip` (or `x-gzip`), `deflate` (the zlib format) or `br` is decompressed. Any other coding, or two codings, gets 415. A body that does not decompress, or has bytes after the compressed data, gets 400. A `Transfer-Encoding` other than `chunked` gets 501.
+- A few bytes can decompress to a large body, so the source decompresses at most two at once, the rest waiting in order. When the decompressed bytes of the requests not answered yet reach four times `maxBodyBytes`, or 64 MiB if that is more, a compressed body gets 503 with `Retry-After: 1`. Uncompressed bodies are not affected, and there is no setting for either limit.
+- Text is read in the charset the Content-Type declares, or in `bodyCharset` when it declares none. A body that is not valid in that charset, and a declared charset the server cannot decode, get 415. The response names the charset, and the server logs a warning with the sender's address and Content-Type, never the body. ISO-8859-1 and Windows-1252 have a character for every byte, so a body read in them is never refused for its charset.
+- A binary body (a PDF, an image, a form with a file in it) is not valid UTF-8, so it gets 415. PostgreSQL cannot store text that holds U+0000 in plain either, so a channel that stores its content without encryption answers `errorStatusCode` to such text in any charset, and the sender may send it again. Set `bodyCharset` to `base64` to keep a binary body: the message is then the base64 of the decompressed bytes, which a File destination with `binary` on writes back as they were.
+- A body over `maxBodyBytes` gets its 413 at its end, or after 10 more seconds if it is still arriving, and the connection is then closed.
+- A sender that closes its connection before its compressed body is handled is not dispatched: it got no answer, so it sends the message again.
+- Requests pipelined on one connection behind a compressed one may be handled first.
+
+The source map keeps the request headers as sent, so a `content-encoding` there does not mean the message is still compressed.
 
 The destination sends each message as the request body. A 2xx response is SENT. A 3xx is an ERROR because redirects are not followed, and any other status is an ERROR with the status in the message.
 
@@ -124,8 +136,9 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 | `method` | No | The one method accepted: `GET`, `POST` (default), `PUT`, `PATCH` or `DELETE`, in any case. |
 | `responseContentType` | No | Content-Type of the reply. |
 | `responseStatusCode` | No | Status for an accepted message, 100 to 599; `200` by default. |
-| `errorStatusCode` | No | Status when the pipeline fails, 100 to 599; `500` by default. |
-| `maxBodyBytes` | No | Largest request body; a larger one gets 413. |
+| `errorStatusCode` | No | Status when the pipeline fails or the request cannot be handled, 100 to 599; `500` by default. |
+| `maxBodyBytes` | No | Largest request body, both as received and once decompressed; a larger one gets 413. |
+| `bodyCharset` | No | How a body is read when its Content-Type declares no charset: `utf-8` (default), `latin1` (ISO-8859-1) or `windows-1252`. A declared charset wins over these. `base64` keeps the bytes of every body, text included, whatever its Content-Type says. `windows-1252` needs a Node with full ICU (the official builds have it); without it the deploy fails. The `charset` key older editors saved is still ignored. |
 | `auth.type` | No | `BASIC` or `TOKEN`. With no `auth` object, anyone who can reach the port can post. API only. |
 | `auth.username` | No | Expected Basic username. Required with `BASIC`: a guard without it refuses to deploy. |
 | `auth.password` | No | Expected Basic password. Required with `BASIC`: a guard without it refuses to deploy. |
@@ -156,6 +169,7 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 - Redirects are not followed; set the final URL.
 - The source's `auth`, `matchSubpaths`, and the destination's `parameters` and `basicAuth` have no editor control.
 - The source accepts one method per connector.
+- `bodyCharset` applies to the whole connector; the source cannot keep some content types as base64 and read the rest as text.
 
 ## FILE
 

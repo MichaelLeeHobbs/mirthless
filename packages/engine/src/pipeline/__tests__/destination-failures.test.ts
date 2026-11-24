@@ -1,13 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { MessageProcessor } from '../message-processor.js';
 import type { MessageStore, PipelineConfig, SendToDestination } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
 
 const CHANNEL = '00000000-0000-0000-0000-000000000012';
-const CT_CHANNEL_MAP = 10;
-const CT_ERROR = 11;
-const CT_RESPONSE = 6;
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
@@ -46,20 +44,20 @@ const refusing: SendToDestination = vi.fn().mockResolvedValue(ok({ status: 'ERRO
 describe('a failed send keeps its reason', () => {
   it('when the destination ends ERROR', async () => {
     const store = await run('NEVER', failing);
-    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CT_ERROR, 'connect ECONNREFUSED', 'TEXT');
+    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.ERROR, 'connect ECONNREFUSED', 'TEXT');
     expect(store.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL, 3, 1, 'ERROR');
   });
 
   it('when the destination waits in the queue', async () => {
     const store = await run('ON_FAILURE', failing);
-    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CT_ERROR, 'connect ECONNREFUSED', 'TEXT');
+    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.ERROR, 'connect ECONNREFUSED', 'TEXT');
     expect(store.enqueue).toHaveBeenCalled();
   });
 
   it('with what the destination answered when it refused', async () => {
     const store = await run('NEVER', refusing);
-    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CT_ERROR, 'partner answered AE', 'TEXT');
-    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CT_RESPONSE, 'MSA|AE|1', 'TEXT');
+    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.ERROR, 'partner answered AE', 'TEXT');
+    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.RESPONSE, 'MSA|AE|1', 'TEXT');
   });
 });
 
@@ -72,7 +70,7 @@ describe('the variables a destination sends with', () => {
 
   it('are stored for a queued destination', async () => {
     const store = await run('ALWAYS', vi.fn());
-    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CT_CHANNEL_MAP, '{"mrn":"MRN1"}', 'JSON');
+    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.CHANNEL_MAP, '{"mrn":"MRN1"}', 'JSON');
   });
 
   it('are not stored for a destination that never queues, or when there are none', async () => {
@@ -80,7 +78,7 @@ describe('the variables a destination sends with', () => {
     const never = await run('NEVER', sent);
     const empty = await run('ALWAYS', vi.fn(), 'msg = msg;');
     for (const store of [never, empty]) {
-      expect(store.storeContent).not.toHaveBeenCalledWith(CHANNEL, 3, 1, CT_CHANNEL_MAP, expect.anything(), 'JSON');
+      expect(store.storeContent).not.toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.CHANNEL_MAP, expect.anything(), 'JSON');
     }
   });
 });
