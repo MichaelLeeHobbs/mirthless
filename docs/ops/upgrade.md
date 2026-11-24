@@ -399,6 +399,10 @@ A Listener also refuses an instance whose SOP Instance UID is not a DICOM UID (d
 
 The editor no longer shows the Listener's pool sizes or the Sender's mode and maximum associations: the connector never used them. A saved channel that has `minPoolSize`, `maxPoolSize`, `mode` or `maxAssociations` keeps deploying; validation drops the keys, whatever their values, so a `maxPoolSize` below `minPoolSize` no longer fails a deploy. Nothing in the database is rewritten.
 
+## Alert email signs in over TLS only (#358)
+
+With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
+
 ## Imports keep stored credentials and script timeouts (#334)
 
 Importing a channel with `OVERWRITE`, or restoring a backup with it, used to clear every connector credential the target had, because the file masks them. It now keeps a stored credential while the connector still goes to the same place as the same user, and clears it otherwise ([Credentials](api-automation.md#credentials)). A pipeline that puts the credentials back after each import can stop doing so. A connector an earlier import or restore left without its credential still needs it entered: look for destinations that deploy without one, such as HTTP with an `Authorization` header.
