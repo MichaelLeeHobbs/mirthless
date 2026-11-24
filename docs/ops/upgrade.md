@@ -317,7 +317,7 @@ These queries also list the Mirth keys the schema drops; compare what they print
 An EMAIL channel now fails to deploy when it has:
 
 - any other key its table doesn't list. Before, such a key was ignored.
-- a `secure` or `includeAttachments` that is not `true` or `false`. Before, any text, `"false"` included, turned `secure` on.
+- a `secure` that is not `true` or `false`. Before, any text, `"false"` included, turned it on.
 - a `postAction` other than `DELETE`, `MARK_READ` or `MOVE`, or a `pollingIntervalMs` above 2147483647.
 - a `host`, `username`, `password` or `folder` of only spaces. An empty one, `POP3`, a polling interval below 1000 ms, and `MOVE` without `moveToFolder` failed before as well, when the connector deployed, without naming the key.
 
@@ -406,6 +406,14 @@ Until 2026-11-23 the backup commands on this page and in [Backup & restore](back
 ## Alert email signs in over TLS only (#358)
 
 With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
+
+## The Email source's Include Attachments setting is gone (#154)
+
+The receiver never read it: an email arrives as the mail server holds it, attachments included, with the box ticked or not. If you left it off to keep attachments out of message storage, they have been stored all along (#369). A saved channel that has `includeAttachments` keeps deploying; validation drops the key, whatever its value. Nothing in the database is rewritten.
+
+## An alert's regex must compile (#133)
+
+An alert whose regex filter does not compile never fired, and nothing said so. Saving one is now refused with the reason. One saved earlier is kept, still never fires, and logs a warning when a channel it covers deploys: look for "its regex filter does not compile" after the upgrade. Restoring a backup that would create or overwrite such an alert reports it and restores the others; one the server already has is skipped as before.
 
 ## Standard upgrade (Docker)
 

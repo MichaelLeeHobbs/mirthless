@@ -7,8 +7,8 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
-import { GrantService } from './grant.service.js';
-import { USER_KIND, type TakenOverKey } from '@galvanigraph/core-models';
+import { GrantService, lockAccessFor } from './grant.service.js';
+import { PERMISSIONS, USER_KIND, type TakenOverKey } from '@galvanigraph/core-models';
 import { ApiKeyService } from './api-key.service.js';
 
 type DbExecutor = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -147,6 +147,8 @@ export class UserService {
       // The user and their one all-channel assignment commit together, with
       // the assignment's audit row (grant.service).
       const createdId = await db.transaction(async (tx) => {
+        // Before the insert: an email change waits on its unique entry while holding this lock.
+        await lockAccessFor(tx, context?.userId ?? null, PERMISSIONS.USERS_WRITE);
         const [row] = await tx
           .insert(users)
           .values({
@@ -185,9 +187,8 @@ export class UserService {
 
       const actor = { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null };
       const oldRoles = await db.transaction(async (tx) => {
-        // The admin role lock comes first, before the user row lock, in every
-        // path that can remove an admin (grant.service), so concurrent changes
-        // queue and each sees the last one's result.
+        // First (grant.service), so what the actor and the target hold stays as checked.
+        await lockAccessFor(tx, actorId, PERMISSIONS.USERS_WRITE);
         if (id === actorId && input.role !== undefined) {
           const current = await GrantService.heldRoleNames(tx, id);
           if (!(current.length === 1 && current[0] === input.role)) {
@@ -201,6 +202,7 @@ export class UserService {
           });
         }
         const target = await lockTarget(tx, id);
+        if (input.enabled === true && !target.enabled) await GrantService.assertCanManageToTheEnd(tx, actorId, id);
         await tx.update(users).set(userUpdates(input)).where(eq(users.id, id));
         // Who could act is replayed from the audit log (grant.service channelAccessAsOf).
         if (input.enabled !== undefined && input.enabled !== target.enabled) {
@@ -253,8 +255,9 @@ export class UserService {
       }
 
       const taken = await db.transaction(async (tx) => {
-        // Cannot remove the last ENABLED admin: a disabled admin does not count.
+        await lockAccessFor(tx, actorId, PERMISSIONS.USERS_DELETE);
         await GrantService.assertCanManage(tx, actorId, id);
+        // Cannot remove the last ENABLED admin: a disabled admin does not count.
         await GrantService.assertKeepsAnAdmin(tx, { userId: id, disabling: true });
         const target = await lockTarget(tx, id);
 
@@ -266,7 +269,7 @@ export class UserService {
         const takenOver: TakenOverKey[] = [];
         // Taken over first, so they are the actor's when the rest are disabled.
         const toTake = [...new Set(takeOwnership)].sort();
-        if (toTake.length > 0) await ApiKeyService.lockForTakeover(tx, toTake, actorId);
+        if (toTake.length > 0) await ApiKeyService.lockForTakeover(tx, toTake);
         for (const keyId of toTake) {
           const next = await ApiKeyService.replaceInTx(tx, keyId, 'leak', actor, id);
           takenOver.push({ keyId, name: next.name, token: next.token });
@@ -309,6 +312,11 @@ export class UserService {
 
       // Revoke the sessions too, so stolen tokens for the account stop working.
       await db.transaction(async (tx) => {
+        if (id !== actorId) {
+          // Hashing takes long enough for either's access to have changed since the first check.
+          await lockAccessFor(tx, actorId, PERMISSIONS.USERS_WRITE);
+          await GrantService.assertCanManageToTheEnd(tx, actorId, id);
+        }
         await tx
           .update(users)
           .set({ passwordHash, updatedAt: new Date() })
