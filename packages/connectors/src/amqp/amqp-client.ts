@@ -79,22 +79,22 @@ function openContainer(value: unknown): OpenContainer | null {
  */
 function nestedHeaderJson(header: unknown): string {
   const parts: string[] = [];
-  const open: OpenContainer[] = [];
+  const containers: OpenContainer[] = [];
   const write = (value: unknown): void => {
     const container = openContainer(value);
     if (container) {
-      open.push(container);
+      containers.push(container);
       parts.push(container.end === ']' ? '[' : '{');
     } else {
       parts.push(JSON.stringify(typeof value === 'bigint' ? value.toString() : value ?? null));
     }
   };
   write(header);
-  for (let current = open.at(-1); current; current = open.at(-1)) {
+  for (let current = containers.at(-1); current; current = containers.at(-1)) {
     const entry = current.entries.next();
     if (entry.done) {
       parts.push(current.end);
-      open.pop();
+      containers.pop();
       continue;
     }
     const [prefix, value] = entry.value;

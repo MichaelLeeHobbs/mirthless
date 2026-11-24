@@ -534,7 +534,7 @@ describe('headersToRecord', () => {
     expect(headersToRecord({ x: [{ big: 12345678901234567890n }] })).toEqual({ x: '[{"big":"12345678901234567890"}]' });
   });
 
-  // As deep as a default 128 KB frame can nest.
+  // A default 128 KB frame nests about 26,000 arrays, or 22,000 tables.
   it('keeps every level of tables and arrays nested tens of thousands deep', () => {
     let arrays: unknown = 'leaf';
     for (let i = 0; i < 26_000; i += 1) arrays = [arrays];
