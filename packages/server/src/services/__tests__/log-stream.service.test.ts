@@ -53,17 +53,16 @@ describe('LogStreamService', () => {
       LogStreamService._addEntry(makeEntry({ level: 30, levelLabel: 'INFO', message: 'info' }));
       LogStreamService._addEntry(makeEntry({ level: 50, levelLabel: 'ERROR', message: 'error' }));
 
-      const result = LogStreamService.query({ level: 40 });
+      const result = LogStreamService.query({ level: 30 });
 
-      expect(result.entries).toHaveLength(1);
-      expect(result.entries[0]!.message).toBe('error');
+      expect(result.entries.map((e) => e.message)).toEqual(['error', 'info']);
     });
 
     it('filters by search text (case-insensitive)', () => {
       LogStreamService._addEntry(makeEntry({ message: 'Channel started' }));
       LogStreamService._addEntry(makeEntry({ message: 'Server booted' }));
 
-      const result = LogStreamService.query({ search: 'channel' });
+      const result = LogStreamService.query({ search: 'CHANNEL' });
 
       expect(result.entries).toHaveLength(1);
       expect(result.entries[0]!.message).toBe('Channel started');
@@ -112,59 +111,34 @@ describe('LogStreamService', () => {
   });
 
   describe('createWritableStream', () => {
-    it('parses JSON log lines and adds entries', () => {
-      return new Promise<void>((resolve) => {
-        const stream = LogStreamService.createWritableStream();
-        const json = JSON.stringify({ level: 30, msg: 'test log', time: Date.now() });
-
-        stream.write(Buffer.from(json + '\n'), 'utf-8', () => {
-          const result = LogStreamService.query();
-          expect(result.entries).toHaveLength(1);
-          expect(result.entries[0]!.message).toBe('test log');
-          expect(result.entries[0]!.level).toBe(30);
-          expect(result.entries[0]!.levelLabel).toBe('INFO');
-          resolve();
-        });
-      });
+    const write = (line: string): Promise<void> => new Promise((resolve) => {
+      LogStreamService.createWritableStream().write(Buffer.from(`${line}\n`), 'utf-8', () => { resolve(); });
     });
 
-    it('emits to Socket.IO logs room', () => {
-      return new Promise<void>((resolve) => {
-        const stream = LogStreamService.createWritableStream();
-        const json = JSON.stringify({ level: 50, msg: 'error log', time: Date.now() });
+    it('parses JSON log lines and adds entries', async () => {
+      await write(JSON.stringify({ level: 30, msg: 'test log', time: Date.UTC(2026, 2, 2, 12), name: 'api' }));
 
-        stream.write(Buffer.from(json + '\n'), 'utf-8', () => {
-          expect(emitToRoom).toHaveBeenCalledWith('logs', 'server:log', expect.objectContaining({
-            message: 'error log',
-            level: 50,
-          }));
-          resolve();
-        });
-      });
+      expect(LogStreamService.query().entries).toEqual([
+        { timestamp: '2026-03-02T12:00:00.000Z', level: 30, levelLabel: 'INFO', logger: 'api', message: 'test log' },
+      ]);
     });
 
-    it('ignores non-JSON lines', () => {
-      return new Promise<void>((resolve) => {
-        const stream = LogStreamService.createWritableStream();
+    it('emits to Socket.IO logs room', async () => {
+      await write(JSON.stringify({ level: 50, msg: 'error log', time: Date.now() }));
 
-        stream.write(Buffer.from('not json\n'), 'utf-8', () => {
-          const result = LogStreamService.query();
-          expect(result.entries).toHaveLength(0);
-          resolve();
-        });
-      });
+      expect(emitToRoom).toHaveBeenCalledWith('logs', 'server:log', expect.objectContaining({ message: 'error log', level: 50 }));
     });
 
-    it('handles empty lines gracefully', () => {
-      return new Promise<void>((resolve) => {
-        const stream = LogStreamService.createWritableStream();
+    it('ignores non-JSON lines', async () => {
+      await write('not json');
 
-        stream.write(Buffer.from('\n'), 'utf-8', () => {
-          const result = LogStreamService.query();
-          expect(result.entries).toHaveLength(0);
-          resolve();
-        });
-      });
+      expect(LogStreamService.query().entries).toHaveLength(0);
+    });
+
+    it('handles empty lines gracefully', async () => {
+      await write('');
+
+      expect(LogStreamService.query().entries).toHaveLength(0);
     });
   });
 });
