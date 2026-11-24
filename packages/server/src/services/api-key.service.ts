@@ -13,7 +13,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { USER_KIND } from '@galvanigraph/core-models';
 import { alias } from 'drizzle-orm/pg-core';
 import {
-  API_KEY_STATUS, AUDIT_ACTION, type ApiKeyStatus, type ApiKeyView, type CreateApiKeyInput, type IssuedApiKey, type Permission,
+  API_KEY_STATUS, AUDIT_ACTION, PERMISSIONS, type ApiKeyStatus, type ApiKeyView, type CreateApiKeyInput, type IssuedApiKey, type Permission,
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
@@ -23,7 +23,7 @@ import { hashToken, matchesTokenHash } from '../lib/token-hash.js';
 import { apiKeys, assignmentGroups, assignments, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 import {
-  GrantService, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, lockAccess, lockScopeGroups,
+  GrantService, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, lockAccessFor, lockScopeGroups,
   type GrantActor, type Reader, type ScopeIds,
 } from './grant.service.js';
 
@@ -155,7 +155,7 @@ export class ApiKeyService {
     const secret = newKeySecret();
     await db.transaction(async (tx) => {
       const scope: ScopeIds = input.groupIds;
-      await lockAccess(tx);
+      await lockAccessFor(tx, actorId, PERMISSIONS.API_KEYS_MANAGE);
       await lockScopeGroups(tx, [scope]);
       assertScopeAllowed('An API key', input.permissions, scope);
       await assertActorCovers(tx, actorId, input.permissions, scope, expiresAt);
@@ -175,7 +175,7 @@ export class ApiKeyService {
    */
   static async setEnabled(id: string, enabled: boolean, actor: GrantActor): Promise<ApiKeyView> {
     await db.transaction(async (tx) => {
-      await lockAccess(tx);
+      await lockAccessFor(tx, actor.userId, PERMISSIONS.API_KEYS_MANAGE);
       const key = await lockKey(tx, id);
       if (key.revokedAt !== null) throw new ServiceError('CONFLICT', 'The key is revoked; issue a new one');
       if (enabled && key.expiresAt.getTime() <= Date.now()) throw new ServiceError('CONFLICT', 'The key has ended; issue a new one');
@@ -197,7 +197,7 @@ export class ApiKeyService {
   static async revoke(id: string, reason: string, actor: GrantActor): Promise<ApiKeyView> {
     await db.transaction(async (tx) => {
       // revoked_by's foreign key waits on an actor being disabled with a new email, who waits on the key.
-      await lockAccess(tx);
+      await lockAccessFor(tx, actor.userId, PERMISSIONS.API_KEYS_MANAGE);
       const key = await lockKey(tx, id);
       if (key.revokedAt !== null) throw new ServiceError('CONFLICT', 'The key is already revoked');
       const now = new Date();
@@ -249,7 +249,7 @@ export class ApiKeyService {
    */
   static async replaceInTx(tx: AuditTransaction, id: string, mode: 'leak' | 'planned', actor: GrantActor, fromLeaver?: string): Promise<{ readonly name: string; readonly token: string }> {
     if (actor.userId === null) throw new ServiceError('FORBIDDEN', 'Replacing a key needs a signed-in actor');
-    await lockAccess(tx);
+    await lockAccessFor(tx, actor.userId, PERMISSIONS.API_KEYS_MANAGE);
     const key = await lockKey(tx, id);
     if (fromLeaver !== undefined && key.issuedBy !== fromLeaver) throw new ServiceError('INVALID_INPUT', `API key ${id} was not issued by this user`);
     if (mode === 'planned' && key.issuedBy !== actor.userId) {

@@ -106,7 +106,7 @@ describeIntegration('group membership and group rules (real Postgres)', () => {
     expect((await call(admin.token, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [old] })).status).toBe(200);
   });
 
-  it('does not count an ended API key, which nothing renews', async () => {
+  it.each(['ended', 'revoked'] as const)('does not count an API key that is %s, which nothing renews', async (how) => {
     const old = await group();
     const admin = await userWith('admin', null);
     const issued = await call(admin.token, 'POST', '/api-keys', {
@@ -118,7 +118,8 @@ describeIntegration('group membership and group rules (real Postgres)', () => {
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
 
     expect(await join()).toBe(403);
-    await mods.pool.query(`UPDATE assignments SET expires_at = now() - interval '1 day' WHERE user_id IN (SELECT user_id FROM api_keys WHERE issued_by = $1)`, [admin.id]);
+    if (how === 'ended') await mods.pool.query(`UPDATE assignments SET expires_at = now() - interval '1 day' WHERE user_id IN (SELECT user_id FROM api_keys WHERE issued_by = $1)`, [admin.id]);
+    else expect((await call(admin.token, 'POST', `/api-keys/${(issued.json as { data: { key: { id: string } } }).data.key.id}/revoke`, { reason: 'Done with it' })).status).toBe(200);
     expect(await join()).toBe(200);
   });
 

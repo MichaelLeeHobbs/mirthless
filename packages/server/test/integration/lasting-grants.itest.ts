@@ -470,6 +470,30 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     expect((await call(writer, 'PUT', `/code-templates/libraries/${shared.id}`, { channelIds: [CHANNEL], revision: 1 })).status).toBe(200);
   });
 
+  it('refuses a restore that would narrow a library\'s links by someone who may restore only until a time', async () => {
+    const restorer = await user();
+    const adminRole = await mods.pool.query<{ id: string }>('SELECT id FROM roles WHERE admin');
+    await assign(restorer, adminRole.rows[0]!.id, { until: inAnHour() });
+    const shared = await library(null);
+    const restore = async (who: TestUser, channelIds: string[] | null): Promise<{ updated: number; errors: string[] }> => {
+      const empty = {
+        channels: [], codeTemplates: [], alerts: [], globalScripts: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }, users: [], settings: [], resources: [],
+        channelGroups: [], tags: [], globalMap: [], configMap: [], groupMemberships: [], tagAssignments: [], channelDependencies: [],
+      };
+      const answer = await call<{ sections: Array<{ section: string; updated: number; errors: string[] }> }>(who, 'POST', '/system/backup', {
+        backup: { version: 1, exportedAt: new Date().toISOString(), ...empty, codeTemplateLibraries: [{ id: shared.id, name: shared.name, description: null, channelIds }] }, collisionMode: 'OVERWRITE',
+      });
+      return answer.json.data!.sections.find((s) => s.section === 'codeTemplateLibraries')!;
+    };
+    const links = async (): Promise<unknown> => (await mods.pool.query<{ channel_ids: unknown }>('SELECT channel_ids FROM code_template_libraries WHERE id = $1', [shared.id])).rows[0]!.channel_ids;
+
+    expect(await restore(restorer, [CHANNEL])).toMatchObject({ updated: 0, errors: [expect.stringContaining('needs system:restore with no end time')] });
+    expect(await links()).toBeNull();
+    expect(await restore(restorer, null)).toMatchObject({ updated: 1, errors: [] });
+    expect(await restore(await user('admin'), [CHANNEL])).toMatchObject({ updated: 1, errors: [] });
+    expect(await links()).toEqual([CHANNEL]);
+  });
+
   it('refuses a Mirth import that would narrow a library for good before writing any library', async () => {
     const { importCodeTemplateLibraries } = await import('../../src/services/mirth-code-templates.js');
     const writer = await briefTemplateWriter();

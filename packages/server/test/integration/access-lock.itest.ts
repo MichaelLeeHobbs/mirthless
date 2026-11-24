@@ -114,12 +114,15 @@ describeIntegration('the access lock (real Postgres)', () => {
   }
 
   interface Prepared { readonly run: () => Promise<number> }
-  /** `lasting`: needs access with no end, so shortening the actor's refuses it too. */
-  interface Action { readonly name: string; readonly needs: string; readonly lasting: boolean; readonly prepare: (who: TestUser) => Promise<Prepared> }
+  /**
+   * `route` is what the route asks for and `needs` what the change gives or reaches. `lasting`:
+   * needs access with no end, so shortening the actor's refuses it too.
+   */
+  interface Action { readonly name: string; readonly route: string; readonly needs: string; readonly lasting: boolean; readonly prepare: (who: TestUser) => Promise<Prepared> }
 
   const ACTIONS: readonly Action[] = [
     {
-      name: 'setting a user\'s assignments', needs: 'channels:read', lasting: true,
+      name: 'setting a user\'s assignments', route: 'users:write', needs: 'channels:read', lasting: true,
       prepare: async (who) => {
         const reader = await customRole(['channels:read']);
         const target = await user();
@@ -127,7 +130,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     },
     {
-      name: 'changing a user\'s single role', needs: 'channels:read', lasting: true,
+      name: 'changing a user\'s single role', route: 'users:write', needs: 'channels:read', lasting: true,
       prepare: async (who) => {
         const reader = await customRole(['channels:read']);
         const target = await user();
@@ -135,7 +138,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     },
     {
-      name: 'creating a user', needs: 'channels:read', lasting: true,
+      name: 'creating a user', route: 'users:write', needs: 'channels:read', lasting: true,
       prepare: async (who) => {
         const reader = await customRole(['channels:read']);
         const name = `itest-new-${randomUUID().slice(0, 8)}`;
@@ -149,7 +152,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     },
     {
-      name: 'adding a permission to an assigned role', needs: 'channels:read', lasting: true,
+      name: 'adding a permission to an assigned role', route: 'roles:write', needs: 'channels:read', lasting: true,
       prepare: async (who) => {
         const held = await customRole([]);
         await userWithRole(mods.pool, held.name, null).then((u) => users.push(u.id));
@@ -157,7 +160,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     },
     {
-      name: 'adding a channel to a group', needs: 'channels:read', lasting: true,
+      name: 'adding a channel to a group', route: 'channels:write', needs: 'channels:read', lasting: true,
       prepare: async (who) => {
         const used = await group();
         await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
@@ -166,7 +169,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     },
     {
-      name: 'restoring a membership', needs: 'system:restore', lasting: true,
+      name: 'restoring a membership', route: 'system:restore', needs: 'system:restore', lasting: true,
       prepare: async (who) => {
         const used = await group();
         await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
@@ -178,14 +181,14 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     },
     {
-      name: 'taking a link out of a library', needs: 'code_templates:write', lasting: true,
+      name: 'taking a link out of a library', route: 'code_templates:write', needs: 'code_templates:write', lasting: true,
       prepare: async (who) => {
         const shared = await library(null);
         return { run: () => status(call(who, 'PUT', `/code-templates/libraries/${shared}`, { channelIds: [CHANNEL], revision: 1 })) };
       },
     },
     ...(['deleting', 'resetting the password of', 'enabling'] as const).map((verb): Action => ({
-      name: `${verb} a user`, needs: 'channels:read', lasting: verb !== 'deleting',
+      name: `${verb} a user`, route: verb === 'deleting' ? 'users:delete' : 'users:write', needs: 'channels:read', lasting: verb !== 'deleting',
       prepare: async (who) => {
         const target = await userWithRole(mods.pool, (await customRole(['channels:read'])).name, null);
         users.push(target.id);
@@ -198,7 +201,29 @@ describeIntegration('the access lock (real Postgres)', () => {
       },
     })),
     {
-      name: 'issuing an API key', needs: 'channels:read', lasting: true,
+      name: 'resetting the password of a user with no access', route: 'users:write', needs: 'users:write', lasting: false,
+      prepare: async (who) => {
+        const target = await user();
+        return { run: () => status(call(who, 'POST', `/users/${target.id}/password`, { newPassword: 'Itest-password-2!' })) };
+      },
+    },
+    ...([
+      ['revoking', 'POST', 'revoke', { reason: 'Done with it' }],
+      ['replacing', 'POST', 'replace', { mode: 'leak' }],
+      ['enabling', 'PATCH', 'enabled', { enabled: true }],
+    ] as const).map(([verb, method, path, body]): Action => ({
+      name: `${verb} an API key`, route: 'api_keys:manage', needs: 'api_keys:manage', lasting: false,
+      prepare: async (who) => {
+        const issued = await call<IssuedApiKey>(admin, 'POST', '/api-keys', {
+          name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + HOUR_MS / 2).toISOString(),
+        });
+        const id = issued.json.data!.key.id;
+        if (verb === 'enabling') await call(admin, 'PATCH', `/api-keys/${id}/enabled`, { enabled: false });
+        return { run: () => status(call(who, method, `/api-keys/${id}/${path}`, body)) };
+      },
+    })),
+    {
+      name: 'issuing an API key', route: 'api_keys:manage', needs: 'channels:read', lasting: true,
       prepare: async (who) => ({
         run: () => status(call(who, 'POST', '/api-keys', {
           name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString(),
@@ -249,6 +274,15 @@ describeIntegration('the access lock (real Postgres)', () => {
     expect(await raced(held, run)).toBe(403);
   });
 
+  it.each(ACTIONS)('refuses $name while the actor\'s role is losing the permission its route asks for', async ({ route, prepare }) => {
+    const { who, roleId } = await actor();
+    const { run } = await prepare(who);
+    const permissions = EVERYTHING.filter((p) => p !== route);
+    const held = await hold((tx) => grants.updateRole(tx, roleId, { permissions: [...permissions] }, { userId: admin.id }));
+
+    expect(await raced(held, run)).toBe(403);
+  });
+
   it.each(ACTIONS)('allows $name when nothing changes the actor\'s access', async ({ prepare }) => {
     const { who } = await actor();
     const { run } = await prepare(who);
@@ -265,31 +299,11 @@ describeIntegration('the access lock (real Postgres)', () => {
     const { result, waited } = await startAgainst(held, run);
     try {
       expect(waited).toBe(true);
+      await mods.pool.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE NOWAIT', [who.id]);
       for (const table of ['users', 'channel_groups', 'api_keys']) {
-        await mods.pool.query(`SELECT 1 FROM ${table} FOR UPDATE NOWAIT`);
+        await mods.pool.query(`SELECT 1 FROM ${table} FOR NO KEY UPDATE NOWAIT`);
       }
       await mods.pool.query('SELECT 1 FROM roles WHERE NOT admin FOR UPDATE NOWAIT');
-    } finally {
-      await held.release();
-    }
-    expect([200, 201, 204]).toContain(await result);
-  });
-
-  it.each([
-    ['revoking', 'POST', 'revoke', { reason: 'Done with it' }],
-    ['replacing', 'POST', 'replace', { mode: 'leak' }],
-    ['enabling', 'PATCH', 'enabled', { enabled: true }],
-  ] as const)('holds no key while %s one waits for the access lock', async (_name, method, path, body) => {
-    const issued = await call<IssuedApiKey>(admin, 'POST', '/api-keys', {
-      name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString(),
-    });
-    const id = issued.json.data!.key.id;
-    if (path === 'enabled') await call(admin, 'PATCH', `/api-keys/${id}/enabled`, { enabled: false });
-    const held = await hold(async (tx) => { await tx.execute(mods.sql`SELECT 1 FROM roles WHERE admin FOR NO KEY UPDATE`); });
-    const { result, waited } = await startAgainst(held, () => status(call(admin, method, `/api-keys/${id}/${path}`, body)));
-    try {
-      expect(waited).toBe(true);
-      await mods.pool.query('SELECT 1 FROM api_keys WHERE id = $1 FOR UPDATE NOWAIT', [id]);
     } finally {
       await held.release();
     }
@@ -329,16 +343,30 @@ describeIntegration('the access lock (real Postgres)', () => {
     }
   });
 
-  it('makes taking a channel out of a group wait for a library link that relies on it', async () => {
+  it('makes taking a channel out of a group wait for a library being linked to it', async () => {
     const lab = await group();
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
     await mods.pool.query('INSERT INTO channel_group_members (channel_group_id, channel_id) VALUES ($1, $2)', [lab, CHANNEL]);
-    const writer = await userWithRole(mods.pool, (await customRole(['code_templates:write'])).name, [lab]);
-    users.push(writer.id);
     const mine = await library([CHANNEL]);
-    const held = await hold(async (tx) => { await grants.applyChannelGroups(tx, CHANNEL, [], { userId: admin.id }); await tx.execute(mods.sql`SELECT 1 FROM roles WHERE admin FOR NO KEY UPDATE`); });
-
-    expect(await raced(held, () => status(call(writer, 'PUT', `/code-templates/libraries/${mine}`, { channelIds: [CHANNEL], revision: 1 })))).toBe(403);
+    const inLibrary = await hold((tx) => tx.execute(mods.sql`SELECT 1 FROM code_template_libraries WHERE id = ${mine} FOR UPDATE`));
+    // A library update waits for its library row before the access lock, so this one takes neither yet.
+    const linking = await startAgainst(inLibrary, () => status(call(admin, 'PUT', `/code-templates/libraries/${mine}`, { channelIds: [CHANNEL], revision: 1 })));
+    expect(linking.waited).toBe(true);
+    const inAccess = await hold(async (tx) => { await tx.execute(mods.sql`SELECT 1 FROM roles WHERE admin FOR NO KEY UPDATE`); });
+    const leaving = await startAgainst(inAccess, () => status(call(admin, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [] })));
+    try {
+      expect(leaving.waited).toBe(true);
+      await inLibrary.release();
+      // Both now wait for the access lock, so one sees the other's result.
+      await vi.waitFor(async () => {
+        const { rows } = await mods.pool.query<{ n: string }>('SELECT count(*) AS n FROM pg_stat_activity WHERE wait_event_type = \'Lock\' AND datname = current_database()');
+        expect(Number(rows[0]!.n)).toBeGreaterThanOrEqual(2);
+      }, { timeout: 5_000, interval: 20 });
+    } finally {
+      await inAccess.release();
+    }
+    expect(await linking.result).toBe(200);
+    expect(await leaving.result).toBe(200);
   });
 
   it('runs every kind of access change at once without a deadlock', async () => {

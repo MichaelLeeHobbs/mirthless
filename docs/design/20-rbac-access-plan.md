@@ -152,8 +152,8 @@ All of these rules live in `services/grant.service.ts`. It is the only writer of
 - **Lasting rule (D-330, #355):** what an actor gives, they must hold for as long as it lasts.
   - An assignment needs the actor's access until its own end. One the user already has can be resent, shortened or narrowed to fewer groups.
   - A permission added to an assigned role, a single role given to a user, and an existing channel added to a group have no end, so they need access with no end. Placing a new channel is not a grant (section 2).
-  - A channel joining a group is judged on the group's expired assignments too, since renewing one restores it. An ended API key's do not count: nothing renews it (D-331).
-  - Taking a channel out of a library's links, or linking a library on every channel or on none to chosen ones, needs `code_templates:write` with no end on every channel it linked to: it lets people change the library who could not before (D-331).
+  - A channel joining a group is judged on the group's expired assignments too, since renewing one restores it. Those of an API key that has ended or is revoked do not count: nothing renews it (D-331).
+  - Shrinking a library's links to chosen channels (taking some out, or coming from every channel or none) needs `code_templates:write` with no end on every channel it linked to: it lets people change the library who could not before. A backup restore that does it needs `system:restore` with no end. Linking it to no channel gives nobody access and does not (D-331).
   - Resetting another user's password, or enabling a user, needs the target rule and `users:write` until each of that user's assignments ends (D-331).
 - **Target rule:** acting on a user needs their grants, and the grants of keys they own, to be within the actor's own. Each user row carries `canManage` with a reason.
 - **Keys:**
@@ -166,7 +166,8 @@ All of these rules live in `services/grant.service.ts`. It is the only writer of
   - Users can't change their own assignments.
   - The last enabled holder of the admin role is protected inside the transaction, under the access lock below. This replaces the user-row lock #234 added (`lockTargetAndAdmins`).
 - **The access lock (D-331, #359):** the admin role row, FOR NO KEY UPDATE (`lockAccess`).
-  - Held by: setting assignments, every change to a user by someone else (create, edit, enable, disable, delete, password reset), a role edit, every change to a channel's groups, a restored membership, every key change (issue, enable, disable, replace, takeover, revoke), and a library update that sends its links.
+  - The route's guard reads its permission before the lock, so a holder reads it again under it (`lockAccessFor`; a membership change reads `channels:write` on the channel, a library update `code_templates:write`).
+  - Held by: setting assignments, every change to a user by someone else (create, edit, enable, disable, delete, password reset), a role edit, every change to a channel's groups, a restored membership, every key change (issue, enable, disable, replace, takeover, revoke), and a library update that sends its links or a restore that overwrites a library.
   - Lock order: the channel or library being changed, the access lock, users, other role rows in id order (SHARE for an assignment, NO KEY UPDATE for an edit), channel groups in id order (NO KEY UPDATE for a scope, KEY SHARE then SHARE for a membership), API keys in key-user order, keys' users. A last-admin check takes the new role's row before the target's; under the access lock that is harmless.
   - The access lock comes before every row after it, inserts included. An insert holds its unique entries, so an email change under the lock would wait for an uncommitted user who is waiting for the lock. A user update that changes the email takes the row FOR UPDATE, which a key's foreign keys to it wait for.
   - The channel or library comes before it, so a change waiting for a long import of one channel does not hold up every revocation.

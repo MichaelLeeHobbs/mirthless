@@ -36,7 +36,7 @@ function standing(grants: FoldedGrants): unknown {
 beforeEach(() => { readStanding.mockReset(); });
 
 describe('issuing a key the issuer covers now', () => {
-  const now = standing(new Map([['channels:read', ALL_CHANNELS]]));
+  const now = standing(new Map([['channels:read', ALL_CHANNELS], ['api_keys:manage', ALL_CHANNELS]]));
   const atEnd = (at: Date): boolean => at.getTime() > Date.now() + DAY_MS / 2;
 
   it('reports a failed read of the issuer\'s access at the key\'s end as that failure, not as access that ends too soon', async () => {

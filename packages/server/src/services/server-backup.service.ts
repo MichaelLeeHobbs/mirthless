@@ -256,7 +256,7 @@ export class ServerBackupService {
       sections.push(await restoreTags(backup.tags, collisionMode));
       sections.push(await restoreChannelGroups(backup.channelGroups, collisionMode));
       sections.push(await restoreResources(backup.resources, collisionMode));
-      sections.push(await restoreCodeTemplateLibraries(backup.codeTemplateLibraries, collisionMode));
+      sections.push(await restoreCodeTemplateLibraries(backup.codeTemplateLibraries, collisionMode, context));
       sections.push(await restoreCodeTemplates(backup.codeTemplates, collisionMode));
       sections.push(await restoreGlobalScripts(backup.globalScripts));
 
@@ -449,6 +449,7 @@ async function restoreResources(
 async function restoreCodeTemplateLibraries(
   items: ServerBackup['codeTemplateLibraries'],
   mode: BackupCollisionMode,
+  context?: AuditContext,
 ): Promise<RestoreSectionResult> {
   return restoreEach('codeTemplateLibraries', items, (item) => `Code template library "${item.name}"`, (item) => restoreRow({
     find: () => db.select({ id: codeTemplateLibraries.id }).from(codeTemplateLibraries).where(eq(codeTemplateLibraries.id, item.id)),
@@ -457,9 +458,7 @@ async function restoreCodeTemplateLibraries(
     }),
     overwrite: {
       mode,
-      update: () => db.update(codeTemplateLibraries).set({
-        name: item.name, description: item.description, channelIds: item.channelIds ?? null,
-      }).where(eq(codeTemplateLibraries.id, item.id)),
+      update: () => CodeTemplateService.overwriteLibrary({ id: item.id, name: item.name, description: item.description, channelIds: item.channelIds ?? null }, context),
     },
   }));
 }

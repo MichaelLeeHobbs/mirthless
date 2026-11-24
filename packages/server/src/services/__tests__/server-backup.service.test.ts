@@ -6,6 +6,7 @@ const mockChannelImportChannels = vi.fn();
 const mockRestoreMembership = vi.fn().mockResolvedValue(undefined);
 const mockListLibraries = vi.fn();
 const mockListTemplates = vi.fn();
+const mockOverwriteLibrary = vi.fn();
 const mockAlertList = vi.fn();
 const mockAlertGetByIds = vi.fn();
 const mockAlertCreate = vi.fn();
@@ -62,7 +63,7 @@ vi.mock('../grant.service.js', () => ({
   GrantService: { restoreMembership: mockRestoreMembership },
 }));
 vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listLibraries: mockListLibraries, listTemplates: mockListTemplates },
+  CodeTemplateService: { listLibraries: mockListLibraries, listTemplates: mockListTemplates, overwriteLibrary: mockOverwriteLibrary },
 }));
 vi.mock('../alert.service.js', () => ({
   AlertService: { list: mockAlertList, getById: mockAlertGetById, getByIds: mockAlertGetByIds, create: mockAlertCreate, update: mockAlertUpdate },
@@ -820,7 +821,7 @@ describe('ServerBackupService', () => {
           section: 'codeTemplateLibraries', table: codeTemplateLibraries, label: 'Code template library "Lib"',
           backup: { codeTemplateLibraries: [libraryItem] },
           inserted: libraryItem,
-          updatedTo: { name: 'Lib', description: 'd', channelIds: ['ch-1'] },
+          updatedTo: null,
         },
         {
           section: 'codeTemplates', table: codeTemplates, label: 'Code template "fmt"',
@@ -852,7 +853,7 @@ describe('ServerBackupService', () => {
           expect(mockUpdate).not.toHaveBeenCalled();
         });
 
-        it('updates an existing row by id in OVERWRITE mode', async () => {
+        it.skipIf(updatedTo === null)('updates an existing row by id in OVERWRITE mode', async () => {
           mockSelectWhere.mockResolvedValue([{ id }]);
           expect(await restoreSection(backup, 'OVERWRITE', section)).toEqual({ section, ...counts(0, 1, 0) });
           expect(mockUpdate).toHaveBeenCalledWith(table);
@@ -866,6 +867,16 @@ describe('ServerBackupService', () => {
           mockInsertValues.mockRejectedValue(new Error('duplicate key'));
           expect(await restoreSection(backup, 'SKIP', section)).toEqual({ section, ...counts(0, 0, 0, [`${label}: duplicate key`]) });
         });
+      });
+
+      it('overwrites a library through the service that judges its links, and reports a refusal', async () => {
+        mockSelectWhere.mockResolvedValue([{ id: libraryItem.id }]);
+        expect(await restoreSection({ codeTemplateLibraries: [libraryItem] }, 'OVERWRITE', 'codeTemplateLibraries')).toEqual({ section: 'codeTemplateLibraries', ...counts(0, 1, 0) });
+        expect(mockOverwriteLibrary.mock.calls[0]?.[0]).toEqual(libraryItem);
+
+        mockOverwriteLibrary.mockRejectedValueOnce(new ServiceError('FORBIDDEN', 'needs system:restore'));
+        expect(await restoreSection({ codeTemplateLibraries: [libraryItem] }, 'OVERWRITE', 'codeTemplateLibraries'))
+          .toEqual({ section: 'codeTemplateLibraries', ...counts(0, 0, 0, ['Code template library "Lib": needs system:restore']) });
       });
 
       it('stores a missing library channel list as null', async () => {

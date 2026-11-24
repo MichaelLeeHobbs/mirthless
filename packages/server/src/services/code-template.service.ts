@@ -17,7 +17,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
 import { codeTemplateLibraries, codeTemplates, type CodeTemplate } from '../db/schema/index.js';
-import { actorGrants, lockAccess } from './grant.service.js';
+import { actorGrants, holdsOver, lockAccess } from './grant.service.js';
 
 export interface LibrarySummary {
   readonly id: string;
@@ -293,6 +293,25 @@ export class CodeTemplateService {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       };
+    });
+  }
+
+  /**
+   * For a backup restore, which needs system:restore rather than code_templates:write. Shrinking
+   * the links lasts, so like a restored membership it needs that with no end (D-331).
+   */
+  static async overwriteLibrary(library: { readonly id: string; readonly name: string; readonly description: string | null; readonly channelIds: Links }, context?: AuditContext): Promise<void> {
+    const { id, name, description, channelIds } = library;
+    await db.transaction(async (tx) => {
+      const existing = await lockLibrary(tx, id, 'update');
+      await lockAccess(tx);
+      if (narrowsLinks(existing.channelIds ?? null, channelIds)) {
+        const lasting = await actorGrants(tx, context?.userId ?? null, null);
+        if (!holdsOver(lasting, PERMISSIONS.SYSTEM_RESTORE, null)) {
+          throw new ServiceError('FORBIDDEN', 'Restoring a library with fewer channels needs system:restore with no end time', { missing: [PERMISSIONS.SYSTEM_RESTORE] });
+        }
+      }
+      await tx.update(codeTemplateLibraries).set({ name, description, channelIds: channelIds === null ? null : [...channelIds] }).where(eq(codeTemplateLibraries.id, id));
     });
   }
 

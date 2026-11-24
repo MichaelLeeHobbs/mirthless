@@ -114,8 +114,10 @@ function pushTargetRule(targetPermissions: readonly string[], actorPermissions: 
   pushResponse([standingRow(ADMIN_ID, actorPermissions)]);
 }
 
+/** The lock, then the actor, read again for the route's permission. */
 function pushAccessLock(): void {
   pushResponse([{ id: 'admin-role' }], { forUpdate: true });
+  pushResponse([standingRow(ADMIN_ID, ['channels:read', 'users:write'])]);
 }
 
 beforeEach(() => {
@@ -271,7 +273,6 @@ describe('UserService', () => {
       pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([{ id: USER_ID }]);
       pushAccessLock();
-      pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([], { orderable: true }); // the target's assignments
 
       const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, true);
