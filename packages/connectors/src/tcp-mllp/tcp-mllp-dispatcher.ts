@@ -1,12 +1,23 @@
 import * as net from 'node:net';
 import * as tls from 'node:tls';
+import { setTimeout as delay } from 'node:timers/promises';
 import * as genericPool from 'generic-pool';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
+import { nestedErrorMessages } from '../nested-errors.js';
 import type { TlsClientOptions } from '../tls.js';
 import { classifyAckResponse, controlIdOf, type SentControlId } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+
+/** Longest wait after a failed connect, so a remote that is down is not hammered. */
+const MAX_CONNECT_PAUSE_MS = 1_000;
+
+/** A host with several addresses fails with an AggregateError, whose own message is empty. */
+function connectFailureText(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  return err.message || nestedErrorMessages(err).join('; ');
+}
 
 export interface TcpMllpDispatcherConfig {
   readonly host: string;
@@ -24,6 +35,9 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   private readonly config: TcpMllpDispatcherConfig;
   private readonly logger: ConnectorLogger;
   private pool: genericPool.Pool<net.Socket> | null = null;
+  /** Why the last connect failed; null once one succeeds. */
+  private connectFailure: string | null = null;
+  private outageLogged = false;
 
   constructor(config: TcpMllpDispatcherConfig, logger?: ConnectorLogger) {
     this.config = config;
@@ -44,11 +58,12 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
   async onStart(): Promise<Result<void>> {
     return tryCatch(async () => {
       const factory: genericPool.Factory<net.Socket> = {
-        create: () => this.createConnection(),
+        create: () => this.connectOrPause(),
         destroy: async (socket) => { socket.destroy(); },
         validate: async (socket) => !socket.destroyed && socket.writable,
       };
 
+      this.resetOutage();
       this.pool = genericPool.createPool(factory, {
         min: 0,
         max: this.config.maxConnections,
@@ -56,12 +71,57 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
         acquireTimeoutMillis: this.config.acquireTimeoutMs,
         testOnBorrow: true,
       });
-      // The pool surfaces background factory-create failures via this event;
-      // without a listener generic-pool logs to stderr and can reject noisily.
-      this.pool.on('factoryCreateError', (err) => {
-        this.logger.error(errorInfo(err), 'MLLP connection factory create error');
-      });
     });
+  }
+
+  /** The pool calls this again at once when it fails while a send waits, so a failure is held back. */
+  private async connectOrPause(): Promise<net.Socket> {
+    try {
+      const socket = await this.createConnection();
+      this.resetOutage();
+      return socket;
+    } catch (err) {
+      this.recordFailedConnect(err);
+      // At most a quarter of a send's wait, so a send that comes during the pause still gets an attempt of its own.
+      await delay(Math.min(MAX_CONNECT_PAUSE_MS, this.config.acquireTimeoutMs / 4));
+      throw err;
+    }
+  }
+
+  private resetOutage(): void {
+    this.connectFailure = null;
+    this.outageLogged = false;
+  }
+
+  private recordFailedConnect(err: unknown): void {
+    this.connectFailure = connectFailureText(err);
+    // With a connection open the remote is there and refuses only more of them, which is no outage.
+    const open = this.pool ? this.pool.borrowed + this.pool.available : 0;
+    if (this.outageLogged || open > 0) return;
+    this.outageLogged = true;
+    this.logger.error(
+      { ...errorInfo(err), errMsg: this.connectFailure, host: this.config.host, port: this.config.port },
+      'MLLP destination cannot be reached; retrying while a message waits, and not logging again until it is reached',
+    );
+  }
+
+  private get remote(): string {
+    return `${this.config.host}:${String(this.config.port)}`;
+  }
+
+  /** The pool's own timeout says neither what was waited for nor why it did not come. */
+  private acquireError(err: unknown): Error {
+    const error = err instanceof Error ? err : new Error(String(err));
+    if (error.name !== 'TimeoutError') return error;
+    const waited = `to ${this.remote} within ${String(this.config.acquireTimeoutMs)}ms`;
+    const text = this.connectFailure === null ? `No free connection ${waited}` : `No connection ${waited}: ${this.connectFailure}`;
+    return new Error(text, { cause: error });
+  }
+
+  /** A queued destination aborts its send after 30 s, which comes before a long acquire timeout. */
+  private abortError(): Error {
+    const reason = this.connectFailure;
+    return new Error(reason === null ? 'Send aborted' : `Send aborted while ${this.remote} could not be reached: ${reason}`);
   }
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
@@ -88,7 +148,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     const acquirePromise = pool.acquire();
 
     return new Promise<net.Socket>((resolve, reject) => {
-      const onAbort = (): void => { reject(new Error('Send aborted')); };
+      const onAbort = (): void => { reject(this.abortError()); };
       signal.addEventListener('abort', onAbort, { once: true });
 
       acquirePromise.then(
@@ -103,7 +163,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
         },
         (err: unknown) => {
           signal.removeEventListener('abort', onAbort);
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(this.acquireError(err));
         },
       );
     });

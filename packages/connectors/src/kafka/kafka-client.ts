@@ -2,6 +2,7 @@
 
 import { Admin, Consumer, Producer, ProduceAcks, type SASLOptions } from '@platformatic/kafka';
 import type { ConnectionOptions as TlsConnectionOptions } from 'node:tls';
+import { nestedErrorMessages } from '../nested-errors.js';
 import type { TlsClientOptions } from '../tls.js';
 
 export const KAFKA_SASL_MECHANISM = {
@@ -92,14 +93,18 @@ export const subscribeKafka: KafkaSubscribe = async (options) => {
     autocommit: false,
   });
   // The consumer emits 'error' when it cannot rejoin the group after a failed heartbeat,
-  // even between records; unheard, it ends the process. Ending the stream with it makes
-  // the iteration throw and the receiver rejoin.
+  // even between records; unheard, it ends the process. A rejoin that a commit started and
+  // that fails is reported only by 'consumer:group:lost': the heartbeat is already cancelled,
+  // so nothing else would notice until the next record. Ending the stream makes the iteration
+  // throw and the receiver rejoin.
   let stream: Awaited<ReturnType<typeof consumer.consume>> | null = null;
   let consumerError: Error | null = null;
-  consumer.on('error', (err: unknown) => {
+  const endStream = (err: unknown): void => {
     consumerError = describeKafkaError(err);
     stream?.destroy(consumerError);
-  });
+  };
+  consumer.on('error', endStream);
+  consumer.on('consumer:group:lost', ({ error }) => { endStream(error); });
   try {
     stream = await consumer.consume({
       topics: [options.topic],
@@ -165,18 +170,8 @@ export type KafkaProducerFactory = (config: KafkaConnectionConfig) => KafkaProdu
  */
 export function describeKafkaError(err: unknown): Error {
   if (!(err instanceof Error)) return new Error(String(err));
-  const reasons: string[] = [];
-  const pending: unknown[] = [err];
-  while (pending.length > 0 && reasons.length < 10) {
-    const next = pending.shift();
-    if (!(next instanceof Error)) continue;
-    if (next !== err && next.message) reasons.push(next.message);
-    const nested = (next as { errors?: unknown }).errors;
-    if (Array.isArray(nested)) pending.push(...(nested as unknown[]));
-    if (next.cause !== undefined) pending.push(next.cause);
-  }
-  const unique = [...new Set(reasons)].filter((r) => r !== err.message);
-  return unique.length === 0 ? err : new Error(`${err.message} ${unique.join('; ')}`, { cause: err });
+  const reasons = nestedErrorMessages(err);
+  return reasons.length === 0 ? err : new Error(`${err.message} ${reasons.join('; ')}`, { cause: err });
 }
 
 export const createKafkaProducer: KafkaProducerFactory = (config) => {

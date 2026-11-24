@@ -127,6 +127,23 @@ describe('subscribeKafka', () => {
     expect(lib.consumerClosed).toEqual([true]);
   });
 
+  // The client reports this rejoin's failure to the commit alone, with the heartbeat already cancelled.
+  it('ends an idle subscription when a rejoin started by a commit loses the group', async () => {
+    const idle = new Readable({ read(): void { /* no records */ } });
+    lib.stream = Object.assign(idle, { close: async () => undefined });
+    const subscription = await subscribeKafka({ ...connection, topic: 'adt', groupId: 'g1', startFrom: 'EARLIEST' });
+    const reading = (async (): Promise<number> => {
+      let count = 0;
+      for await (const _record of subscription) count += 1;
+      return count;
+    })();
+    lib.consumer?.emit('consumer:group:lost', {
+      groupId: 'g1', memberId: 'm1', generationId: 3, operation: 'joinGroup',
+      error: Object.assign(new Error('joinGroup failed 4 times.'), { errors: [new Error('COORDINATOR_NOT_AVAILABLE')] }),
+    });
+    await expect(reading).rejects.toThrow('joinGroup failed 4 times. COORDINATOR_NOT_AVAILABLE');
+  });
+
   it('ends the subscription when the consumer fails while joining', async () => {
     lib.errorDuringConsume = new Error('Rejoining the group failed.');
     lib.stream = Object.assign(new Readable({ read(): void { /* no records */ } }), { close: async () => undefined });
