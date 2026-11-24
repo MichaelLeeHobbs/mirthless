@@ -47,7 +47,7 @@ describe('registry DICOM factories', () => {
 });
 
 describe('registry EMAIL factory', () => {
-  // EMAIL_SOURCE_DEFAULTS since dad3da5 (2026-03-03), the login filled.
+  // EMAIL_SOURCE_DEFAULTS from dad3da5 (2026-03-03) until #154, the login filled.
   it('builds from the properties the editor saves', () => {
     expect(() => createSourceConnector('EMAIL', {
       host: 'imap.example', port: 993, secure: true, username: 'lab', password: 'p', protocol: 'IMAP', folder: 'INBOX',

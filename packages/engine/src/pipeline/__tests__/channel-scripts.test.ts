@@ -172,7 +172,7 @@ describe('channel preprocessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('ERROR');
     expect(result.value.destinationResults).toHaveLength(0);
-    // Source connector (metaDataId 0) error content (CT_PROCESSING_ERROR = 13).
+    // Source connector (metaDataId 0) error content (CONTENT_TYPE.PROCESSING_ERROR = 13).
     expect(store.storeContent).toHaveBeenCalledWith(
       expect.any(String), 1, 0, 13, expect.stringContaining('pre boom'), 'TEXT',
     );

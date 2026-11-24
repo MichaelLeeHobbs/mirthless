@@ -27,7 +27,6 @@ function makeConfig(overrides?: Partial<EmailReceiverConfig>): EmailReceiverConf
     postAction: EMAIL_POST_ACTION.MARK_READ,
     moveToFolder: '',
     subjectFilter: '',
-    includeAttachments: false,
     ...overrides,
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiKeyView } from '@galvanigraph/core-models';
 import { coversKey, draftProblem, keyScopeLabel, liveKeysIssuedBy, needsReason, toIssueInput, type KeyDraft } from '../api-keys.js';
+import { toDateTimeLocal } from '../datetime-local.js';
 
 const NOW = Date.parse('2026-11-17T12:00:00Z');
 const DAY = 86_400_000;
@@ -14,10 +15,7 @@ function key(over: Partial<ApiKeyView>): ApiKeyView {
   };
 }
 
-function local(ms: number): string {
-  const d = new Date(ms);
-  return new Date(ms - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
+const local = (ms: number): string => toDateTimeLocal(new Date(ms).toISOString());
 
 describe('liveKeysIssuedBy', () => {
   it('lists the working keys a user issued: offboarding acts on no other', () => {

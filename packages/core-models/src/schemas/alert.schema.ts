@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { regexError } from '../regex-error.js';
 
 export const ALERT_TRIGGER_TYPES = ['CHANNEL_ERROR', 'NO_MESSAGES'] as const;
 
@@ -18,10 +19,16 @@ export const ERROR_EVENT_TYPES = [
 
 export const ALERT_ACTION_TYPES = ['EMAIL', 'CHANNEL'] as const;
 
+/** Refused at save, because a pattern that does not compile never matches and its alert never fires. */
+const alertRegexSchema = z.string().superRefine((pattern, ctx) => {
+  const message = regexError(pattern);
+  if (message !== null) ctx.addIssue({ code: 'custom', message });
+});
+
 export const channelErrorTriggerSchema = z.object({
   type: z.literal('CHANNEL_ERROR'),
   errorTypes: z.array(z.enum(ERROR_EVENT_TYPES)).min(1),
-  regex: z.string().nullable().default(null),
+  regex: alertRegexSchema.nullable().default(null),
 });
 
 export const noMessagesTriggerSchema = z.object({

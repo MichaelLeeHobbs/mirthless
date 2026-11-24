@@ -1,3 +1,4 @@
+import { regexError } from '@galvanigraph/core-models';
 import type { LoadedAlert, ChannelErrorEvent } from './alert-evaluator.js';
 import { evaluateAlerts } from './alert-evaluator.js';
 import { dispatchActions, type ActionDispatcherDeps } from './action-dispatcher.js';
@@ -22,6 +23,17 @@ export class AlertManager {
 
   loadAlerts(alerts: readonly LoadedAlert[]): void {
     this.alerts = alerts;
+    for (const alert of alerts) this.warnOfBadRegex(alert);
+  }
+
+  /** Saved before the API refused one, or written to the database. */
+  private warnOfBadRegex(alert: LoadedAlert): void {
+    const errMsg = alert.enabled && alert.trigger.regex ? regexError(alert.trigger.regex) : null;
+    if (errMsg === null) return;
+    this.deps.logger.warn(
+      { alertId: alert.id, alertName: alert.name, channelName: this.deps.channelName, errMsg },
+      `Alert "${alert.name}" never fires: its regex filter does not compile`,
+    );
   }
 
   getAlerts(): readonly LoadedAlert[] {

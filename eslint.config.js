@@ -27,6 +27,7 @@ const SHARED_HELPERS = [
   { names: 'unescapeControlChars|readEscapes|unescapeMirth', home: '@galvanigraph/core-util (delimited.ts)' },
   { names: 'fillPlaceholders|placeholderText|placeholderNames|recordLookup|hasPlaceholderText', home: '@galvanigraph/core-util (placeholders.ts, D-275)' },
   { names: 'formatTimestampWith', home: 'packages/web/src/lib/format.ts (D-278)' },
+  { names: 'toDateTimeLocal|fromDateTimeLocal|sentDateTimeLocal|toLocalInput', home: 'packages/web/src/lib/datetime-local.ts' },
   { names: 'isSecretSetting|isSecretSettingType|isSecret', home: '@galvanigraph/core-util (secret-setting.ts)' },
   { names: 'containsPattern|likePattern', home: 'packages/server/src/lib/like.ts' },
   { names: 'emitSuccessEvent|emitCollectionEvent|emitDataSourceEvent', home: 'packages/server/src/lib/event-emitter.ts' },
@@ -35,6 +36,7 @@ const SHARED_HELPERS = [
   { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvanigraph/connectors (smtp/smtp-dispatcher.ts)' },
   { names: 'parseHeaderLines|parseHeaders|headersFromText', home: '@galvanigraph/core-models (http-connector.schema.ts)' },
   { names: 'redirectMessage', home: 'packages/connectors/src/redirect.ts' },
+  { names: 'regexError|firstInvalidRegex', home: '@galvanigraph/core-models (regex-error.ts)' },
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
 ];
 // A permission check goes through holdsPermission or can (@galvanigraph/core-models

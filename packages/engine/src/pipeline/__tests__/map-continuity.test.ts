@@ -178,7 +178,7 @@ describe('Pipeline Map Continuity', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
-    const transformedCall = storeContentCalls.find((c: unknown[]) => c[3] === 3); // CT_TRANSFORMED=3
+    const transformedCall = storeContentCalls.find((c: unknown[]) => c[3] === 3); // CONTENT_TYPE.TRANSFORMED=3
     expect(transformedCall).toBeDefined();
     expect(transformedCall![4]).toBe('localhost');
   });

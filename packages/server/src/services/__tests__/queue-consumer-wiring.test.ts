@@ -331,7 +331,7 @@ describe('QueueConsumer wiring', () => {
     });
 
     it('refuses to deploy a queued destination on a non-storing storage mode', async () => {
-      // METADATA/DISABLED/RAW never persist CT_SENT, so a queued destination would
+      // METADATA/DISABLED/RAW never persist CONTENT_TYPE.SENT, so a queued destination would
       // reload null content and error 100% of messages.
       for (const mode of ['METADATA', 'DISABLED', 'RAW']) {
         const channel = makeChannel({

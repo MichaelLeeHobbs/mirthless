@@ -99,22 +99,22 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
       const a = await makeGroup('a');
       const b = await makeGroup('b');
 
-      unwrap(await ChannelGroupService.setChannelGroups(channelId, [a, b]));
+      unwrap(await ChannelGroupService.setChannelGroups(channelId, [a, b], actor));
       expect(await groupsOf(channelId)).toEqual([a, b].sort());
 
-      unwrap(await ChannelGroupService.setChannelGroups(channelId, [b]));
+      unwrap(await ChannelGroupService.setChannelGroups(channelId, [b], actor));
       expect(await groupsOf(channelId)).toEqual([b]);
 
-      unwrap(await ChannelGroupService.setChannelGroups(channelId, []));
+      unwrap(await ChannelGroupService.setChannelGroups(channelId, [], actor));
       expect(await groupsOf(channelId)).toEqual([]);
     });
 
     it('answers NOT_FOUND for an unknown group and leaves the memberships alone', async () => {
       const channelId = await makeChannel();
       const a = await makeGroup('a');
-      unwrap(await ChannelGroupService.setChannelGroups(channelId, [a]));
+      unwrap(await ChannelGroupService.setChannelGroups(channelId, [a], actor));
 
-      const result = await ChannelGroupService.setChannelGroups(channelId, [randomUUID()]);
+      const result = await ChannelGroupService.setChannelGroups(channelId, [randomUUID()], actor);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -125,7 +125,7 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
     it('answers NOT_FOUND for an unknown channel', async () => {
       const a = await makeGroup('a');
 
-      const result = await ChannelGroupService.setChannelGroups(randomUUID(), [a]);
+      const result = await ChannelGroupService.setChannelGroups(randomUUID(), [a], actor);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -137,7 +137,7 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
       const a = await makeGroup('a');
       unwrap(await ChannelService.delete(channelId));
 
-      const result = await ChannelGroupService.setChannelGroups(channelId, [a]);
+      const result = await ChannelGroupService.setChannelGroups(channelId, [a], actor);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -149,14 +149,14 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
       const channelId = await makeChannel();
       const from = await makeGroup('from');
       const to = await makeGroup('to');
-      unwrap(await ChannelGroupService.setChannelGroups(channelId, [from]));
+      unwrap(await ChannelGroupService.setChannelGroups(channelId, [from], actor));
 
       const locker = await pool.connect();
       try {
         await locker.query('BEGIN');
         await locker.query('DELETE FROM channel_groups WHERE id = $1', [to]);
 
-        const pending = ChannelGroupService.setChannelGroups(channelId, [to]);
+        const pending = ChannelGroupService.setChannelGroups(channelId, [to], actor);
         await waitForBlocked(pool, 'select "id" from "channel_groups"');
         await locker.query('COMMIT');
 
@@ -177,14 +177,14 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
       const channelId = await makeChannel();
       const from = await makeGroup('from');
       const to = await makeGroup('to');
-      unwrap(await ChannelGroupService.setChannelGroups(channelId, [from]));
+      unwrap(await ChannelGroupService.setChannelGroups(channelId, [from], actor));
 
       const locker = await pool.connect();
       try {
         await locker.query('BEGIN');
         await locker.query('INSERT INTO channel_group_members (channel_group_id, channel_id) VALUES ($1, $2)', [to, channelId]);
 
-        const pending = ChannelGroupService.setChannelGroups(channelId, [to]);
+        const pending = ChannelGroupService.setChannelGroups(channelId, [to], actor);
         await waitForBlocked(pool, 'insert into "channel_group_members"');
         await locker.query('COMMIT');
 

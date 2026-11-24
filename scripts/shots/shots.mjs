@@ -70,6 +70,7 @@ const PAGES = {
   'events-export-reason': { url: '/events', click: 'Export' },
   tags: '/tags',
   'alert-editor': '/alerts/a1',
+  'alert-regex-error': { url: '/alerts/a1', fill: { 'Regex Filter (optional)': '[unclosed' } },
   'alert-templates': { url: '/alerts/a1', keys: 'End' },
   'code-templates': '/code-templates',
   'library-links': { url: '/code-templates', click: 'Edit library' },

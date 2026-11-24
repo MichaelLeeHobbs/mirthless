@@ -96,7 +96,7 @@ describeIntegration('UserService roles (real Postgres)', () => {
 
     it('refuses a role that does not exist and creates no user', async () => {
       const name = tag();
-      const result = await UserService.createUser({ username: name, email: `${name}@example.test`, password: 'password123', role: 'wizard' });
+      const result = await UserService.createUser({ username: name, email: `${name}@example.test`, password: 'password123', role: 'wizard' }, { userId: await createUser('admin'), ipAddress: null });
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'INVALID_INPUT');

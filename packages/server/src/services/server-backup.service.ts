@@ -256,7 +256,7 @@ export class ServerBackupService {
       sections.push(await restoreTags(backup.tags, collisionMode));
       sections.push(await restoreChannelGroups(backup.channelGroups, collisionMode));
       sections.push(await restoreResources(backup.resources, collisionMode));
-      sections.push(await restoreCodeTemplateLibraries(backup.codeTemplateLibraries, collisionMode));
+      sections.push(await restoreCodeTemplateLibraries(backup.codeTemplateLibraries, collisionMode, context));
       sections.push(await restoreCodeTemplates(backup.codeTemplates, collisionMode));
       sections.push(await restoreGlobalScripts(backup.globalScripts));
 
@@ -451,6 +451,7 @@ async function restoreResources(
 async function restoreCodeTemplateLibraries(
   items: ServerBackup['codeTemplateLibraries'],
   mode: BackupCollisionMode,
+  context?: AuditContext,
 ): Promise<RestoreSectionResult> {
   return restoreEach('codeTemplateLibraries', items, (item) => `Code template library "${item.name}"`, (item) => restoreRow({
     find: () => db.select({ id: codeTemplateLibraries.id }).from(codeTemplateLibraries).where(eq(codeTemplateLibraries.id, item.id)),
@@ -459,9 +460,7 @@ async function restoreCodeTemplateLibraries(
     }),
     overwrite: {
       mode,
-      update: () => db.update(codeTemplateLibraries).set({
-        name: item.name, description: item.description, channelIds: item.channelIds ?? null,
-      }).where(eq(codeTemplateLibraries.id, item.id)),
+      update: () => CodeTemplateService.overwriteLibrary({ id: item.id, name: item.name, description: item.description, channelIds: item.channelIds ?? null }, context),
     },
   }));
 }
@@ -551,6 +550,8 @@ async function restoreAlerts(
   for (const item of items) {
     try {
       const existing = foundOrThrow(await AlertService.getById(item.id));
+      // Before the trigger is checked: an alert left as it is has nothing to report.
+      if (existing && mode === 'SKIP') { skipped++; continue; }
       const createInput = {
         name: item.name,
         description: item.description ?? '',
@@ -565,7 +566,6 @@ async function restoreAlerts(
       };
 
       if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
         const res = await AlertService.update(item.id, { ...createInput, revision: existing.revision });
         if (!res.ok) throw res.error;
         updated++;

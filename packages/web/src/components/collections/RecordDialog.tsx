@@ -9,7 +9,8 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { CollectionRecord, CollectionSummary } from '../../hooks/use-collections.js';
-import { filledFields, formatTtl, fromDateTimeLocal, toDateTimeLocal } from '../../lib/collections.js';
+import { filledFields, formatTtl } from '../../lib/collections.js';
+import { fromDateTimeLocal, toDateTimeLocal } from '../../lib/datetime-local.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 /** `expireAt: null`: never (edit) or the collection default (add). */
@@ -53,7 +54,7 @@ export function RecordDialog({ collection, record, readOnly, isPending, error, o
   const [formError, setFormError] = useState<string | null>(null);
 
   const handleSave = (): void => {
-    const expireAt = fromDateTimeLocal(expires);
+    const expireAt = fromDateTimeLocal(expires, record?.expireAt ?? null);
     if (expireAt === undefined) {
       setFormError('Expires must be a date and time, or blank.');
       return;
@@ -101,8 +102,8 @@ export function RecordDialog({ collection, record, readOnly, isPending, error, o
           value={expires}
           onChange={(e) => { setExpires(e.target.value); }}
           helperText={readOnly ? undefined : expiryHelp(collection, record === null)}
-          slotProps={{ input: { readOnly }, inputLabel: { shrink: true } }}
-          sx={{ minWidth: 260 }}
+          slotProps={{ input: { readOnly }, inputLabel: { shrink: true }, htmlInput: { step: 1 } }}
+          sx={{ width: 280, maxWidth: '100%' }}
         />
         {record ? (
           <Typography variant="caption" component="p" sx={{ color: 'text.secondary', mt: 1.5 }}>
