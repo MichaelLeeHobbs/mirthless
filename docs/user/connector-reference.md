@@ -26,6 +26,27 @@ Each type's property schemas are in `packages/core-models/src/schemas/<type>-con
 
 A connector's properties are checked when the channel deploys. Every type rejects a key its table below does not list, or a value of the wrong type, so a misspelled key fails the deploy instead of being ignored. The exceptions are keys this app's own editor or Mirth importer once saved and nothing reads, which are dropped, and old value spellings, which are mapped; `docs/ops/upgrade.md` lists them per type. A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a table and its schema list different keys.
 
+### Test Connection
+
+**Test Connection** checks the settings in the form as a deploy checks them, with the references to the configuration map filled, and answers with the deploy's reason when a deploy would refuse them (D-380). So the rest of the form has to be filled in before a connection can be tested. Scripts are not compiled. It then connects, gives up after 10 seconds (40 at most, for a MySQL server that stops answering after the sign-in), and sends no message:
+
+| Connector | What is tested |
+|---|---|
+| TCP_MLLP and DICOM destinations, EMAIL | A TCP connection. No TLS and no sign-in. |
+| HTTP destination | A `HEAD` request. With `scheme` HTTPS it uses the certificates from the store. Any answer passes, an error status too; a redirect does not. |
+| HTTP source with `scheme` HTTPS | A TLS handshake on the server itself, with the certificate and its key. |
+| Other HTTP sources, TCP_MLLP and DICOM sources | The settings only. A listener connects to nothing: its port is opened when the channel starts. |
+| FILE | That the server can read the directory, and for a destination write to it. A directory that a destination would create has to be there. |
+| SFTP | Sign-in, and that the remote directory is there. A destination creates one that is not. |
+| DATABASE, SMTP | Sign-in. |
+| FHIR | `GET <baseUrl>/metadata`, without the credentials. |
+| KAFKA, AMQP | Sign-in, and that the topic, queue or exchange is there. A topic that holds `${...}` is not checked. |
+| JAVASCRIPT, CHANNEL | The settings only. |
+
+A `${...}` that names no entry of the configuration map is left as it is, as at a deploy, so an HTTP URL whose server is filled per message cannot be tested. Loopback, link-local and other reserved addresses are refused, which a deployed channel may reach (D-262).
+
+To have references filled you need `config_map:read`, or `channels:write` on the channel the test is for, because the form says which server gets the values. Without it, settings that hold a reference to the map are refused (403). Which entries were filled is recorded in the audit log, best effort (`CONFIG_MAP_READ`).
+
 ## Keys on every connector
 
 ### Every source

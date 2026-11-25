@@ -130,6 +130,25 @@ beforeEach(() => {
 });
 
 describe('ConfigMapService', () => {
+  describe('references', () => {
+    it('fails when the entries cannot be read', async () => {
+      const list = vi.spyOn(ConfigMapService, 'list').mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') } as never);
+
+      const result = await ConfigMapService.references();
+
+      list.mockRestore();
+      expect(result.ok).toBe(false);
+    });
+
+    it('fills a name, and a category and a name', async () => {
+      pushOrderableResponse([makeEntry({ category: 'site', name: 'port', value: '6661' })]);
+
+      const result = await ConfigMapService.references();
+
+      expect([...(result.value ?? new Map<string, string>())]).toEqual([['site.port', '6661'], ['port', '6661']]);
+    });
+  });
+
   describe('list', () => {
     it('returns all entries sorted by category then name', async () => {
       const entries = [

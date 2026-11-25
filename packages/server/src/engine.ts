@@ -65,7 +65,7 @@ import { ResourceService } from './services/resource.service.js';
 import { DataSourceService } from './services/data-source.service.js';
 import { AlertService, type AlertDetail } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
-import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from './services/connector-tls-resolver.js';
+import { DESTINATION_TLS_RESOLVERS, SOURCE_TLS_RESOLVERS } from './services/connector-tls-resolver.js';
 import { ServiceError } from './lib/service-error.js';
 import { whyNotTaking } from './lib/taking-messages.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
@@ -543,16 +543,12 @@ const RAW_NOT_STORED = 'Not finished after a server stop: its raw content is not
 /** How long an undeploy waits for crash recovery to end the messages it was working on. */
 const RECOVERY_ENDS_MS = 10_000;
 
-type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
 interface SourceFailureReport {
   readonly channelId: string;
   readonly runtime: ChannelRuntime;
   readonly error: Error;
   readonly raiseAlert: (event: Parameters<AlertManager['handleEvent']>[0]) => Promise<void>;
 }
-
-const SOURCE_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpSourceTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
-const DESTINATION_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpDestinationTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
 
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
