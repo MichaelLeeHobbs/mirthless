@@ -348,8 +348,8 @@ describe('QueueConsumer wiring', () => {
     });
   });
 
-  describe('undeploy', () => {
-    it('stops all queue consumers on undeploy', async () => {
+  describe('stopping', () => {
+    it('gives the runtime every queue consumer, to stop and halt them with the channel (#413)', async () => {
       const channel = makeChannel({
         destinations: [
           makeDest({ id: 'dest-1', metaDataId: 1, queueMode: 'ON_FAILURE' }),
@@ -360,12 +360,8 @@ describe('QueueConsumer wiring', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never));
 
-      await engine.undeploy(CHANNEL_ID);
-
-      expect(mockQueueConsumerInstances).toHaveLength(2);
-      for (const instance of mockQueueConsumerInstances) {
-        expect(instance.stop).toHaveBeenCalledOnce();
-      }
+      const { queues } = mockRuntimeDeploy.mock.lastCall![0] as { readonly queues: unknown };
+      expect(queues).toEqual(mockQueueConsumerInstances);
     });
   });
 
@@ -402,72 +398,6 @@ describe('QueueConsumer wiring', () => {
 
       expect(result.ok).toBe(true);
       expect(mockConsumer.start).toHaveBeenCalledOnce();
-    });
-
-    it('stops queue consumers when channel stops', async () => {
-      const mockRuntime = {
-        getState: vi.fn().mockReturnValue('STOPPED'),
-        start: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        halt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        pause: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        resume: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-      };
-
-      const mockConsumer = { start: vi.fn(), stop: vi.fn().mockResolvedValue(undefined) };
-
-      const deployedChannels = new Map<string, unknown>();
-      deployedChannels.set(CHANNEL_ID, {
-        channelId: CHANNEL_ID,
-        runtime: mockRuntime,
-        queueConsumers: [mockConsumer],
-        recoverOnce: async () => {},
-        resetClaimsOnce: async () => {},
-      });
-
-      const { getEngine: getEngineFn } = await import('../../engine.js');
-      const engine = getEngineFn();
-      vi.spyOn(engine, 'getRuntime').mockImplementation(
-        (id: string) => deployedChannels.get(id) as ReturnType<typeof engine.getRuntime>,
-      );
-
-      const result = await DeploymentService.stop(CHANNEL_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockConsumer.stop).toHaveBeenCalledOnce();
-    });
-
-    it('halts queue consumers, which ends their sends, when channel halts', async () => {
-      const mockRuntime = {
-        getState: vi.fn().mockReturnValue('STOPPED'),
-        start: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        halt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        pause: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-        resume: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-      };
-
-      const mockConsumer1 = { start: vi.fn(), halt: vi.fn().mockResolvedValue(undefined) };
-      const mockConsumer2 = { start: vi.fn(), halt: vi.fn().mockResolvedValue(undefined) };
-
-      const deployedChannels = new Map<string, unknown>();
-      deployedChannels.set(CHANNEL_ID, {
-        channelId: CHANNEL_ID,
-        runtime: mockRuntime,
-        queueConsumers: [mockConsumer1, mockConsumer2],
-      });
-
-      const { getEngine: getEngineFn } = await import('../../engine.js');
-      const engine = getEngineFn();
-      vi.spyOn(engine, 'getRuntime').mockImplementation(
-        (id: string) => deployedChannels.get(id) as ReturnType<typeof engine.getRuntime>,
-      );
-
-      const result = await DeploymentService.halt(CHANNEL_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockConsumer1.halt).toHaveBeenCalledOnce();
-      expect(mockConsumer2.halt).toHaveBeenCalledOnce();
     });
   });
 });

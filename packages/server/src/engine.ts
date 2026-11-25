@@ -916,6 +916,7 @@ export class EngineManager {
       channelId: channel.id,
       source,
       destinations,
+      queues: queueConsumers,
       onMessage: async (raw) => (batched
         ? processHl7Batch(raw)
         : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) })))),
@@ -1035,9 +1036,9 @@ export class EngineManager {
   }
 
   /**
-   * Stops the channel (queue consumers too, as a stop from the UI does) so the
-   * dashboard shows it stopped. The failed message stays on its queue or topic
-   * until an operator fixes the cause and starts the channel again.
+   * Stops the channel so the dashboard shows it stopped. The failed message
+   * stays on its queue or topic until an operator fixes the cause and starts
+   * the channel again.
    */
   private async stopAfterSourceFailure(report: SourceFailureReport): Promise<void> {
     const { channelId, runtime, error, raiseAlert } = report;
@@ -1056,7 +1057,6 @@ export class EngineManager {
     });
     await raiseAlert({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: error.message, timestamp: Date.now() });
 
-    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
     const stopped = await deployed.runtime.stop();
     if (!stopped.ok) {
       logger.error({ channelId, errMsg: stopped.error.message }, 'Could not stop the channel after its source failed');
@@ -1123,11 +1123,6 @@ export class EngineManager {
     if (!deployed) {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
-
-    // Stop queue consumers before the connectors: stop() waits for the send in
-    // flight, so no queued delivery fails (and burns a retry) because its
-    // destination was stopped underneath it.
-    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
     // Stop first: runtime.undeploy() requires STOPPED, and undeploy must never
     // throw on a STARTED channel (that would sever in-flight messages and skip

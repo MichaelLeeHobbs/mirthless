@@ -2,7 +2,7 @@ import { getEventListeners } from 'node:events';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { ChannelRuntime } from '../channel-runtime.js';
-import type { RuntimeSourceConnector, RuntimeConnector, ChannelRuntimeConfig } from '../channel-runtime.js';
+import type { RuntimeSourceConnector, RuntimeConnector, RuntimeQueue, ChannelRuntimeConfig } from '../channel-runtime.js';
 
 function ok(): Result<void> {
   return { ok: true, value: undefined, error: null } as Result<void>;
@@ -574,6 +574,81 @@ describe('ChannelRuntime', () => {
         work.finish();
 
         expect(await runtime.backgroundEnds(1_000)).toBe(true);
+      });
+    });
+
+    describe('with queues', () => {
+      it('stops the source, then the queues, then the destinations (#413)', async () => {
+        const calls: string[] = [];
+        const source = makeSource();
+        const dest = makeConnector();
+        const queue: RuntimeQueue = { stop: async () => { calls.push('queue'); }, halt: vi.fn() };
+        (source.onStop as Mock).mockImplementation(async () => { calls.push('source'); return ok(); });
+        (dest.onStop as Mock).mockImplementation(async () => { calls.push('destination'); return ok(); });
+        await runtime.deploy(makeConfig({ source, destinations: new Map([[1, dest]]), queues: [queue] }));
+        await runtime.start();
+
+        expect((await runtime.stop()).ok).toBe(true);
+
+        expect(calls).toEqual(['source', 'queue', 'destination']);
+      });
+
+      it('takes no pause and no resume while a queued send holds the stop up', async () => {
+        const source = makeSource();
+        let sendEnds = (): void => undefined;
+        const queue: RuntimeQueue = {
+          stop: () => new Promise<void>((resolve) => { sendEnds = resolve; }),
+          halt: vi.fn(),
+        };
+        await runtime.deploy(makeConfig({ source, queues: [queue] }));
+        await runtime.start();
+
+        const stopped = runtime.stop();
+        await settle();
+        expect(source.onStop).toHaveBeenCalledOnce();
+        expect((await runtime.pause()).error?.message).toBe('Cannot pause: the channel is stopping');
+        expect((await runtime.resume()).ok).toBe(false);
+        sendEnds();
+
+        expect((await stopped).ok).toBe(true);
+        expect(runtime.getState()).toBe('STOPPED');
+        expect(source.onStart).toHaveBeenCalledOnce();
+      });
+
+      it('a halt ends the queued send that a stop waits for, and takes the stop over', async () => {
+        const dest = makeConnector();
+        let sendEnds = (): void => undefined;
+        const sending = new Promise<void>((resolve) => { sendEnds = resolve; });
+        const queue: RuntimeQueue = { stop: () => sending, halt: () => { sendEnds(); return sending; } };
+        await runtime.deploy(makeConfig({ destinations: new Map([[1, dest]]), queues: [queue] }));
+        await runtime.start();
+
+        const stopped = runtime.stop();
+        await settle();
+        expect((await runtime.halt()).ok).toBe(true);
+
+        expect((await stopped).error?.message).toBe('Cannot stop: the channel was halted');
+        expect(dest.onStop).not.toHaveBeenCalled();
+      });
+
+      it('a halt halts the connectors without waiting for a queued send, and has stopped the channel only once that has ended', async () => {
+        const source = makeSource();
+        const dest = makeConnector();
+        let sendEnds = (): void => undefined;
+        const queue: RuntimeQueue = { stop: vi.fn(), halt: () => new Promise<void>((resolve) => { sendEnds = resolve; }) };
+        await runtime.deploy(makeConfig({ source, destinations: new Map([[1, dest]]), queues: [queue] }));
+        await runtime.start();
+
+        const halted = runtime.halt();
+        await settle();
+        expect(source.onHalt).toHaveBeenCalledOnce();
+        expect(dest.onHalt).toHaveBeenCalledOnce();
+        // A start now would have the queue send two messages at once.
+        expect(runtime.getState()).toBe('STARTED');
+        sendEnds();
+
+        expect((await halted).ok).toBe(true);
+        expect(runtime.getState()).toBe('STOPPED');
       });
     });
 
