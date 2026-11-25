@@ -213,11 +213,11 @@ describeIntegration('Deleting a message that is still worked on (real Postgres, 
     });
 
     it('it is refused when the queue takes it at the same moment', async () => {
-      await createChannel('ALWAYS');
+      await running('ALWAYS');
       const { MessageService } = mods;
-      unwrap(await deployment.deploy(channelId, actor));
       const { messageId } = unwrap(await MessageService.createMessage(channelId, 'itest'));
-      unwrap(await MessageService.createConnectorMessage(channelId, messageId, 1, 'Partner', 'QUEUED'));
+      // Not QUEUED: the channel's own queue would take it first.
+      unwrap(await MessageService.createConnectorMessage(channelId, messageId, 1, 'Partner', 'ERROR'));
       unwrap(await MessageService.markProcessed(channelId, messageId));
       const claim = await hold(`UPDATE connector_messages SET status = 'PENDING' WHERE channel_id = $1`, [channelId]);
 
