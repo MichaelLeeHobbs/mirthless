@@ -6,14 +6,14 @@
 // redeploy runs. Each test saves an edit without deploying it and checks that
 // the restarted channel still runs what was deployed.
 
-import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CONTENT_TYPE, createChannelSchema, type CreateChannelInput } from '@galvanigraph/core-models';
 import { runStuckScript } from '../../src/lib/__tests__/support/run-stuck-script.js';
-import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, WAIT, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('A restart deploys the recorded deployment, not the saved head (#225)', () => {
   let mods: ServerModules;
@@ -251,15 +251,24 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     expect(Date.parse(/ at (\S+Z),/.exec(rows[0]?.r ?? '')?.[1] ?? '')).toBeGreaterThan(endedAt);
   });
 
+  /** Each gives a connection 3 s. Repeating one changes nothing, so it is tried again (#444). */
+  async function holds(): Promise<{ readonly hold: (id: string, reason: string) => Promise<boolean>; readonly release: (id: string, reason: string) => Promise<void> }> {
+    const { holdChannel, releaseChannel } = await import('../../src/lib/script-hold.js');
+    const db = { connectionString: databaseUrl(), ssl: false };
+    return {
+      hold: (id, reason) => vi.waitFor(() => holdChannel(db, id, reason), WAIT),
+      release: (id, reason) => vi.waitFor(() => releaseChannel(db, id, reason), WAIT),
+    };
+  }
+
   it('a second hold keeps the first one\'s reason, so releasing it leaves the first', async () => {
     const { id } = await createChannel("msg = 'c:' + String(msg);");
     unwrap(await deployment.DeploymentService.deploy(id, actor));
-    const { holdChannel, releaseChannel } = await import('../../src/lib/script-hold.js');
-    const db = { connectionString: databaseUrl(), ssl: false };
+    const { hold, release } = await holds();
 
-    await holdChannel(db, id, 'first');
-    expect(await holdChannel(db, id, 'second')).toBe(true);
-    await releaseChannel(db, id, 'second');
+    await hold(id, 'first');
+    expect(await hold(id, 'second')).toBe(true);
+    await release(id, 'second');
 
     const { rows } = await mods.pool.query('SELECT held_reason AS r FROM channel_deployments WHERE channel_id = $1', [id]);
     expect(rows).toEqual([{ r: 'first' }]);
@@ -269,18 +278,17 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     const { id } = await createChannel("msg = 'a:' + String(msg);");
     const other = await createChannel("msg = 'b:' + String(msg);");
     for (const ch of [id, other.id]) unwrap(await deployment.DeploymentService.deploy(ch, actor));
-    const { holdChannel, releaseChannel } = await import('../../src/lib/script-hold.js');
-    const db = { connectionString: databaseUrl(), ssl: false };
+    const { hold, release } = await holds();
     const held = async (): Promise<unknown[]> => (await mods.pool.query(
       'SELECT held_reason AS r FROM channel_deployments WHERE channel_id = ANY($1) ORDER BY channel_id = $2 DESC', [[id, other.id], id],
     )).rows.map((r: { r: string | null }) => r.r);
 
-    expect(await holdChannel(db, id, 'first')).toBe(true);
+    expect(await hold(id, 'first')).toBe(true);
     expect(await held()).toEqual(['first', null]);
-    await holdChannel(db, other.id, 'first');
-    await releaseChannel(db, id, 'first');
+    await hold(other.id, 'first');
+    await release(id, 'first');
     expect(await held()).toEqual([null, 'first']);
-    await releaseChannel(db, other.id, 'earlier');
+    await release(other.id, 'earlier');
     expect(await held()).toEqual([null, 'first']);
   });
 

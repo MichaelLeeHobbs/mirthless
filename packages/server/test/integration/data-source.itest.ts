@@ -47,9 +47,9 @@ describeIntegration('DataSourceService (real Postgres)', () => {
   }
 
   // Database connectors use this pool too. No server lets a connection in within 1 ms.
-  it('gives a connection as long as any other wait of the suite, whatever the pool asks for (#444)', async () => {
+  it('gives a connection more time than the pool asks for (#444)', async () => {
     const pool = new ConnectionPool();
-    expect(await pool.create({ ...dbParts(), maxConnections: 1, idleTimeoutMs: 1_000, connectionTimeoutMs: 1 })).toMatchObject({ ok: true });
+    unwrap(await pool.create({ ...dbParts(), maxConnections: 1, idleTimeoutMs: 1_000, connectionTimeoutMs: 1 }));
     await pool.destroy();
   });
 

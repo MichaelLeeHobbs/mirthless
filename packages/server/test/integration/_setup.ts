@@ -31,10 +31,7 @@ if (!shouldRunIntegration) {
   );
 }
 
-/**
- * A database connector and a data source give a connection 10 s, which is no setting, and a busy host can
- * take longer (#444). The child processes of the suites have neither.
- */
+/** A database connector and a data source give a connection 10 s, which is no setting, and a busy host can take longer (#444). */
 async function allowSlowConnections(): Promise<void> {
   const { prototype } = (await import('@galvanigraph/connectors')).ConnectionPool;
   const create = prototype.create;
