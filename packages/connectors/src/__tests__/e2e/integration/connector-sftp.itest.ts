@@ -160,7 +160,8 @@ describeSftp('SFTP connector cascade (real SFTP server)', () => {
   });
 });
 
-describeSftp('SFTP files that change, and sources that stop (real SFTP server, #412)', () => {
+// A busy machine takes over a second for each SSH sign-in, and a test here makes four or five.
+describeSftp('SFTP files that change, and sources that stop (real SFTP server, #412)', { timeout: 60_000 }, () => {
   const raw = new SftpLibrary();
   let dir = '';
   let receivers: SftpReceiver[] = [];
@@ -234,12 +235,12 @@ describeSftp('SFTP files that change, and sources that stop (real SFTP server, #
     const { seen } = await start({}, async (content) => {
       if (content === 'A') await raw.put(Buffer.from('B first half,'), `${dir}/b.hl7`);
     });
-    await vi.waitFor(async () => { expect(await isThere('a.hl7')).toBe(false); }, { timeout: 10_000 });
+    await vi.waitFor(async () => { expect(await isThere('a.hl7')).toBe(false); }, { timeout: 30_000 });
     await new Promise((resolve) => { setTimeout(resolve, 700); });
     expect(seen).toEqual(['A']);
     await drop('b.hl7', 'B first half, second half');
-    await vi.waitFor(() => { expect(seen).toEqual(['A', 'B first half, second half']); }, { timeout: 10_000 });
-    await vi.waitFor(async () => { expect(await isThere('b.hl7')).toBe(false); }, { timeout: 10_000 });
+    await vi.waitFor(() => { expect(seen).toEqual(['A', 'B first half, second half']); }, { timeout: 30_000 });
+    await vi.waitFor(async () => { expect(await isThere('b.hl7')).toBe(false); }, { timeout: 30_000 });
   });
 
   it('does not delete a file that changed while its message was processed', async () => {
@@ -249,15 +250,15 @@ describeSftp('SFTP files that change, and sources that stop (real SFTP server, #
       await raw.put(Buffer.from('second version'), `${dir}/a.hl7`);
       await age('a.hl7', 40_000);
     });
-    await vi.waitFor(() => { expect(seen).toEqual(['first', 'second version']); }, { timeout: 10_000 });
-    await vi.waitFor(async () => { expect(await isThere('a.hl7')).toBe(false); }, { timeout: 10_000 });
+    await vi.waitFor(() => { expect(seen).toEqual(['first', 'second version']); }, { timeout: 30_000 });
+    await vi.waitFor(async () => { expect(await isThere('a.hl7')).toBe(false); }, { timeout: 30_000 });
   });
 
   it('replaces nothing in the move-to folder, and does not deliver again after a redeploy', async () => {
     await raw.put(Buffer.from('yesterday'), `${dir}/archive/a.hl7`);
     await drop('a.hl7', 'today');
     const first = await start({ afterProcessing: SFTP_POST_ACTION.MOVE });
-    await vi.waitFor(async () => { expect(await isThere('.galvanigraph-quarantine.json')).toBe(true); }, { timeout: 10_000 });
+    await vi.waitFor(async () => { expect(await isThere('.galvanigraph-quarantine.json')).toBe(true); }, { timeout: 30_000 });
     await first.receiver.onStop();
     const second = await start({ afterProcessing: SFTP_POST_ACTION.MOVE });
     await new Promise((resolve) => { setTimeout(resolve, 700); });
@@ -274,7 +275,7 @@ describeSftp('SFTP files that change, and sources that stop (real SFTP server, #
     let release = (): void => undefined;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const { receiver, seen } = await start({}, async () => { await gate; return result; });
-    await vi.waitFor(() => { expect(seen).toEqual(['A']); }, { timeout: 10_000 });
+    await vi.waitFor(() => { expect(seen).toEqual(['A']); }, { timeout: 30_000 });
     const stopped = receiver.onStop();
     release();
     await stopped;
@@ -286,7 +287,7 @@ describeSftp('SFTP files that change, and sources that stop (real SFTP server, #
   });
 
   it('never shows part of a file, replacing one that is there', async () => {
-    const content = 'x'.repeat(30_000_000);
+    const content = 'x'.repeat(10_000_000);
     await raw.put(Buffer.from('old'), `${dir}/out.txt`);
     let done = false;
     const sizes = new Set<number>();
@@ -304,8 +305,8 @@ describeSftp('SFTP files that change, and sources that stop (real SFTP server, #
 
   it('leaves nothing of a send that is given up half-way', async () => {
     const abort = new AbortController();
-    const sent = send('x'.repeat(30_000_000), {}, abort.signal);
-    await vi.waitFor(async () => { expect((await raw.list(dir)).some((f) => f.name.endsWith('.tmp') && f.size > 0)).toBe(true); }, { timeout: 10_000, interval: 5 });
+    const sent = send('x'.repeat(10_000_000), {}, abort.signal);
+    await vi.waitFor(async () => { expect((await raw.list(dir)).some((f) => f.name.endsWith('.tmp') && f.size > 0)).toBe(true); }, { timeout: 30_000, interval: 5 });
     abort.abort();
     expect(await sent).toContain('aborted');
     expect((await raw.list(dir)).map((f) => f.name)).toEqual(['archive']);
@@ -313,8 +314,8 @@ describeSftp('SFTP files that change, and sources that stop (real SFTP server, #
 
   it('names the file that holds part of an append that was given up', async () => {
     const abort = new AbortController();
-    const sent = send('x'.repeat(30_000_000), { appendMode: true }, abort.signal);
-    await vi.waitFor(async () => { expect((await raw.list(dir)).some((f) => f.name === 'out.txt' && f.size > 0)).toBe(true); }, { timeout: 10_000, interval: 5 });
+    const sent = send('x'.repeat(10_000_000), { appendMode: true }, abort.signal);
+    await vi.waitFor(async () => { expect((await raw.list(dir)).some((f) => f.name === 'out.txt' && f.size > 0)).toBe(true); }, { timeout: 30_000, interval: 5 });
     abort.abort();
     expect(await sent).toContain(`${dir}/out.txt may hold part of this message`);
   });

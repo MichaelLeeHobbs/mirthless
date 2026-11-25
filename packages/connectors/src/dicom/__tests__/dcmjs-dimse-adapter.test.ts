@@ -42,7 +42,7 @@ async function startScp(roots: FileRoots, dir = storageDir): Promise<void> {
   const created = createDimseReceiver({ port: PORT, storageDir: dir, aeTitle: 'SCP', connectionTimeoutMs: 5_000, roots });
   if (!created.ok) throw created.error;
   receiver = created.value;
-  receiver.onFileReceived((data) => { received.push(data); });
+  receiver.onFileReceived(async (data) => { received.push(data); });
   const started = await receiver.start();
   if (!started.ok) throw started.error;
 }
