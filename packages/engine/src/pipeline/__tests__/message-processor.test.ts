@@ -862,8 +862,7 @@ describe('MessageProcessor', () => {
   it.each([
     ['a blank record', '001\n\n003\n', {}],
     ['a CR inside a quoted value', '1,"two\r\nlines"\r\n', {}],
-    // The second column, past the names, is called column2 too: the row has room for one of them.
-    ['a column whose name repeats an earlier one', '1,2\n', { columnNames: ['column2'] }],
+    ['columns named by whole numbers', 'A,B\r\n', { columnNames: ['2', '1'] }],
   ])('a Delimited preprocessor that changes nothing keeps %s', async (_name, text, delimited) => {
     const sendFn = makeSendFn();
     const config = makeConfig({
@@ -889,6 +888,38 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput('1,2\n'), AbortSignal.timeout(5_000));
 
     expect(sendFn).toHaveBeenCalledWith(1, 1, '1,X\n', expect.any(AbortSignal), expect.any(String), undefined);
+  });
+
+  // #372: the columns came back swapped, or one short.
+  it('a Delimited preprocessor that edits a row keeps every column in its place, whatever the names', async () => {
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      dataType: 'DELIMITED',
+      dataTypeOptions: { delimited: delimitedOptionsSchema.parse({ columnNames: ['2', '1', '__proto__', 'mrn'] }) },
+      scripts: { preprocessor: { code: 'msg[0].mrn = msg[0].__proto__ + msg[0][2] + msg[0][1];' } },
+    });
+    const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput('A,B,C,D\n'), AbortSignal.timeout(5_000));
+
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'A,B,C,CAB\n', expect.any(AbortSignal), expect.any(String), undefined);
+  });
+
+  it.each([
+    ['adds a value', 'msg = msg.map((row) => ["A", "B"].concat("NEW"));', 'A,B,NEW\n'],
+    ['swaps the values', 'msg = [["B", "A"]];', 'B,A\n'],
+  ])('a Delimited preprocessor that gives rows as arrays and %s is taken at its word, whatever the names', async (_case, code, sent) => {
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      dataType: 'DELIMITED',
+      dataTypeOptions: { delimited: delimitedOptionsSchema.parse({ columnNames: ['2', '1'] }) },
+      scripts: { preprocessor: { code } },
+    });
+    const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput('A,B\n'), AbortSignal.timeout(5_000));
+
+    expect(sendFn).toHaveBeenCalledWith(1, 1, sent, expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('does not count the source as SENT when the only destination errors (stats overcount)', async () => {

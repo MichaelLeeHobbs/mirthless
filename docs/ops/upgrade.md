@@ -672,6 +672,21 @@ GROUP BY c.channel_id;
 
 This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
 
+## Delimited columns keep their order (#372)
+
+A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read (D-378). Messages sent before stay as they were, so check them with the partner. Look at the channels with such names before the upgrade: a partner that reads the columns swapped must stop doing that, and a script that swaps them back, or gives such a row another order, must give the row as an array instead or stop. Such a script and the server have to change together: disable the channel before the upgrade, so that it stays down, change the script after it, and enable and deploy the channel.
+
+A column name that a later column without a name has is refused when the channel deploys, for example `column2` as the only name, or `column9` as the second of two: a row wide enough to have that later column lost the earlier one when it was read. The refusal does not depend on how wide the rows are. Before the upgrade rename such a column, change what scripts call it, and redeploy the channel: a restart deploys what was last deployed, not what was saved, and one that is refused is reported as a channel that failed to redeploy.
+
+This lists the saved column names of every Delimited channel:
+
+```sql
+SELECT c.id, c.name, t.inbound_properties->'delimited'->'columnNames' AS column_names
+FROM channels c JOIN channel_transformers t ON t.channel_id = c.id AND t.connector_id IS NULL
+WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
+  AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
+```
+
 ## DICOM log lines hold no UID (#321)
 
 A DICOM connector's log lines about one file give `directory` and `file` (a hash of the file name) where they had `filePath`, and the message or association id ([how to find the file](../user/connector-reference.md#dicom-security), D-386). A failed file operation is logged by its call and code (`errMsg: "rename failed: EBUSY"`), where the text quoted the path and some lines had `code`. The ERROR texts of a DICOM Sender name the image the same way: `DICOM file 2b7b59d38673 cannot be read: open failed: ENOENT`. Content that is no absolute path, such as the list of paths of a Listener in `PER_ASSOCIATION` mode, gets `The message content is not the absolute path of a DICOM file`. Change log queries and the regex filters of alerts that look for the old texts. **Lines and messages written before the upgrade still hold the paths**, so keep or delete old logs accordingly.
