@@ -95,6 +95,38 @@ describe('serializeDelimited', () => {
     expect(serializeDelimited(row, csv)).toBe('1,DOE,JOHN,NEW\n');
   });
 
+  // JavaScript lists keys that are whole numbers first, and assigning to __proto__ adds no key (#372).
+  it.each([
+    ['whole numbers, against their order', ['2', '1'], '1,2,3'],
+    ['a whole number between other names', ['mrn', '2', 'name'], 'A,B,C,D'],
+    ['a whole number that is another column\'s place', ['10', '2', '0'], 'A,B,C,D,E'],
+    ['__proto__', ['__proto__', 'mrn'], 'A,B'],
+    ['__proto__ alone', ['__proto__'], 'A,B'],
+    ['names every object has', ['constructor', 'toString', 'hasOwnProperty'], 'A,B,C'],
+  ])('reads and writes columns named %s in the order of the record', (_what, columnNames, text) => {
+    const o = delimitedOptionsSchema.parse({ columnNames });
+    const rows = parseDelimited(text, o);
+    expect(Object.keys(rows[0]!)).toHaveLength(text.split(',').length);
+    expect(serializeDelimited(rows, o)).toBe(`${text}\n`);
+    // As a script's rows come back.
+    expect(serializeDelimited(JSON.parse(JSON.stringify(rows)), o)).toBe(`${text}\n`);
+  });
+
+  it('keeps the columns\' places when a script edits one, deletes one or adds one', () => {
+    const o = delimitedOptionsSchema.parse({ columnNames: ['2', '1', 'name'] });
+    const read = (): Record<string, string> => parseDelimited('A,B,C,D', o)[0]!;
+    expect(serializeDelimited({ ...read(), 1: 'X' }, o)).toBe('A,X,C,D\n');
+    const { name: _name, ...without } = read();
+    expect(serializeDelimited(without, o)).toBe('A,B,D\n');
+    expect(serializeDelimited({ ...read(), status: 'NEW', 7: 'LAST' }, o)).toBe('A,B,C,D,LAST,NEW\n');
+    expect(serializeDelimited({ ...read(), column1: 'ADDED' }, o)).toBe('A,B,C,D,ADDED\n');
+  });
+
+  it('writes a row a script built in its key order', () => {
+    expect(serializeDelimited([{ given: 'JOHN', mrn: '1', family: 'DOE' }], csv)).toBe('JOHN,1,DOE\n');
+    expect(serializeDelimited([['x', 'y']], csv)).toBe('x,y\n');
+  });
+
   it('writes null and undefined as empty and other values as text', () => {
     expect(serializeDelimited([{ a: null, b: undefined, c: 5 }], csv)).toBe(',,5\n');
   });

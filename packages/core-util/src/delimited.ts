@@ -85,9 +85,8 @@ export function parseDelimited(text: string, options: DelimitedOptions): Delimit
   const rows: DelimitedRow[] = [];
   for (const fields of records) {
     if (fields.length === 1 && fields[0] === '') continue;
-    const row: DelimitedRow = {};
-    fields.forEach((value, index) => { row[options.columnNames[index] ?? `column${String(index + 1)}`] = value; });
-    rows.push(row);
+    // fromEntries, because assigning to __proto__ adds no key.
+    rows.push(Object.fromEntries(fields.map((value, index) => [options.columnNames[index] ?? `column${String(index + 1)}`, value])));
   }
   return rows;
 }
@@ -101,12 +100,33 @@ function writeValue(raw: unknown, o: DelimitedOptions): string {
   return o.quote + escaped + o.quote;
 }
 
-/** Columns go in each row's key order, not `columnNames` order. */
+const WHOLE_NUMBER = /^(?:0|[1-9]\d*)$/;
+const DEFAULT_NAME = /^column([1-9]\d*)$/;
+
+/** Where the column is in a record that was read; a key that is no such column goes last. */
+function columnPlace(key: string, places: ReadonlyMap<string, number>): number {
+  const named = places.get(key);
+  if (named !== undefined) return named;
+  const n = Number(DEFAULT_NAME.exec(key)?.[1]);
+  return n > places.size ? n - 1 : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * In the row's key order. JavaScript lists keys that are whole numbers first, so a row that has one no
+ * longer says which order its columns were in: they go by their place in the record.
+ */
+function rowValues(row: Readonly<Record<string, unknown>>, places: ReadonlyMap<string, number>): unknown[] {
+  const keys = Object.keys(row);
+  if (WHOLE_NUMBER.test(keys[0] ?? '')) keys.sort((a, b) => columnPlace(a, places) - columnPlace(b, places));
+  return keys.map((key) => row[key]);
+}
+
 export function serializeDelimited(rows: unknown, options: DelimitedOptions): string {
   const list: readonly unknown[] = Array.isArray(rows) ? rows : [rows];
+  const places = new Map(options.columnNames.map((name, index) => [name, index]));
   let out = '';
   for (const row of list) {
-    const values = row !== null && typeof row === 'object' ? Object.values(row) : [row];
+    const values = row !== null && typeof row === 'object' ? rowValues(row as Record<string, unknown>, places) : [row];
     out += values.map((v) => writeValue(v, options)).join(options.columnDelimiter) + options.recordDelimiter;
   }
   return out;

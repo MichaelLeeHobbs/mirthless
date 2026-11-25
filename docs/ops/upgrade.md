@@ -616,6 +616,12 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 - A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start, which a redeploy or a restart before that loses ([JavaScript](../user/connector-reference.md#javascript), D-371).
 
+## Delimited columns keep their order (#372)
+
+A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read. Nothing has to be changed for that; messages sent before stay as they were, so check them with the partner if a channel has such names.
+
+A column name that a later column without a name has is refused when the channel deploys, for example `column2` as the only name: each row lost its first such column when it was read. A restart does not deploy such a channel either and reports it, so rename the column, and what scripts call it, before the upgrade.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

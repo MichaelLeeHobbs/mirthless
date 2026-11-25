@@ -23,6 +23,16 @@ describe('delimitedOptionsSchema', () => {
     expect(repeated.success).toBe(false);
     expect(repeated.error?.issues[0]?.message).toBe('Column names must be unique');
   });
+
+  // Reading such a row would keep only the later of the two (#372).
+  it.each([[['column2']], [['a', 'column3']], [['column1', 'column9']]])('refuses a name that a later column without a name has: %j', (columnNames) => {
+    const { error } = delimitedOptionsSchema.safeParse({ columnNames });
+    expect(error?.issues.map((i) => i.message)).toEqual([expect.stringContaining(`"${columnNames.at(-1)!}" is what column`)]);
+  });
+
+  it.each([[['column1']], [['a', 'column1']], [['column2', 'b']], [['column02']], [['column']], [['mycolumn9']], [['column9x']], [['2', '1', '__proto__']]])('accepts %j, where no two columns have one name', (columnNames) => {
+    expect(delimitedOptionsSchema.safeParse({ columnNames }).success).toBe(true);
+  });
 });
 
 describe('transformerStepInputSchema', () => {
