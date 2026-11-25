@@ -6,7 +6,8 @@ let selectResult: unknown[] = [];
 const mockSelect = vi.fn(() => ({ from: () => ({ where: () => Promise.resolve(selectResult) }) }));
 /** The row the failed-attempt UPDATE ... RETURNING gives back. */
 let countedRow: unknown[] = [];
-const mockUpdate = vi.fn(() => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve(countedRow) }) }) }));
+const mockSet = vi.fn((_values: Record<string, unknown>) => ({ where: () => ({ returning: () => Promise.resolve(countedRow) }) }));
+const mockUpdate = vi.fn(() => ({ set: mockSet }));
 const mockDelete = vi.fn(() => ({ where: () => Promise.resolve(undefined) }));
 const mockDb = { select: mockSelect, update: mockUpdate, delete: mockDelete };
 
@@ -98,6 +99,8 @@ describe('AuthService.login audit', () => {
     countedRow = []; // the UPDATE matched nothing: the account is locked now
     const result = await AuthService.login('alice', 'pw', META);
     expect(result.ok).toBe(false);
+    // Only a correct password gets as far as recording a sign-in.
+    expect(mockSet).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ lastLoginAt: expect.any(Date) as Date }));
     expectFailureAudit('u-1', 'account_locked');
     expect(emitEvent).toHaveBeenCalledTimes(1);
   });
