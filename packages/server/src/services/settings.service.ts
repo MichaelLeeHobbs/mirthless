@@ -3,7 +3,7 @@ import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { UpsertSettingInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { redactSettingValue } from '../lib/secret-redaction.js';
+import { REDACTED, redactSettingValue } from '../lib/secret-redaction.js';
 import { db } from '../lib/db.js';
 import { systemSettings } from '../db/schema/index.js';
 
@@ -71,6 +71,7 @@ async function clearPasswordOfChangedHost(tx: Tx, inputs: readonly UpsertSetting
   return clearPassword(tx);
 }
 
+/** Drizzle skips what is undefined: a stored setting keeps it, a new one takes the column's default. */
 async function upsertRow(tx: Tx, input: UpsertSettingInput): Promise<SettingDetail> {
   const { key, value, type, description, category } = input;
   const [row] = await tx
@@ -81,7 +82,14 @@ async function upsertRow(tx: Tx, input: UpsertSettingInput): Promise<SettingDeta
   return toDetail(row!);
 }
 
-function saveAll(inputs: readonly UpsertSettingInput[]): Promise<{ readonly detail: readonly SettingDetail[]; readonly cleared: boolean }> {
+/** A setting read with its value masked, then sent back, would lose it. */
+function refuseMasked(inputs: readonly UpsertSettingInput[]): void {
+  const masked = inputs.find((i) => i.value === REDACTED);
+  if (masked) throw new ServiceError('INVALID_INPUT', `Setting "${masked.key}" holds a masked value (${REDACTED}). Enter the value, or leave the setting out.`);
+}
+
+async function saveAll(inputs: readonly UpsertSettingInput[]): Promise<{ readonly detail: readonly SettingDetail[]; readonly cleared: boolean }> {
+  refuseMasked(inputs);
   return db.transaction(async (tx) => {
     await lockSmtp(tx, inputs.map((i) => i.key));
     const cleared = await clearPasswordOfChangedHost(tx, inputs);

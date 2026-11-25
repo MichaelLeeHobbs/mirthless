@@ -469,7 +469,7 @@ The migration builds the index of waiting messages again, which reads the whole 
 
 - A destination that is switched off no longer sends what is on its queue. Switch it on, or let its queue empty first, if it should be sent.
 - Messages that wait for a destination that is switched off, has its queue off or was removed, or that are not known to be for the one with their number, are reported at the first start, also those left there long ago. Nothing is sent or deleted. Look for `QUEUE_HELD` on the Events page.
-- `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
+- `PUT /api/v1/channels/:id` needs the `id` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
 - An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
 
 ## File and SFTP: temporary names, moves and changed files (#412)
@@ -539,6 +539,36 @@ A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans an
 - A message that a server stop interrupted before it was routed, and whose raw content is not stored, stayed RECEIVED for good. Each channel's first start after the upgrade marks its own ERROR, with one alert per channel and an error in the log for each, and the data pruner then deletes them like any finished message. Nothing was stored that could have been run again. To look at them first, with the server stopped: `SELECT m.channel_id, m.id, m.received_at FROM messages m JOIN connector_messages s ON s.channel_id = m.channel_id AND s.message_id = m.id AND s.meta_data_id = 0 WHERE NOT m.processed AND (s.status = 'RECEIVED' OR s.status = 'TRANSFORMED' AND NOT EXISTS (SELECT 1 FROM connector_messages d WHERE d.channel_id = m.channel_id AND d.message_id = m.id AND d.meta_data_id > 0)) AND NOT EXISTS (SELECT 1 FROM message_content c WHERE c.channel_id = m.channel_id AND c.message_id = m.id AND c.meta_data_id = 0 AND c.content_type = 1);`
 - The global and the channel preprocessor now run on a message that its data type cannot read, so they can repair it. It was refused before they ran. One that ends in ERROR as before has now been through them: check what your preprocessors do beside changing the message (a `dbQuery`, a `routeMessage`, a counter), and that they take `msg` as text ([scripting](../user/scripting-api.md#what-a-script-returns)). The sender of a message that is not repaired gets the same error as before.
 - A server that stops undeploys its channels at once instead of one after another, so undeploy scripts of different channels can run at the same time.
+
+## Updates keep what the request leaves out (#400)
+
+`PUT` on a channel, an alert or a setting put each field the request left out back to its default, without a word. What is left out now stays as it is (D-360). The web UI sends every field, so this concerns scripts that call the API. Check what such a script saved:
+
+- A channel: `enabled`, `description` and `responseMode`; with `properties` in the request, all of them, such as `encryptData` (off), `messageStorageMode` (`DEVELOPMENT`) and `pruningEnabled` (off); with `scripts`, the scripts that were left out (emptied); with `destinations`, `filters` or `transformers`, what was left out of each, such as the queue settings and the `enabled` of a rule or step (on). **History** in the channel editor compares one save with another, but has nothing from before a channel's first save. This lists the channels that are not encrypted at rest:
+
+  ```sql
+  SELECT name FROM channels WHERE deleted_at IS NULL AND NOT encrypt_data;
+  ```
+
+- An alert: without its `actions` it told nobody, without its `channelIds` it watched every channel, and without `enabled` it was switched on. Its description, its templates and its limits (`reAlertIntervalMs`, `maxAlerts`) were cleared. This lists the alerts without an action:
+
+  ```sql
+  SELECT name FROM alerts a WHERE NOT EXISTS (SELECT 1 FROM alert_actions x WHERE x.alert_id = a.id);
+  ```
+
+- A setting: without its `type` it became a `string`, without its `category` it moved to `general`, and without its `description` it lost that. A password whose key is not named like a secret was then shown to whoever may read settings. This lists the settings saved without a type and a description:
+
+  ```sql
+  SELECT key FROM system_settings WHERE type = 'string' AND description IS NULL;
+  ```
+
+A script that counted on the defaults must send them. These now get a 400:
+
+- `PUT /api/v1/channels/:id` with a filter, transformer, rule, step or metadata column that is not whole ([Change a channel](api-automation.md#change-a-channel)).
+- `PUT /api/v1/settings/:key` and `/settings/bulk` without the `value`, or with the mask a read shows for a password, which was stored in place of the password.
+- `PUT /api/v1/alerts/:id` with a `CHANNEL_ERROR` trigger without its `regex` (null for none).
+
+A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
 ## Standard upgrade (Docker)
 
