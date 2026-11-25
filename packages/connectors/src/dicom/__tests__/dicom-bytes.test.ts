@@ -323,6 +323,13 @@ describe('explicitToImplicit', () => {
     expect(() => explicitToImplicit(bytes)).toThrow('cut short');
   });
 
+  it.each([
+    ['a sequence', header(SEQUENCE_END, null, 0)],
+    ['an item', Buffer.concat([header([0x0009, 0x1002], 'SQ', UNDEFINED), header(ITEM, null, 0), header(ITEM_END, null, 0), header(SEQUENCE_END, null, 0)])],
+  ])('refuses a delimiter of %s that is not open', (_case, bytes) => {
+    expect(() => explicitToImplicit(bytes)).toThrow('ends nothing');
+  });
+
   it('keeps an element number 0 that is not a group length', () => {
     const other = Buffer.concat([header([0x0009, 0x0000], 'LO', 2), Buffer.from('ab')]);
     expect(explicitToImplicit(other).length).toBe(10);

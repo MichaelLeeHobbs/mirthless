@@ -73,7 +73,10 @@ export interface DcmtkReceiver {
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void;
   onEvent(event: 'error', listener: (data: { readonly error: Error }) => void): void;
   start(): Promise<Result<void>>;
+  /** Answers what it took first, for a bounded time. */
   stop(): Promise<void>;
+  /** Cuts off what is open. */
+  halt(): Promise<void>;
 }
 
 export type ReceiverFactory = (options: {
@@ -218,7 +221,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
     return tryCatch(async () => {
       this.endSweeps();
       if (this.receiver) {
-        await this.receiver.stop();
+        await this.receiver.halt();
       }
     });
   }

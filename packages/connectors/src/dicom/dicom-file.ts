@@ -175,7 +175,8 @@ export function explicitToImplicit(dataset: Buffer): Buffer {
     const isItem = group === ITEM_GROUP;
     const within = open.reduce((end, container) => Math.min(end, container.end), dataset.length);
     if (isItem && element !== ITEM) {
-      open.pop();
+      const ended = open.pop();
+      if (ended?.delimiter !== element || ended.end !== Infinity) throw new Error('The dataset has a delimiter that ends nothing');
       out.push(implicitHeader(group, element, 0));
       at = start;
     } else if (length !== 0 && (isItem || vr === 'SQ')) {
