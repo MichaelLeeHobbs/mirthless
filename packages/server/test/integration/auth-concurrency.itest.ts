@@ -2,7 +2,7 @@
 
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
-import { describeIntegration } from './_setup.js';
+import { describeIntegration, waitForBlocked } from './_setup.js';
 
 const PASSWORD = 'Correct-horse-1';
 const GUESSES = 10;
@@ -62,6 +62,37 @@ describeIntegration('AuthService concurrency (real Postgres)', () => {
     expect(results.filter((r) => code(r) === 'INVALID_CREDENTIALS')).toHaveLength(4);
     expect(results.filter((r) => code(r) === 'ACCOUNT_LOCKED')).toHaveLength(GUESSES - 4);
     expect(code(await AuthService.login(username, PASSWORD))).toBe('ACCOUNT_LOCKED');
+  });
+
+  it('refuses the correct password when the account is locked while that password is being checked', async () => {
+    const { id, username } = await createUser();
+    const lockedUntil = new Date(Date.now() + 60_000);
+    const client = await pool.connect();
+    let login: ReturnType<typeof AuthService.login>;
+    try {
+      // Uncommitted, so login reads an unlocked account, then waits here to record the sign-in.
+      await client.query('BEGIN');
+      await client.query('UPDATE users SET failed_login_attempts = 5, locked_until = $2 WHERE id = $1', [id, lockedUntil]);
+      login = AuthService.login(username, PASSWORD);
+      await waitForBlocked(pool, 'update "users"');
+      await client.query('COMMIT');
+    } finally {
+      // Dropped, not reused: if the wait failed, its transaction is still open.
+      client.release(true);
+    }
+
+    expect(code(await login)).toBe('ACCOUNT_LOCKED');
+    expect(await lockState(id)).toEqual({ attempts: 5, lockedUntil });
+    const { rows } = await pool.query<{ n: string }>('SELECT count(*) AS n FROM sessions WHERE user_id = $1', [id]);
+    expect(Number(rows[0]?.n)).toBe(0);
+  });
+
+  it('signs in with the correct password after a lock expires, and clears the count', async () => {
+    const { id, username } = await createUser({ attempts: 5, lockedUntil: new Date(Date.now() - 1000) });
+
+    expect((await AuthService.login(username, PASSWORD)).ok).toBe(true);
+
+    expect(await lockState(id)).toEqual({ attempts: 0, lockedUntil: null });
   });
 
   it('starts a new count after a lock expires, so one wrong guess does not lock again', async () => {

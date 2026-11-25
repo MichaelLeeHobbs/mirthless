@@ -90,6 +90,17 @@ describe('AuthService.login audit', () => {
     await AuthService.login('alice', 'pw', META);
     expectFailureAudit('u-1', 'account_locked');
   });
+
+  it('records a correct password refused because a concurrent attempt locked the account', async () => {
+    const bcrypt = (await import('bcrypt')).default;
+    vi.mocked(bcrypt.compare).mockResolvedValueOnce(true as never);
+    selectResult = [user({ failedLoginAttempts: 4 })];
+    countedRow = []; // the UPDATE matched nothing: the account is locked now
+    const result = await AuthService.login('alice', 'pw', META);
+    expect(result.ok).toBe(false);
+    expectFailureAudit('u-1', 'account_locked');
+    expect(emitEvent).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('AuthService.logout audit', () => {
