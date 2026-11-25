@@ -15,10 +15,10 @@ import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logge
 
 const IDLE_SOCKET_TIMEOUT_MS = 300_000;
 
-/** How long a stop waits for an answer to be read. */
-const STOP_READ_MS = 15_000;
+/** How long a stop waits for an answer to be sent, which takes a sender that reads once its buffers are full. */
+const STOP_SEND_MS = 15_000;
 
-/** How long a sender that was answered during a stop has to close its connection. */
+/** How long a sender that was answered then has to read the answer and close. */
 const STOP_CLOSE_MS = 2_000;
 
 /** PASSTHROUGH returns the pipeline response verbatim; AUTO_ACK builds an HL7 ACK/NAK from the inbound MSH. */
@@ -45,8 +45,12 @@ interface Connection {
   readonly socket: net.Socket;
   /** Ends once the messages that came on it are answered, or left. */
   answered: Promise<void>;
+  /** Messages that came on it and wait for their turn. */
+  waiting: number;
   /** A message that came on it is being processed. */
   inHand: boolean;
+  /** It was answered, perhaps just now: its sender may not have read that yet. */
+  hasAnswered: boolean;
 }
 
 /** One start of the source. A message that outlives a halt belongs to its own, not to a later start's. */
@@ -161,13 +165,13 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
   }
 
   private async closeOnceAnswered(connection: Connection): Promise<void> {
-    const { socket, inHand } = connection;
+    const { socket } = connection;
     await connection.answered;
     if (socket.destroyed) return;
     const closed = new Promise<void>((resolve) => { socket.once('close', () => { resolve(); }); });
     const sent = new Promise<void>((resolve) => { socket.end(() => { resolve(); }); });
     // Destroyed while its sender still sends, the connection would be reset and the answer lost.
-    if (await settleWithin(sent, STOP_READ_MS) && inHand) await settleWithin(closed, STOP_CLOSE_MS);
+    if (await settleWithin(sent, STOP_SEND_MS) && connection.hasAnswered) await settleWithin(closed, STOP_CLOSE_MS);
     socket.destroy();
   }
 
@@ -196,13 +200,14 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
       socket.destroy();
       return;
     }
-    const connection: Connection = { socket, answered: Promise.resolve(), inHand: false };
+    const connection: Connection = { socket, answered: Promise.resolve(), waiting: 0, inHand: false, hasAnswered: false };
     run.connections.add(connection);
 
     // Close idle connections so dead/half-open sockets don't accumulate and fill
     // maxConnections, after which new senders would be silently refused.
     socket.setTimeout(IDLE_SOCKET_TIMEOUT_MS);
     socket.on('timeout', () => {
+      if (connection.inHand) return;
       this.logger.warn({ remoteAddress: socket.remoteAddress }, 'MLLP connection idle timeout; closing');
       socket.destroy();
     });
@@ -212,34 +217,34 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
       charset: this.config.charset,
       ...(this.config.framing ? { framing: this.config.framing } : {}),
     });
-
-    socket.on('data', (chunk: Buffer) => {
-      // Read and dropped: unread, it would reset the connection, and the answer to the message in hand be lost.
-      if (!run.live) return;
-      let msgs: readonly string[];
-      try {
-        msgs = parser.parse(chunk);
-      } catch (err) {
-        this.logger.error(
-          { ...errorInfo(err), remoteAddress: socket.remoteAddress },
-          'MLLP frame rejected; destroying connection',
-        );
-        socket.destroy();
-        return;
-      }
-      for (const content of msgs) this.enqueue(run, connection, content);
-    });
-
+    socket.on('data', (chunk: Buffer) => { this.receive(run, connection, parser, chunk); });
     socket.on('close', () => { run.connections.delete(connection); });
-
     socket.on('error', (err) => {
       this.logger.error(errorInfo(err), 'MLLP connection error');
       socket.destroy();
     });
   }
 
+  private receive(run: Run, connection: Connection, parser: MllpParser, chunk: Buffer): void {
+    // Read and dropped: unread, it would reset the connection, and the answer to the message in hand be lost.
+    if (!run.live) return;
+    let msgs: readonly string[];
+    try {
+      msgs = parser.parse(chunk);
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), remoteAddress: connection.socket.remoteAddress },
+        'MLLP frame rejected; destroying connection',
+      );
+      connection.socket.destroy();
+      return;
+    }
+    for (const content of msgs) this.enqueue(run, connection, content);
+  }
+
   /** One after the other: HL7 senders assume strict request and response, so answers must not interleave. */
   private enqueue(run: Run, connection: Connection, content: string): void {
+    connection.waiting += 1;
     const work = connection.answered
       .then(() => this.takeMessage(run, connection, content))
       .catch((err: unknown) => {
@@ -252,22 +257,26 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
 
   private async takeMessage(run: Run, connection: Connection, content: string): Promise<void> {
     if (!run.live) {
+      if (connection.waiting === 0) return;
       this.logger.warn(
-        { remoteAddress: connection.socket.remoteAddress },
-        'MLLP message not taken: the source was stopped before its turn came. It is not acknowledged, so its sender keeps it',
+        { remoteAddress: connection.socket.remoteAddress, messages: connection.waiting },
+        'MLLP messages not taken: the source was stopped before their turn came. They are not acknowledged, so their sender keeps them',
       );
+      connection.waiting = 0;
       return;
     }
+    connection.waiting -= 1;
     connection.inHand = true;
     try {
-      await this.processMessage(content, connection.socket);
+      await this.processMessage(content, connection);
     } finally {
       connection.inHand = false;
     }
   }
 
-  private async processMessage(content: string, socket: net.Socket): Promise<void> {
+  private async processMessage(content: string, connection: Connection): Promise<void> {
     if (!this.dispatcher) return;
+    const { socket } = connection;
 
     const raw: RawMessage = {
       content,
@@ -280,7 +289,9 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
 
     const result = await this.dispatcher(raw);
     const answer = this.passthroughFrame(result) ?? this.ackFrame(content, result);
-    if (socket.writable) socket.write(answer);
+    if (!socket.writable) return;
+    socket.write(answer);
+    connection.hasAnswered = true;
   }
 
   /** Never fails, whatever the charset makes of the delimiters and ids it repeats: the message was handled. */

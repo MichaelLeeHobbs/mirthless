@@ -529,7 +529,8 @@ describe('TcpMllpReceiver stop', () => {
 
   it('dispatches no message that waits behind the one in hand once it is stopped (#413)', async () => {
     const { dispatch, received, letGo, entered } = heldDispatcher();
-    receiver = new TcpMllpReceiver(makeConfig(), makeLogger().logger);
+    const warnings: unknown[] = [];
+    receiver = new TcpMllpReceiver(makeConfig(), { ...makeLogger().logger, warn: (obj: unknown): void => { warnings.push(obj); } });
     receiver.setDispatcher(dispatch);
     await receiver.onStart();
     const { client, acks, closed } = await openPersistent(TEST_PORT);
@@ -542,6 +543,7 @@ describe('TcpMllpReceiver stop', () => {
     await closed;
 
     expect(received).toEqual([hl7('A')]);
+    expect(warnings).toEqual([expect.objectContaining({ messages: 2 })]);
     // B and C got no answer, so their sender keeps them.
     expect(acks).toHaveLength(1);
     expect(acks[0]).toContain('MSA|AA|A');
@@ -566,6 +568,109 @@ describe('TcpMllpReceiver stop', () => {
     expect(received).toEqual([hl7('A')]);
     expect(acks).toHaveLength(1);
     expect(acks[0]).toContain('MSA|AA|A');
+  });
+
+  /** The sender has the first bytes of its next message sent before it reads what it was answered. */
+  async function stopWhileSending(client: net.Socket, acks: string[], closed: Promise<void>, stop: () => Promise<unknown>): Promise<void> {
+    client.pause();
+    client.write(wrapMllp(hl7('B')).subarray(0, 20));
+    const stopping = stop();
+    const sending = setInterval(() => { client.write('PID|1\r'); }, 20);
+    await new Promise((resolve) => { setTimeout(resolve, 300); });
+    clearInterval(sending);
+    expect(acks).toEqual([]);
+    client.resume();
+    await Promise.all([stopping, closed]);
+  }
+
+  it('the answer reaches a sender that goes on sending and reads it late', async () => {
+    const { dispatch, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+    client.write(wrapMllp(hl7('A')));
+    await entered;
+
+    await stopWhileSending(client, acks, closed, () => {
+      const stopping = receiver!.onStop();
+      letGo();
+      return stopping;
+    });
+
+    expect(acks).toHaveLength(1);
+    expect(acks[0]).toContain('MSA|AA|A');
+  });
+
+  it('an answer written just before the stop reaches its sender too', async () => {
+    let answered = (): void => undefined;
+    const written = new Promise<void>((resolve) => { answered = resolve; });
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(async () => {
+      // Once the answer is written, which comes after this in the same turn.
+      setImmediate(() => { answered(); });
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+    client.pause();
+    client.write(wrapMllp(hl7('A')));
+    await written;
+
+    await stopWhileSending(client, acks, closed, () => receiver!.onStop());
+
+    expect(acks).toHaveLength(1);
+    expect(acks[0]).toContain('MSA|AA|A');
+  });
+
+  it('gives up an answer that is not read within 15 seconds', async () => {
+    const { dispatch, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client } = await openPersistent(TEST_PORT);
+    client.write(wrapMllp(VALID_HL7));
+    await entered;
+
+    // As a socket whose peer reads nothing: its last write never finishes.
+    const end = vi.spyOn(net.Socket.prototype, 'end').mockReturnThis();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const stopping = receiver.onStop();
+      letGo();
+      await vi.waitFor(() => { expect(end).toHaveBeenCalled(); });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect((await stopping).ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      end.mockRestore();
+      client.destroy();
+    }
+  });
+
+  it('does not close a connection as idle while its message is being processed, and does once it waits for the next', async () => {
+    const { dispatch, letGo, entered } = heldDispatcher();
+    const setTimeoutOf = net.Socket.prototype.setTimeout;
+    const shortened = vi.spyOn(net.Socket.prototype, 'setTimeout').mockImplementation(function (this: net.Socket, ms: number) {
+      return setTimeoutOf.call(this, ms === 300_000 ? 100 : ms);
+    });
+    try {
+      receiver = new TcpMllpReceiver(makeConfig(), makeLogger().logger);
+      receiver.setDispatcher(dispatch);
+      await receiver.onStart();
+      const { client, acks, closed } = await openPersistent(TEST_PORT);
+      client.write(wrapMllp(VALID_HL7));
+      await entered;
+
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      letGo();
+      await closed;
+
+      expect(acks).toHaveLength(1);
+      expect(acks[0]).toContain('MSA|AA|MSGID123');
+    } finally {
+      shortened.mockRestore();
+    }
   });
 
   it('closes a connection that waits for nothing at once, while another has a message in hand', async () => {
