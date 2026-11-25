@@ -350,7 +350,7 @@ export class MessageProcessor {
       } catch (parseErr) {
         const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
         // Use inline error-out since errorOut helper isn't defined yet
-        await Promise.all([
+        await this.saved(messageId, 0, 'the ERROR status of a failed message', [
           this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, `Invalid ${dataType}: ${parseMsg}`, 'TEXT'),
           this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
           this.store.incrementStats(channelId, 0, serverId, 'errored'),
@@ -423,7 +423,7 @@ export class MessageProcessor {
         if (!filterResult.ok) return errorOut('sourceFilter', filterResult.error.message);
         mark('sourceFilter');
         if (filterResult.value.returnValue !== true) {
-          await Promise.all([
+          await this.saved(messageId, 0, 'the FILTERED status of a message', [
             this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'FILTERED'),
             this.store.incrementStats(channelId, 0, serverId, 'filtered'),
             this.store.markProcessed(channelId, messageId),
@@ -530,7 +530,7 @@ export class MessageProcessor {
       // errors and nothing still queued (a queued destination needs the stored
       // content to deliver later, and error content must be kept for investigation).
       if (!hasError && !stillQueued && this.store.removeCompletedContent) {
-        await this.store.removeCompletedContent(channelId, messageId);
+        await this.saved(messageId, 0, 'the removal of the content of a completed message', [this.store.removeCompletedContent(channelId, messageId)]);
       }
       mark('finalize');
 
@@ -661,7 +661,7 @@ export class MessageProcessor {
           return this.destErrorOut(messageId, dest, 'destinationFilter', filterResult.error.message);
         }
         if (filterResult.value.returnValue !== true) {
-          await Promise.all([
+          await this.saved(messageId, dest.metaDataId, 'the FILTERED status of a destination', [
             this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'FILTERED'),
             this.store.incrementStats(channelId, dest.metaDataId, serverId, 'filtered'),
           ]);
@@ -732,9 +732,9 @@ export class MessageProcessor {
       if (response.status === 'SENT') {
         // What the destination answered is in its own format (an ACK, an HTTP
         // body, a file path), not the channel's inbound data type.
-        await this.store.storeContent(
-          channelId, messageId, dest.metaDataId, CONTENT_TYPE.RESPONSE, response.content, 'TEXT',
-        );
+        await this.saved(messageId, dest.metaDataId, 'the response of a delivered destination', [
+          this.store.storeContent(channelId, messageId, dest.metaDataId, CONTENT_TYPE.RESPONSE, response.content, 'TEXT'),
+        ]);
 
         mapState.responseMap[dest.name] = { status: response.status, content: response.content };
 
@@ -749,14 +749,16 @@ export class MessageProcessor {
           if (rtResult.ok) {
             const transformed = scriptReplacement(rtResult.value.returnValue, rtResult.value.msg);
             responseContent = serializeFromSandbox(transformed, dataType, response.content, this.config.dataTypeOptions);
-            await this.store.storeContent(
-              channelId, messageId, dest.metaDataId, CONTENT_TYPE.RESPONSE_TRANSFORMED, responseContent, dataType,
-            );
+            await this.saved(messageId, dest.metaDataId, 'the transformed response of a delivered destination', [
+              this.store.storeContent(channelId, messageId, dest.metaDataId, CONTENT_TYPE.RESPONSE_TRANSFORMED, responseContent, dataType),
+            ]);
           } else {
-            await this.store.storeContent(
-              channelId, messageId, dest.metaDataId, CONTENT_TYPE.PROCESSING_ERROR,
-              `Script error in responseTransformer: ${rtResult.error.message}`, 'TEXT',
-            );
+            await this.saved(messageId, dest.metaDataId, 'why the response transformer of a delivered destination failed', [
+              this.store.storeContent(
+                channelId, messageId, dest.metaDataId, CONTENT_TYPE.PROCESSING_ERROR,
+                `Script error in responseTransformer: ${rtResult.error.message}`, 'TEXT',
+              ),
+            ]);
             if (this.config.onError) {
               await this.config.onError({
                 channelId, errorType: 'DESTINATION_CONNECTOR',
@@ -808,9 +810,13 @@ export class MessageProcessor {
   private async recordSendFailure(messageId: number, metaDataId: number, result: Result<DestinationResponse>): Promise<void> {
     const { channelId } = this.config;
     const response = result.ok ? result.value.content : '';
-    await this.saved(messageId, metaDataId, 'why a destination failed', [
-      this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.ERROR, sendFailureReason(result), 'TEXT'),
-      ...(response ? [this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT')] : []),
+    await Promise.all([
+      this.saved(messageId, metaDataId, 'why a destination failed', [
+        this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.ERROR, sendFailureReason(result), 'TEXT'),
+      ]),
+      ...(response ? [this.saved(messageId, metaDataId, 'the response of a failed destination', [
+        this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT'),
+      ])] : []),
     ]);
   }
 

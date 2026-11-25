@@ -1,12 +1,13 @@
 // What the server logs when a statement fails (D-347). It logged the statement's
-// parameters: connector passwords and message content.
+// parameters: connector passwords and message content. The last test also covers
+// what becomes of a message whose answer cannot be stored (#404).
 
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Writable } from 'node:stream';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
-import { createChannelSchema } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, createChannelSchema } from '@galvanigraph/core-models';
 import { adminActor, apiCall, describeIntegration, loadServerModules, unwrap, userWithRole, type ServerModules, type TestActor } from './_setup.js';
 
 const NUL = String.fromCharCode(0);
@@ -42,7 +43,7 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     deployment = await import('../../src/services/deployment.service.js');
     const app = (await import('../../src/app.js')).default;
     server = createServer(app);
-    partner = createServer((_req, res) => { res.statusCode = 500; res.end(`MRN-8675309${NUL}`); });
+    partner = createServer((req, res) => { res.statusCode = req.url === '/refuse' ? 500 : 200; res.end(`MRN-8675309${NUL}`); });
     await listen(server);
     await listen(partner);
     base = `http://127.0.0.1:${String(port(server))}`;
@@ -83,18 +84,28 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     expect(logged).not.toContain('S-timeout');
   });
 
-  it('holds no message content when a partner\'s answer cannot be stored', async () => {
+  it.each([
+    ['refused it', '/refuse', 'NEVER', 'ERROR', 'the response of a failed destination'],
+    ['took it', '/accept', 'NEVER', 'SENT', 'the response of a delivered destination'],
+    ['took it from the queue', '/accept', 'ALWAYS', 'SENT', 'the response of a delivered destination'],
+  ] as const)('says that the answer of a partner that %s cannot be stored, without the answer, and the message keeps its status', async (_what, path, queueMode, status, what) => {
     const channel = unwrap(await mods.ChannelService.create(createChannelSchema.parse({
       name: `itest-query-error-${randomUUID()}`, enabled: true, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'AUTO_AFTER_DESTINATIONS',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 },
-      destinations: [{ name: 'H', connectorType: 'HTTP', queueMode: 'NEVER', properties: { url: `http://127.0.0.1:${String(port(partner))}/` } }],
+      destinations: [{ name: 'H', connectorType: 'HTTP', queueMode, properties: { url: `http://127.0.0.1:${String(port(partner))}${path}` } }],
     }), actor));
     channels.push(channel.id);
     unwrap(await deployment.DeploymentService.deploy(channel.id, actor));
     if (engineMod.getEngine().getRuntime(channel.id)!.runtime.getState() !== 'STARTED') unwrap(await deployment.DeploymentService.start(channel.id, actor));
     try {
       await apiCall(base, token, 'POST', `/channels/${channel.id}/send-message`, { content: 'hello' });
-      await vi.waitFor(() => { expect(logged).toContain('Message store write failed'); }, 10_000);
+      await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, 10_000);
+      expect(logged).toContain('Message store write failed');
+      const destination = async (): Promise<unknown> => (await mods.pool.query(
+        'SELECT status FROM connector_messages WHERE channel_id = $1 AND meta_data_id = 1', [channel.id])).rows;
+      await vi.waitFor(async () => { expect(await destination()).toEqual([{ status }]); }, 10_000);
+      const stored = await mods.pool.query('SELECT content_type FROM message_content WHERE channel_id = $1 AND meta_data_id = 1', [channel.id]);
+      expect(stored.rows).not.toContainEqual({ content_type: CONTENT_TYPE.RESPONSE });
       expect(logged).toContain('Failed query (22021): insert into');
       expect(logged).not.toContain('MRN-8675309');
     } finally {
