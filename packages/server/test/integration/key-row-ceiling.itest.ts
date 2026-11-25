@@ -127,6 +127,24 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
     }
   });
 
+  it('does not count a send that is refused because the channel is not deployed (#419)', async () => {
+    const issued = await apiCall<IssuedApiKey>(base, admin.token, 'POST', '/api-keys', {
+      name: 'Sender', permissions: ['channels:deploy', 'messages:read'], groupIds: [lab], expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    expect(issued.status).toBe(201);
+    const { token, key: { id } } = issued.json.data!;
+    const sender = (await mods.pool.query<{ user_id: string }>('SELECT user_id FROM api_keys WHERE id = $1', [id])).rows[0]!.user_id;
+
+    const statuses: number[] = [];
+    for (let i = 0; i < CEILING + 1; i++) statuses.push((await apiCall(base, token, 'POST', `/channels/${CHANNEL}/send-message`, { content: 'MSH|' })).status);
+
+    expect(statuses).toEqual(Array.from({ length: CEILING + 1 }, () => 404));
+    const recorded = await mods.pool.query(`SELECT action FROM audit_log WHERE user_id = $1 AND attributes ? 'rows'`, [sender]);
+    expect(recorded.rows).toEqual([]);
+    // Its whole day is left.
+    expect((await apiCall(base, token, 'GET', `/channels/${CHANNEL}/messages`)).status).toBe(200);
+  });
+
   it('leaves a person\'s reads alone', async () => {
     expect((await apiCall(base, admin.token, 'GET', `/channels/${CHANNEL}/messages`)).status).toBe(200);
     expect((await apiCall(base, admin.token, 'GET', `/channels/${CHANNEL}/messages`)).status).toBe(200);
