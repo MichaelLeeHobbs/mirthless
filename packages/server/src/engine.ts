@@ -225,30 +225,58 @@ export function dataTypeOptionsFor(channel: ChannelDetail): DataTypeOptions {
   return { delimited: parsed.data };
 }
 
+export interface BatchRules {
+  /** The source never offers its input again, so no message may wait for that. */
+  readonly offeredOnce: boolean;
+  /** What the channel receives is stored as plain text, which cannot hold U+0000. */
+  readonly storesPlainText: boolean;
+}
+
+export function batchRulesFor(channel: Pick<ChannelDetail, 'sourceConnectorType' | 'encryptData' | 'messageStorageMode'>): BatchRules {
+  return {
+    offeredOnce: channel.sourceConnectorType === 'JAVASCRIPT',
+    storesPlainText: !channel.encryptData && shouldStoreContent(channel.messageStorageMode as MessageStorageMode, CONTENT_TYPE.RAW),
+  };
+}
+
+export interface BatchRun extends BatchRules {
+  readonly split: (content: string) => string[];
+  readonly processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>;
+}
+
+function splitBatch(content: string, run: BatchRun): readonly string[] {
+  const parts = run.split(content);
+  if (parts.length === 0) throw new Error('The batch holds no messages');
+  const unstorable = run.storesPlainText && !run.offeredOnce ? parts.findIndex((part) => part.includes('\0')) : -1;
+  if (unstorable !== -1) {
+    throw new Error(`Message ${String(unstorable + 1)} of ${String(parts.length)} in the batch holds U+0000, which the message store cannot hold as plain text; none of the batch was processed`);
+  }
+  return parts;
+}
+
 /**
- * Process each message of a batch, in order, and report the batch as one
- * outcome: an error if the batch could not be split or any message failed
- * (so the source keeps or quarantines it), otherwise the last message's
- * outcome. Every message is processed even after one fails, as Mirth does.
+ * Process each message of a batch, in order, as Mirth does, and report the batch as one outcome.
+ * A message that was not recorded ends it and the batch is not taken, so the source offers it
+ * again, and the messages before that one are then processed again (D-254, D-359). Otherwise the
+ * first error, if any message was recorded with one, or the last message's outcome.
  */
-export async function processBatch(
-  split: (content: string) => string[],
-  content: string,
-  processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>,
-): Promise<Result<SourceDispatchOutcome>> {
-  const parts = tryCatch((): string[] => {
-    const list = split(content);
-    if (list.length === 0) throw new Error('The batch holds no messages');
-    return list;
-  });
+export async function processBatch(content: string, run: BatchRun): Promise<Result<SourceDispatchOutcome>> {
+  const parts = tryCatch(() => splitBatch(content, run));
   if (!parts.ok) return { ok: false, value: null, error: parts.error } as Result<SourceDispatchOutcome>;
   let outcome: Result<SourceDispatchOutcome> | undefined;
   let failure: Result<SourceDispatchOutcome> | undefined;
-  for (const part of parts.value) {
-    outcome = await processOne(part);
-    if (!failure && (!outcome.ok || outcome.value.status === DISPATCH_STATUS.ERROR)) failure = outcome;
+  let unrecorded: Result<SourceDispatchOutcome> | undefined;
+  for (const [index, part] of parts.value.entries()) {
+    if (unrecorded && !run.offeredOnce) break;
+    outcome = await run.processOne(part);
+    if (!outcome.ok) {
+      const error = new Error(`Message ${String(index + 1)} of ${String(parts.value.length)} in the batch was not recorded: ${outcome.error.message}`, { cause: outcome.error });
+      unrecorded ??= { ok: false, value: null, error } as Result<SourceDispatchOutcome>;
+    } else if (outcome.value.status === DISPATCH_STATUS.ERROR) {
+      failure ??= outcome;
+    }
   }
-  return failure ?? outcome!;
+  return unrecorded ?? failure ?? outcome!;
 }
 
 export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
@@ -863,12 +891,18 @@ export class EngineManager {
     const processMessage = (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> =>
       this.track(channel.id, processOne(rawContent, sourceMap));
 
+    const processHl7Batch = async (raw: { readonly content: string; readonly sourceMap: Record<string, unknown> }): Promise<Result<SourceDispatchOutcome>> => {
+      const result = await processBatch(raw.content, { ...batchRulesFor(channel), split: splitHl7Batch, processOne: (part) => processMessage(part, raw.sourceMap) });
+      if (!result.ok) logger.error({ channelId: channel.id, errMsg: result.error.message }, 'HL7 batch not taken; its source is told so');
+      return result;
+    };
+
     const runtimeConfig: ChannelRuntimeConfig = {
       channelId: channel.id,
       source,
       destinations,
       onMessage: async (raw) => (batched
-        ? processBatch(splitHl7Batch, raw.content, (part) => processMessage(part, raw.sourceMap))
+        ? processHl7Batch(raw)
         : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) })))),
     };
 
