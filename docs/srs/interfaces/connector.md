@@ -153,7 +153,7 @@ interface QuarantineLedger { load(paths: readonly string[]): Promise<void>; has(
 | CPI-POL-03 | A polling source shall not stop itself because an input was not recorded; it shall offer it again at each later poll. | P1 | Test | Proposed |
 
 - CPI-POL-01: source: the `polling` flag in every polling receiver; `client-lifecycle.ts` ("a hung server cannot wedge a poll loop"), `SFTP_OP_TIMEOUT_MS` and `IMAP_OP_TIMEOUT_MS`, `STATEMENT_TIMEOUT_MS` in the DATABASE receiver. An interval is 100 to 2147483647 ms, at least 1000 for EMAIL (D-274).
-- CPI-POL-02: source: D-158, D-168, `quarantine-ledger.ts`, `DISPATCHED_KEYWORD` in `email/imap-client.ts`. Conflict: the code only logs a ledger it could not write and D-158 accepts a loud log; the alert follows AGENTS.md "Fail safe, not silent". Today a SFTP source whose connection was closed by a stop takes a skipped post-action for a done one (`postProcess` returns when there is no client), so the file is neither removed nor quarantined, and the next start dispatches it again.
+- CPI-POL-02: source: D-158, D-168, `quarantine-ledger.ts`, `DISPATCHED_KEYWORD` in `email/imap-client.ts`. Conflict: the code only logs a ledger it could not write and D-158 accepts a loud log; the alert follows AGENTS.md "Fail safe, not silent".
 - CPI-POL-03: source: srs-debate 2026-11-24, finding C3 (Contractor 2).
 
 ## Destination guarantees (DST)

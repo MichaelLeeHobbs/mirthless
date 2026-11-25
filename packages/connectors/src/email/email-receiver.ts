@@ -229,6 +229,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
       if (!session.live) throw listed.error;
       this.logger.warn(errorInfo(listed.error), 'Email folder could not be read on the connection kept from the last poll; trying a new one');
       await this.disconnect(session);
+      if (!session.live) throw listed.error;
     }
     const client = await this.connect(session);
     if (!session.live) throw new Error('The source was stopped while it connected');

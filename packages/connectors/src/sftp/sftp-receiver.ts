@@ -2,12 +2,12 @@
 // (new instance) does not re-dispatch an already-dispatched file.
 
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
-import { stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import { settleUnlessAborted, stderr, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { selectsFileName } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
-import { connectFresh, closeQuietly } from '../client-lifecycle.js';
+import { connectFresh } from '../client-lifecycle.js';
 import {
   QUARANTINE_LEDGER_NAME,
   QUARANTINE_LEDGER_NAMES,
@@ -62,12 +62,22 @@ export function joinRemote(dir: string, name: string): string {
 /** One start of the source and its connection. A cycle that outlives a halt keeps its own, not a later start's. */
 interface Session {
   client: SftpClient | null;
+  /** Of a connect in the poll cycle that has not ended. */
+  connecting: SftpClient | null;
   /** False once stop or halt is asked for, so a poll cycle in progress takes no more files. */
   live: boolean;
   /** Ends once the file in hand is deleted, moved, quarantined or left. */
   file: Promise<void>;
   /** The file in hand was read: from here on it is processed and settled, whatever stops the source. */
   taken: boolean;
+}
+
+/** A file that was read keeps the connection, and the cycle closes it. */
+function destroyIdle(session: Session): void {
+  if (session.taken) return;
+  session.connecting?.destroy();
+  session.client?.destroy();
+  session.client = null;
 }
 
 export class SftpReceiver implements SourceConnectorRuntime {
@@ -78,6 +88,8 @@ export class SftpReceiver implements SourceConnectorRuntime {
   private health: SourceHealthHandler = () => undefined;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private session: Session | null = null;
+  /** Of the latest start: a halt aborts it, which ends what a stop waits for. */
+  private halted = new AbortController();
   /** The session of the poll cycle in flight; there is never a second cycle. */
   private polling: Session | null = null;
   /** Dispatched files whose pipeline errored or whose post-action failed, so they are not re-dispatched. */
@@ -130,9 +142,10 @@ export class SftpReceiver implements SourceConnectorRuntime {
       if (!this.dispatcher) {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
-      const session: Session = { client: null, live: true, file: Promise.resolve(), taken: false };
+      const session: Session = { client: null, connecting: null, live: true, file: Promise.resolve(), taken: false };
       await this.connect(session);
       this.session = session;
+      this.halted = new AbortController();
       // Merge the current and legacy (pre-rename) ledgers, so entries
       // quarantined before the rename are still skipped.
       await this.quarantine.load(QUARANTINE_LEDGER_NAMES.map((name) => joinRemote(this.config.remoteDirectory, name)));
@@ -145,18 +158,22 @@ export class SftpReceiver implements SourceConnectorRuntime {
   /** Waits for a file that was read, so it is deleted, moved or quarantined before its connection goes. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
+      const { signal } = this.halted;
       const session = this.endSession();
       // Not only this session's: after a pause the session is gone, and its file may be in flight.
-      if (this.polling?.taken === true) await this.polling.file;
-      if (session !== null) await this.disconnect(session);
+      if (this.polling?.taken === true) await settleUnlessAborted(this.polling.file, signal);
+      if (session === null) return;
+      session.connecting?.destroy();
+      if (signal.aborted) destroyIdle(session);
+      else await this.disconnect(session);
     });
   }
 
-  /** Does not wait: a file that was read keeps the connection, and the cycle closes it. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
       const session = this.endSession();
-      if (session !== null && !session.taken) await this.disconnect(session);
+      this.halted.abort();
+      if (session !== null) destroyIdle(session);
     });
   }
 
@@ -221,7 +238,12 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
   private async connect(session: Session): Promise<SftpClient> {
     const client = this.createClient(this.config);
-    session.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
+    session.connecting = client;
+    try {
+      session.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
+    } finally {
+      session.connecting = null;
+    }
     return session.client;
   }
 
@@ -234,8 +256,10 @@ export class SftpReceiver implements SourceConnectorRuntime {
       if (!session.live) throw listed.error;
       this.logger.warn({ ...errorInfo(listed.error), remoteDirectory: this.config.remoteDirectory }, 'SFTP listing failed on the connection kept from the last poll; trying a new one');
       await this.disconnect(session);
+      if (!session.live) throw listed.error;
     }
     const client = await this.connect(session);
+    if (!session.live) throw new Error('The source was stopped while it connected');
     return { client, entries: await this.listMatchingFiles(client) };
   }
 
@@ -340,13 +364,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     const { client } = session;
     if (!client) return;
     session.client = null;
-    await closeQuietly({
-      close: () => client.end(),
-      timeoutMs: SFTP_OP_TIMEOUT_MS,
-      label: 'SFTP end',
-      logger: this.logger,
-      message: 'Error disconnecting SFTP client',
-    });
+    await client.end();
   }
 
   private clearPollTimer(): void {

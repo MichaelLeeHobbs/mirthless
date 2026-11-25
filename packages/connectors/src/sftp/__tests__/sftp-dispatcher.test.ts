@@ -119,7 +119,7 @@ describe('send', () => {
     expect(result.value!.content).toBe('/outbound/99.dat');
     expect(state.files.get('99.dat')?.content).toBe('BODY');
     expect(state.mkdirs).toContain('/outbound');
-    expect(state.endCount).toBe(1);
+    expect([state.endCount, state.destroyCount]).toEqual([1, 0]);
   });
 
   it('substitutes ${timestamp} in the filename template', async () => {
@@ -163,7 +163,20 @@ describe('send', () => {
 
     const result = await d.send(makeMessage(), makeSignal());
     expect(result.ok).toBe(false);
-    expect(state.endCount).toBe(1);
+    expect([state.endCount, state.destroyCount]).toEqual([1, 0]);
+  });
+
+  it('closes at once when the send is given up', async () => {
+    const state = new RemoteState();
+    const d = new SftpDispatcher(makeConfig(), () => ({ ...makeMockSftpClient(state), connect: () => new Promise(() => undefined) }));
+    await d.onStart();
+    const abort = new AbortController();
+
+    const sending = d.send(makeMessage(), abort.signal);
+    abort.abort();
+
+    expect((await sending).ok).toBe(false);
+    expect([state.endCount, state.destroyCount]).toEqual([0, 1]);
   });
 });
 
