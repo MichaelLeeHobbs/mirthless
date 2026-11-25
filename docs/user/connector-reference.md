@@ -64,6 +64,8 @@ The source listens on a TCP port and reads framed messages, by default MLLP (0x0
 
 The source answers every message. With `responseMode` AUTO_ACK it builds an HL7 ACK from the inbound MSH: AA when the pipeline accepted the message (a filtered message counts as accepted), AE when it failed. It never sends AR. With PASSTHROUGH it returns the response the pipeline produced, and falls back to the same ACK when there is none or when its charset cannot hold it (logged as an error).
 
+A stop or a pause takes no new messages. The message in hand on each connection is answered first, however long it takes, and its sender then has 15 seconds to read the answer. One that comes after the stop, or waits behind another on its connection, is not recorded and gets no acknowledgement before the connection closes, so its sender keeps it. A halt closes every connection at once.
+
 The destination waits for the partner's acknowledgement and reads MSA-1. AA or CA is SENT. Anything else is an ERROR with the code and MSA-3 text in the error message: a NAK (AE, AR, CE, CR), a missing MSA-1, an acknowledgement it cannot parse, an MSA-2 that names a different message control ID (MSA-2 must equal the whole sent MSH-10 or its first component), or the connection closing before an acknowledgement arrives. An ERROR is retried only if the destination's queue is on.
 
 ### TCP_MLLP security

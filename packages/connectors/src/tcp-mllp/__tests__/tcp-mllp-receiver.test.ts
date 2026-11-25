@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import {
@@ -477,6 +477,184 @@ describe('TcpMllpReceiver stop', () => {
 
     expect(acks).toHaveLength(1);
     expect(acks[0]).toContain('MSA|AA|MSGID123');
+  });
+
+  const hl7 = (controlId: string): string => VALID_HL7.replace('MSGID123', controlId);
+
+  /** A dispatcher that holds each message until it is let go, and what it was given. */
+  function heldDispatcher(): { dispatch: (raw: RawMessage) => Promise<Result<DispatchResult>>; received: string[]; letGo: () => void; entered: Promise<void> } {
+    let letGo = (): void => undefined;
+    let enter = (): void => undefined;
+    const gate = new Promise<void>((resolve) => { letGo = resolve; });
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const received: string[] = [];
+    return {
+      received,
+      letGo: () => { letGo(); },
+      entered,
+      dispatch: async (raw) => {
+        received.push(raw.content);
+        enter();
+        await gate;
+        return { ok: true as const, value: { messageId: received.length }, error: null };
+      },
+    };
+  }
+
+  it('answers a message that takes longer than 5 seconds, so its sender does not send it again (#413)', async () => {
+    const { dispatch, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+    client.write(wrapMllp(VALID_HL7));
+    await entered;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let stopped = false;
+      const stopping = receiver.onStop().then(() => { stopped = true; });
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(stopped).toBe(false);
+      letGo();
+      await stopping;
+    } finally {
+      vi.useRealTimers();
+    }
+    await closed;
+
+    expect(acks).toHaveLength(1);
+    expect(acks[0]).toContain('MSA|AA|MSGID123');
+  });
+
+  it('dispatches no message that waits behind the one in hand once it is stopped (#413)', async () => {
+    const { dispatch, received, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig(), makeLogger().logger);
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+    client.write(Buffer.concat(['A', 'B', 'C'].map((id) => wrapMllp(hl7(id)))));
+    await entered;
+
+    const stopping = receiver.onStop();
+    letGo();
+    await stopping;
+    await closed;
+
+    expect(received).toEqual([hl7('A')]);
+    // B and C got no answer, so their sender keeps them.
+    expect(acks).toHaveLength(1);
+    expect(acks[0]).toContain('MSA|AA|A');
+  });
+
+  it('answers the message in hand although another arrives on its connection after the stop (#413)', async () => {
+    const { dispatch, received, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+    client.write(wrapMllp(hl7('A')));
+    await entered;
+
+    const stopping = receiver.onStop();
+    await new Promise<void>((resolve) => { client.write(wrapMllp(hl7('B')), () => { resolve(); }); });
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    letGo();
+    await stopping;
+    await closed;
+
+    expect(received).toEqual([hl7('A')]);
+    expect(acks).toHaveLength(1);
+    expect(acks[0]).toContain('MSA|AA|A');
+  });
+
+  it('closes a connection that waits for nothing at once, while another has a message in hand', async () => {
+    const { dispatch, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const busy = await openPersistent(TEST_PORT);
+    const idle = await openPersistent(TEST_PORT);
+    busy.client.write(wrapMllp(VALID_HL7));
+    await entered;
+
+    const stopping = receiver.onStop();
+    await idle.closed;
+    letGo();
+    await stopping;
+    await busy.closed;
+
+    expect(busy.acks).toHaveLength(1);
+  });
+
+  it('waits for a message whose sender has gone, or its destinations would stop under it', async () => {
+    const { dispatch, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client, closed } = await openPersistent(TEST_PORT);
+    client.write(wrapMllp(VALID_HL7));
+    await entered;
+    client.destroy();
+    await closed;
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+
+    let stopped = false;
+    const stopping = receiver.onStop().then(() => { stopped = true; });
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    expect(stopped).toBe(false);
+    letGo();
+    await stopping;
+  });
+
+  it('a second stop waits as the first does', async () => {
+    const { dispatch, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client } = await openPersistent(TEST_PORT);
+    client.write(wrapMllp(VALID_HL7));
+    await entered;
+
+    const ended: string[] = [];
+    const first = receiver.onStop().then(() => { ended.push('first'); });
+    const second = receiver.onStop().then(() => { ended.push('second'); });
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    expect(ended).toEqual([]);
+    letGo();
+    await Promise.all([first, second]);
+  });
+
+  it('a halt ends a stop that waits, and nothing that waited is dispatched, not even after the next start (#413)', async () => {
+    const { dispatch, received, letGo, entered } = heldDispatcher();
+    receiver = new TcpMllpReceiver(makeConfig(), makeLogger().logger);
+    receiver.setDispatcher(dispatch);
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+    client.write(Buffer.concat(['A', 'B'].map((id) => wrapMllp(hl7(id)))));
+    await entered;
+
+    const stopping = receiver.onStop();
+    expect((await receiver.onHalt()).ok).toBe(true);
+    await stopping;
+    await closed;
+    expect((await receiver.onStart()).ok).toBe(true);
+    letGo();
+    expect(await connectAndSend(TEST_PORT, hl7('C'))).toContain('MSA|AA|C');
+
+    expect(received).toEqual([hl7('A'), hl7('C')]);
+    expect(acks).toEqual([]);
+  });
+
+  it('stops promptly while a sender stalls in its TLS handshake', async () => {
+    receiver = new TcpMllpReceiver(makeConfig({ tls: { cert: TEST_CERT_PEM, key: TEST_KEY_PEM } }));
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onStart();
+    const { closed } = await openPersistent(TEST_PORT);
+
+    const stopped = receiver.onStop();
+    await closed;
+    expect((await stopped).ok).toBe(true);
   });
 
   it('refuses new connections after stop', async () => {

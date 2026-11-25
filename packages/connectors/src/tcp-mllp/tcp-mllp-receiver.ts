@@ -15,8 +15,10 @@ import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logge
 
 const IDLE_SOCKET_TIMEOUT_MS = 300_000;
 
-const STOP_DRAIN_MS = 5_000;
+/** How long a stop waits for an answer to be read. */
+const STOP_READ_MS = 15_000;
 
+/** How long a sender that was answered during a stop has to close its connection. */
 const STOP_CLOSE_MS = 2_000;
 
 /** PASSTHROUGH returns the pipeline response verbatim; AUTO_ACK builds an HL7 ACK/NAK from the inbound MSH. */
@@ -39,15 +41,44 @@ export interface TcpMllpReceiverConfig {
   readonly framing?: Framing | undefined;
 }
 
+interface Connection {
+  readonly socket: net.Socket;
+  /** Ends once the messages that came on it are answered, or left. */
+  answered: Promise<void>;
+  /** A message that came on it is being processed. */
+  inHand: boolean;
+}
+
+/** One start of the source. A message that outlives a halt belongs to its own, not to a later start's. */
+interface Run {
+  readonly server: net.Server;
+  /** Over TLS the sockets below the connections, so one that stalls in its handshake is in here too. */
+  readonly sockets: Set<net.Socket>;
+  readonly connections: Set<Connection>;
+  readonly inProgress: Set<Promise<void>>;
+  /** False once stop or halt is asked for. */
+  live: boolean;
+  readonly halt: () => void;
+  readonly halted: Promise<void>;
+  stopped: Promise<void> | null;
+}
+
+function newRun(server: net.Server): Run {
+  let halt = (): void => undefined;
+  const halted = new Promise<void>((resolve) => { halt = resolve; });
+  const sockets = new Set<net.Socket>();
+  server.on('connection', (socket: net.Socket) => {
+    sockets.add(socket);
+    socket.once('close', () => { sockets.delete(socket); });
+  });
+  return { server, sockets, connections: new Set(), inProgress: new Set(), live: true, halt, halted, stopped: null };
+}
+
 export class TcpMllpReceiver implements SourceConnectorRuntime {
   private readonly config: TcpMllpReceiverConfig;
   private readonly logger: ConnectorLogger;
-  private server: net.Server | null = null;
+  private run: Run | null = null;
   private dispatcher: MessageDispatcher | null = null;
-  private readonly connections = new Set<net.Socket>();
-  /** Per-connection processing chain, so stop can wait for work in flight. */
-  private readonly chains = new Map<net.Socket, Promise<void>>();
-  private stopping = false;
 
   constructor(config: TcpMllpReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
@@ -75,84 +106,81 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      this.stopping = false;
-      this.server = this.createServer();
-      this.server.maxConnections = this.config.maxConnections;
+      const { server, acceptEvent } = this.createServer();
+      server.maxConnections = this.config.maxConnections;
+      const run = newRun(server);
+      server.on(acceptEvent, (socket: net.Socket) => { this.handleConnection(run, socket); });
 
       await new Promise<void>((resolve, reject) => {
-        const srv = this.server!;
-        srv.once('error', reject);
-        srv.listen(this.config.port, this.config.host, () => {
-          srv.removeListener('error', reject);
+        server.once('error', reject);
+        server.listen(this.config.port, this.config.host, () => {
+          server.removeListener('error', reject);
           resolve();
         });
       });
+      this.run = run;
     });
   }
 
-  private createServer(): net.Server {
-    const onConnection = (socket: net.Socket): void => { this.handleConnection(socket); };
-    if (this.config.tls) {
-      const t = this.config.tls;
-      return tls.createServer(
-        {
-          cert: t.cert,
-          key: t.key,
-          ...(t.ca !== undefined ? { ca: t.ca } : {}),
-          requestCert: t.requireClientCert === true,
-          rejectUnauthorized: t.requireClientCert === true,
-        },
-        onConnection,
-      );
-    }
-    return net.createServer(onConnection);
+  private createServer(): { readonly server: net.Server; readonly acceptEvent: 'connection' | 'secureConnection' } {
+    const t = this.config.tls;
+    if (!t) return { server: net.createServer(), acceptEvent: 'connection' };
+    const server = tls.createServer({
+      cert: t.cert,
+      key: t.key,
+      ...(t.ca !== undefined ? { ca: t.ca } : {}),
+      requestCert: t.requireClientCert === true,
+      rejectUnauthorized: t.requireClientCert === true,
+    });
+    return { server, acceptEvent: 'secureConnection' };
   }
 
   /**
-   * HL7 senders hold their connection open and `server.close` completes only
-   * once every connection is gone, so the order matters: stop reading, let
-   * in-flight messages finish and ACK, then close the connections. A message
-   * arriving after reading stops is not acknowledged, so the sender keeps it.
+   * Answers the messages in hand, however long they take, until a halt. Those that came after
+   * them, or wait behind them on their connection, are not acknowledged, so their sender keeps them.
    */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
-      const server = this.server;
-      if (!server) return;
-
-      this.stopping = true;
-      const listenerClosed = new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
-
-      await settleWithin(Promise.all([...this.chains.values()]), STOP_DRAIN_MS);
-
-      // destroySoon flushes a pending ACK before closing the socket.
-      for (const socket of this.connections) {
-        socket.destroySoon();
-      }
-      await settleWithin(listenerClosed, STOP_CLOSE_MS);
-
-      for (const socket of this.connections) {
-        socket.destroy();
-      }
-      this.connections.clear();
-      this.chains.clear();
-      await listenerClosed;
-      this.server = null;
+      const { run } = this;
+      if (!run) return;
+      run.stopped ??= this.stopRun(run);
+      await run.stopped;
+      if (this.run === run) this.run = null;
     });
+  }
+
+  private async stopRun(run: Run): Promise<void> {
+    run.live = false;
+    // HL7 senders hold their connection open, and `close` completes only once every one is gone.
+    const listenerClosed = new Promise<void>((resolve) => { run.server.close(() => { resolve(); }); });
+    const closing = [...run.connections].map((connection) => this.closeOnceAnswered(connection));
+    // Not only the connections': a message whose sender has gone is in hand too.
+    await Promise.race([Promise.all([...closing, ...run.inProgress]), run.halted]);
+    for (const socket of run.sockets) socket.destroy();
+    await listenerClosed;
+  }
+
+  private async closeOnceAnswered(connection: Connection): Promise<void> {
+    const { socket, inHand } = connection;
+    await connection.answered;
+    if (socket.destroyed) return;
+    const closed = new Promise<void>((resolve) => { socket.once('close', () => { resolve(); }); });
+    const sent = new Promise<void>((resolve) => { socket.end(() => { resolve(); }); });
+    // Destroyed while its sender still sends, the connection would be reset and the answer lost.
+    if (await settleWithin(sent, STOP_READ_MS) && inHand) await settleWithin(closed, STOP_CLOSE_MS);
+    socket.destroy();
   }
 
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      if (!this.server) return;
-
-      this.stopping = true;
-      this.server.close();
-
-      for (const socket of this.connections) {
-        socket.destroy();
-      }
-      this.connections.clear();
-      this.chains.clear();
-      this.server = null;
+      const { run } = this;
+      if (!run) return;
+      this.run = null;
+      run.live = false;
+      run.server.close();
+      run.halt();
+      for (const connection of run.connections) connection.socket.destroy();
+      for (const socket of run.sockets) socket.destroy();
     });
   }
 
@@ -162,8 +190,14 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  private handleConnection(socket: net.Socket): void {
-    this.connections.add(socket);
+  private handleConnection(run: Run, socket: net.Socket): void {
+    // Over TLS a handshake can end after the stop began.
+    if (!run.live) {
+      socket.destroy();
+      return;
+    }
+    const connection: Connection = { socket, answered: Promise.resolve(), inHand: false };
+    run.connections.add(connection);
 
     // Close idle connections so dead/half-open sockets don't accumulate and fill
     // maxConnections, after which new senders would be silently refused.
@@ -178,16 +212,10 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
       charset: this.config.charset,
       ...(this.config.framing ? { framing: this.config.framing } : {}),
     });
-    // Serialize processing per connection: HL7 senders assume strict
-    // sequential request/response, so ACKs must not interleave.
-    let chain: Promise<void> = Promise.resolve();
 
     socket.on('data', (chunk: Buffer) => {
-      // Stopping: take no new work. Unacknowledged, the message stays with the sender.
-      if (this.stopping) {
-        socket.destroy();
-        return;
-      }
+      // Read and dropped: unread, it would reset the connection, and the answer to the message in hand be lost.
+      if (!run.live) return;
       let msgs: readonly string[];
       try {
         msgs = parser.parse(chunk);
@@ -199,26 +227,43 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
         socket.destroy();
         return;
       }
-      for (const content of msgs) {
-        chain = chain
-          .then(() => this.processMessage(content, socket))
-          .catch((err: unknown) => {
-            this.logger.error(errorInfo(err), 'Unexpected error processing MLLP message');
-          });
-      }
-      this.chains.set(socket, chain);
+      for (const content of msgs) this.enqueue(run, connection, content);
     });
 
-    socket.on('close', () => {
-      this.connections.delete(socket);
-      this.chains.delete(socket);
-    });
+    socket.on('close', () => { run.connections.delete(connection); });
 
     socket.on('error', (err) => {
       this.logger.error(errorInfo(err), 'MLLP connection error');
-      this.connections.delete(socket);
       socket.destroy();
     });
+  }
+
+  /** One after the other: HL7 senders assume strict request and response, so answers must not interleave. */
+  private enqueue(run: Run, connection: Connection, content: string): void {
+    const work = connection.answered
+      .then(() => this.takeMessage(run, connection, content))
+      .catch((err: unknown) => {
+        this.logger.error(errorInfo(err), 'Unexpected error processing MLLP message');
+      })
+      .finally(() => { run.inProgress.delete(work); });
+    run.inProgress.add(work);
+    connection.answered = work;
+  }
+
+  private async takeMessage(run: Run, connection: Connection, content: string): Promise<void> {
+    if (!run.live) {
+      this.logger.warn(
+        { remoteAddress: connection.socket.remoteAddress },
+        'MLLP message not taken: the source was stopped before its turn came. It is not acknowledged, so its sender keeps it',
+      );
+      return;
+    }
+    connection.inHand = true;
+    try {
+      await this.processMessage(content, connection.socket);
+    } finally {
+      connection.inHand = false;
+    }
   }
 
   private async processMessage(content: string, socket: net.Socket): Promise<void> {
