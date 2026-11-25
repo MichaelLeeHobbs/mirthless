@@ -215,6 +215,35 @@ describe('TcpMllpReceiver', () => {
     for (const r of responses) expect(r).toContain('MSA|AA');
   });
 
+  it('answers every frame of one write that together pass maxFrameBytes (#415)', async () => {
+    const received: string[] = [];
+    receiver = new TcpMllpReceiver(makeConfig({ maxFrameBytes: 1_000 }));
+    receiver.setDispatcher(makeDispatcher((raw) => {
+      received.push(raw.content);
+      return { messageId: received.length };
+    }));
+    await receiver.onDeploy();
+    await receiver.onStart();
+    const texts = ['A', 'B', 'C'].map((c) => `${VALID_HL7}\rNTE|1||${c.repeat(350)}`);
+
+    const acks = await new Promise<readonly string[]>((resolve, reject) => {
+      const parser = new MllpParser();
+      const answers: string[] = [];
+      const client = net.createConnection({ host: '127.0.0.1', port: TEST_PORT }, () => {
+        client.write(Buffer.concat(texts.map((text) => wrapMllp(text))));
+      });
+      client.on('data', (chunk: Buffer) => {
+        answers.push(...parser.parse(chunk));
+        if (answers.length === texts.length) client.end();
+      });
+      client.on('error', reject);
+      client.on('close', () => { resolve(answers); });
+    });
+
+    expect(received).toEqual(texts);
+    expect(acks).toHaveLength(3);
+  });
+
   it('halt destroys connections immediately', async () => {
     receiver = new TcpMllpReceiver(makeConfig());
     receiver.setDispatcher(makeDispatcher());

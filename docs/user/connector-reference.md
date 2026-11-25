@@ -79,7 +79,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `maxConnections` | No | Most open connections at once. |
 | `responseMode` | No | `AUTO_ACK` (default) or `PASSTHROUGH`. See what it does. |
 | `charset` | No | `utf-8` (default), `latin1` (ISO-8859-1), `ascii` or `utf16le`, used to read and write frames. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. |
-| `maxFrameBytes` | No | Most bytes buffered for one message before the connection is refused. |
+| `maxFrameBytes` | No | Most bytes one message may have, start and end bytes not counted. A longer one closes the connection without an acknowledgement, for it or for a message that ended in the same read. |
 | `frameStart` | No | Start bytes in hex, such as `02` for STX. API or Mirth import only. Invalid hex refuses to deploy. |
 | `frameEnd` | No | End bytes in hex, such as `03` for ETX. API or Mirth import only. |
 | `tls.cert` | No | Server certificate chain, PEM. API only. Required whenever `tls` is set; without it the deploy fails. |
@@ -365,7 +365,7 @@ A key neither table lists refuses to deploy, naming the key.
 
 ### JAVASCRIPT: what it does
 
-The source runs a script on a timer and sends each value it returns as a message: a string is one message, an array of strings is one message each, and an empty string, null or undefined sends nothing. The destination runs a script with the message in scope, and the script's return value becomes the response.
+The source runs a script on a timer and sends each value it returns as a message: a string is one message, an array is one message per item, and an empty string, null or undefined sends nothing. A number is sent as text (`NaN` and `Infinity` are null), an object or an array inside the array as JSON, and a message from `parseHL7` as its HL7 text. An item that holds no message is skipped, and a warning in the log counts them: empty text, null, undefined, `true` or `false` in an array, and an object or array without data, which is also what a promise becomes that the script did not await. The destination runs a script with the message in scope, and the script's return value becomes the response.
 
 Both run in the engine's script sandbox, with the same bridges as transformers. See [scripting-api.md](./scripting-api.md).
 
