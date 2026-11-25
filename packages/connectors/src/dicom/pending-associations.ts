@@ -116,8 +116,9 @@ export class PendingAssociations {
 
   /** True when the list is gone. One that cannot be removed stays in hand, so this run makes no second message of it. */
   async remove(associationId: string): Promise<boolean> {
+    const list = this.held.get(associationId);
+    if (list === undefined) return true;
     try {
-      const list = await this.pathOf(associationId);
       await fs.rm(list, { force: true, recursive: true, maxRetries: 5 });
       this.release(associationId);
       return true;

@@ -298,7 +298,12 @@ export class DicomReceiver implements SourceConnectorRuntime {
       content: JSON.stringify(files),
       sourceMap: { callingAE, calledAE, associationId, associationDir: this.config.storageDir, fileCount: files.length, ...extra },
     });
-    const taken = await tryCatch(stored);
+    const taken = await tryCatch(async () => {
+      if (await stored) return;
+      // Until it has run, only the list can make such a message again.
+      const result = await done;
+      if (!result.ok) throw result.error;
+    });
     if (!taken.ok) {
       this.logger.error(
         { ...errorInfo(taken.error), associationId, fileCount: files.length },
@@ -307,8 +312,6 @@ export class DicomReceiver implements SourceConnectorRuntime {
       this.pending.release(associationId);
       return false;
     }
-    // Until it has run, only the list can make such a message again.
-    if (!taken.value) await done;
     // Before the post-action, so it takes no file that a list names.
     const removed = await this.pending.remove(associationId);
     const result = await done;

@@ -395,6 +395,20 @@ describe('PER_ASSOCIATION', () => {
     await waitFor(async () => { expect(await lists()).toEqual([]); });
   });
 
+  it('makes the message again when one that a restart could not run was cut short', async () => {
+    const seen: RawMessage[] = [];
+    await listen(async (raw) => {
+      seen.push(raw);
+      raw.onStored?.({ recoverable: false });
+      return seen.length === 1 ? STORE_DOWN : PROCESSED;
+    }, PER_ASSOCIATION);
+
+    expect(await store(['1.2.1'])).toEqual([Status.Success]);
+
+    await waitFor(() => { expect(seen).toHaveLength(2); });
+    await waitFor(async () => { expect(await lists()).toEqual([]); });
+  });
+
   it('makes one message, and keeps its files, while its list cannot be removed', async () => {
     broken.remove = true;
     const seen: RawMessage[] = [];

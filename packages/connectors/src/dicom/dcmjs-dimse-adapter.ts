@@ -248,7 +248,8 @@ class DimseReceiver implements DcmtkReceiver {
       override cStoreRequest(request: CStoreRequestType, callback: (response: CStoreResponseType) => void): void {
         const response = CStoreResponse.fromRequest(request);
         const dataset = request.getDataset();
-        if (!dataset) {
+        // Sent after the release: nothing would make a message of it.
+        if (!dataset || this.ended) {
           response.setStatus(Status.ProcessingFailure);
           callback(response);
           return;
