@@ -2,22 +2,25 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
+import { ServiceError } from '../../lib/service-error.js';
 
 const mockService = {
   searchMessages: vi.fn(),
   getMessageDetail: vi.fn(),
-  deleteMessage: vi.fn(),
 };
+const mockDelete = vi.fn();
 
 vi.mock('../../services/message-query.service.js', () => ({
   MessageQueryService: mockService,
 }));
 
+vi.mock('../../services/message-reprocess.service.js', () => ({
+  MessageReprocessService: { deleteMessage: mockDelete },
+}));
+
 vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
-
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
 
 const recordReadOrRefuse = vi.fn();
 vi.mock('../../lib/audited-read.js', () => ({ recordReadOrRefuse }));
@@ -79,6 +82,28 @@ describe('MessageController.getDetail', () => {
     await MessageController.getDetail(makeReq({ params: { id: 'ch-1', msgId: '5' } as never }), makeRes());
 
     expect(recordReadOrRefuse).not.toHaveBeenCalled();
+  });
+});
+
+describe('MessageController.delete', () => {
+  it('deletes as the caller and answers 204', async () => {
+    mockDelete.mockResolvedValue({ ok: true, value: undefined, error: null });
+    const res = makeRes();
+
+    await MessageController.delete(makeReq({ params: { id: 'ch-1', msgId: '5' } as never }), res);
+
+    expect(mockDelete).toHaveBeenCalledExactlyOnceWith('ch-1', 5, { userId: 'user-1', ipAddress: '10.0.0.7' });
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(204);
+  });
+
+  it('answers 409 with the reason for a message that is still being processed', async () => {
+    mockDelete.mockResolvedValue({ ok: false, value: null, error: new ServiceError('CONFLICT', 'still being processed') });
+    const res = makeRes();
+
+    await MessageController.delete(makeReq({ params: { id: 'ch-1', msgId: '5' } as never }), res);
+
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(409);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: { code: 'CONFLICT', message: 'still being processed' } });
   });
 });
 

@@ -1525,3 +1525,61 @@ describe('MessageProcessor finishes a message that fails unexpectedly', () => {
     expect(store.markProcessed).toHaveBeenCalledOnce();
   });
 });
+
+// A message that is marked processed can be deleted, and what is stored after that outlives it (#403).
+describe('MessageProcessor stores nothing once a message is processed', () => {
+  it('stores why a message failed before it marks it processed', async () => {
+    const store = makeStore();
+    let reasonStored = false;
+    vi.mocked(store.storeContent).mockImplementation(async (_channel, _message, _connector, contentType) => {
+      await Promise.resolve();
+      if (contentType === CONTENT_TYPE.PROCESSING_ERROR) reasonStored = true;
+      return ok(undefined);
+    });
+    const storedWhenMarked: boolean[] = [];
+    vi.mocked(store.markProcessed).mockImplementation(() => { storedWhenMarked.push(reasonStored); return Promise.resolve(ok(undefined)); });
+    const config = makeConfig({ scripts: { sourceTransformer: { code: 'throw new Error("bad");' } } });
+    const processor = new MessageProcessor(sandbox, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(storedWhenMarked).toEqual([true]);
+  });
+
+  it('stores nothing beside a custom metadata value that cannot be read', async () => {
+    const store = { ...makeStore(), storeCustomMetadata: vi.fn().mockResolvedValue(ok(undefined)) };
+    const circular: Record<string, unknown> = {};
+    circular['self'] = circular;
+    const config = makeConfig({ metadataColumns: [{ name: 'Order', dataType: 'STRING', mapping: 'order' }] });
+    const processor = new MessageProcessor(sandbox, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(
+      { ...makeInput(), sourceMap: { order: circular }, received: { messageId: 7, correlationId: 'c' } }, AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('ERROR');
+    expect(vi.mocked(store.storeContent).mock.calls.map((c) => c[3])).toEqual([CONTENT_TYPE.PROCESSING_ERROR]);
+    expect(store.createConnectorMessage).not.toHaveBeenCalled();
+  });
+
+  it('waits for a destination that is still being sent to when another throws', async () => {
+    const store = makeStore();
+    let answer: (response: Result<DestinationResponse>) => void = () => undefined;
+    const sendFn: SendToDestination = vi.fn().mockImplementation((metaDataId: number) => (metaDataId === 1
+      ? Promise.reject(new Error('connector blew up'))
+      : new Promise((resolve) => { answer = resolve; })));
+    const destination = { name: 'Dest', enabled: true, scripts: {}, queueMode: 'NEVER' as const };
+    const config = makeConfig({ destinations: [{ ...destination, metaDataId: 1 }, { ...destination, metaDataId: 2 }] });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const processing = processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    await vi.waitFor(() => { expect(sendFn).toHaveBeenCalledTimes(2); });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    expect(store.markProcessed).not.toHaveBeenCalled();
+    answer(ok({ status: 'SENT', content: 'AA' }));
+    const result = await processing;
+
+    expect(result.ok && result.value.status).toBe('ERROR');
+    expect(statuses(store)).toEqual([[0, 'TRANSFORMED'], [2, 'SENT'], [0, 'ERROR']]);
+    expect(store.markProcessed).toHaveBeenCalledOnce();
+  });
+});

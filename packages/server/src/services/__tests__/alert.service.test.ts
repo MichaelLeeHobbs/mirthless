@@ -19,7 +19,13 @@ function consumeResponse(): unknown {
   return [];
 }
 
-const mockSelectWhere = vi.fn().mockImplementation(() => consumeResponse());
+/** Reads its response when awaited, so a subquery takes none. */
+const query = () => ({
+  then(resolve: (v: unknown) => void, reject?: (e: unknown) => void): Promise<unknown> {
+    return Promise.resolve(consumeResponse()).then(resolve, reject);
+  },
+});
+const mockSelectWhere = vi.fn().mockImplementation(() => ({ ...query(), orderBy: query }));
 
 const mockSelectFrom = vi.fn().mockImplementation(() => {
   return {
@@ -68,6 +74,7 @@ const mockTransaction = vi.fn().mockImplementation(async (fn: (tx: unknown) => P
     update: txUpdate,
     delete: txDelete,
     select: mockSelect,
+    execute: vi.fn(),
   });
 });
 
@@ -89,7 +96,7 @@ vi.mock('drizzle-orm', () => ({
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
   inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
-  sql: vi.fn(),
+  sql: { raw: (text: string) => text },
 }));
 
 vi.mock('../../lib/event-emitter.js', () => ({
@@ -442,6 +449,86 @@ describe('AlertService', () => {
 
       expect(result.ok).toBe(true);
       expect(mockTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('read in one snapshot, so that none is read without its channels', () => {
+    it.each([
+      ['listEnabled', () => AlertService.listEnabled()],
+      ['getByIds', () => AlertService.getByIds([ALERT_ID])],
+    ])('%s', async (_name, read) => {
+      const select = vi.fn().mockReturnValue({ from: mockSelectFrom });
+      const execute = vi.fn();
+      mockTransaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn({ select, execute }));
+      mockSelect.mockClear();
+      pushResponse([makeAlertRow()]);
+      pushResponse([makeChannelRow()]);
+      pushResponse([makeActionRow()]);
+
+      expect(await read()).toMatchObject({ ok: true, value: [{ id: ALERT_ID, channelIds: [CHANNEL_ID] }] });
+
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), { isolationLevel: 'repeatable read', accessMode: 'read only' });
+      expect(mockSelect).not.toHaveBeenCalled();
+      // Before the first read: one that waits for a lock must not keep its connection once the engine gave it up.
+      expect(execute).toHaveBeenCalledExactlyOnceWith('SET LOCAL statement_timeout = 30000');
+      expect(execute.mock.invocationCallOrder[0]).toBeLessThan(select.mock.invocationCallOrder[0]!);
+    });
+  });
+
+  describe('onChange', () => {
+    const base = {
+      name: 'New alert', description: '', enabled: true, trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null },
+      channelIds: [], actions: [], subjectTemplate: null, bodyTemplate: null, reAlertIntervalMs: null, maxAlerts: null,
+    } as const;
+    const detailRead = (): void => { pushResponse([makeAlertRow()]); pushResponse([]); pushResponse([]); };
+    const changes: ReadonlyArray<readonly [string, () => void, () => Promise<unknown>]> = [
+      ['created', () => { pushResponse([]); detailRead(); mockReturning.mockResolvedValue([{ id: ALERT_ID }]); },
+        () => AlertService.create({ ...base, trigger: { ...base.trigger, errorTypes: ['ANY'] }, channelIds: [], actions: [] })],
+      ['changed', () => { pushResponse([makeAlertRow()]); detailRead(); }, () => AlertService.update(ALERT_ID, { description: 'x', revision: 1 })],
+      ['deleted', () => { pushResponse([{ id: ALERT_ID }]); }, () => AlertService.delete(ALERT_ID)],
+      ['enabled or disabled', () => { pushResponse([{ id: ALERT_ID }]); detailRead(); }, () => AlertService.setEnabled(ALERT_ID, false)],
+    ];
+
+    it.each(changes)('is told once when an alert was %s', async (_what, prepare, change) => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      prepare();
+
+      expect(await change()).toMatchObject({ ok: true });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not told of a change that was refused', async () => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      pushResponse([]);
+
+      await AlertService.delete(ALERT_ID);
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('is told of a change whose write failed, since it may have been saved', async () => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      pushResponse([{ id: ALERT_ID }]);
+      mockDeleteWhere.mockRejectedValueOnce(new Error('connection lost'));
+
+      expect(await AlertService.delete(ALERT_ID)).toMatchObject({ ok: false });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('is told of a change that was saved, although the alert could not be read back', async () => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      pushResponse([{ id: ALERT_ID }]);
+      pushResponse([]);
+
+      expect(await AlertService.setEnabled(ALERT_ID, false)).toMatchObject({ ok: false });
+
+      expect(listener).toHaveBeenCalledTimes(1);
     });
   });
 
