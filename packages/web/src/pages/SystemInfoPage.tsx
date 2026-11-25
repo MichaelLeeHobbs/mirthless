@@ -29,7 +29,7 @@ interface SystemTab {
 const SYSTEM_TABS: readonly SystemTab[] = [
   { slug: '', label: 'Overview', description: 'Server, database, engine and memory health at a glance.' },
   { slug: 'logs', label: 'Logs', description: 'The live server log, filterable by level and text.' },
-  { slug: 'pruner', label: 'Data pruner', description: 'Schedule or run the pruner that removes old message content.' },
+  { slug: 'pruner', label: 'Data pruner', description: 'Schedule or run the pruner that deletes old messages and expired collection records.' },
   { slug: 'backup', label: 'Backup & restore', description: 'Download a configuration backup or restore one.' },
 ];
 

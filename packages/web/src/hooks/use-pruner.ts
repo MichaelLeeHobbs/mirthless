@@ -5,11 +5,11 @@ interface PrunerScheduleStatus {
   readonly enabled: boolean;
   readonly cronExpression: string;
   readonly lastRunAt: string | null;
-  readonly lastRunResult: {
-    readonly channelsPruned: number;
-    readonly totalDeleted: number;
+  readonly lastRunResult: (PruneAllResult & {
+    /** The run as a whole: nothing is known of what it did. */
+    readonly failed: boolean;
     readonly completedAt: string;
-  } | null;
+  }) | null;
 }
 
 interface UpdatePrunerScheduleInput {
@@ -20,6 +20,10 @@ interface UpdatePrunerScheduleInput {
 interface PruneAllResult {
   readonly channelsPruned: number;
   readonly totalDeleted: number;
+  readonly expiredRecordsDeleted: number;
+  /** False when the time was up first, or it failed. */
+  readonly expiredRecordsComplete: boolean;
+  readonly expiredRecordsFailed: boolean;
   /** Channels whose prune failed; the others were still pruned. */
   readonly failedChannelIds: readonly string[];
 }

@@ -95,8 +95,9 @@ not per-message). At `store()`:
   expires.
 - Override is an optional `{ expireAt }` (or `{ ttlSeconds }`) on the write.
 
-Pruning reuses the existing data-pruner scheduler: periodic
-`DELETE FROM collection_records WHERE expire_at < now()`.
+Pruning reuses the existing data-pruner scheduler, which is off until an
+administrator turns it on: each run deletes expired records in batches (D-390).
+Until then an expired record stays stored and does not match (D-377).
 
 ## Script bridge
 

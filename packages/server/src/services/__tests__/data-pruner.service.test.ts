@@ -48,6 +48,9 @@ vi.mock('../message-delete-helper.js', () => ({ DELETE_BATCH_SIZE: 1_000, delete
 const mockSweep = vi.fn();
 vi.mock('../leftover-rows.js', () => ({ SWEEP_BUDGET_MS: { SCHEDULED: 300_000 }, sweepLeftoverRows: mockSweep }));
 
+const mockPruneExpired = vi.fn();
+vi.mock('../expired-records.js', () => ({ pruneExpiredRecords: mockPruneExpired }));
+
 vi.mock('../../lib/db.js', () => ({
   db: mockDb,
   default: mockDb,
@@ -108,6 +111,7 @@ beforeEach(() => {
   staleBatches = [];
   mockDeleteMessagesByIds.mockImplementation((_channelId: string, ids: readonly number[]) => Promise.resolve({ deletedIds: ids, unfinishedIds: [], refusedIds: [] }));
   mockSweep.mockResolvedValue({ rowsDeleted: 0, complete: true, failed: false });
+  mockPruneExpired.mockResolvedValue({ deleted: 0, byCollection: {}, complete: true, failed: false });
   installExecute();
   mockDeleteWhere.mockResolvedValue(undefined);
   mockSelectWhere.mockImplementation(() => {
@@ -295,11 +299,50 @@ describe('DataPrunerService', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value).toEqual({ channelsPruned: 1, totalDeleted: 2, failedChannelIds: [CHANNEL_ID_1], leftoverRowsDeleted: 0, leftoverRowsComplete: true });
+      expect(result.value).toEqual({ channelsPruned: 1, totalDeleted: 2, failedChannelIds: [CHANNEL_ID_1], leftoverRowsDeleted: 0, leftoverRowsComplete: true, expiredRecordsDeleted: 0, expiredRecordsComplete: true, expiredRecordsFailed: false });
       expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'FAILURE',
         attributes: expect.objectContaining({ failedChannelIds: [CHANNEL_ID_1] }),
       }));
+    });
+  });
+
+  describe('pruneAll, for expired collection records', () => {
+    beforeEach(() => { pushSelectResponse([]); });
+
+    it('records how many it deleted, by collection', async () => {
+      mockPruneExpired.mockResolvedValue({ deleted: 5, byCollection: { k1: 2, k2: 3 }, complete: true, failed: false });
+
+      expect(await DataPrunerService.pruneAll()).toMatchObject({ ok: true, value: { expiredRecordsDeleted: 5, expiredRecordsFailed: false } });
+      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
+        level: 'INFO', outcome: 'SUCCESS',
+        attributes: expect.objectContaining({ expiredRecordsDeleted: 5, expiredRecordsByCollection: { k1: 2, k2: 3 }, expiredRecordsComplete: true }),
+      }));
+    });
+
+    it('records that it did not get to all of them, which is no failure', async () => {
+      mockPruneExpired.mockResolvedValue({ deleted: 1_000, byCollection: { k1: 1_000 }, complete: false, failed: false });
+
+      expect(await DataPrunerService.pruneAll(undefined, 30_000)).toMatchObject({ ok: true, value: { expiredRecordsComplete: false } });
+      // Run Now is a request that waits for both.
+      expect(mockPruneExpired).toHaveBeenCalledExactlyOnceWith(15_000);
+      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCESS', attributes: expect.objectContaining({ expiredRecordsComplete: false }) }));
+    });
+
+    it('is recorded as failed, with what it deleted before', async () => {
+      mockPruneExpired.mockResolvedValue({ deleted: 1_000, byCollection: { k1: 1_000 }, complete: false, failed: true });
+
+      expect(await DataPrunerService.pruneAll()).toMatchObject({ ok: true, value: { expiredRecordsDeleted: 1_000, expiredRecordsFailed: true } });
+      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
+        level: 'ERROR', outcome: 'FAILURE',
+        attributes: expect.objectContaining({ expiredRecordsDeleted: 1_000, expiredRecordsByCollection: { k1: 1_000 }, expiredRecordsFailed: true }),
+      }));
+    });
+
+    it('is not run for one channel', async () => {
+      await DataPrunerService.pruneChannel(CHANNEL_ID_1, 30);
+
+      expect(mockPruneExpired).not.toHaveBeenCalled();
     });
   });
 
@@ -317,7 +360,7 @@ describe('DataPrunerService', () => {
       mockSweep.mockResolvedValue({ rowsDeleted: 12, complete: false, failed: false });
 
       expect(await DataPrunerService.pruneAll(undefined, 30_000)).toMatchObject({ ok: true, value: { leftoverRowsComplete: false } });
-      expect(mockSweep).toHaveBeenCalledExactlyOnceWith(30_000);
+      expect(mockSweep).toHaveBeenCalledExactlyOnceWith(15_000);
       expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCESS', attributes: expect.objectContaining({ leftoverRowsComplete: false }) }));
     });
 

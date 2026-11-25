@@ -49,7 +49,7 @@ Named data that every channel's scripts can use, whoever wrote the channel: the 
 - SHR-COL-05: source: docs/user/scripting-api.md "Collections" (`delete` returns true, or false if already gone) and its order and report matching example; that exactly one caller is told is from code only.
 - SHR-COL-06: source: D-177 point 5; docs/testing/66-collections.md "TTL / Pruning".
 - SHR-COL-07: source: docs/design/10-collections.md "Model" ("default record lifetime"). conflict: D-377 shows an expired record to a person on the records page, marked, until it is pruned, so that they can correct it; D-377 kept, and the requirement's "or a person" is for its owner to decide.
-- SHR-COL-08: source: D-177 point 5; docs/design/10-collections.md "TTL". The 24 hours is the daily pruner schedule. conflict: the design reuses the pruner schedule, which is off until an administrator turns it on, while a collection promises a lifetime with no such condition; the lifetime kept.
+- SHR-COL-08: source: D-177 point 5, D-390; docs/design/10-collections.md "TTL". The 24 hours is the daily pruner schedule. conflict: the design reuses the pruner schedule, which is off until an administrator turns it on, while a collection promises a lifetime with no such condition; the lifetime kept.
 - SHR-COL-09: source: code only: a script may ask for at most 1,000 records, and a search that asks for no limit has none. Compare ROADMAP "Apply row limits in the database" for data sources.
 
 ## Data sources (DSR)

@@ -223,7 +223,8 @@ are indexed by, and a default TTL). Then `getCollection(name)` returns a handle:
   adds more field predicates (a scalar is equality, an array is `IN`, multiple fields are AND'd);
   `options.latest` returns only the single newest match; `options.limit`/`options.order` page and
   order by creation time (default newest-first). Returns an array of
-  `{ id, fields, payload, expireAt, createdAt }`. A record whose life is over does not match. With
+  `{ id, fields, payload, expireAt, createdAt }`. A record whose life is over does not match, and the
+  data pruner deletes it when it next runs (it is off until an administrator turns it on). With
   `latest` that means the newest record that lives on, so give the records of one key the same life:
   an older order that never expires is found once a newer one has expired.
 - `await update(id, changes)` — change one record by its `id`. `changes` may hold `fields`
