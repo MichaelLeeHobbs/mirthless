@@ -37,7 +37,7 @@ function show(state: Record<string, unknown> = { data: [OLD, REST] }): void {
 
 const row = (name: string): HTMLElement => screen.getByText(name).closest('tr')!;
 const open = (name: string): HTMLElement => {
-  fireEvent.click(screen.getByRole('button', { name: `Delete the messages of ${name}` }));
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Delete messages of ${name} \\(`) }));
   return screen.getByRole('dialog');
 };
 const confirm = (): HTMLElement => within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete messages' });
@@ -68,7 +68,14 @@ describe('the deleted channels', () => {
   it('offer no removal without the permission', () => {
     granted = ['settings:read'];
     show();
-    expect(screen.getByRole('button', { name: 'Delete the messages of ADT Old' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Delete messages of ADT Old (11111111)' })).toHaveProperty('disabled', true);
+  });
+
+  // Names are not unique among deleted channels, and a button's name holds the text it shows (WCAG 2.5.3).
+  it('name each button by what it shows and the channel it is for', () => {
+    show({ data: [OLD, { ...OLD, channelId: 'bbbbbbbb-2222-4333-8444-555555555555' }] });
+    expect(screen.getAllByRole('button', { name: /^Delete messages of ADT Old/ }).map((b) => b.getAttribute('aria-label')))
+      .toEqual(['Delete messages of ADT Old (11111111)', 'Delete messages of ADT Old (bbbbbbbb)']);
   });
 });
 
@@ -76,7 +83,7 @@ describe('the removal', () => {
   it('says what goes, what does not, and that it cannot be undone', () => {
     show();
     const text = open('ADT Old').textContent ?? '';
-    for (const part of ['1200 messages', '"ADT Old" (11111111)', '3 of them were never delivered.', 'cannot be undone', 'Files on disk', 'backups are not touched']) expect(text).toContain(part);
+    for (const part of ['1200 messages', '"ADT Old" (11111111)', '3 of them were never delivered.', 'cannot be undone', 'Files on disk', 'the server log, events, alerts already sent', 'backups are not touched']) expect(text).toContain(part);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(purge.mutate).not.toHaveBeenCalled();
   });
@@ -109,6 +116,19 @@ describe('the removal', () => {
 
     expect(purge.mutate).toHaveBeenCalledExactlyOnceWith({ channelId: OLD.channelId, reason: 'the feed has moved' }, expect.anything());
     expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  // Channel names take any text, which an input cannot always hold.
+  it.each([
+    ['a line break and edge spaces', ' ADT\n  Old ', 'ADT Old'],
+    ['nothing but spaces', '  ', '11111111'],
+  ])('asks for a name with %s as one that can be typed', (_what, name, typed) => {
+    show({ data: [{ ...OLD, name }] });
+    fireEvent.click(screen.getByRole('button', { name: /^Delete messages of/ }));
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'the feed has moved' } });
+    fireEvent.change(screen.getByLabelText(`Type ${typed} to confirm`), { target: { value: typed } });
+
+    expect(confirm()).toHaveProperty('disabled', false);
   });
 
   it('closes the dialog and says how many went once they have', async () => {

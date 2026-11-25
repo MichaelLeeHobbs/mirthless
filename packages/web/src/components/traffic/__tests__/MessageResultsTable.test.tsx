@@ -30,7 +30,17 @@ function renderTable(props: Partial<Parameters<typeof MessageResultsTable>[0]> =
   );
 }
 
-afterEach(() => { cleanup(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+/** Every media query matches: the layout of a phone. */
+function onPhone(): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: true, media: query, onchange: null,
+    addListener: (): void => undefined, removeListener: (): void => undefined,
+    addEventListener: (): void => undefined, removeEventListener: (): void => undefined,
+    dispatchEvent: (): boolean => false,
+  }));
+}
 
 describe('MessageResultsTable', () => {
   it('renders message rows with channel + connector', () => {
@@ -60,6 +70,15 @@ describe('MessageResultsTable', () => {
     expect(live.getByRole('button', { name: 'Reprocess' })).toHaveProperty('disabled', false);
     expect(deleted.getByRole('button', { name: 'Reprocess' })).toHaveProperty('disabled', true);
     expect(deleted.getByLabelText('The channel is deleted: its messages cannot be reprocessed')).toBeTruthy();
+  });
+
+  it('offers no reprocessing of a deleted channel\'s message on a phone either', () => {
+    onPhone();
+    renderTable({ items: [...items, { ...items[0]!, messageId: 43, channelId: 'ch-2', channelName: 'Old Feed', channelDeleted: true }], total: 2, onReprocess: vi.fn() });
+    const reprocess = (name: string): HTMLElement => within(screen.getByText(name).closest('tr')!).getByRole('button', { name: 'Reprocess' });
+
+    expect(screen.queryByText('Open')).toBeNull();
+    expect([reprocess('Lab Feed'), reprocess('Old Feed')].map((b) => (b as HTMLButtonElement).disabled)).toEqual([false, true]);
   });
 
   it('renders the empty state when there are no items', () => {

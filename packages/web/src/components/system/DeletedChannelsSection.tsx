@@ -24,6 +24,8 @@ import { TableSkeleton } from '../common/states/LoadingState.js';
 
 const COLUMNS = 6;
 
+const shortId = (channel: DeletedChannel): string => channel.channelId.slice(0, 8);
+
 function undeliveredText({ undelivered }: DeletedChannel): string {
   return undelivered === 0 ? '' : `${String(undelivered)} not delivered`;
 }
@@ -38,17 +40,22 @@ function Identity({ channel }: { readonly channel: DeletedChannel }): ReactNode 
   return (
     <>
       {channel.name}
-      <Typography variant="caption" component="div" sx={{ color: 'text.secondary', fontFamily: FONT_FAMILY_MONO }}>{channel.channelId.slice(0, 8)}</Typography>
+      <Typography variant="caption" component="div" sx={{ color: 'text.secondary', fontFamily: FONT_FAMILY_MONO }}>{shortId(channel)}</Typography>
     </>
   );
 }
 
 function warning(channel: DeletedChannel): string {
   return [
-    `This removes ${whatText(channel)} of "${channel.name}" (${channel.channelId.slice(0, 8)}), deleted on ${formatTimestamp(channel.deletedAt)}, with their content, attachments and metadata, from this server.`,
+    `This removes ${whatText(channel)} of "${channel.name}" (${shortId(channel)}), deleted on ${formatTimestamp(channel.deletedAt)}, with their content, attachments and metadata, from this server.`,
     ...(channel.undelivered === 0 ? [] : [`${String(channel.undelivered)} of them ${channel.undelivered === 1 ? 'was' : 'were'} never delivered.`]),
-    'It cannot be undone. Files on disk, messages passed on to other channels, and backups are not touched.',
+    'It cannot be undone. Files on disk, messages passed on to other channels, the server log, events, alerts already sent, and backups are not touched.',
   ].join(' ');
+}
+
+/** A name any channel can have, line breaks and edge spaces included, as one that can be typed. */
+function typedName(channel: DeletedChannel): string {
+  return channel.name.replace(/\s+/g, ' ').trim() || shortId(channel);
 }
 
 interface RowProps {
@@ -74,7 +81,7 @@ function Row({ channel, canPurge, onPurge }: RowProps): ReactNode {
       <TableCell align="right">
         <Tooltip title={canPurge ? '' : 'Requires settings:write permission'}>
           <span>
-            <Button size="small" color="error" startIcon={<DeleteIcon />} disabled={!canPurge} onClick={onPurge} aria-label={`Delete the messages of ${channel.name}`}>
+            <Button size="small" color="error" startIcon={<DeleteIcon />} disabled={!canPurge} onClick={onPurge} aria-label={`Delete messages of ${channel.name} (${shortId(channel)})`}>
               Delete messages
             </Button>
           </span>
@@ -141,7 +148,7 @@ export function DeletedChannelsSection(): ReactNode {
           severity="error"
           reasonLabel="Reason"
           reasonHelp="Recorded in the audit log."
-          requireTyped={target.name}
+          requireTyped={typedName(target)}
           isPending={purge.isPending}
           onConfirm={(reason) => { handleConfirm(reason ?? ''); }}
           onCancel={() => { setTarget(null); }}

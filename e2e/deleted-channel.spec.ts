@@ -2,7 +2,7 @@
 
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { adminApi, createMllpChannel, deployAndStart, getData, removeChannel } from './fixtures/api.js';
+import { API_BASE, adminApi, createMllpChannel, deployAndStart, getData, removeChannel } from './fixtures/api.js';
 import { sendMllpMessage } from './fixtures/mllp.js';
 
 // Of this run: deleted channels of earlier runs stay in the lists.
@@ -16,6 +16,8 @@ const HL7_ADT = [
 
 let api: APIRequestContext;
 let channelId = '';
+let deleted = false;
+const purgeButton = new RegExp(`^Delete messages of ${CHANNEL_NAME} \\(`);
 
 const total = async (): Promise<number> => (await getData<{ total: number }>(api, `/channels/${channelId}/messages`)).total;
 
@@ -36,9 +38,18 @@ test.describe('The messages of a deleted channel', () => {
     expect(await sendMllpMessage(MLLP_PORT, HL7_ADT)).toContain('MSA|AA|E2E-DELETED-1');
     await expect.poll(total).toBe(1);
     await removeChannel(api, channelId);
+    deleted = true;
   });
 
+  // Puts back what this run made, wherever it stopped (D-289): a channel left deployed holds its port for every later run.
   test.afterAll(async () => {
+    if (channelId !== '') {
+      if (!deleted) await removeChannel(api, channelId);
+      const left = await getData<Array<{ channelId: string }>>(api, '/admin/prune/deleted-channels');
+      if (left.some((c) => c.channelId === channelId)) {
+        await api.post(`${API_BASE}/admin/prune/deleted-channels/${channelId}`, { data: { reason: 'end-to-end test clean-up' } });
+      }
+    }
     await api?.dispose();
   });
 
@@ -52,7 +63,8 @@ test.describe('The messages of a deleted channel', () => {
 
     const row = page.getByRole('row').filter({ has: page.getByRole('button', { name: CHANNEL_NAME, exact: true }) });
     await expect(row).toHaveCount(1);
-    await expect(row).toContainText('Deleted');
+    // The chip, not the channel's name, which has the word too.
+    await expect(row.getByText('Deleted', { exact: true })).toBeVisible();
   });
 
   test('are shown in the message browser, which says that the channel is deleted', async ({ page }) => {
@@ -66,7 +78,7 @@ test.describe('The messages of a deleted channel', () => {
 
   test('are removed by an administrator who gives a reason and types the name', async ({ page }) => {
     await page.goto('/system/pruner');
-    await page.getByRole('button', { name: `Delete the messages of ${CHANNEL_NAME}` }).click();
+    await page.getByRole('button', { name: purgeButton }).click();
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('1 message');
@@ -77,7 +89,7 @@ test.describe('The messages of a deleted channel', () => {
     await remove.click();
 
     await expect(page.getByText(`Deleted 1 message of ${CHANNEL_NAME}`)).toBeVisible();
-    await expect(page.getByRole('button', { name: `Delete the messages of ${CHANNEL_NAME}` })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: purgeButton })).toHaveCount(0);
     expect(await total()).toBe(0);
   });
 
