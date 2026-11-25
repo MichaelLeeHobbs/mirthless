@@ -1,8 +1,8 @@
 // Drizzle's error for a failed statement holds its parameters, which are
 // passwords and message content, in its message, its stack and a property, and
 // error text is logged, sent in alerts and stored with messages. Importing this
-// file replaces that error wherever Drizzle runs a statement. Drizzle has no
-// setting for it.
+// file replaces that error wherever Drizzle runs a statement; every file that
+// makes a Drizzle client imports it. Drizzle has no setting for it.
 
 import { DrizzleQueryError } from 'drizzle-orm';
 import { PgPreparedQuery } from 'drizzle-orm/pg-core';
@@ -17,10 +17,19 @@ function reason(cause: unknown): string {
   return text === '' ? '' : ` (${text})`;
 }
 
-/** `cause` is the database's or the driver's error. */
+/** What Postgres quotes values in. Nothing reads them; what prints an error prints its cause too. */
+const QUOTES_VALUES = ['detail', 'where', 'internalQuery'] as const;
+
+/** The same object, so what reads its code or constraint still does. */
+function withoutQuotedValues(cause: unknown): unknown {
+  if (typeof cause === 'object' && cause !== null) for (const key of QUOTES_VALUES) Reflect.deleteProperty(cause, key);
+  return cause;
+}
+
+/** `cause` is the database's or the driver's error. Its message can quote a value: never log it. */
 export class QueryError extends Error {
   constructor(query: string, cause: unknown) {
-    super(`Failed query${reason(cause)}: ${query}`, { cause });
+    super(`Failed query${reason(cause)}: ${query}`, { cause: withoutQuotedValues(cause) });
     this.name = 'QueryError';
   }
 }

@@ -445,7 +445,7 @@ Before, a server that stopped again while crash recovery was running a message l
 
 ## The log no longer holds the parameters of a failed statement (D-347)
 
-When a database statement failed, the server logged its parameters: connector passwords when saving a channel failed, and message content when storing it failed, for example during a database restart. The log line now names the statement and the database's error code. Logs written before may hold them, and so may alert emails: treat those as you treat the database, and replace the passwords they show. The log pages of the web UI did not show them.
+When a database statement failed, for example during a database restart, its parameters were in the error's text: passwords when saving a channel, a setting or a certificate failed (with the certificate's private key), and message content when storing it failed. The server logged that text. Alerts, events, the errors stored with a message (from a script's use of a collection) and a few API answers (a backup restore's, for one) could carry it too. It now names the statement and the database's error code. What was written before stays: treat those logs as you treat the database, and replace the passwords and keys they show. The log pages of the web UI did not show them.
 
 ## Standard upgrade (Docker)
 
