@@ -1,3 +1,5 @@
+import { decodeWindows1252 } from '../windows-1252.js';
+
 export interface Hl7Encoding {
   readonly fieldSep: string;
   readonly componentSep: string;
@@ -76,16 +78,6 @@ export function escapeValue(value: string, enc: Hl7Encoding): string {
  */
 export type HexEscapeCharset = 'utf-8' | 'windows-1252';
 
-/**
- * Windows-1252 characters for bytes 0x80 to 0x9F. The five bytes it leaves
- * undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D) keep their C1 code points, as the
- * WHATWG Encoding Standard decodes them.
- */
-const WINDOWS_1252_80_9F: readonly number[] = [
-  0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
-  0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178,
-];
-
 /** Fatal, so a run that is not valid UTF-8 is refused rather than turned into U+FFFD; `ignoreBOM` keeps an escaped BOM as U+FEFF. */
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
@@ -98,13 +90,9 @@ export function hexEscapeCharset(msh18: string | undefined): HexEscapeCharset {
   return name === 'UNICODEUTF8' || name === 'UTF8' ? 'utf-8' : 'windows-1252';
 }
 
-function decodeWindows1252(bytes: readonly number[]): string {
-  return bytes.map((b) => String.fromCharCode(WINDOWS_1252_80_9F[b - 0x80] ?? b)).join('');
-}
-
-function decodeUtf8(bytes: readonly number[]): string | undefined {
+function decodeUtf8(bytes: Uint8Array): string | undefined {
   try {
-    return UTF8_DECODER.decode(Uint8Array.from(bytes));
+    return UTF8_DECODER.decode(bytes);
   } catch {
     // A fatal TextDecoder reports invalid bytes only by throwing a TypeError;
     // the caller then reads the run byte by byte, so no byte is lost.
@@ -114,12 +102,13 @@ function decodeUtf8(bytes: readonly number[]): string | undefined {
 
 /** `\XC3\\XA9\` is the bytes C3 A9. */
 function decodeHexRun(run: string, escapeChar: string, charset: HexEscapeCharset): string {
-  const bytes: number[] = [];
+  const codes: number[] = [];
   for (const piece of run.split(escapeChar)) {
     for (let i = 1; i < piece.length; i += 2) {
-      bytes.push(parseInt(piece.substring(i, i + 2), 16));
+      codes.push(parseInt(piece.substring(i, i + 2), 16));
     }
   }
+  const bytes = Uint8Array.from(codes);
   const utf8 = charset === 'utf-8' ? decodeUtf8(bytes) : undefined;
   return utf8 ?? decodeWindows1252(bytes);
 }
