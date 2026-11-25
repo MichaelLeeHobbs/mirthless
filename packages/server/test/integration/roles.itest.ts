@@ -312,7 +312,7 @@ describeIntegration('roles and grant rules (real Postgres)', () => {
       for (const result of [
         await UserService.updateUser(wider, { firstName: 'No' }, manager),
         await UserService.deleteUser(wider, manager),
-        await UserService.changePassword(wider, 'password123', manager, true),
+        await UserService.changePassword(wider, 'password123', manager),
         await UserService.unlockUser(wider, manager),
       ]) {
         expect(!result.ok && codeOf(result.error)).toBe('FORBIDDEN');

@@ -667,7 +667,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
       '/users/{id}/password': {
         post: {
           tags: ['Users'],
-          summary: 'Change user password',
+          summary: 'Reset another user\'s password (your own: POST /users/me/password)',
           operationId: 'userChangePassword',
           security: bearerSecurity,
           parameters: [
@@ -681,7 +681,6 @@ export function generateOpenAPISpec(): OpenAPISpec {
                   type: 'object',
                   required: ['newPassword'],
                   properties: {
-                    currentPassword: { type: 'string', description: 'Current password (required for non-admin)' },
                     newPassword: { type: 'string', minLength: 8 },
                   },
                 },
@@ -690,7 +689,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
           },
           responses: {
             '204': noContent,
-            '400': openApiErrorResponse('Validation error'),
+            '400': openApiErrorResponse('Validation error, or your own account'),
             '401': openApiErrorResponse('Not authenticated'),
             '403': openApiErrorResponse('Insufficient permissions'),
           },

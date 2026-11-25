@@ -63,8 +63,9 @@ export const changeOwnPasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+/** Lowercase, as Postgres returns ids: the checks for the caller's own id compare text. */
 export const userIdParamSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().uuid().transform((id) => id.toLowerCase()),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

@@ -7,6 +7,7 @@ import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import Grid from '@mui/material/Grid';
+import Typography from '@mui/material/Typography';
 import type { UserSummary } from '../../api/client.js';
 import { useAssignments } from '../../hooks/use-assignments.js';
 import { sameAssignments, toDraft, type AssignmentDraft } from '../../lib/assignments.js';
@@ -17,6 +18,8 @@ import { AssignmentsEditor } from './AssignmentsEditor.js';
 interface UserDialogProps {
   readonly open: boolean;
   readonly user: UserSummary | null;
+  /** `user` is the signed-in user, whose password changes only with the current one. */
+  readonly isSelf: boolean;
   readonly onClose: () => void;
   readonly onSave: (data: UserFormData) => void;
   readonly error: string | null;
@@ -35,7 +38,7 @@ export interface UserFormData {
   readonly assignments: readonly AssignmentDraft[] | null;
 }
 
-export function UserDialog({ open, user, onClose, onSave, error, saving }: UserDialogProps): ReactNode {
+export function UserDialog({ open, user, isSelf, onClose, onSave, error, saving }: UserDialogProps): ReactNode {
   const isEdit = user !== null;
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -124,14 +127,20 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
             />
           </Grid>
           <Grid size={12}>
-            <TextField
-              label={isEdit ? 'New Password (leave blank to keep)' : 'Password'}
-              type="password"
-              value={password}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => { setPassword(e.target.value); }}
-              fullWidth
-              required={!isEdit}
-            />
+            {isSelf ? (
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                To change your own password, use Change Password in the account menu.
+              </Typography>
+            ) : (
+              <TextField
+                label={isEdit ? 'New Password (leave blank to keep)' : 'Password'}
+                type="password"
+                value={password}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => { setPassword(e.target.value); }}
+                fullWidth
+                required={!isEdit}
+              />
+            )}
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>
             <TextField

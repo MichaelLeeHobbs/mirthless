@@ -114,7 +114,7 @@ export class UserController {
     const id = req.params['id'] as string;
     const { newPassword } = req.body as ChangePasswordInput;
     const actorId = req.user!.id;
-    const result = await UserService.changePassword(id, newPassword, actorId, holdsPermission(req.user?.permissions, 'users:write'));
+    const result = await UserService.changePassword(id, newPassword, actorId);
 
     if (!result.ok) {
       const status = userErrorStatus(result.error);

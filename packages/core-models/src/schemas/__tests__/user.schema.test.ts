@@ -5,6 +5,7 @@ import {
   createUserSchema,
   loginSchema,
   deleteUserQuerySchema,
+  userIdParamSchema,
 } from '../user.schema.js';
 
 describe('deleteUserQuerySchema', () => {
@@ -23,6 +24,19 @@ describe('deleteUserQuerySchema', () => {
   it('refuses anything that is not a key id', () => {
     expect(deleteUserQuerySchema.safeParse({ takeOwnership: `${A},nope` }).success).toBe(false);
     expect(deleteUserQuerySchema.safeParse({ takeOwnership: 'x'.repeat(4001) }).success).toBe(false);
+  });
+});
+
+describe('userIdParamSchema', () => {
+  const STORED = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+  it('reads an id in capitals as the stored id, so the caller\'s own id is recognized in either case', () => {
+    expect(userIdParamSchema.parse({ id: STORED.toUpperCase() })).toEqual({ id: STORED });
+    expect(userIdParamSchema.parse({ id: STORED })).toEqual({ id: STORED });
+  });
+
+  it('refuses an id that is not a UUID', () => {
+    expect(userIdParamSchema.safeParse({ id: 'me' }).success).toBe(false);
   });
 });
 
