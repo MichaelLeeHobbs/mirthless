@@ -86,7 +86,7 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
       child.once('error', resolve);
       child.once('close', (code, signal) => { resolve(new Error(`The server ended by itself (${String(code ?? signal)}): ${output}`)); });
     });
-    let early: Error | null = null;
+    let early: Error | null;
     try {
       early = await Promise.race([waitForBlocked(mods.pool, 'select %"resources"', START_TIMEOUT_MS).then(() => null), ended]);
     } catch (err) {
