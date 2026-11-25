@@ -29,5 +29,5 @@ scenario('S12 SMTP Sender sends a mail with a subject from the channel map', asy
   }), ['S12 SendMail']);
 
   await sendMllp(PORT, `MSH|^~\\&|RIS|S|HUB|V|20261110120000||ORM^O01|S12|P|2.3\rORC|NW|ACC${stamp}`);
-  await expect.poll(() => mailSubjects(`ACC${stamp}`), { timeout: 20_000 }).toEqual([`S12 report ACC${stamp}`]);
+  await expect.poll(() => mailSubjects(`ACC${stamp}`)).toEqual([`S12 report ACC${stamp}`]);
 });

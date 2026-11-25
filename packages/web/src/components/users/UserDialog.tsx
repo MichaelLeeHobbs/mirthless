@@ -40,6 +40,7 @@ export interface UserFormData {
 
 export function UserDialog({ open, user, isSelf, onClose, onSave, error, saving }: UserDialogProps): ReactNode {
   const isEdit = user !== null;
+  const emailLocked = isEdit && !user.enabled;
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -124,6 +125,9 @@ export function UserDialog({ open, user, isSelf, onClose, onSave, error, saving 
               onChange={(e: ChangeEvent<HTMLInputElement>) => { setEmail(e.target.value); }}
               fullWidth
               required
+              disabled={emailLocked}
+              helperText={emailLocked ? 'Enable the account to change its email.' : undefined}
+              slotProps={{ formHelperText: { disabled: false } }}
             />
           </Grid>
           <Grid size={12}>

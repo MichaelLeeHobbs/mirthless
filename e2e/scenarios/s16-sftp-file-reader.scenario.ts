@@ -30,9 +30,9 @@ scenario('S16 File Reader over SFTP reads a partner file and deletes it', async 
     }), ['S16 SFTP Orders']);
 
     await withSftp((c) => c.put(Buffer.from('MSH|^~\\&|LAB|S16|HUB|V|20261110120000||ORM^O01|S16CTL|P|2.3\rORC|NW|ACC016'), `${DIR}/order1.hl7`));
-    await expect.poll(() => sink.received.length, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     expect(sink.received[0]).toContain('ORC|NW|ACC016');
-    await expect.poll(() => withSftp((c) => c.exists(`${DIR}/order1.hl7`)), { timeout: 10_000 }).toBe(false);
+    await expect.poll(() => withSftp((c) => c.exists(`${DIR}/order1.hl7`))).toBe(false);
   } finally {
     await sink.close();
   }

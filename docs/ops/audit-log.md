@@ -1,6 +1,6 @@
 # Audit log
 
-The `audit_log` table is GalvaniGraph's protected record of who read PHI and who changed access (D-312). This page is for the person who runs the database: how the table is protected, how its partitions are kept, and how old months are dropped.
+The `audit_log` table is GalvaniGraph's protected record of who read PHI and who changed access (D-312). It also holds the old and new name and email address of a user whose details changed, so staff names and addresses are kept as long as its months are. This page is for the person who runs the database: how the table is protected, how its partitions are kept, and how old months are dropped.
 
 ## How it is protected
 

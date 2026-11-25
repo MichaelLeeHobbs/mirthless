@@ -63,8 +63,8 @@ scenario('S02 lane router sends each message type to exactly one lane channel', 
   }
 
   const count = async (l: string): Promise<number> => (await api.messages(ids[`S02 HL7 ROUTER - ${l}`]!)).total;
-  await expect.poll(() => count('Orders'), { timeout: 15_000 }).toBe(1);
-  await expect.poll(() => count('Priors'), { timeout: 15_000 }).toBe(1);
+  await expect.poll(() => count('Orders')).toBe(1);
+  await expect.poll(() => count('Priors')).toBe(1);
   expect(await count('Priority')).toBe(0);
   expect((await api.messages(ids['S02 HL7 Listener']!)).total).toBe(3);
 });

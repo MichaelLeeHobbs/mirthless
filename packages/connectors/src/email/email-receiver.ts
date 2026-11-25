@@ -1,32 +1,24 @@
-import { tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { settleUnlessAborted, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
 import { connectFresh, closeQuietly } from '../client-lifecycle.js';
-import { createRequire } from 'node:module';
-
-// ESM has no bare `require` at runtime (vitest injects one, which hid this).
-const require = createRequire(import.meta.url);
+import {
+  createImapClient,
+  DISPATCHED_KEYWORD,
+  ERROR_KEYWORD,
+  ImapRefusal,
+  type EmailMessage,
+  type ImapClient,
+  type ImapConnectionOptions,
+  type UnreadEmails,
+} from './imap-client.js';
 
 const IMAP_OP_TIMEOUT_MS = 30_000;
 
-/**
- * Lives on the mail server, so a restart before the post-action succeeds retries
- * only the post-action, not the dispatch.
- */
-export const DISPATCHED_KEYWORD = '$GalvaniGraphDispatched';
-
-/**
- * Keywords from earlier names (D-309, D-205): read as dispatched, never set, so an
- * email handled before a rename is not delivered again.
- */
-export const LEGACY_DISPATCHED_KEYWORDS: readonly string[] = ['$GalvaniFlowDispatched', '$MirthlessDispatched'];
-
-export function hasDispatchedKeyword(flags: ReadonlySet<string> | undefined): boolean {
-  if (flags === undefined) return false;
-  return flags.has(DISPATCHED_KEYWORD) || LEGACY_DISPATCHED_KEYWORDS.some((keyword) => flags.has(keyword));
-}
+/** How many UIDs one log line names. */
+const REPORTED_UIDS = 20;
 
 const EMAIL_PROTOCOL = {
   IMAP: 'IMAP',
@@ -41,12 +33,7 @@ const EMAIL_POST_ACTION = {
 } as const;
 type EmailPostAction = typeof EMAIL_POST_ACTION[keyof typeof EMAIL_POST_ACTION];
 
-export interface EmailReceiverConfig {
-  readonly host: string;
-  readonly port: number;
-  readonly secure: boolean;
-  readonly username: string;
-  readonly password: string;
+export interface EmailReceiverConfig extends ImapConnectionOptions {
   readonly protocol: EmailProtocol;
   readonly folder: string;
   readonly pollingIntervalMs: number;
@@ -58,30 +45,25 @@ export interface EmailReceiverConfig {
 export { EMAIL_PROTOCOL, EMAIL_POST_ACTION };
 export type { EmailProtocol, EmailPostAction };
 
-export interface EmailMessage {
-  readonly uid: number;
-  readonly subject: string;
-  readonly from: string;
-  readonly to: string;
-  readonly date: string;
-  readonly body: string;
-  readonly attachmentCount: number;
-  /** True when the email already carries {@link DISPATCHED_KEYWORD} or one of {@link LEGACY_DISPATCHED_KEYWORDS}. */
-  readonly dispatched: boolean;
+export type ImapClientFactory = (options: ImapConnectionOptions) => ImapClient;
+
+/** One start of the source and its connection. A cycle that outlives a halt keeps its own, not a later start's. */
+interface Session {
+  client: ImapClient | null;
+  /** False once stop or halt is asked for: the cycle in flight takes no more emails. */
+  live: boolean;
+  /** An email is being dispatched, marked or post-processed. */
+  inHand: boolean;
+  /** Ends once the connection dropped last is closed. */
+  closed: Promise<void>;
 }
 
-export interface ImapClient {
-  connect(): Promise<void>;
-  fetchUnread(folder: string): Promise<readonly EmailMessage[]>;
-  markRead(uid: number): Promise<void>;
-  /** Resolves false when the mailbox does not accept custom keywords. */
-  markDispatched(uid: number): Promise<boolean>;
-  moveMessage(uid: number, folder: string): Promise<void>;
-  deleteMessage(uid: number): Promise<void>;
-  disconnect(): Promise<void>;
+interface ListedEmail {
+  readonly key: string;
+  readonly email: EmailMessage;
+  /** Dispatched before, by this source or another, or recorded with an error. */
+  readonly known: boolean;
 }
-
-export type ImapClientFactory = (config: EmailReceiverConfig) => ImapClient;
 
 export class EmailReceiver implements SourceConnectorRuntime {
   private readonly config: EmailReceiverConfig;
@@ -89,22 +71,28 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private session: Session | null = null;
+  /** Of the latest start: a halt aborts it, which ends what a stop waits for. */
+  private halted = new AbortController();
+  /** A poll cycle is in flight, of this session or of one that was halted; there is never a second. */
   private polling = false;
-  /** Stop waits for this so the email gets its post-action. */
-  private dispatchInFlight: Promise<void> | null = null;
-  private client: ImapClient | null = null;
+  private emailInHand: Promise<void> | null = null;
   /**
-   * Dispatched UIDs whose post-action has not succeeded: later polls retry only the
-   * post-action. Backs up {@link DISPATCHED_KEYWORD} for mailboxes that reject custom keywords.
+   * Emails this instance dispatched, and whether their post-action went through: later polls run
+   * only that. Backs up {@link DISPATCHED_KEYWORD} for mailboxes that reject custom keywords, and
+   * is what `DELETE` goes by: the keyword does not say which channel recorded the email.
    */
-  private readonly awaitingPostAction = new Set<number>();
-  /** UIDs the pipeline recorded with an error: no post-action and no second dispatch. */
-  private readonly heldAfterError = new Set<number>();
+  private readonly recorded = new Map<string, { done: boolean }>();
+  /** Emails the pipeline recorded with an error. Backs up {@link ERROR_KEYWORD} in the same way. */
+  private readonly heldAfterError = new Set<string>();
+  /** Emails already reported as left in the folder: not deleted, or not dispatched. */
+  private readonly reported = new Set<string>();
+  private readonly reportedUnreadable = new Set<string>();
   private warnedNoKeywords = false;
 
   constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory, logger?: ConnectorLogger) {
     this.config = config;
-    this.createClient = createClient ?? defaultImapClientFactory;
+    this.createClient = createClient ?? createImapClient;
     this.logger = logger ?? createConnectorLogger('EMAIL');
   }
 
@@ -140,88 +128,135 @@ export class EmailReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      // Stored only once connected: a failed start must not leave stop to log out a dead session.
-      await this.reconnect();
+      const session: Session = { client: null, live: true, inHand: false, closed: Promise.resolve() };
+      await this.connect(session);
+      this.session = session;
+      this.halted = new AbortController();
 
       this.pollTimer = setInterval(() => {
-        void this.pollCycle();
+        void this.pollCycle(session);
       }, this.config.pollingIntervalMs);
     });
   }
 
+  /** Waits for the email in hand, so it is marked and post-processed before its connection goes. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.clearPollTimer();
-      // Let an email being dispatched finish its post-action on the open session;
-      // logging out first would leave it unread and dispatch it again after a
-      // resume. A fetch in progress is not waited for: it dispatches nothing.
-      if (this.dispatchInFlight !== null) await this.dispatchInFlight;
-      await this.disconnectClient();
+      const { signal } = this.halted;
+      const session = this.endSession();
+      // Not only this session's: after a pause the session is gone, and its email may be in hand.
+      if (this.emailInHand !== null) await settleUnlessAborted(this.emailInHand, signal);
+      if (session === null) return;
+      if (signal.aborted) destroyIdle(session);
+      else await settleUnlessAborted(this.disconnect(session), signal);
     });
   }
 
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.clearPollTimer();
-      await this.disconnectClient();
+      const session = this.endSession();
+      this.halted.abort();
+      if (session !== null) destroyIdle(session);
     });
+  }
+
+  private endSession(): Session | null {
+    const { session } = this;
+    if (this.pollTimer !== null) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+    if (session !== null) session.live = false;
+    this.session = null;
+    return session;
   }
 
   async onUndeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.dispatcher = null;
-      this.client = null;
     });
   }
 
-  private async pollCycle(): Promise<void> {
+  private async pollCycle(session: Session): Promise<void> {
     if (this.polling || !this.dispatcher) return;
     this.polling = true;
     try {
-      if (!this.client) await this.reconnect();
-      if (!this.client) return;
-      const messages = await withTimeout(
-        this.client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread',
-      );
-      for (const msg of messages) {
-        if (!this.matchesSubjectFilter(msg)) continue;
-        // One email that throws must not stop the emails after it or drop a
-        // working connection. It stays unread, so the next poll retries it.
-        const processing = this.processMessage(msg);
-        this.dispatchInFlight = processing.catch(() => undefined);
-        try {
-          await processing;
-        } catch (err) {
-          this.logger.error({ ...errorInfo(err), uid: msg.uid }, 'Email could not be processed; continuing with the next email');
-        } finally {
-          this.dispatchInFlight = null;
-        }
-      }
+      await this.takeEmails(session);
     } catch (err) {
       // Otherwise a dropped connection leaves the channel STARTED but silently idle.
-      this.logger.error(errorInfo(err), 'Email poll cycle failed; will reconnect');
-      await this.safeDisconnect();
-      this.client = null;
+      if (session.live) this.logger.error(errorInfo(err), 'Email poll cycle failed; will reconnect');
+      await this.disconnect(session);
     } finally {
       this.polling = false;
+      if (!session.live) await this.disconnect(session);
     }
   }
 
-  private async reconnect(): Promise<void> {
-    const client = this.createClient(this.config);
-    this.client = await connectFresh(client, IMAP_OP_TIMEOUT_MS, 'IMAP connect', () => client.disconnect());
+  private async takeEmails(session: Session): Promise<void> {
+    const client = session.client ?? await this.connect(session);
+    if (!session.live) return;
+    const unread = await withTimeout(client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread');
+    this.forgetGone(unread);
+    const listed = unread.emails.filter((email) => this.matchesSubjectFilter(email)).map((email) => this.known(unread, email));
+    this.report(unread, listed);
+    // New ones first: one whose mark or post-action always fails ends the poll.
+    for (const item of [...listed.filter(({ known }) => !known), ...listed.filter(({ known }) => known)]) {
+      if (!session.live) return;
+      session.inHand = true;
+      const processing = this.processEmail(client, item);
+      this.emailInHand = processing.then(() => undefined, () => undefined);
+      try {
+        await processing;
+      } finally {
+        this.emailInHand = null;
+        session.inHand = false;
+      }
+    }
   }
 
-  private async safeDisconnect(): Promise<void> {
-    const client = this.client;
-    if (!client) return;
-    await closeQuietly({
-      close: () => client.disconnect(),
-      timeoutMs: IMAP_OP_TIMEOUT_MS,
-      label: 'IMAP disconnect',
-      logger: this.logger,
-      message: 'Error disconnecting IMAP client during reconnect',
-    });
+  private known({ uidValidity }: UnreadEmails, email: EmailMessage): ListedEmail {
+    const key = keyOf(uidValidity, email.uid);
+    return { key, email, known: email.held || email.dispatched || this.recorded.has(key) || this.heldAfterError.has(key) };
+  }
+
+  /** A listing can lack an email that is still there, so only one that was dealt with is forgotten when it is gone. */
+  private forgetGone({ uidValidity, emails, unreadable }: UnreadEmails): void {
+    const listed = new Set([...emails.map(({ uid }) => uid), ...unreadable].map((uid) => keyOf(uidValidity, uid)));
+    const otherFolder = (key: string): boolean => !key.startsWith(keyOf(uidValidity, ''));
+    for (const [key, { done }] of this.recorded) {
+      if (otherFolder(key) || (done && !listed.has(key))) this.recorded.delete(key);
+    }
+    for (const keys of [this.heldAfterError, this.reported, this.reportedUnreadable]) {
+      for (const key of keys) {
+        if (otherFolder(key)) keys.delete(key);
+      }
+    }
+  }
+
+  private async connect(session: Session): Promise<ImapClient> {
+    // Without UIDVALIDITY a UID means nothing on another connection.
+    for (const keys of [this.recorded, this.heldAfterError]) {
+      for (const key of keys.keys()) {
+        if (key.startsWith(keyOf('', ''))) keys.delete(key);
+      }
+    }
+    const client = this.createClient(this.config);
+    session.client = await connectFresh(client, IMAP_OP_TIMEOUT_MS, 'IMAP connect', () => client.disconnect());
+    return session.client;
+  }
+
+  private disconnect(session: Session): Promise<void> {
+    const { client } = session;
+    if (client) {
+      // Drop it first: a later stop must not log this session out again.
+      session.client = null;
+      session.closed = closeQuietly({
+        close: () => client.disconnect(),
+        timeoutMs: IMAP_OP_TIMEOUT_MS,
+        label: 'IMAP disconnect',
+        logger: this.logger,
+        message: 'Error disconnecting IMAP client',
+      });
+    }
+    return session.closed;
   }
 
   private matchesSubjectFilter(msg: EmailMessage): boolean {
@@ -229,210 +264,180 @@ export class EmailReceiver implements SourceConnectorRuntime {
     return msg.subject.toLowerCase().includes(this.config.subjectFilter.toLowerCase());
   }
 
-  private async processMessage(msg: EmailMessage): Promise<void> {
-    if (!this.dispatcher || !this.client) return;
-
-    if (this.heldAfterError.has(msg.uid)) return;
-
-    if (!msg.dispatched && !this.awaitingPostAction.has(msg.uid)) {
-      const raw: RawMessage = {
-        content: msg.body,
-        sourceMap: {
-          subject: msg.subject,
-          from: msg.from,
-          to: msg.to,
-          date: msg.date,
-          attachmentCount: msg.attachmentCount,
-        },
-      };
-
-      const result = await this.dispatcher(raw);
-      if (!result.ok) {
-        // Left unread on the server, so the next poll retries it.
-        this.logger.error({ ...errorInfo(result.error), uid: msg.uid }, 'Email dispatch failed; message left unread for retry');
-        return;
-      }
-      const failure = dispatchFailure(result);
-      if (failure !== null) {
-        // Recorded with an error: no post-action (it would report success) and no
-        // second dispatch while this channel stays deployed.
-        this.heldAfterError.add(msg.uid);
-        this.logger.error(
-          { ...errorInfo(failure), uid: msg.uid },
-          'Pipeline recorded an error for this email; it is left untouched in the mailbox and not read again until the channel is redeployed',
-        );
-        return;
-      }
-      this.awaitingPostAction.add(msg.uid);
-      await this.recordDispatched(msg.uid);
+  /** Rejects when the connection is in doubt, so no further email is dispatched that it could not mark. */
+  private async processEmail(client: ImapClient, { key, email }: ListedEmail): Promise<void> {
+    if (email.held) {
+      // What the server shows counts from here on: without the keyword, the email is dispatched again.
+      if (this.heldAfterError.delete(key)) this.reported.add(key);
+      return;
     }
+    if (this.heldAfterError.has(key)) {
+      await this.markOnServer(client, email.uid, ERROR_KEYWORD);
+      return;
+    }
+    if (this.isLeft(key, email)) return;
+    const before = email.dispatched || this.recorded.has(key);
+    if (!before && !(await this.dispatch(client, email, key))) return;
+    const done = await this.postProcessed(client, email, key);
+    // After the post-action, or a mark that always fails would keep it from being tried.
+    if (!done && before && !email.dispatched) await this.markOnServer(client, email.uid, DISPATCHED_KEYWORD);
+  }
 
-    // A post-action failure must not cause a second dispatch: the UID stays in
-    // awaitingPostAction and only the post-action is retried on the next poll.
+  /** False when the server refused it. */
+  private async postProcessed(client: ImapClient, email: EmailMessage, key: string): Promise<boolean> {
     try {
-      await this.postProcess(msg.uid);
-      this.awaitingPostAction.delete(msg.uid);
+      await this.postProcess(client, email);
+      const entry = this.recorded.get(key);
+      if (entry) entry.done = true;
+      return true;
     } catch (err) {
-      this.logger.error({ ...errorInfo(err), uid: msg.uid }, 'Email post-action failed after dispatch; will retry the post-action only');
+      // Still in `recorded`, so the next poll retries only the post-action.
+      this.logger.error({ ...errorInfo(err), uid: email.uid }, 'Email post-action failed after dispatch; will retry the post-action only');
+      if (!(err instanceof ImapRefusal)) throw err;
+      return false;
     }
   }
 
-  /** A failure is logged, not fatal: the in-memory set still prevents a duplicate until restart. */
-  private async recordDispatched(uid: number): Promise<void> {
-    const client = this.client;
+  /** Its keyword is from before this channel was deployed, or another channel's: `DELETE` goes only by what this instance recorded. */
+  private isLeft(key: string, email: EmailMessage): boolean {
+    return this.config.postAction === EMAIL_POST_ACTION.DELETE && email.dispatched && !this.recorded.has(key);
+  }
+
+  private report(unread: UnreadEmails, listed: readonly ListedEmail[]): void {
+    const keysOf = (items: readonly ListedEmail[]): string[] => items.map(({ key }) => key);
+    this.reportOnce(
+      this.reportedUnreadable,
+      unread.unreadable.map((uid) => keyOf(unread.uidValidity, uid)),
+      'Emails could not be read: the mail server listed them and did not answer with their content. They stay in the folder, unread, or are gone from it',
+    );
+    this.reportOnce(
+      this.reported,
+      keysOf(listed.filter(({ key, email }) => this.isLeft(key, email))),
+      'Emails not deleted: their keyword says that they were dispatched before this channel was deployed, or by another channel. They stay in the folder; delete them there if their messages are recorded',
+    );
+    this.reportOnce(
+      this.reported,
+      keysOf(listed.filter(({ key, email }) => email.held && !this.heldAfterError.has(key))),
+      `Emails not read: their keyword ${ERROR_KEYWORD} says that their messages were recorded with an error, by this channel or another. They stay in the folder until it is removed`,
+    );
+  }
+
+  private reportOnce(reported: Set<string>, keys: readonly string[], message: string): void {
+    const unreported = keys.filter((key) => !reported.has(key));
+    if (unreported.length === 0) return;
+    for (const key of unreported) reported.add(key);
+    const uids = unreported.slice(0, REPORTED_UIDS).map((key) => Number(key.slice(key.lastIndexOf(':') + 1)));
+    this.logger.warn({ emails: unreported.length, uids, folder: this.config.folder }, message);
+  }
+
+  /** True when the pipeline took the email without an error, so it gets its post-action. */
+  private async dispatch(client: ImapClient, email: EmailMessage, key: string): Promise<boolean> {
+    const { dispatcher } = this;
+    if (!dispatcher) return false;
+    const { uid } = email;
+    const raw: RawMessage = {
+      content: textOf(email),
+      sourceMap: {
+        subject: email.subject,
+        from: email.from,
+        to: email.to,
+        date: email.date,
+        attachmentCount: email.attachmentCount,
+      },
+    };
+
+    const result = await this.dispatchRaw(dispatcher, raw);
+    if (!result.ok) {
+      // Left unread on the server, so the next poll retries it.
+      this.logger.error({ ...errorInfo(result.error), uid }, 'Email dispatch failed; message left unread for retry');
+      return false;
+    }
+    const failure = this.failureOf(result);
+    if (failure !== null) {
+      // Recorded with an error: no post-action (it would report success) and no second dispatch.
+      this.heldAfterError.add(key);
+      this.logger.error(
+        { ...errorInfo(failure), uid, keyword: ERROR_KEYWORD },
+        'Pipeline recorded an error for this email; it is left in the mailbox and not dispatched again',
+      );
+      await this.markOnServer(client, uid, ERROR_KEYWORD);
+      return false;
+    }
+    this.recorded.set(key, { done: false });
+    await this.markOnServer(client, uid, DISPATCHED_KEYWORD);
+    return true;
+  }
+
+  /** A throw becomes a failed result: the email stays unread, and those after it are still taken. */
+  private async dispatchRaw(dispatcher: MessageDispatcher, raw: RawMessage): Promise<Result<DispatchResult>> {
+    const called = await tryCatch(() => dispatcher(raw));
+    return called.ok ? called.value : called;
+  }
+
+  /** `DELETE` takes away what a message with a failed destination is reprocessed from, when the channel does not store it. */
+  private failureOf(result: Result<DispatchResult>): Error | null {
+    if (result.ok && result.value.destinationFailed === true && this.config.postAction === EMAIL_POST_ACTION.DELETE) {
+      return new Error(`A destination or the postprocessor failed for message ${String(result.value.messageId)}`);
+    }
+    return dispatchFailure(result);
+  }
+
+  /** What is in memory still prevents a duplicate when this fails, until a restart or a redeploy. */
+  private async markOnServer(client: ImapClient, uid: number, keyword: string): Promise<void> {
     try {
-      if (!client) throw new Error('IMAP client is not connected (channel stopped or halted)');
-      const stored = await withTimeout(client.markDispatched(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markDispatched');
+      const stored = await withTimeout(client.mark(uid, keyword), IMAP_OP_TIMEOUT_MS, 'IMAP mark');
       if (!stored && !this.warnedNoKeywords) {
         this.warnedNoKeywords = true;
         this.logger.warn(
-          { uid, folder: this.config.folder, keyword: DISPATCHED_KEYWORD },
-          'Mailbox does not accept custom IMAP keywords; an email whose post-action fails may be dispatched again after a restart',
+          { uid, folder: this.config.folder, keyword },
+          'Mailbox does not accept custom IMAP keywords; an email that is left in it may be dispatched again after a restart or a redeploy',
         );
       }
     } catch (err) {
       this.logger.error(
-        { ...errorInfo(err), uid },
-        'Could not mark email as dispatched; if its post-action also fails, a restart may dispatch it again',
+        { ...errorInfo(err), uid, keyword },
+        'Could not mark the email on the server; if it is left in the mailbox, a restart or a redeploy may dispatch it again',
       );
+      if (!(err instanceof ImapRefusal)) throw err;
     }
   }
 
-  private async postProcess(uid: number): Promise<void> {
-    // Throw rather than return: the caller would take a silent return as done and
-    // stop tracking an email that is still unread, which a later poll then dispatches again.
-    if (!this.client) throw new Error('IMAP client is not connected (channel stopped or halted)');
-
+  private async postProcess(client: ImapClient, email: EmailMessage): Promise<void> {
+    const { uid } = email;
     switch (this.config.postAction) {
       case EMAIL_POST_ACTION.DELETE:
-        await withTimeout(this.client.deleteMessage(uid), IMAP_OP_TIMEOUT_MS, 'IMAP deleteMessage');
+        if (holdsAllBytes(email)) {
+          await withTimeout(client.deleteMessage(uid), IMAP_OP_TIMEOUT_MS, 'IMAP deleteMessage');
+        } else {
+          this.logger.error({ uid, folder: this.config.folder }, 'Email marked read, not deleted: it is not valid UTF-8, so its message does not hold all of it');
+          await withTimeout(client.markRead(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markRead');
+        }
         break;
       case EMAIL_POST_ACTION.MARK_READ:
-        await withTimeout(this.client.markRead(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markRead');
+        await withTimeout(client.markRead(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markRead');
         break;
       case EMAIL_POST_ACTION.MOVE:
-        await withTimeout(this.client.moveMessage(uid, this.config.moveToFolder), IMAP_OP_TIMEOUT_MS, 'IMAP moveMessage');
+        await withTimeout(client.moveMessage(uid, this.config.moveToFolder), IMAP_OP_TIMEOUT_MS, 'IMAP moveMessage');
         break;
     }
   }
-
-  private async disconnectClient(): Promise<void> {
-    const client = this.client;
-    if (!client) return;
-    // Drop it first: a later stop or a failed restart must not log this session out again.
-    this.client = null;
-    await withTimeout(client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
-  }
-
-  private clearPollTimer(): void {
-    if (this.pollTimer !== null) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-  }
 }
 
-function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
-  const { ImapFlow } = require('imapflow') as { ImapFlow: new (opts: Record<string, unknown>) => ImapFlowInstance };
-
-  const client = new ImapFlow({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: { user: config.username, pass: config.password },
-    logger: false,
-  });
-
-  // ImapFlow emits 'error' when the connection drops between polls; with no listener
-  // Node kills the engine process. The poll loop reconnects.
-  const factoryLogger = createConnectorLogger('EMAIL');
-  client.on('error', (err: unknown) => {
-    factoryLogger.warn(errorInfo(err), 'IMAP client error (will reconnect on next poll)');
-  });
-
-  return {
-    async connect(): Promise<void> {
-      await client.connect();
-    },
-    async fetchUnread(folder: string): Promise<readonly EmailMessage[]> {
-      const lock = await client.getMailboxLock(folder);
-      try {
-        const messages: EmailMessage[] = [];
-        const fetchOptions = { source: true, envelope: true, uid: true, flags: true };
-        for await (const msg of client.fetch({ seen: false }, fetchOptions)) {
-          messages.push({
-            uid: msg.uid,
-            subject: msg.envelope?.subject ?? '',
-            from: msg.envelope?.from?.[0]?.address ?? '',
-            to: msg.envelope?.to?.[0]?.address ?? '',
-            date: msg.envelope?.date?.toISOString() ?? '',
-            body: msg.source?.toString() ?? '',
-            attachmentCount: 0,
-            dispatched: hasDispatchedKeyword(msg.flags),
-          });
-        }
-        return messages;
-      } finally {
-        lock.release();
-      }
-    },
-    async markRead(uid: number): Promise<void> {
-      requireDone(await client.messageFlagsAdd({ uid }, ['\\Seen']), 'mark read', uid);
-    },
-    async markDispatched(uid: number): Promise<boolean> {
-      // imapflow drops a keyword the selected mailbox's PERMANENTFLAGS rejects and returns false.
-      return client.messageFlagsAdd({ uid }, [DISPATCHED_KEYWORD]);
-    },
-    async moveMessage(uid: number, targetFolder: string): Promise<void> {
-      requireDone(await client.messageMove({ uid }, targetFolder), `move to "${targetFolder}"`, uid);
-    },
-    async deleteMessage(uid: number): Promise<void> {
-      requireDone(await client.messageFlagsAdd({ uid }, ['\\Deleted']), 'flag deleted', uid);
-      await client.expunge({ uid });
-    },
-    async disconnect(): Promise<void> {
-      await client.logout();
-    },
-  };
+/** The cycle keeps the connection for an email in hand, and closes it. */
+function destroyIdle(session: Session): void {
+  if (session.inHand) return;
+  session.client?.destroy();
+  session.client = null;
 }
 
-/**
- * imapflow reports a failed move or flag change by resolving false, not by
- * throwing. Throw so the receiver treats the post-action as failed.
- */
-function requireDone(done: boolean, action: string, uid: number): void {
-  if (!done) throw new Error(`IMAP server refused to ${action} for UID ${uid}`);
+function keyOf(uidValidity: string, uid: number | ''): string {
+  return `${uidValidity}:${String(uid)}`;
 }
 
-interface ImapFlowEnvelopeAddress {
-  readonly address?: string;
+function textOf(email: EmailMessage): string {
+  return email.source.toString('utf8');
 }
 
-interface ImapFlowEnvelope {
-  readonly subject?: string;
-  readonly from?: readonly ImapFlowEnvelopeAddress[];
-  readonly to?: readonly ImapFlowEnvelopeAddress[];
-  readonly date?: Date;
-}
-
-interface ImapFlowFetchMessage {
-  readonly uid: number;
-  readonly source?: Buffer;
-  readonly envelope?: ImapFlowEnvelope;
-  readonly flags?: ReadonlySet<string>;
-}
-
-interface ImapFlowLock {
-  release(): void;
-}
-
-interface ImapFlowInstance {
-  connect(): Promise<void>;
-  on(event: string, listener: (arg: unknown) => void): void;
-  getMailboxLock(folder: string): Promise<ImapFlowLock>;
-  fetch(query: Record<string, unknown>, options: Record<string, unknown>): AsyncIterable<ImapFlowFetchMessage>;
-  messageFlagsAdd(query: Record<string, unknown>, flags: readonly string[]): Promise<boolean>;
-  messageMove(query: Record<string, unknown>, destination: string): Promise<boolean>;
-  expunge(query: Record<string, unknown>): Promise<void>;
-  logout(): Promise<void>;
+function holdsAllBytes(email: EmailMessage): boolean {
+  return Buffer.from(textOf(email), 'utf8').equals(email.source);
 }

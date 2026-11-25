@@ -4,6 +4,8 @@ import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { fillVariables, variableNames } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';
+import { closeQuietly, HALT_CLOSE_MS, STOP_CLOSE_MS } from '../client-lifecycle.js';
+import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { createAmqpPublisher, type AmqpConnectionConfig, type AmqpPublisher, type AmqpPublisherFactory } from './amqp-client.js';
 
 const SEND_TIMEOUT_MS = 30_000;
@@ -19,12 +21,14 @@ export interface AmqpDispatcherConfig extends AmqpConnectionConfig {
 export class AmqpDispatcher implements DestinationConnectorRuntime {
   private readonly config: AmqpDispatcherConfig;
   private readonly createPublisher: AmqpPublisherFactory;
+  private readonly logger: ConnectorLogger;
   private started = false;
   private publisher: Promise<AmqpPublisher> | null = null;
 
-  constructor(config: AmqpDispatcherConfig, createPublisher?: AmqpPublisherFactory) {
+  constructor(config: AmqpDispatcherConfig, createPublisher?: AmqpPublisherFactory, logger?: ConnectorLogger) {
     this.config = config;
     this.createPublisher = createPublisher ?? createAmqpPublisher;
+    this.logger = logger ?? createConnectorLogger('AMQP');
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -58,8 +62,12 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
       for (const [name, value] of Object.entries(this.config.headers)) headers[name] = fillVariables(value, message);
       const messageId = `${message.channelId}:${String(message.messageId)}:${String(message.metaDataId)}`;
 
+      const ended = AbortSignal.any([signal, AbortSignal.timeout(SEND_TIMEOUT_MS)]);
       const publish = async (): Promise<void> => {
-        const publisher = await this.connection();
+        const opening = this.connection();
+        const publisher = await opening;
+        // The send was given up while the connection opened; its message may be on the queue again.
+        if (ended.aborted) throw new Error('Send aborted');
         try {
           await publisher.publish({
             exchange: this.config.exchange,
@@ -70,7 +78,7 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
             messageId,
           });
         } finally {
-          if (!publisher.isOpen) await this.dropConnection();
+          if (!publisher.isOpen) await this.dropConnection(opening, HALT_CLOSE_MS);
         }
       };
       await withTimeoutSignal(publish(), SEND_TIMEOUT_MS, 'AMQP publish', signal);
@@ -79,41 +87,40 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
   }
 
   async onStop(): Promise<Result<void>> {
-    return tryCatch(async () => { await this.close(); });
+    return tryCatch(async () => { await this.close(STOP_CLOSE_MS); });
   }
 
   async onHalt(): Promise<Result<void>> {
-    return tryCatch(async () => { await this.close(); });
+    return tryCatch(async () => { await this.close(HALT_CLOSE_MS); });
   }
 
   async onUndeploy(): Promise<Result<void>> {
-    return tryCatch(async () => { await this.close(); });
+    return tryCatch(async () => { await this.close(STOP_CLOSE_MS); });
   }
 
   /** Concurrent sends share one connect. */
-  private async connection(): Promise<AmqpPublisher> {
-    this.publisher ??= this.createPublisher(this.config);
-    try {
-      return await this.publisher;
-    } catch (err) {
-      this.publisher = null;
-      throw err;
-    }
+  private connection(): Promise<AmqpPublisher> {
+    if (this.publisher) return this.publisher;
+    const opening = this.createPublisher(this.config);
+    this.publisher = opening;
+    opening.catch(() => { if (this.publisher === opening) this.publisher = null; });
+    return opening;
   }
 
-  private async dropConnection(): Promise<void> {
-    const pending = this.publisher;
-    this.publisher = null;
-    if (!pending) return;
-    try {
-      await (await pending).close();
-    } catch {
-      // Already closed: the connection was lost, which is why it is being dropped.
-    }
+  /** One still connecting is closed when it is connected. */
+  private async dropConnection(opening: Promise<AmqpPublisher>, timeoutMs: number): Promise<void> {
+    if (this.publisher === opening) this.publisher = null;
+    await closeQuietly({
+      close: async () => (await opening).close(timeoutMs),
+      timeoutMs,
+      label: 'AMQP close',
+      logger: this.logger,
+      message: 'Error closing AMQP connection',
+    });
   }
 
-  private async close(): Promise<void> {
+  private async close(timeoutMs: number): Promise<void> {
     this.started = false;
-    await this.dropConnection();
+    if (this.publisher) await this.dropConnection(this.publisher, timeoutMs);
   }
 }

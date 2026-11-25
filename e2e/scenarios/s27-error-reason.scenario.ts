@@ -16,7 +16,7 @@ scenario('S27 a destination error records why it failed', async (api) => {
 
   expect(await sendMllp(PORT, 'MSH|^~\\&|RIS|SITE27|HUB|HUB|20261110120000||ORM^O01|S27CTL|P|2.3\rORC|NW|ACC027')).toContain('MSA|AE|S27CTL');
 
-  await expect.poll(async () => (await api.messages(channelId)).total, { timeout: 10_000 }).toBe(1);
+  await expect.poll(async () => (await api.messages(channelId)).total).toBe(1);
   const { items } = await api.messages(channelId);
   const dest = (await api.message(channelId, items[0]!.messageId)).connectors.find((c) => c.metaDataId === 1)!;
   expect(dest.status).toBe('ERROR');

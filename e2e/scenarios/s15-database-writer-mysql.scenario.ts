@@ -6,9 +6,10 @@ import mysql from 'mysql2/promise';
 import { channelExport, tcpListener, dbWriter } from './support/mirth-xml.js';
 import { sendMllp } from './support/net.js';
 import { scenario, mirthId } from './support/scenario.js';
+import { INTEGRATION_WAIT_MS } from '../../packages/server/test/time-budgets.js';
 
 const PORT = 16615;
-const MYSQL = { host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner' } as const;
+const MYSQL = { host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner', connectTimeout: INTEGRATION_WAIT_MS } as const;
 
 async function mysqlQuery<T>(text: string): Promise<T[]> {
   const conn = await mysql.createConnection(MYSQL);
@@ -47,6 +48,6 @@ scenario('S15 Database Writer inserts rows into MySQL', async (api) => {
   }), ['S15 Results to MySQL']);
 
   await sendMllp(PORT, 'MSH|^~\\&|EXA|S|HUB|V|20261110120000||ORU^R01|S15|P|2.4\rOBR|1|ACC015|\rOBX|1|TX|IMP||Mild degenerative change');
-  await expect.poll(() => mysqlQuery<{ accession: string; impression: string }>('SELECT accession, impression FROM s15_results'), { timeout: 15_000 })
+  await expect.poll(() => mysqlQuery<{ accession: string; impression: string }>('SELECT accession, impression FROM s15_results'))
     .toEqual([{ accession: 'ACC015', impression: 'Mild degenerative change' }]);
 });

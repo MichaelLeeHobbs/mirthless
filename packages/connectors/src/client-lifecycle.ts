@@ -3,6 +3,10 @@
 import { errorInfo, type ConnectorLogger } from './logger.js';
 import { withTimeout } from './timeout.js';
 
+/** How long a stop, and how long a halt, waits for a partner to answer a close. */
+export const STOP_CLOSE_MS = 10_000;
+export const HALT_CLOSE_MS = 2_000;
+
 export interface ConnectableClient {
   connect(): Promise<void>;
 }

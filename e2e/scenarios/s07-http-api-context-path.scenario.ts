@@ -3,6 +3,7 @@
 import { expect, request } from '@playwright/test';
 import { channelExport, httpListener, jsWriter } from './support/mirth-xml.js';
 import { scenario, mirthId } from './support/scenario.js';
+import { INTEGRATION_WAIT_MS } from '../../packages/server/test/time-budgets.js';
 
 const PORT = 16607;
 
@@ -29,7 +30,7 @@ scenario('S07 HTTP listener routes on context path and returns the postprocessor
     postprocessor: "return JSON.stringify($c('response'));",
   }), ['S07 API']);
 
-  const ctx = await request.newContext();
+  const ctx = await request.newContext({ timeout: INTEGRATION_WAIT_MS });
   try {
     const report = await ctx.post(`http://127.0.0.1:${String(PORT)}/api/report`, { data: { accession: 'ACC007' } });
     expect(report.status()).toBe(200);
