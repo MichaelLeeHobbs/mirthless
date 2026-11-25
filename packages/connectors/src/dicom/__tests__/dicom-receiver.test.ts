@@ -72,6 +72,7 @@ interface MockReceiver extends DcmtkReceiver {
   errorHandler: ((data: { readonly error: Error }) => void) | null;
   start: Mock<DcmtkReceiver['start']>;
   stop: Mock<DcmtkReceiver['stop']>;
+  halt: Mock<DcmtkReceiver['halt']>;
 }
 
 function makeMockReceiver(): MockReceiver {
@@ -86,6 +87,7 @@ function makeMockReceiver(): MockReceiver {
     },
     start: vi.fn<DcmtkReceiver['start']>(async () => ({ ok: true as const, value: undefined as void, error: null })),
     stop: vi.fn<DcmtkReceiver['stop']>(async () => {}),
+    halt: vi.fn<DcmtkReceiver['halt']>(async () => {}),
   };
   return mock;
 }
@@ -439,7 +441,8 @@ describe('DicomReceiver lifecycle', () => {
 
     const result = await receiver.onHalt();
     expect(result.ok).toBe(true);
-    expect(mock.stop).toHaveBeenCalledTimes(1);
+    expect(mock.halt).toHaveBeenCalledTimes(1);
+    expect(mock.stop).not.toHaveBeenCalled();
   });
 
   it('undeploys and nulls out references', async () => {

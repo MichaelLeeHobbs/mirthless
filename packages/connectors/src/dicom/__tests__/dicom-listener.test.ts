@@ -1,6 +1,6 @@
 // What the DICOM Listener takes, and how it starts and stops (#410), over real associations.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -14,7 +14,7 @@ import { freePort } from '../../__fixtures__/free-port.js';
 const { Client, Dataset, association: associations, constants, requests } = pkg;
 const { PresentationContext } = associations;
 const { CEchoRequest, CStoreRequest } = requests;
-const { Status } = constants;
+const { AbortReason, AbortSource, Status } = constants;
 
 const IMPLICIT = '1.2.840.10008.1.2';
 const CT = '1.2.840.10008.5.1.4.1.1.2';
@@ -125,6 +125,8 @@ describe('the storage SOP classes the listener takes', () => {
 
   it.each([
     ['a query', '1.2.840.10008.5.1.4.1.2.2.1'],
+    ['a query under the storage root', '1.2.840.10008.5.1.4.1.1.200.4'],
+    ['an inventory creation', '1.2.840.10008.5.1.4.1.1.201.5'],
     ['a private class', '1.3.12.2.1107.5.9.1'],
   ])('do not include %s', async (_name, sopClass) => {
     await start();
@@ -153,6 +155,8 @@ describe('the transfer syntaxes the listener takes', () => {
     ['MPEG-4', '1.2.840.10008.1.2.4.102'],
     ['High-Throughput JPEG 2000', '1.2.840.10008.1.2.4.201'],
     ['RLE', '1.2.840.10008.1.2.5'],
+    ['Encapsulated Uncompressed', '1.2.840.10008.1.2.1.98'],
+    ['Deflated Image Frame', '1.2.840.10008.1.2.8.1'],
   ])('include %s', async (_name, transferSyntax) => {
     await start();
     expect(await store(CT, transferSyntax)).toEqual({ status: Status.Success });
@@ -221,10 +225,50 @@ describe('stopping the listener', () => {
 
   it('does not wait for an image that is never stored', async () => {
     const { receiver, sent } = await taking();
+    const began = Date.now();
 
     expect((await receiver.onStop()).ok).toBe(true);
+    expect(Date.now() - began).toBeLessThan(12_000);
 
     // Cut off without an answer, so the sender keeps the image.
+    expect(await sent.catch(() => ({}))).not.toHaveProperty('status');
+  });
+
+  it('does not wait for a sender that hung up on an image it had taken', async () => {
+    let storeIt = (): void => undefined;
+    const receiver = await start(async (raw) => {
+      await new Promise<void>((resolve) => { storeIt = resolve; });
+      raw.onStored?.({ recoverable: true });
+      return PROCESSED;
+    });
+    const client = new Client();
+    client.addRequest(new CStoreRequest(new RawDataset(CT, IMPLICIT, Buffer.concat([uid(0x0016, CT, false), uid(0x0018, '1.2.3.4', false)]))));
+    client.on('networkError', () => undefined);
+    const closed = new Promise<void>((resolve) => { client.on('closed', () => { resolve(); }); });
+    client.send('127.0.0.1', port, 'SCU', 'LISTENER', TIMEOUTS);
+    await vi.waitFor(async () => { expect((await fs.readdir(dir)).length).toBe(1); }, 15_000);
+    let stopped = false;
+    const stopping = receiver.onStop().then(() => { stopped = true; });
+    client.abort(AbortSource.ServiceUser, AbortReason.NotSpecified);
+    await closed;
+    await new Promise((resolve) => { setTimeout(resolve, 200); });
+    const began = Date.now();
+
+    storeIt();
+    await stopping;
+
+    expect(stopped).toBe(true);
+    // Well under the 5 s a stop waits at most.
+    expect(Date.now() - began).toBeLessThan(3_000);
+  });
+
+  it('does not wait at all when it is halted', async () => {
+    const { receiver, sent } = await taking();
+    const began = Date.now();
+
+    expect((await receiver.onHalt()).ok).toBe(true);
+
+    expect(Date.now() - began).toBeLessThan(3_000);
     expect(await sent.catch(() => ({}))).not.toHaveProperty('status');
   });
 

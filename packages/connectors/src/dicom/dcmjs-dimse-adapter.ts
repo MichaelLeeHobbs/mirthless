@@ -7,8 +7,7 @@
 // The critical piece the native wrapper lacked is association negotiation: an SCP
 // must inspect the requested presentation contexts and ACCEPT the ones whose
 // abstract syntax (SOP class) and a transfer syntax it supports, otherwise the
-// association is rejected ("Source: Service User"). The accept-list here mirrors
-// what production DIMSE services commonly accept.
+// association is rejected ("Source: Service User"). It accepts every standard storage SOP class (D-355).
 
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -52,16 +51,23 @@ const OTHER_STORAGE: ReadonlySet<string> = new Set([
   '1.2.840.10008.5.1.4.45.1', // Implant Template Group
 ]);
 
+/** Services DICOM put under the storage root: the queries, retrievals and creation of protocol approvals and inventories. */
+const NOT_STORAGE: ReadonlySet<string> = new Set(['200.4', '200.5', '200.6', '201.2', '201.3', '201.4', '201.5', '201.6'].map((end) => STORAGE_ROOT + end));
+
 /** Every standard storage SOP class, by its UID and not by a list of names: the connector stores bytes, whatever they are. */
 function isAcceptedSopClass(uid: string): boolean {
-  return uid === SopClass.Verification || uid.startsWith(STORAGE_ROOT) || OTHER_STORAGE.has(uid);
+  if (uid === SopClass.Verification || OTHER_STORAGE.has(uid)) return true;
+  return uid.startsWith(STORAGE_ROOT) && !NOT_STORAGE.has(uid);
 }
 
-const UNCOMPRESSED: ReadonlySet<string> = new Set<string>([
+const OTHER_TRANSFER_SYNTAXES: ReadonlySet<string> = new Set<string>([
   TransferSyntax.ImplicitVRLittleEndian,
   TransferSyntax.ExplicitVRLittleEndian,
   TransferSyntax.ExplicitVRBigEndian,
   TransferSyntax.DeflatedExplicitVRLittleEndian,
+  TransferSyntax.RleLossless,
+  '1.2.840.10008.1.2.1.98', // Encapsulated Uncompressed
+  '1.2.840.10008.1.2.8.1', // Deflated Image Frame Compression
 ]);
 
 /** Where DICOM puts its image and video codecs, and the two (JPIP) whose pixel data is only a URL: stored, there would be no image. */
@@ -69,7 +75,7 @@ const CODEC_ROOT = '1.2.840.10008.1.2.4.';
 const JPIP: ReadonlySet<string> = new Set(['1.2.840.10008.1.2.4.94', '1.2.840.10008.1.2.4.95', '1.2.840.10008.1.2.4.204', '1.2.840.10008.1.2.4.205']);
 
 function isAcceptedTransferSyntax(uid: string): boolean {
-  return UNCOMPRESSED.has(uid) || uid === TransferSyntax.RleLossless || (uid.startsWith(CODEC_ROOT) && !JPIP.has(uid));
+  return OTHER_TRANSFER_SYNTAXES.has(uid) || (uid.startsWith(CODEC_ROOT) && !JPIP.has(uid));
 }
 
 function negotiatePresentationContexts(association: AssociationType): void {
@@ -261,8 +267,9 @@ class DimseReceiver implements DcmtkReceiver {
       }
 
       async finish(): Promise<void> {
-        await Promise.allSettled(this.storing);
+        // Before the wait: a sender that hangs up during it closes the connection itself.
         const closed = new Promise<void>((resolve) => { this.on('close', () => { resolve(); }); });
+        await Promise.allSettled(this.storing);
         this.sendAbort(AbortSource.ServiceUser, AbortReason.NotSpecified);
         // Ends the socket once what was written has gone out.
         this.close();
@@ -380,8 +387,13 @@ class DimseReceiver implements DcmtkReceiver {
     this.stopping = true;
     // A sender whose image was taken is told so before its association is cut off.
     await settleWithin(Promise.allSettled([...this.associations].map((association) => association.finish())), ANSWERS_END_MS);
+    await this.halt();
+  }
+
+  async halt(): Promise<void> {
+    this.stopping = true;
+    this.server?.close();
     this.server = null;
-    server.close();
   }
 }
 
