@@ -1,6 +1,7 @@
 import type { Result } from '@galvanigraph/core-util';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
-import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler } from '../pipeline/message-processor.js';
+import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler, StoreFailure } from '../pipeline/message-processor.js';
+import { reportUnsaved } from '../pipeline/report-unsaved.js';
 import { sendFailureReason } from '../pipeline/send-failure.js';
 import { parseStoredVariables } from '../pipeline/stored-variables.js';
 
@@ -25,6 +26,8 @@ export interface QueueConsumerConfig {
   readonly pollIntervalMs: number;
   /** Raised when a queued message is given up on (final ERROR), same as pipeline destination errors. */
   readonly onError?: AlertEventHandler | undefined;
+  /** For the log: a store write for one message that failed, whether or not it raises an alert too. */
+  readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
   /**
    * Called once a delivery leaves the whole message delivered (every connector
    * SENT or FILTERED, per `MessageStore.isFullyDelivered`), with the raw
@@ -43,6 +46,12 @@ interface QueuedMessage {
 
 /** RETRY_LATER: it failed and is back on the queue. HALTED: a halt ended its send, and it is back on the queue. */
 type Outcome = 'DONE' | 'RETRY_LATER' | 'HALTED';
+
+const STATUS_OF = {
+  SENT: 'the SENT status of a delivered destination',
+  ERROR: 'the ERROR status of a failed destination',
+  QUEUED: 'the QUEUED status of a destination',
+} as const;
 
 export class QueueConsumer {
   private readonly config: QueueConsumerConfig;
@@ -147,7 +156,7 @@ export class QueueConsumer {
   /** Without counting an attempt: none was made, or a halt ended it. */
   private async putBack(messages: readonly QueuedMessage[]): Promise<void> {
     for (const msg of messages) {
-      const released = await this.store.release(this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED');
+      const released = await this.saved(msg, STATUS_OF.QUEUED, this.store.release(this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED'));
       if (!released.ok) await this.reportUnrecorded(msg, 'QUEUED', released.error.message);
     }
   }
@@ -244,15 +253,14 @@ export class QueueConsumer {
 
     // Keep the latest reason with the message, so the message browser says why
     // it is still queued.
-    const reasonStored = await this.store.storeContent(this.config.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR, reason, 'TEXT');
-    if (!reasonStored.ok) await this.alertOnce(`Queued destination ${String(msg.metaDataId)} could not save why message ${String(msg.messageId)} failed: ${reasonStored.error.message}`);
+    await this.storeReason(msg, reason);
 
     // Re-queue for retry. Transitioning back to QUEUED persists an incremented
     // send_attempts (see MessageService.updateConnectorMessageStatus), which the
     // retry cap above counts.
-    const requeued = await this.store.updateConnectorMessageStatus(
+    const requeued = await this.saved(msg, STATUS_OF.QUEUED, this.store.updateConnectorMessageStatus(
       this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED',
-    );
+    ));
     if (!requeued.ok) await this.reportUnrecorded(msg, 'QUEUED', requeued.error.message);
     return 'RETRY_LATER';
   }
@@ -261,24 +269,32 @@ export class QueueConsumer {
     const { channelId, serverId } = this.config;
     // Keep the destination's response, as the direct-send path does, so the
     // message browser shows it for queued deliveries too.
-    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT');
-    if (!stored.ok) await this.reportUnrecorded(msg, 'response content', stored.error.message);
+    const stored = await this.saved(msg, 'the response of a delivered destination',
+      this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT'));
     // An earlier attempt left why it failed; a delivered message must not show it.
-    if (this.store.removeContent) {
-      const cleared = await this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR);
-      if (!cleared.ok) {
-        await this.alert(
-          `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but the reason an ` +
-          `earlier attempt failed could not be removed: ${cleared.error.message}. The message still shows it.`,
-        );
-      }
-    }
-    const released = await this.store.release(channelId, msg.messageId, msg.metaDataId, 'SENT');
+    const cleared = this.store.removeContent
+      ? await this.saved(msg, 'the removal of why an earlier attempt failed',
+        this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR))
+      : undefined;
+    const released = await this.saved(msg, STATUS_OF.SENT, this.store.release(channelId, msg.messageId, msg.metaDataId, 'SENT'));
     if (!released.ok) {
       await this.reportUnrecorded(msg, 'SENT', released.error.message);
       return;
     }
-    await this.store.incrementStats(channelId, msg.metaDataId, serverId, 'sent');
+    // Not before: they would use up the alert that says the message is sent again.
+    if (!stored.ok) {
+      await this.alert(
+        `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but its response could not be saved: ` +
+        `${stored.error.message}. A response the message shows is from an earlier attempt.`,
+      );
+    }
+    if (cleared && !cleared.ok) {
+      await this.alert(
+        `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but the reason an ` +
+        `earlier attempt failed could not be removed: ${cleared.error.message}. The message still shows it.`,
+      );
+    }
+    await this.saved(msg, 'the count of a delivered destination', this.store.incrementStats(channelId, msg.metaDataId, serverId, 'sent'));
     // Before the content goes: the source needs the raw content it dispatched.
     await this.notifyDelivered(msg);
     await this.removeDeliveredContent(msg);
@@ -315,7 +331,8 @@ export class QueueConsumer {
   /** Apply the channel's remove-content-on-completion setting now that this delivery is done. */
   private async removeDeliveredContent(msg: QueuedMessage): Promise<void> {
     if (!this.store.removeContentIfDelivered) return;
-    const removed = await this.store.removeContentIfDelivered(this.config.channelId, msg.messageId);
+    const removed = await this.saved(msg, 'the removal of the content of a completed message',
+      this.store.removeContentIfDelivered(this.config.channelId, msg.messageId));
     if (removed.ok) return;
     await this.alert(
       `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)} but its stored ` +
@@ -329,6 +346,15 @@ export class QueueConsumer {
       `Queued destination ${String(msg.metaDataId)} could not save ${what} for message ` +
       `${String(msg.messageId)}: ${cause}. It stays PENDING and is re-queued on the next deploy.`,
     );
+  }
+
+  private async saved(msg: QueuedMessage, what: string, write: Promise<Result<void>>): Promise<Result<void>> {
+    await reportUnsaved([write], { channelId: this.config.channelId, messageId: msg.messageId, metaDataId: msg.metaDataId, what }, this.config.onStoreFailure);
+    return write;
+  }
+
+  private storeReason(msg: QueuedMessage, reason: string): Promise<Result<void>> {
+    return this.saved(msg, 'why a destination failed', this.store.storeContent(this.config.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR, reason, 'TEXT'));
   }
 
   private async alertOnce(errorMessage: string): Promise<void> {
@@ -350,14 +376,13 @@ export class QueueConsumer {
   /** Keeps the reason and alerts, so a message the queue gives up on is never silently dropped. */
   private async giveUp(msg: QueuedMessage, reason: string): Promise<void> {
     const { channelId, serverId } = this.config;
-    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR, reason, 'TEXT');
-    if (!stored.ok) await this.reportUnrecorded(msg, 'the error reason', stored.error.message);
-    const released = await this.store.release(channelId, msg.messageId, msg.metaDataId, 'ERROR');
+    await this.storeReason(msg, reason);
+    const released = await this.saved(msg, STATUS_OF.ERROR, this.store.release(channelId, msg.messageId, msg.metaDataId, 'ERROR'));
     if (!released.ok) {
       await this.reportUnrecorded(msg, `ERROR (${reason})`, released.error.message);
       return;
     }
-    await this.store.incrementStats(channelId, msg.metaDataId, serverId, 'errored');
+    await this.saved(msg, 'the count of a failed destination', this.store.incrementStats(channelId, msg.metaDataId, serverId, 'errored'));
     await this.alert(`Queued destination ${String(msg.metaDataId)} gave up on message ${String(msg.messageId)}: ${reason}`);
   }
 }
