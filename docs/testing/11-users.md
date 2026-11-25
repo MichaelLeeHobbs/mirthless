@@ -51,5 +51,6 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 20 | Password field in edit | Open edit dialog for user | Password field available | |
+| 20 | Password field in edit | Open the edit dialog for another user | Password field available | |
 | 21 | Change password | Enter new password, submit | Password updated, user can login with new password | |
+| 22 | No password field for yourself | Open the edit dialog for your own account | No password field; the text points to Change Password in the account menu | |

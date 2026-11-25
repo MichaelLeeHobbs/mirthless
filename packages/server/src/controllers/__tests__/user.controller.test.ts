@@ -39,13 +39,22 @@ describe('UserController password changes', () => {
     expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Current password is incorrect' } });
   });
 
-  it('answers a change to another user\'s password without rights with 403', async () => {
-    mockService.changePassword.mockResolvedValue({ ok: false, value: null, error: new ServiceError('FORBIDDEN', 'Cannot change another user\'s password') });
+  it('answers a reset of a user outside the caller\'s access with 403', async () => {
+    mockService.changePassword.mockResolvedValue({ ok: false, value: null, error: new ServiceError('FORBIDDEN', 'You can only manage users whose access is within your own') });
     const res = makeRes();
 
     await UserController.changePassword(makeReq({ newPassword: 'N3w-password!' }), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('answers a reset of the caller\'s own password with 400', async () => {
+    mockService.changePassword.mockResolvedValue({ ok: false, value: null, error: new ServiceError('SELF_ACTION', 'Use Change Password') });
+    const res = makeRes();
+
+    await UserController.changePassword(makeReq({ newPassword: 'N3w-password!' }), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('returns 204 when the password is changed', async () => {

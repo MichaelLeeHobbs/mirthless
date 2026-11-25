@@ -36,7 +36,9 @@ const PAGES = {
   traffic: '/messages',
   alerts: '/alerts',
   users: '/users',
-  'user-edit-role': { url: '/users', click: 'Edit user' },
+  // The first row is u1: someone else's account, then your own, which has no password field.
+  'user-edit-role': { url: '/users', click: 'Edit user', user: { id: 'u9' } },
+  'user-edit-self': { url: '/users', click: 'Edit user' },
   // A scoped user whose temporary access ends in half an hour: the banner, and My access.
   'my-access': {
     url: '/',
