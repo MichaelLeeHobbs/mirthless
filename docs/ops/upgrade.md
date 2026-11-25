@@ -421,6 +421,12 @@ The editor no longer shows the Listener's pool sizes or the Sender's mode and ma
 
 Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that can't be restored. Take a new backup with `docker/backup.sh`, change any cron job or script that runs `pg_dump` through `docker exec -t`, and [repair the dumps you still need](backup-restore.md#dumps-taken-with-docker-exec--t).
 
+## Backups carry a code template's language, and the server gets time to stop (#419)
+
+A server backup left out whether a code template is JavaScript or TypeScript, so a TypeScript template restored onto another server became JavaScript, which is not type-checked. If you restored a backup like that, set those templates back to TypeScript. Take a new backup after the upgrade: one made before it restores a template the server does not have as JavaScript.
+
+The production compose file now gives the server 45 seconds to stop (`stop_grace_period`). Docker's default of 10 cut off the 30 it uses to let the messages under way end. Add it to a compose file of your own. The container from before the upgrade still has the old limit, so stop it yourself before step 3 of the [upgrade](#standard-upgrade-docker): `docker compose -f docker/docker-compose.prod.yml stop -t 45 server`.
+
 ## Alert email signs in over TLS only (#358)
 
 With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
@@ -469,7 +475,7 @@ The migration builds the index of waiting messages again, which reads the whole 
 
 - A destination that is switched off no longer sends what is on its queue. Switch it on, or let its queue empty first, if it should be sent.
 - Messages that wait for a destination that is switched off, has its queue off or was removed, or that are not known to be for the one with their number, are reported at the first start, also those left there long ago. Nothing is sent or deleted. Look for `QUEUE_HELD` on the Events page.
-- `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
+- `PUT /api/v1/channels/:id` needs the `id` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
 - An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
 
 ## File and SFTP: temporary names, moves and changed files (#412)
@@ -540,11 +546,35 @@ A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans an
 - The global and the channel preprocessor now run on a message that its data type cannot read, so they can repair it. It was refused before they ran. One that ends in ERROR as before has now been through them: check what your preprocessors do beside changing the message (a `dbQuery`, a `routeMessage`, a counter), and that they take `msg` as text ([scripting](../user/scripting-api.md#what-a-script-returns)). The sender of a message that is not repaired gets the same error as before.
 - A server that stops undeploys its channels at once instead of one after another, so undeploy scripts of different channels can run at the same time.
 
-## Backups carry a code template's language, and the server gets time to stop (#419)
+## Updates keep what the request leaves out (#400)
 
-A server backup left out whether a code template is JavaScript or TypeScript, so a TypeScript template restored onto another server became JavaScript, which is not type-checked. If you restored a backup like that, set those templates back to TypeScript. Take a new backup after the upgrade: one made before it restores a template the server does not have as JavaScript.
+`PUT` on a channel, an alert or a setting put each field the request left out back to its default, without a word. What is left out now stays as it is (D-360). The web UI sends every field, so this concerns scripts that call the API. Check what such a script saved:
 
-The production compose file now gives the server 45 seconds to stop (`stop_grace_period`). Docker's default of 10 cut off the 30 it uses to let the messages under way end. Add it to a compose file of your own. The container from before the upgrade still has the old limit, so stop it yourself before step 3 below: `docker compose -f docker/docker-compose.prod.yml stop -t 45 server`.
+- A channel: `enabled`, `description` and `responseMode`; with `properties` in the request, all of them, such as `encryptData` (off), `messageStorageMode` (`DEVELOPMENT`) and `pruningEnabled` (off); with `scripts`, the scripts that were left out (emptied); with `destinations`, `filters` or `transformers`, what was left out of each, such as the queue settings and the `enabled` of a rule or step (on). **History** in the channel editor compares one save with another, but has nothing from before a channel's first save. This lists the channels that are not encrypted at rest:
+
+  ```sql
+  SELECT name FROM channels WHERE deleted_at IS NULL AND NOT encrypt_data;
+  ```
+
+- An alert: without its `actions` it told nobody, without its `channelIds` it watched every channel, and without `enabled` it was switched on. Its description, its templates and its limits (`reAlertIntervalMs`, `maxAlerts`) were cleared. This lists the alerts without an action:
+
+  ```sql
+  SELECT name FROM alerts a WHERE NOT EXISTS (SELECT 1 FROM alert_actions x WHERE x.alert_id = a.id);
+  ```
+
+- A setting: without its `type` it became a `string`, without its `category` it moved to `general`, and without its `description` it lost that. A password whose key is not named like a secret was then shown to whoever may read settings. This lists the settings saved without a type and a description:
+
+  ```sql
+  SELECT key FROM system_settings WHERE type = 'string' AND description IS NULL;
+  ```
+
+A script that counted on the defaults must send them. These now get a 400:
+
+- `PUT /api/v1/channels/:id` with a filter, transformer, rule, step or metadata column that is not whole ([Change a channel](api-automation.md#change-a-channel)).
+- `PUT /api/v1/settings/:key` and `/settings/bulk` without the `value`, or with the mask a read shows for a password, which was stored in place of the password.
+- `PUT /api/v1/alerts/:id` with a `CHANNEL_ERROR` trigger without its `regex` (null for none).
+
+A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
 ## Standard upgrade (Docker)
 
