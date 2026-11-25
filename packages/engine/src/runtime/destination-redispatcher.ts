@@ -12,16 +12,19 @@ import type {
 import { reportUnsaved } from '../pipeline/report-unsaved.js';
 import { sendFailureReason } from '../pipeline/send-failure.js';
 import { parseStoredVariables } from '../pipeline/stored-variables.js';
+import type { ConnectorMessageRecord } from './recovery-manager.js';
 
 const SEND_TIMEOUT_MS = 30_000;
 
-const NOTHING_TO_SEND = 'Not sent after a server stop: nothing is stored to send. The server stopped before this destination ran, '
+const NOTHING_TO_SEND = 'nothing is stored to send. The server stopped before this destination ran, '
   + "or the channel's storage mode does not keep what is sent and it may have been delivered. Reprocess the message to deliver it.";
 
+const MAY_BE_DELIVERED = 'It may have been delivered: check before you reprocess the message.';
+
 function variablesNotKept(names: readonly string[]): string {
-  return `Not sent again after a server stop: this destination uses the message's variables (${names.join(', ')}), and they are kept only `
-    + 'for a destination that queues. It may have been delivered: check before you reprocess the message.';
+  return `this destination uses the message's variables (${names.join(', ')}), and they are kept only for a destination that queues. ${MAY_BE_DELIVERED}`;
 }
+
 
 /** How it ended, as recorded. A QUEUED one is the queue consumer's from then on. */
 export type RedispatchOutcome = 'SENT' | 'QUEUED' | 'ERROR';
@@ -31,12 +34,15 @@ export interface RedispatchConfig {
   readonly serverId: string;
   readonly store: MessageStore;
   readonly send: SendToDestination;
-  readonly queueMode: (metaDataId: number) => DestinationConfig['queueMode'];
+  /** As deployed now. */
+  readonly destinations: readonly DestinationConfig[];
   readonly variablesUsed: VariablesUsed;
   /** Nothing is sent or queued once it is aborted. */
   readonly runSignal: AbortSignal;
   readonly haltSignal: AbortSignal;
   readonly onError: AlertEventHandler;
+  /** For the log. The reason is null when it came from the partner. */
+  readonly onFailed: (messageId: number, metaDataId: number, reason: string | null) => void;
   readonly onStoreFailure: (failure: StoreFailure) => void;
 }
 
@@ -49,31 +55,41 @@ export class DestinationRedispatcher {
   }
 
   /** Not ok when the destination was left as it was, for a later recovery. */
-  async redispatch(messageId: number, metaDataId: number): Promise<Result<RedispatchOutcome>> {
+  async redispatch({ messageId, metaDataId, connectorName }: ConnectorMessageRecord): Promise<Result<RedispatchOutcome>> {
     return tryCatch(async () => {
+      const destination = this.destinationFor(metaDataId, connectorName);
+      if (typeof destination === 'string') return this.refuse(messageId, metaDataId, destination);
+
       const content = await this.load(messageId, metaDataId, CONTENT_TYPE.SENT);
-      if (content === null) return this.fail(messageId, metaDataId, CONTENT_TYPE.PROCESSING_ERROR, NOTHING_TO_SEND);
+      if (content === null) return this.refuse(messageId, metaDataId, NOTHING_TO_SEND);
 
       const variables = parseStoredVariables(await this.load(messageId, metaDataId, CONTENT_TYPE.CHANNEL_MAP));
-      if (variables === 'INVALID') {
-        return this.fail(messageId, metaDataId, CONTENT_TYPE.PROCESSING_ERROR, 'Not sent after a server stop: the variables stored for it are not a JSON object');
-      }
+      if (variables === 'INVALID') return this.refuse(messageId, metaDataId, 'the variables stored for it are not a JSON object');
       // Whatever its queue mode: it may have been changed since the message was routed.
       const missing = variables ? [] : this.config.variablesUsed(metaDataId, messageId, content);
-      if (missing.length > 0) return this.fail(messageId, metaDataId, CONTENT_TYPE.PROCESSING_ERROR, variablesNotKept(missing));
+      if (missing.length > 0) return this.refuse(messageId, metaDataId, variablesNotKept(missing));
 
-      return this.deliver(messageId, metaDataId, content, variables);
+      return this.deliver(messageId, destination, content, variables);
     });
+  }
+
+  /** Or why there is none to send to. A save numbers the destinations anew, so another can have its number. */
+  private destinationFor(metaDataId: number, preparedFor: string | null): DestinationConfig | string {
+    const now = this.config.destinations.find((d) => d.metaDataId === metaDataId);
+    if (!now) return `the channel no longer has the destination it was prepared for. ${MAY_BE_DELIVERED}`;
+    if (preparedFor !== null && preparedFor !== now.name) {
+      return `it was prepared for the destination "${preparedFor}", and this is now "${now.name}". ${MAY_BE_DELIVERED}`;
+    }
+    return now.enabled ? now : `this destination is switched off. ${MAY_BE_DELIVERED}`;
   }
 
   private async deliver(
     messageId: number,
-    metaDataId: number,
+    { metaDataId, queueMode }: DestinationConfig,
     content: string,
     variables: Readonly<Record<string, unknown>> | undefined,
   ): Promise<RedispatchOutcome> {
     const { runSignal, haltSignal } = this.config;
-    const queueMode = this.config.queueMode(metaDataId);
     if (runSignal.aborted) throw new Error('Interrupted: the channel stopped');
     if (queueMode === 'ALWAYS') return this.enqueue(messageId, metaDataId);
 
@@ -114,11 +130,16 @@ export class DestinationRedispatcher {
     return 'SENT';
   }
 
+  private refuse(messageId: number, metaDataId: number, why: string): Promise<RedispatchOutcome> {
+    return this.fail(messageId, metaDataId, CONTENT_TYPE.PROCESSING_ERROR, `Not sent after a server stop: ${why}`);
+  }
+
   private async fail(messageId: number, metaDataId: number, contentType: ContentType, reason: string): Promise<RedispatchOutcome> {
     const { channelId, serverId, store } = this.config;
     await this.storeReason(messageId, metaDataId, contentType, reason);
     const failed = await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, 'ERROR');
     if (!failed.ok) throw failed.error;
+    this.config.onFailed(messageId, metaDataId, contentType === CONTENT_TYPE.ERROR ? null : reason);
     await this.saved(messageId, metaDataId, 'the count of a failed destination', [store.incrementStats(channelId, metaDataId, serverId, 'errored')]);
     await this.config.onError({
       channelId,

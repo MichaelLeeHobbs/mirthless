@@ -10,6 +10,8 @@ export interface ConnectorMessageRecord {
   readonly messageId: number;
   readonly metaDataId: number;
   readonly status: string;
+  /** Its name when the message was routed. */
+  readonly connectorName: string | null;
 }
 
 export interface RecoveryStore {
@@ -31,7 +33,7 @@ export interface RecoveryStore {
 export type ReprocessSourceFn = (channelId: string, messageId: number) => Promise<Result<void>>;
 
 /** Not ok when the destination was left as it was, for a later recovery. */
-export type RedispatchDestinationFn = (channelId: string, messageId: number, metaDataId: number) => Promise<Result<RedispatchOutcome>>;
+export type RedispatchDestinationFn = (channelId: string, destination: ConnectorMessageRecord) => Promise<Result<RedispatchOutcome>>;
 
 export interface RecoveryResult {
   readonly recovered: number;
@@ -130,7 +132,7 @@ export class RecoveryManager {
         skipped++;
         continue;
       }
-      const result = await this.redispatchDestination(channelId, messageId, conn.metaDataId);
+      const result = await this.redispatchDestination(channelId, conn);
       if (!result.ok) complete = false;
       if (!result.ok || result.value === 'ERROR') errors++;
       else recovered = 1;

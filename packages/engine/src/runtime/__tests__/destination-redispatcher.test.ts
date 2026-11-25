@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { DestinationRedispatcher, type RedispatchConfig } from '../destination-redispatcher.js';
-import type { MessageStore } from '../../pipeline/message-processor.js';
+import type { DestinationConfig, MessageStore } from '../../pipeline/message-processor.js';
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const DESTINATION = 2;
@@ -32,6 +32,7 @@ const store = {
 const send = vi.fn();
 const variablesUsed = vi.fn();
 const onError = vi.fn();
+const onFailed = vi.fn();
 const onStoreFailure = vi.fn();
 let run = new AbortController();
 let halt = new AbortController();
@@ -48,11 +49,19 @@ beforeEach(() => {
   halt = new AbortController();
 });
 
-function redispatch(queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS' = 'NEVER', overrides: Partial<RedispatchConfig> = {}): ReturnType<DestinationRedispatcher['redispatch']> {
+function partner(overrides: Partial<DestinationConfig> = {}): DestinationConfig {
+  return { metaDataId: DESTINATION, name: 'Lab', enabled: true, scripts: {}, queueMode: 'NEVER', ...overrides };
+}
+
+function redispatch(
+  queueMode: DestinationConfig['queueMode'] = 'NEVER',
+  overrides: Partial<RedispatchConfig> = {},
+  connectorName: string | null = 'Lab',
+): ReturnType<DestinationRedispatcher['redispatch']> {
   return new DestinationRedispatcher({
-    channelId: CHANNEL_ID, serverId: 'server-01', store, send, queueMode: () => queueMode, variablesUsed,
-    runSignal: run.signal, haltSignal: halt.signal, onError, onStoreFailure, ...overrides,
-  }).redispatch(7, DESTINATION);
+    channelId: CHANNEL_ID, serverId: 'server-01', store, send, destinations: [partner({ metaDataId: 1, name: 'Other' }), partner({ queueMode })], variablesUsed,
+    runSignal: run.signal, haltSignal: halt.signal, onError, onFailed, onStoreFailure, ...overrides,
+  }).redispatch({ messageId: 7, metaDataId: DESTINATION, status: 'RECEIVED', connectorName });
 }
 
 const statuses = (): unknown[] => store.updateConnectorMessageStatus.mock.calls.map((c: unknown[]) => c.slice(1, 4));
@@ -87,6 +96,29 @@ describe('DestinationRedispatcher', () => {
     });
   });
 
+  describe('the destination it was prepared for', () => {
+    it.each([
+      ['is another one now', [partner({ name: 'Clinic' })], 'it was prepared for the destination "Lab", and this is now "Clinic"'],
+      ['is gone', [partner({ metaDataId: 1 })], 'no longer has the destination'],
+      ['is switched off', [partner({ enabled: false })], 'switched off'],
+    ])('%s: nothing is sent or queued, and it says why', async (_what, destinations, why) => {
+      for (const queueMode of ['NEVER', 'ALWAYS'] as const) {
+        vi.clearAllMocks();
+        expect(await redispatch(queueMode, { destinations: destinations.map((d) => ({ ...d, queueMode })) })).toMatchObject({ ok: true, value: 'ERROR' });
+
+        expect(send).not.toHaveBeenCalled();
+        expect(store.enqueue).not.toHaveBeenCalled();
+        expect(statuses()).toEqual([[7, DESTINATION, 'ERROR']]);
+        expect(kept()).toEqual([[CONTENT_TYPE.PROCESSING_ERROR, expect.stringContaining(why)]]);
+        expect(onError).toHaveBeenCalledOnce();
+      }
+    });
+
+    it('has no name on record: it goes by the number', async () => {
+      expect(await redispatch('NEVER', {}, null)).toMatchObject({ ok: true, value: 'SENT' });
+    });
+  });
+
   describe('the variables of the message', () => {
     it.each(['NEVER', 'ON_FAILURE'] as const)('are sent as they were stored, under queue mode %s', async (queueMode) => {
       contents.set(CONTENT_TYPE.CHANNEL_MAP, '{"mrn":"123","dob":null}');
@@ -116,6 +148,7 @@ describe('DestinationRedispatcher', () => {
       expect(store.enqueue).not.toHaveBeenCalled();
       expect(statuses()).toEqual([[7, DESTINATION, 'ERROR']]);
       expect(kept()).toEqual([[CONTENT_TYPE.PROCESSING_ERROR, expect.stringContaining('variables (mrn)')]]);
+      expect(onFailed).toHaveBeenCalledExactlyOnceWith(7, DESTINATION, expect.stringContaining('variables (mrn)'));
       expect(store.incrementStats).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, DESTINATION, 'server-01', 'errored');
     });
 
@@ -161,6 +194,7 @@ describe('DestinationRedispatcher', () => {
       expect(await redispatch('NEVER')).toMatchObject({ ok: true, value: 'ERROR' });
 
       expect(kept()).toEqual(expected);
+      expect(onFailed).toHaveBeenCalledExactlyOnceWith(7, DESTINATION, null);
       expect(statuses()).toEqual([[7, DESTINATION, 'ERROR']]);
       expect(store.incrementStats).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, DESTINATION, 'server-01', 'errored');
       expect(onError).toHaveBeenCalledExactlyOnceWith({
@@ -177,6 +211,7 @@ describe('DestinationRedispatcher', () => {
       expect(statuses()).toEqual([]);
       expect(store.incrementStats).not.toHaveBeenCalled();
       expect(onError).not.toHaveBeenCalled();
+      expect(onFailed).not.toHaveBeenCalled();
     });
   });
 

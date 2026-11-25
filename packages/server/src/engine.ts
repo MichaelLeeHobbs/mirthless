@@ -77,6 +77,7 @@ interface ChannelRecovery {
   readonly store: MessageStore;
   readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
   readonly sendFn: SendToDestination;
+  readonly destinations: readonly DestinationConfig[];
   readonly variablesUsed: VariablesUsed;
   readonly raiseAlert: AlertEventHandler;
   readonly horizon: Result<number>;
@@ -780,10 +781,12 @@ export class EngineManager {
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
       }
+      // As the pipeline sends them: an empty set, which the queue and recovery read from the store, is none.
+      const sent = variables && Object.keys(variables).length > 0 ? variables : undefined;
       // Connectors apply their own configured timeouts; this is the backstop
       // that keeps a send from hanging forever if one does not.
       return connector.send(
-        { ...messageFor(metaDataId, messageId, content), correlationId, variables },
+        { ...messageFor(metaDataId, messageId, content), correlationId, variables: sent },
         AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]),
       );
     };
@@ -893,9 +896,9 @@ export class EngineManager {
     const recoverOnce = (): Promise<void> => {
       const { runSignal, haltSignal } = runtime;
       const run = async (): Promise<void> => {
-        if (recovered || !(await this.earlierWorkEnds(channel.id, earlierWork, runSignal))) return;
+        if (recovered || !(await this.earlierWorkEnds(channel.id, earlierWork, { runSignal, raiseAlert }))) return;
         recovered = await this.recoverChannel({
-          channel, store, processMessage, sendFn, variablesUsed, raiseAlert, horizon: recoveryHorizon, runSignal, haltSignal,
+          channel, store, processMessage, sendFn, destinations: destConfigs, variablesUsed, raiseAlert, horizon: recoveryHorizon, runSignal, haltSignal,
         });
       };
       // An interrupted one may still be ending its sends.
@@ -919,15 +922,21 @@ export class EngineManager {
 
   /**
    * A message that an earlier deployment is still working on is unprocessed too, and recovering it
-   * would send it twice. False when it has not ended: recovery is then for the next start.
+   * would send it twice. False when the channel began to stop first: recovery is then for the next start.
    */
-  private async earlierWorkEnds(channelId: string, earlierWork: readonly Promise<void>[], runSignal: AbortSignal): Promise<boolean> {
+  private async earlierWorkEnds(
+    channelId: string,
+    earlierWork: readonly Promise<void>[],
+    { runSignal, raiseAlert }: Pick<ChannelRecovery, 'runSignal' | 'raiseAlert'>,
+  ): Promise<boolean> {
     if (earlierWork.length === 0) return true;
-    const ended = await settleWithin(Promise.all(earlierWork), SEND_BACKSTOP_MS, runSignal);
-    if (!ended && !runSignal.aborted) {
-      logger.error({ channelId }, 'Channel recovery put off to the next start: an earlier deployment is still sending a message that could not be cancelled');
+    while (!(await settleWithin(Promise.all(earlierWork), SEND_BACKSTOP_MS, runSignal))) {
+      if (runSignal.aborted) return false;
+      const errorMessage = 'Crash recovery is waiting: an earlier deployment of the channel is still sending a message that could not be cancelled. If that never ends, restart the server';
+      logger.error({ channelId }, errorMessage);
+      await raiseAlert({ channelId, errorType: 'DESTINATION_CONNECTOR', errorMessage, timestamp: Date.now() });
     }
-    return ended;
+    return true;
   }
 
   /**
@@ -1151,13 +1160,11 @@ export class EngineManager {
     };
 
     const redispatcher = this.redispatcherFor(recovery);
-    const redispatchDestination: RedispatchDestinationFn = async (channelId, messageId, metaDataId) => {
-      const result = await redispatcher.redispatch(messageId, metaDataId);
-      const record = { channelId, messageId, metaDataId };
-      if (result.ok && result.value === 'ERROR') {
-        logger.error(record, 'Crash recovery could not deliver a message and marked the destination ERROR; the message says why');
-      } else if (!result.ok && !runSignal.aborted) {
-        logger.error({ ...record, errMsg: result.error.message }, 'Crash recovery left a destination as it was; the next deployment recovers it');
+    const redispatchDestination: RedispatchDestinationFn = async (channelId, destination) => {
+      const result = await redispatcher.redispatch(destination);
+      if (!result.ok && !runSignal.aborted) {
+        const { messageId, metaDataId } = destination;
+        logger.error({ channelId, messageId, metaDataId, errMsg: result.error.message }, 'Crash recovery left a destination as it was; the next deployment recovers it');
       }
       return result;
     };
@@ -1177,17 +1184,20 @@ export class EngineManager {
     return !interrupted;
   }
 
-  private redispatcherFor({ channel, store, sendFn, variablesUsed, raiseAlert, runSignal, haltSignal }: ChannelRecovery): DestinationRedispatcher {
+  private redispatcherFor({ channel, store, sendFn, destinations, variablesUsed, raiseAlert, runSignal, haltSignal }: ChannelRecovery): DestinationRedispatcher {
     return new DestinationRedispatcher({
       channelId: channel.id,
       serverId: this.serverId,
       store,
       send: sendFn,
-      queueMode: (metaDataId) => queueModeOf(channel.destinations.find((d) => d.metaDataId === metaDataId)),
+      destinations,
       variablesUsed,
       runSignal,
       haltSignal,
       onError: raiseAlert,
+      onFailed: (messageId, metaDataId, reason) => {
+        logger.error({ channelId: channel.id, messageId, metaDataId, ...(reason === null ? {} : { reason }) }, 'Crash recovery could not deliver a message and marked the destination ERROR');
+      },
       onStoreFailure: logStoreFailure,
     });
   }
@@ -1316,7 +1326,7 @@ export class EngineManager {
         name: d.name,
         enabled: d.enabled,
         scripts: cleanScripts as DestinationScripts,
-        queueMode: queueModeOf(d),
+        queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
         waitForPrevious: d.waitForPrevious,
         ...(template === undefined ? {} : { template }),
       });
@@ -1502,10 +1512,6 @@ function logStoreFailure(failure: StoreFailure): void {
     { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
     'Message store write failed: part of a message status could not be saved',
   );
-}
-
-function queueModeOf(destination: ChannelDetail['destinations'][number] | undefined): DestinationConfig['queueMode'] {
-  return (destination?.queueMode ?? 'NEVER') as DestinationConfig['queueMode'];
 }
 
 interface FilterRuleRow {

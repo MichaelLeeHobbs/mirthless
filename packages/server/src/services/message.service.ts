@@ -406,13 +406,14 @@ export class MessageService {
   static async getConnectorMessages(
     channelId: string,
     messageId: number,
-  ): Promise<Result<readonly { messageId: number; metaDataId: number; status: string }[]>> {
+  ): Promise<Result<readonly { messageId: number; metaDataId: number; status: string; connectorName: string | null }[]>> {
     return tryCatch(async () => {
       const rows = await db
         .select({
           messageId: connectorMessages.messageId,
           metaDataId: connectorMessages.metaDataId,
           status: connectorMessages.status,
+          connectorName: connectorMessages.connectorName,
         })
         .from(connectorMessages)
         .where(
