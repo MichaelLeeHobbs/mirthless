@@ -114,11 +114,11 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
       return [];
     }
     const messages = normalizeScriptResult(result.value);
-    const items = Array.isArray(result.value) ? result.value.length : messages.length;
+    const items = itemCount(result.value);
     if (items > messages.length) {
       this.logger.warn(
         { items, skipped: items - messages.length },
-        'JavaScript source script returned an array with empty, null or undefined items, which hold no message; skipped',
+        'JavaScript source script returned items that hold no message; skipped (empty text, null, true or false in an array, or an object without data, which is also what a promise becomes that was not awaited)',
       );
     }
     return messages;
@@ -139,15 +139,22 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
 }
 
 export function normalizeScriptResult(value: unknown): readonly string[] {
-  const items: readonly unknown[] = Array.isArray(value) ? value : [value];
+  // `cond && text` leaves a boolean in an array where there is no message.
+  const items = Array.isArray(value) ? value.filter((item) => typeof item !== 'boolean') : [value];
   return items.map(messageText).filter((text) => text !== '');
+}
+
+/** A single null, undefined or empty text is how a script says that it has nothing to send. */
+function itemCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  return value === null || value === undefined || value === '' ? 0 : 1;
 }
 
 /** '' when the item holds no message. */
 function messageText(item: unknown): string {
   if (item === null || item === undefined) return '';
   if (typeof item !== 'object' || isMessageObject(item)) return String(item);
-  return JSON.stringify(item);
+  return Object.keys(item).length === 0 ? '' : JSON.stringify(item);
 }
 
 /** A result leaves the sandbox as JSON data, except a parsed message, whose text its own `toString` gives. */

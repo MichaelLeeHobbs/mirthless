@@ -63,6 +63,7 @@ describe('JavaScript source connector (a polling script generates messages)', ()
     ['an array of text, objects and parsed messages', "const m = parseHL7('MSH|^~\\\\&|A|B'); return ['text', { id: 7 }, 42, m, null];", ['text', '{"id":7}', '42', 'MSH|^~\\&|A|B']],
     ['a parsed message', "return parseHL7('MSH|^~\\\\&|A|B');", ['MSH|^~\\&|A|B']],
     ['an object', 'return { id: 7 };', ['{"id":7}']],
+    ['promises nobody awaited, beside a message', "return [Promise.resolve('lost'), 'kept'];", ['kept']],
   ])('sends every item a real sandbox hands back: %s (#415)', async (_name, script, expected) => {
     const compiled = await compile(script);
     const source = new JavaScriptReceiver({ script: 'ignored', pollingIntervalMs: 100 });

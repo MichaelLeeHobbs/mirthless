@@ -28,6 +28,17 @@ describe('custom framing', () => {
     expect(parser.parse(Buffer.from([0x0b, 0x58, 0x1c, 0x0d]))).toEqual(['X']);
   });
 
+  it('finds a long end wherever the stream is cut', () => {
+    const framing = framingFromHex('0B', '0D0A0D0A');
+    const stream = Buffer.concat(['one', 'two\r\n\rx', 'three'].map((text) => wrapMllp(text, 'utf-8', framing)));
+    for (let size = 1; size <= stream.length; size++) {
+      const parser = new MllpParser({ framing });
+      const out: string[] = [];
+      for (let i = 0; i < stream.length; i += size) out.push(...parser.parse(stream.subarray(i, i + size)));
+      expect(out).toEqual(['one', 'two\r\n\rx', 'three']);
+    }
+  });
+
   it('refuses frame bytes that are not hex pairs, or an empty end', () => {
     expect(() => framingFromHex('0', '03')).toThrow('hex pairs');
     expect(() => framingFromHex('02', 'ZZ')).toThrow('hex pairs');
@@ -200,6 +211,12 @@ describe('MllpParser DoS guard', () => {
       expect(parseIn(Buffer.concat([exact, exact]), size)).toEqual(['A'.repeat(20), 'A'.repeat(20)]);
       expect(() => parseIn(over, size)).toThrow(/maximum size of 20 bytes/);
     }
+  });
+
+  it('gives out nothing of a chunk that holds a frame over the limit, so the sender keeps it all', () => {
+    const parser = new MllpParser({ maxFrameBytes: 20 });
+    expect(() => parser.parse(Buffer.concat([wrapMllp('OK'), wrapMllp('A'.repeat(21))]))).toThrow(/maximum size/);
+    expect(parser.parse(wrapMllp('NEXT'))).toEqual(['NEXT']);
   });
 
   it('does not count bytes between frames, which it drops', () => {

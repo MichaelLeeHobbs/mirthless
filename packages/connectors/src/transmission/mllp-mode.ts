@@ -125,7 +125,7 @@ export class MllpParser {
     const keep = this.framing.end.length - 1;
     if (keep === 0) return;
     const joined = chunk.length >= keep ? chunk : Buffer.concat([this.tail, chunk]);
-    this.tail = Buffer.from(joined.subarray(joined.length - keep));
+    this.tail = Buffer.from(joined.subarray(Math.max(0, joined.length - keep)));
   }
 
   /** The index after the start bytes (where the payload begins), not of the start bytes. */

@@ -69,8 +69,17 @@ describe('normalizeScriptResult', () => {
   });
 
   it('makes every array item a message, and skips the ones that hold none (#415)', () => {
-    expect(normalizeScriptResult(['a', 42, 'b', null, '', undefined, false, { id: 7 }, ['x', 'y']]))
-      .toEqual(['a', '42', 'b', 'false', '{"id":7}', '["x","y"]']);
+    expect(normalizeScriptResult(['a', 42, 'b', null, '', undefined, { id: 7 }, ['x', 'y'], 0]))
+      .toEqual(['a', '42', 'b', '{"id":7}', '["x","y"]', '0']);
+  });
+
+  it('skips what is left of a promise, and an item a condition left out', () => {
+    expect(normalizeScriptResult([{}, 'a', [], false, true])).toEqual(['a']);
+    expect(normalizeScriptResult({})).toEqual([]);
+  });
+
+  it('stringifies a boolean that is the whole result', () => {
+    expect(normalizeScriptResult(false)).toEqual(['false']);
   });
 
   it('stringifies a number', () => {
@@ -199,6 +208,18 @@ describe('JavaScriptReceiver poll cycle', () => {
 
     expect(dispatched).toEqual(['secret', '{"id":7}']);
     expect(warnings).toEqual([{ obj: { items: 4, skipped: 2 }, msg: expect.stringContaining('skipped') as string }]);
+  });
+
+  it('says that an object without data, which a promise becomes, was not sent (#415)', async () => {
+    const { logger, warnings } = makeMockLogger();
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }), logger);
+    receiver.setDispatcher(makeDispatcher());
+    receiver.setScriptRunner(makeScriptRunner({}));
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(warnings).toEqual([{ obj: { items: 1, skipped: 1 }, msg: expect.stringContaining('promise') as string }]);
   });
 
   it('logs nothing about items when every one is a message, or there are none', async () => {
