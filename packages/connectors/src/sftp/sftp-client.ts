@@ -1,5 +1,8 @@
 import { createRequire } from 'node:module';
+import { connect, type Socket } from 'node:net';
 import type { Writable } from 'node:stream';
+import { settleWithin } from '@galvanigraph/core-util';
+import { HALT_CLOSE_MS } from '../client-lifecycle.js';
 import type { FileVersion } from '../quarantine-ledger.js';
 
 // The package is ESM, so a bare `require` is undefined at runtime (vitest
@@ -54,8 +57,10 @@ export interface SftpClient {
   mkdir(remoteDirectory: string): Promise<void>;
   /** A link counts as what it points to. */
   pathKind(remotePath: string): Promise<SftpPathKind>;
-  /** Also gives up a connect in progress, which may then never settle. */
+  /** Never fails, and ends in time with the connection gone, whatever the server does. */
   end(): Promise<void>;
+  /** Closes the connection without a word to the server; what is under way on it fails. */
+  destroy(): void;
 }
 
 export type SftpClientFactory = (options: SftpConnectionOptions) => SftpClient;
@@ -112,8 +117,6 @@ export interface Ssh2ClientInstance {
   exists(remotePath: string): Promise<false | string>;
   stat(remotePath: string): Promise<{ readonly isDirectory: boolean; readonly size: number; readonly modifyTime: number }>;
   end(): Promise<boolean>;
-  /** The ssh2 client, which holds the connection. */
-  readonly client: { destroy(): unknown };
 }
 
 /** ssh2-sftp-client's exists() answers 'd', '-', 'l' or false; it uses lstat, so a link is 'l'. */
@@ -212,10 +215,15 @@ function fileChanges(client: Ssh2ClientInstance): FileChanges {
 
 export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnectionOptions): SftpClient {
   const pathKind = makePathKind(client);
+  // Ours, because ssh2 does not destroy one that it has half closed.
+  let socket: Socket | null = null;
   return {
     ...fileChanges(client),
     async connect(): Promise<void> {
-      await client.connect(buildConnectOptions(options));
+      socket = connect({ host: options.host, port: options.port });
+      // ssh2 reports its errors; this is for one that comes before or after.
+      socket.on('error', () => undefined);
+      await client.connect({ ...buildConnectOptions(options), sock: socket });
     },
     async list(remoteDirectory: string): Promise<readonly SftpFileInfo[]> {
       const entries = await client.list(remoteDirectory);
@@ -238,10 +246,11 @@ export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnecti
     },
     pathKind,
     async end(): Promise<void> {
-      await client.end();
-      // While no SFTP session is up the library's end() closes nothing. ssh2's own end()
-      // would leave the socket open until the server closes its side, which a hung one may never do.
-      client.client.destroy();
+      await settleWithin(client.end(), HALT_CLOSE_MS);
+      socket?.destroy();
+    },
+    destroy(): void {
+      socket?.destroy();
     },
   };
 }

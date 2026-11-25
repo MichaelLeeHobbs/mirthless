@@ -31,6 +31,7 @@ async function expectNoConnections(): Promise<void> {
 async function startRelay(): Promise<{ readonly port: number; readonly client: Promise<Socket>; close(): Promise<void> }> {
   const sockets: Socket[] = [];
   let onClient: (socket: Socket) => void = () => undefined;
+  /** The first. */
   const client = new Promise<Socket>((resolve) => { onClient = resolve; });
   const relay = createServer({ allowHalfOpen: true }, (socket) => {
     const upstream = connect({ port: server.options.port, host: '127.0.0.1', allowHalfOpen: true });
@@ -51,9 +52,10 @@ async function startRelay(): Promise<{ readonly port: number; readonly client: P
   };
 }
 
-function makeSource(): SftpReceiver {
+function makeSource(port = server.options.port, seen: string[] = []): SftpReceiver {
   const receiver = new SftpReceiver({
     ...server.options,
+    port,
     remoteDirectory: '/in',
     filePattern: '*',
     pollingIntervalMs: 100,
@@ -62,13 +64,16 @@ function makeSource(): SftpReceiver {
     minFileAgeMs: 0,
     ignoreDot: true,
   });
-  receiver.setDispatcher(async () => ({ ok: true as const, value: { messageId: 1 }, error: null }));
+  receiver.setDispatcher(async (raw) => {
+    seen.push(raw.content);
+    return { ok: true as const, value: { messageId: 1 }, error: null };
+  });
   return receiver;
 }
 
-async function send(signal: AbortSignal): Promise<string> {
+async function send(signal: AbortSignal, port = server.options.port): Promise<string> {
   const dispatcher = new SftpDispatcher({
-    ...server.options, remoteDirectory: '/out', fileNameTemplate: 'a.hl7', appendMode: false, tempFileEnabled: true,
+    ...server.options, port, remoteDirectory: '/out', fileNameTemplate: 'a.hl7', appendMode: false, tempFileEnabled: true,
   });
   expect((await dispatcher.onStart()).ok).toBe(true);
   const result = await dispatcher.send({ channelId: 'ch-1', messageId: 42, metaDataId: 1, content: 'A', dataType: 'HL7V2' }, signal);
@@ -136,6 +141,112 @@ describe('an SFTP server that signs in and never answers the request for SFTP', 
     abort.abort(new Error('SFTP send given up by the test'));
 
     expect(await sending).toContain('given up by the test');
+    await expectNoConnections();
+  });
+});
+
+/** A socket that is only half closed still takes data; one that is gone answers it with a reset. */
+async function expectGone(socket: Socket): Promise<void> {
+  await vi.waitFor(() => {
+    if (!socket.destroyed) socket.write('x');
+    expect(socket.destroyed).toBe(true);
+  }, { timeout: 5_000 });
+}
+
+describe('an SFTP server that does not answer a request or the close (#413)', () => {
+  let relay: Awaited<ReturnType<typeof startRelay>>;
+
+  beforeEach(async () => {
+    relay = await startRelay();
+  });
+
+  afterEach(async () => {
+    await relay.close();
+  });
+
+  it('a send ends when it is given up, and its connection is gone', async () => {
+    let reached = (): void => undefined;
+    const asked = new Promise<void>((resolve) => { reached = resolve; });
+    server.rules.unanswered = () => { reached(); return true; };
+    const abort = new AbortController();
+    const sending = send(abort.signal, relay.port);
+    await asked;
+
+    const before = Date.now();
+    abort.abort(new Error('SFTP send given up by the test'));
+
+    expect(await sending).toContain('given up by the test');
+    expect(Date.now() - before).toBeLessThan(3_000);
+    await expectGone(await relay.client);
+  });
+
+  it('a send that went through is SENT, and its connection is gone', async () => {
+    const before = Date.now();
+    expect(await send(new AbortController().signal, relay.port)).toBe('sent');
+    expect(Date.now() - before).toBeLessThan(6_000);
+    await expectGone(await relay.client);
+  });
+
+  it('a halt of a source ends at once, its connection is gone, and the next start polls', async () => {
+    let reached = (): void => undefined;
+    const asked = new Promise<void>((resolve) => { reached = resolve; });
+    server.put('/in/a.hl7', 'A');
+    const seen: string[] = [];
+    const source = makeSource(relay.port, seen);
+    expect((await source.onStart()).ok).toBe(true);
+    server.rules.unanswered = (request) => { if (request === 'OPENDIR') reached(); return true; };
+    await asked;
+
+    const before = Date.now();
+    expect((await source.onHalt()).ok).toBe(true);
+    expect(Date.now() - before).toBeLessThan(1_000);
+    await expectGone(await relay.client);
+
+    delete server.rules.unanswered;
+    expect((await source.onStart()).ok).toBe(true);
+    await vi.waitFor(() => { expect(seen).toEqual(['A']); }, { timeout: 5_000 });
+    await source.onHalt();
+  });
+
+  it('a stop of a source ends, and its connection is gone', async () => {
+    const source = makeSource(relay.port);
+    expect((await source.onStart()).ok).toBe(true);
+
+    const before = Date.now();
+    expect((await source.onStop()).ok).toBe(true);
+    expect(Date.now() - before).toBeLessThan(5_000);
+    await expectGone(await relay.client);
+  });
+
+  it('a refused host key leaves no connection', async () => {
+    const client = createSsh2SftpClient({ ...server.options, port: relay.port, hostKey: 'another' });
+    await expect(client.connect()).rejects.toThrow();
+    await client.end();
+    await expectGone(await relay.client);
+  });
+});
+
+describe('a halt of an SFTP source while a stop waits for its file', () => {
+  it('ends the stop', async () => {
+    server.put('/in/a.hl7', 'A');
+    let reached = (): void => undefined;
+    const taken = new Promise<void>((resolve) => { reached = resolve; });
+    let letGo = (): void => undefined;
+    const held = new Promise<void>((resolve) => { letGo = resolve; });
+    const source = makeSource();
+    source.setDispatcher(async () => {
+      reached();
+      await held;
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+    await source.onStart();
+    await taken;
+
+    const stopping = source.onStop();
+    await source.onHalt();
+    expect((await stopping).ok).toBe(true);
+    expect(server.connections()).toBe(1);
+    letGo();
     await expectNoConnections();
   });
 });

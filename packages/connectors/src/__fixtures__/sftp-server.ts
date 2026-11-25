@@ -82,6 +82,8 @@ export interface SftpServerRules {
   onRename?: (from: string, to: string) => Promise<void> | void;
   /** Called when a signed-in client asks for the SFTP subsystem, which is then not started: refused, or left unanswered. */
   onSubsystem?: (refuse: () => void) => void;
+  /** Called with each request once SFTP is up; true leaves it unanswered. */
+  unanswered?: (request: string) => boolean;
 }
 
 export interface TestSftpServer {
@@ -124,7 +126,13 @@ class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'close'
     this.files.set(filePath, { data: Buffer.from(content, 'utf8'), mtime: Math.floor(mtimeMs / 1000) });
   }
 
-  serve(stream: SftpStream): void {
+  serve(sftp: SftpStream): void {
+    const stream: Pick<SftpStream, 'on'> & SftpStream = Object.create(sftp) as SftpStream;
+    stream.on = (event, handler): void => {
+      sftp.on(event, (reqId, ...args) => {
+        if (this.rules.unanswered?.(event) !== true) handler(reqId, ...args);
+      });
+    };
     stream.on('OPEN', (id, filePath: string, flags: number) => { this.open(stream, id, filePath, flags); });
     stream.on('OPENDIR', (id, dir: string) => {
       if (!this.dirs.has(dir)) stream.status(id, NO_SUCH_FILE);

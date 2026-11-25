@@ -138,5 +138,8 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
     async end(): Promise<void> {
       state.endCount++;
     },
+    destroy(): void {
+      state.endCount++;
+    },
   };
 }
