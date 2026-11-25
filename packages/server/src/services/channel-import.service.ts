@@ -4,6 +4,7 @@ import { eq, inArray, isNull, and, ne, sql } from 'drizzle-orm';
 import {
   PERMISSIONS,
   can,
+  idSchema,
   type ChannelGroupId,
   isSourceConnectorType,
   isDestinationConnectorType,
@@ -23,6 +24,7 @@ import { QueryError } from '../lib/query-error.js';
 import { stripRedactedProperties } from '../lib/secret-redaction.js';
 import { numberError, planImport, type ImportedRow, type ImportPlan, type ImportTarget, type StoredDestination } from '../lib/import-destinations.js';
 import { overwriteProperties } from '../lib/stored-credentials.js';
+import { withCopies } from '../lib/import-copies.js';
 import { MessageService } from './message.service.js';
 import {
   channels,
@@ -42,8 +44,11 @@ import {
  * needs channels:write on the channel it replaces. A backup restore brings its
  * own memberships and runs under system:restore, which covers every channel,
  * so it does neither.
+ *
+ * `holds`: why a channel may not run until someone decides, by its id in the file (D-301).
+ * An overwrite leaves the stored enabled flag alone (D-328), so one over an enabled channel is refused.
  */
-export type ImportPlacement = { readonly groupId?: string } | 'restore';
+export type ImportPlacement = { readonly groupId?: string; readonly holds?: Readonly<Record<string, readonly string[]>> } | 'restore';
 
 export class ChannelImportService {
   static async importChannels(
@@ -66,7 +71,8 @@ export class ChannelImportService {
           entries.flatMap((e) => [e.sourceConnectorProperties, ...e.destinations.map((d) => d.properties)]));
       }
 
-      for (const entry of entries) {
+      const channelEntries = collisionMode === 'CREATE_NEW' ? withCopies(entries, await ChannelImportService.copyIds(entries)) : entries;
+      for (const entry of channelEntries) {
         const result = await importSingleChannel(entry, collisionMode, { context, placement });
         if (result === 'created') created++;
         else if (result === 'updated') updated++;
@@ -83,6 +89,14 @@ export class ChannelImportService {
 
       return { created, updated, skipped, errors };
     });
+  }
+
+  /** New ids for the entries whose channel is here already, by the id in the file, in lower case. */
+  static async copyIds(entries: readonly ChannelExportEntry[]): Promise<ReadonlyMap<string, string>> {
+    const ids = entries.flatMap((e) => idSchema.safeParse(e.id).data ?? []);
+    if (ids.length === 0) return new Map();
+    const existing = await db.select({ id: channels.id }).from(channels).where(and(inArray(channels.id, ids), isNull(channels.deletedAt)));
+    return new Map(existing.map((c) => [c.id, randomUUID()]));
   }
 }
 
@@ -126,6 +140,7 @@ async function importSingleChannel(
     if (existing) {
       if (mode === 'SKIP') return 'skipped';
       if (mode === 'OVERWRITE') return await overwriteChannel(entry, run);
+      // An id the file has twice, or that came to be here since copyIds looked.
       return await createChannel({ ...entry, id: randomUUID(), destinations: entry.destinations.map(({ id: _id, ...d }) => d) }, run);
     }
 
@@ -220,10 +235,13 @@ async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Pr
  * deleted, between this check and the write.
  */
 async function overwriteRefusal(tx: ImportTx, channelId: string, run: ImportRun): Promise<string | null> {
-  const [live] = await tx.select({ id: channels.id }).from(channels)
+  const [live] = await tx.select({ id: channels.id, enabled: channels.enabled }).from(channels)
     .where(and(eq(channels.id, channelId), isNull(channels.deletedAt))).for('update');
   if (!(await mayOverwrite(tx, channelId, run))) return 'it would replace a channel you cannot change';
-  return live ? null : 'it was deleted while the import waited for it';
+  if (!live) return 'it was deleted while the import waited for it';
+  const holds = run.placement === 'restore' ? undefined : run.placement.holds?.[channelId];
+  if (!live.enabled || holds === undefined) return null;
+  return `the channel it replaces is enabled, and it must not run until someone has decided about this: ${holds.join('; ')}. Disable the channel, import again, and enable it once you have decided`;
 }
 
 async function idsOfOtherChannels(tx: ImportTx, entry: ChannelExportEntry): Promise<ReadonlySet<string>> {

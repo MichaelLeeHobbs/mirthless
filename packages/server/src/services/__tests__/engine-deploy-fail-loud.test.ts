@@ -230,7 +230,7 @@ describe('EngineManager.deploy refuses to start a channel it cannot run as confi
   it('fails when an enabled Mapper step has nothing the engine can run', async () => {
     const channel = makeChannel(sourceTransformer(step({ script: 'msg.delete("PID.19");' }), step({ type: 'MAPPER' }, 1)));
 
-    expect(await deployError(bundleOf(channel))).toBe('Labs source transformer: Transformer step 2 has type MAPPER, which this engine cannot run');
+    expect(await deployError(bundleOf(channel))).toBe('Labs source transformer: Transformer step 2 has type MAPPER, which this engine cannot run without a script');
   });
 
   it('fails when a Rule Builder rule is incomplete', async () => {
