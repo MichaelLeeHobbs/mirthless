@@ -8,6 +8,7 @@ import {
   type UpdateCodeTemplateLibraryInput,
   type CreateCodeTemplateInput,
   type UpdateCodeTemplateInput,
+  type CodeTemplateLanguage,
   type FoldedGrants,
   type Permission,
 } from '@galvanigraph/core-models';
@@ -39,7 +40,7 @@ export interface TemplateDetail {
   readonly name: string;
   readonly description: string | null;
   readonly type: string;
-  readonly language: string;
+  readonly language: CodeTemplateLanguage;
   readonly code: string;
   readonly contexts: ReadonlyArray<string>;
   readonly revision: number;
@@ -54,7 +55,8 @@ function toTemplateDetail(r: CodeTemplate): TemplateDetail {
     name: r.name,
     description: r.description,
     type: r.type,
-    language: r.language,
+    // Written only from codeTemplateLanguageSchema.
+    language: r.language as CodeTemplateLanguage,
     code: r.code,
     contexts: r.contexts,
     revision: r.revision,
