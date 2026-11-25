@@ -13,6 +13,7 @@ export type {
   MessageStore,
   PipelineInput,
   ProcessedMessage,
+  ReceivedMessage,
   DestinationResult,
   PipelineConfig,
   ResponseSource,

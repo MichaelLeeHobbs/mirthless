@@ -1,9 +1,10 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, sql, gt, lte, asc, max } from 'drizzle-orm';
-import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@galvanigraph/core-models';
+import { eq, and, sql, gt, inArray, lte, asc, max, not } from 'drizzle-orm';
+import { CONTENT_TYPE, SOCKET_EVENT, type ContentType, type MessageStatus } from '@galvanigraph/core-models';
 import { db } from '../lib/db.js';
 import { emitToRoomCoalesced } from '../lib/socket.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
+import { ServiceError } from '../lib/service-error.js';
 import {
   messages,
   connectorMessages,
@@ -424,6 +425,35 @@ export class MessageService {
         );
       return rows;
     });
+  }
+
+  /**
+   * Puts a message that stopped before it was routed back as it was when it was received, so
+   * running it again cannot leave a second message to deliver. Refused once it was routed, and
+   * for a message that is finished or gone. Takes its locks in the order a message's deletion does.
+   */
+  static async resetToReceived(channelId: string, messageId: number): Promise<Result<CreateMessageResult>> {
+    return tryCatch(() => db.transaction(async (tx) => {
+      const ofMessage = <T extends typeof messageCustomMetadata | typeof messageContent | typeof connectorMessages>(table: T) =>
+        and(eq(table.channelId, channelId), eq(table.messageId, messageId));
+      await tx.delete(messageCustomMetadata).where(ofMessage(messageCustomMetadata));
+      const received = and(eq(messageContent.metaDataId, 0), inArray(messageContent.contentType, [CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP]));
+      await tx.delete(messageContent).where(and(ofMessage(messageContent), not(received!)));
+      const [source, ...destinations] = await tx.select({ metaDataId: connectorMessages.metaDataId, status: connectorMessages.status })
+        .from(connectorMessages).where(ofMessage(connectorMessages)).orderBy(asc(connectorMessages.metaDataId)).for('update');
+      const [message] = await tx.select({ messageId: messages.id, correlationId: messages.correlationId }).from(messages)
+        .where(and(eq(messages.channelId, channelId), eq(messages.id, messageId), eq(messages.processed, false)));
+      // A source is TRANSFORMED once its destinations are recorded, and they are sent to only after that.
+      const unrouted = source?.metaDataId === 0 && (source.status === 'RECEIVED'
+        ? destinations.every((d) => d.status === 'RECEIVED')
+        : source.status === 'TRANSFORMED' && destinations.length === 0);
+      if (!unrouted || message === undefined) {
+        throw new ServiceError('CONFLICT', `Message ${String(messageId)} cannot be run again: it has been routed, finished or deleted`);
+      }
+      await tx.delete(connectorMessages).where(and(ofMessage(connectorMessages), gt(connectorMessages.metaDataId, 0)));
+      await tx.update(connectorMessages).set({ status: 'RECEIVED' }).where(and(ofMessage(connectorMessages), eq(connectorMessages.metaDataId, 0)));
+      return message;
+    }));
   }
 
   static async getQueuedMessages(

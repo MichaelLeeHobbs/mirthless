@@ -151,8 +151,8 @@ export async function deleteTestChannel(mods: ServerModules, id: string): Promis
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 /** A blocked statement shows in pg_stat_activity as a Lock wait with the statement as its query. */
-export async function waitForBlocked(pool: ServerModules['pool'], queryPrefix: string): Promise<void> {
-  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+export async function waitForBlocked(pool: ServerModules['pool'], queryPrefix: string, timeoutMs = LOCK_WAIT_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const { rows } = await pool.query<{ waiting: string }>(
       `SELECT count(*) AS waiting FROM pg_stat_activity
