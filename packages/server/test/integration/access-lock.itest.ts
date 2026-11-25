@@ -489,7 +489,7 @@ describeIntegration('the access lock (real Postgres)', () => {
     const { totalCount, idleCount, waitingCount } = mods.pool;
     return [
       `Nothing answered for ${String(STUCK_MS / 1_000)} s. Unanswered: ${pending.join(', ')}.`,
-      'Follow blocked_by to the backend nobody blocks. Idle in transaction for all that time, with requests waiting for a connection, is a deadlock. Active is work in progress.',
+      'Follow blocked_by to the backend nobody blocks. Idle in transaction for all that time, it waits for this process, which is a deadlock. Active, it is work in progress.',
       `Pool: ${JSON.stringify({ totalCount, idleCount, waitingCount })}`,
       ...await backends().catch((err: unknown) => [`The backends could not be read: ${String(err)}`]),
     ].join('\n');
