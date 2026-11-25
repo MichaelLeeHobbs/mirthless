@@ -45,44 +45,34 @@ describe('isKnownEncoding', () => {
   });
 });
 
-describe('decodePayload on a Node without windows-1252 (no full ICU)', () => {
+describe('decodePayload in windows-1252, whatever the TextDecoder of this Node does with it (#391)', () => {
+  const Real = globalThis.TextDecoder;
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
   });
 
-  it('still loads and decodes the other charsets; only windows-1252 fails, when used', async () => {
-    const Real = globalThis.TextDecoder;
-    vi.stubGlobal('TextDecoder', class extends Real {
+  it.each([
+    ['this Node', Real],
+    ['a Node that decodes it as Latin-1 (22.20, 24.13)', class extends Real {
+      override decode(...args: Parameters<InstanceType<typeof Real>['decode']>): string {
+        return this.encoding === 'windows-1252' ? Buffer.from(args[0] as Uint8Array).toString('latin1') : super.decode(...args);
+      }
+    }],
+    ['a Node without full ICU, which does not have it', class extends Real {
       constructor(label?: string, options?: DecoderOptions) {
         if (label === 'windows-1252') throw new RangeError('The "windows-1252" encoding is not supported');
         super(label, options);
       }
-    });
+    }],
+  ])('reads the same text on %s', async (_node, Decoder) => {
+    vi.stubGlobal('TextDecoder', Decoder);
     vi.resetModules();
     const { decodePayload } = await import('../encoding.js');
-    expect(decodePayload(Buffer.from('MSH|1'), 'utf-8')).toEqual({ text: 'MSH|1', replaced: false });
-    expect(decodePayload(Buffer.from([0xe9]), 'latin1').text).toBe('é');
-    expect(() => decodePayload(Buffer.from([0x93]), 'windows-1252')).toThrow('windows-1252');
-  });
 
-  it('fails the deploy of a Kafka, AMQP or HTTP source set to windows-1252', async () => {
-    const Real = globalThis.TextDecoder;
-    vi.stubGlobal('TextDecoder', class extends Real {
-      constructor(label?: string, options?: DecoderOptions) {
-        if (label === 'windows-1252') throw new RangeError('The "windows-1252" encoding is not supported');
-        super(label, options);
-      }
-    });
-    vi.resetModules();
-    const { createSourceConnector } = await import('../registry.js');
-    const kafka = { brokers: 'k:9092', topic: 't', groupId: 'g' };
-    const amqp = { host: 'rabbit', queue: 'q' };
-    expect(() => createSourceConnector('KAFKA', { ...kafka, charset: 'windows-1252' })).toThrow(/windows-1252.*not available/);
-    expect(() => createSourceConnector('AMQP', { ...amqp, charset: 'windows-1252' })).toThrow(/windows-1252.*not available/);
-    expect(() => createSourceConnector('AMQP', { ...amqp, charset: 'latin1' })).not.toThrow();
-    const http = await createSourceConnector('HTTP', { port: 8080, bodyCharset: 'windows-1252' }).onDeploy();
-    expect(http.ok ? null : http.error.message).toMatch(/windows-1252.*not available/);
-    expect((await createSourceConnector('HTTP', { port: 8080, bodyCharset: 'latin1' }).onDeploy()).ok).toBe(true);
-  }, 30_000); // a fresh import of the registry loads every connector
+    expect(decodePayload(Buffer.from([0x93, 0x41, 0xfc, 0x94, 0x20, 0x80]), 'windows-1252')).toEqual({ text: '\u201cAü\u201d \u20ac', replaced: false });
+    expect(decodePayload(Buffer.from([0x93]), 'latin1').text).toBe('\u0093');
+    expect(decodePayload(Buffer.from('MSH|1'), 'utf-8')).toEqual({ text: 'MSH|1', replaced: false });
+  });
 });

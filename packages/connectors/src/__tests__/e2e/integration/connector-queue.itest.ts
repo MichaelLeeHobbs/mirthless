@@ -424,23 +424,20 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     const api = `http://${cfg.host}:${String(cfg.managementPort)}/api`;
     const auth = { Authorization: `Basic ${Buffer.from(`${cfg.username}:${cfg.password}`).toString('base64')}` };
     // By the queue, which only this test consumes: other connections on a shared broker have the same name.
-    const consumers = async (): Promise<readonly string[]> => {
-      const queue = await (await fetch(`${api}/queues/%2F/${names.dropped}`, { headers: auth })).json() as { consumer_details?: { channel_details: { connection_name: string } }[] };
-      return (queue.consumer_details ?? []).map((c) => c.channel_details.connection_name);
+    const consumer = async (): Promise<string> => {
+      const queue = await (await fetch(`${api}/queues/%2F/${names.dropped}`, { headers: auth })).json() as { consumer_details?: { channel_details: { connection_name?: string } }[] };
+      const connections = (queue.consumer_details ?? []).map((c) => c.channel_details.connection_name);
+      expect(connections).toEqual([expect.stringMatching(/./)]);
+      return connections[0]!;
     };
-    const only = async (): Promise<string> => {
-      const now = await consumers();
-      expect(now).toHaveLength(1);
-      return now[0]!;
-    };
-    // The management API is some seconds behind.
-    const dropped = await vi.waitFor(only, WAIT);
+    // The management API is some seconds behind, and may list a consumer before it knows its connection.
+    const dropped = await vi.waitFor(consumer, WAIT);
     expect((await fetch(`${api}/connections/${encodeURIComponent(dropped)}`, { method: 'DELETE', headers: auth })).ok).toBe(true);
 
     await publish('after');
     await vi.waitFor(() => { expect(sink.received.map((m) => m.content)).toEqual(['before', 'after']); }, WAIT);
-    await vi.waitFor(async () => { expect(await only()).not.toBe(dropped); }, WAIT);
-  }, TEST_TIMEOUT);
+    await vi.waitFor(async () => { expect(await consumer()).not.toBe(dropped); }, WAIT);
+  }, 5 * WAIT.timeout);
 
   it('connection test finds the queue and the exchange, and reports a missing queue', async () => {
     await expect(testAmqpConnection(connection(), { queue: names.queue })).resolves.toContain(`queue ${names.queue}`);

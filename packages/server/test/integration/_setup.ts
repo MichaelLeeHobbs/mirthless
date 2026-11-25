@@ -5,7 +5,8 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type RequestListener, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { describe } from 'vitest';
+import type { IssuedApiKey } from '@galvanigraph/core-models';
+import { describe, expect } from 'vitest';
 import { INTEGRATION_WAIT_MS } from '../time-budgets.js';
 
 function isTestDatabaseConfigured(): boolean {
@@ -141,7 +142,7 @@ export async function listen(handler: RequestListener): Promise<{ readonly serve
   const server = createServer(handler);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve(); });
   });
   return { server, base: `http://127.0.0.1:${String((server.address() as AddressInfo).port)}` };
 }
@@ -163,6 +164,15 @@ export async function apiCall<T = unknown>(base: string, token: string, method: 
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return { status: res.status, json: res.status === 204 ? {} : await res.json() as ApiAnswer<T>['json'] };
+}
+
+/** On every channel, for 30 days. The caller deletes the key's user before its issuer. */
+export async function issueKey(base: string, as: TestUser, permissions: readonly string[]): Promise<IssuedApiKey> {
+  const res = await apiCall<IssuedApiKey>(base, as.token, 'POST', '/api-keys', {
+    name: `itest-key-${randomUUID().slice(0, 8)}`, permissions, groupIds: null, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+  });
+  expect(res.status).toBe(201);
+  return res.json.data!;
 }
 
 export async function deleteTestChannel(mods: ServerModules, id: string): Promise<void> {

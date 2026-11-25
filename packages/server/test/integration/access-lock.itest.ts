@@ -462,40 +462,50 @@ describeIntegration('the access lock (real Postgres)', () => {
     });
   });
 
-  /** Before the pool's connection timeout, or the statement timeout, breaks the deadlock this looks for. */
-  const STUCK_MS = INTEGRATION_WAIT_MS - 15_000;
+  /**
+   * With no answer at all meanwhile: on a slow host they come late, but they come. Half the time after
+   * which the pool gives up on a connection, which would hide the deadlock.
+   */
+  const STUCK_MS = INTEGRATION_WAIT_MS / 2;
 
-  /** Postgres ends a deadlock of its own with a 500. One that also waits on this process never ends. */
+  /** Postgres ends a deadlock among its own locks, with a 500. One that also waits on this process never ends. */
   async function allAnswered(requests: Readonly<Record<string, Promise<{ readonly status: number }>>>): Promise<void> {
     const pending = new Set(Object.keys(requests));
     const failed: string[] = [];
-    const all = Object.entries(requests).map(async ([name, answer]) => {
+    const answers = Object.entries(requests).map(async ([name, answer]) => {
       const { status: got } = await answer.finally(() => { pending.delete(name); });
       if (got >= 500) failed.push(`${name}: ${String(got)}`);
     });
-    const answered = Promise.all(all);
-    if (!await settleWithin(answered, STUCK_MS)) throw new Error(await whatIsStuck(pending));
-    await answered;
+    const all = Promise.all(answers);
+    for (let left = pending.size; left > 0; left = pending.size) {
+      if (await settleWithin(all, STUCK_MS)) break;
+      if (pending.size === left) throw new Error(await whatIsStuck([...pending]));
+    }
+    await all;
     expect(failed).toEqual([]);
   }
 
-  /** A connection of its own, because the pool may have none left. */
-  async function whatIsStuck(pending: ReadonlySet<string>): Promise<string> {
+  async function whatIsStuck(pending: readonly string[]): Promise<string> {
     const { totalCount, idleCount, waitingCount } = mods.pool;
-    const client = new pg.Client({ connectionString: process.env['DATABASE_URL'] });
-    await client.connect();
+    return [
+      `Nothing answered for ${String(STUCK_MS / 1_000)} s. Unanswered: ${pending.join(', ')}.`,
+      'Follow blocked_by to the backend nobody blocks. Idle in transaction for all that time, with requests waiting for a connection, is a deadlock. Active is work in progress.',
+      `Pool: ${JSON.stringify({ totalCount, idleCount, waitingCount })}`,
+      ...await backends().catch((err: unknown) => [`The backends could not be read: ${String(err)}`]),
+    ].join('\n');
+  }
+
+  /** Through a connection of its own, because the pool may have none left. */
+  async function backends(): Promise<string[]> {
+    const client = new pg.Client({ connectionString: process.env['DATABASE_URL'], connectionTimeoutMillis: 10_000, query_timeout: 10_000 });
     try {
+      await client.connect();
       const { rows } = await client.query(`SELECT pid, state, wait_event_type, wait_event, pg_blocking_pids(pid) AS blocked_by,
           round(extract(epoch FROM clock_timestamp() - state_change))::int AS seconds, left(query, 120) AS query
         FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state <> 'idle' ORDER BY seconds DESC`);
-      return [
-        `Unanswered after ${String(STUCK_MS / 1_000)} s: ${[...pending].join(', ')}.`,
-        'Statements that have waited for a lock all that time, or requests that wait for a connection, are a deadlock. Neither is a slow host.',
-        `Pool: ${JSON.stringify({ totalCount, idleCount, waitingCount })}`,
-        ...rows.map((r) => JSON.stringify(r)),
-      ].join('\n');
+      return rows.map((r) => JSON.stringify(r));
     } finally {
-      await client.end();
+      void client.end().catch(() => undefined);
     }
   }
 

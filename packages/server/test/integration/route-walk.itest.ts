@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { USER_ROLE } from '@galvanigraph/core-models';
 import { builtInRolePermissions, defaultRoles } from '../../src/db/seeds/roles.js';
 import { closeServer, describeIntegration, listen } from './_setup.js';
@@ -188,36 +188,37 @@ describeIntegration('route walk per principal (real authenticate)', () => {
       `${a.method} ${a.route ?? '(before routing)'} ${a.reason}${a.repeatsSinceLast > 0 ? ` (${String(a.repeatsSinceLast)} more)` : ''}`).sort();
   }
 
-  it('recorded each route a viewer was refused once, by template, and counts a repeat within the minute instead of recording it', async () => {
-    const viewer = caller(USER_ROLE.VIEWER);
-    const refused = routes.filter((r) => !holds(USER_ROLE.VIEWER, r));
-    const expected = refused.map((r) => `${label(r)} no_permission`).sort();
-    await expect.poll(() => refusalsOf(viewer.id)).toEqual(expected);
+  describe('what the walk recorded', () => {
+    const refusedToViewers = (): readonly WalkedRoute[] => routes.filter((r) => !holds(USER_ROLE.VIEWER, r));
+    const repeated = (): WalkedRoute => refusedToViewers()[0]!;
 
-    const first = refused[0];
-    if (!first) throw new Error('the viewer is refused nothing');
-    // Back to it: expect.poll moves a stopped clock on.
-    vi.setSystemTime(walkedAt);
-    await call(first, viewer.token, { param: ID });
-    // A minute later the next refusal closes the first one's window, which writes what it held back.
-    vi.setSystemTime(walkedAt + MINUTE_MS);
-    await call(first, viewer.token, { param: ID });
-    const again = `${label(first)} no_permission`;
-    await expect.poll(() => refusalsOf(viewer.id)).toEqual([...expected, again, `${again} (1 more)`].sort());
-  });
+    beforeAll(async () => {
+      const { token } = caller(USER_ROLE.VIEWER);
+      await call(repeated(), token, { param: ID });
+      // A minute later the next refusal closes every window of the walk, which writes what each held back.
+      vi.setSystemTime(walkedAt + MINUTE_MS);
+      await call(repeated(), token, { param: ID });
+    });
 
-  it.each([
-    ['disabled', 'account_disabled'],
-    ['must-change', 'password_change_required'],
-    ['revoked', 'session_revoked'],
-  ] as const)('recorded the %s caller once per method, before routing, across every route it was sent to', async (name, reason) => {
-    // Before routing there is no template, so each method is one record whatever the path.
-    const sent = routes.filter((r) => name !== 'must-change' || !PASSWORD_CHANGE_EXEMPT.some(same(r)));
-    const expected = [...new Set(sent.map((r) => r.method))].flatMap((m) => {
-      const repeats = sent.filter((r) => r.method === m).length - 1;
-      const once = `${m} (before routing) ${reason}`;
-      return repeats > 0 ? [once, `${once} (${String(repeats)} more)`] : [once];
-    }).sort();
-    await expect.poll(() => refusalsOf(caller(name).id)).toEqual(expected);
+    it('is each route a viewer was refused, once and by template, and a repeat within the minute only as a count', async () => {
+      const again = `${label(repeated())} no_permission`;
+      const expected = [...refusedToViewers().map((r) => `${label(r)} no_permission`), again, `${again} (1 more)`].sort();
+      await expect.poll(() => refusalsOf(caller(USER_ROLE.VIEWER).id)).toEqual(expected);
+    });
+
+    it.each([
+      ['disabled', 'account_disabled'],
+      ['must-change', 'password_change_required'],
+      ['revoked', 'session_revoked'],
+    ] as const)('is the %s caller once per method, before routing, and the rest of its refusals as a count', async (name, reason) => {
+      // Before routing there is no template, so each method is one record whatever the path.
+      const sent = routes.filter((r) => name !== 'must-change' || !PASSWORD_CHANGE_EXEMPT.some(same(r)));
+      const expected = [...new Set(sent.map((r) => r.method))].flatMap((m) => {
+        const repeats = sent.filter((r) => r.method === m).length - 1;
+        const once = `${m} (before routing) ${reason}`;
+        return repeats > 0 ? [once, `${once} (${String(repeats)} more)`] : [once];
+      }).sort();
+      await expect.poll(() => refusalsOf(caller(name).id)).toEqual(expected);
+    });
   });
 });

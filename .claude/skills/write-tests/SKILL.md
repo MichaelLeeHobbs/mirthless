@@ -31,7 +31,7 @@ This is healthcare software. A bug gets a failing test first: write it, watch it
 - **Test the unhappy path first**: errors, timeouts, empty input, bad input, the second call, the concurrent call.
 - **Names say what happens**: `it('returns an error when the channel id is invalid')`.
 - **Fast**: unit tests under 100 ms each. Use fake timers for intervals.
-- **Wait on a condition, not for a time.** In an integration test, `expect.poll` and `vi.waitFor(..., WAIT)` use the suite's one limit; give neither a shorter one. When a test needs a time to pass, move the clock (`vi.useFakeTimers({ toFake: ['Date'] })`), so a slow host cannot end a window the test is inside (D-350).
+- **Wait on a condition, not for a time.** In an integration test, `expect.poll` and `vi.waitFor(..., WAIT)` use the suite's one limit; give neither a shorter one. When a test needs a time to pass, move the clock (`vi.useFakeTimers({ toFake: ['Date'] })`), so a slow host cannot end a window the test is inside. The database keeps its own clock, and a wait moves a faked one on at each try, so set it again after a wait (D-352).
 - **No conditional assertions.** `if (!result.ok) return;` before the real `expect` lets a test pass while checking nothing. Assert the precondition.
 - Coverage floors are in each package's `vitest.config.ts`. They are minimums the gate enforces, not targets; the target is 95% of branches.
 

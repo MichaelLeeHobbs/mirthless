@@ -644,7 +644,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
           },
           responses: {
             '200': successResponse('User updated', { $ref: '#/components/schemas/User' }),
-            '400': openApiErrorResponse('Validation error'),
+            '400': openApiErrorResponse('Validation error, or disabling your own account, or changing your own role'),
             '401': openApiErrorResponse('Not authenticated'),
             '404': openApiErrorResponse('User not found'),
           },
@@ -659,6 +659,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
           ],
           responses: {
             '204': noContent,
+            '400': openApiErrorResponse('Validation error, or your own account'),
             '401': openApiErrorResponse('Not authenticated'),
             '404': openApiErrorResponse('User not found'),
           },

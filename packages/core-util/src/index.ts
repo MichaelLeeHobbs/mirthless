@@ -11,3 +11,4 @@ export * from './throttle.js';
 export * from './slots.js';
 export * from './settle-within.js';
 export * from './csv.js';
+export * from './windows-1252.js';

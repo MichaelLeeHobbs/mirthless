@@ -5,7 +5,7 @@ import type { Server } from 'node:http';
 import type { ApiKeyView, IssuedApiKey } from '@galvanigraph/core-models';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, listen, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, issueKey, listen, loadServerModules, userWithRole,
   type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -29,13 +29,7 @@ describeIntegration('API keys: narrowing, Replace and offboarding (real Postgres
     return { user, roleId };
   }
 
-  async function issue(as: TestUser, permissions: readonly string[]): Promise<IssuedApiKey> {
-    const res = await apiCall<IssuedApiKey>(base, as.token, 'POST', '/api-keys', {
-      name: `k-${randomUUID().slice(0, 6)}`, permissions, groupIds: null, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
-    });
-    expect(res.status).toBe(201);
-    return res.json.data!;
-  }
+  const issue = (as: TestUser, permissions: readonly string[]): Promise<IssuedApiKey> => issueKey(base, as, permissions);
 
   const works = async (token: string): Promise<number> => (await apiCall(base, token, 'GET', `/channels/${CHANNEL}`)).status;
   const view = async (id: string): Promise<ApiKeyView> => (await apiCall<ApiKeyView>(base, admin.token, 'GET', `/api-keys/${id}`)).json.data!;
