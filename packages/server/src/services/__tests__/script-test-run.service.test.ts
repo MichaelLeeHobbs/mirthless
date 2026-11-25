@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Each run starts a worker thread and compiles with esbuild, and one test waits
-// out the 5 s test-run limit, so the 5 s default is too short.
-vi.setConfig({ testTimeout: 30_000 });
+// Longer than a run's own limits (30 s to start, then up to 15 s), so that a test on a
+// loaded machine sees what the run answered (D-368).
+vi.setConfig({ testTimeout: 120_000 });
 
 const mockChannelService = { getById: vi.fn() };
 const mockTemplates = { listTemplatesForChannel: vi.fn(), listTemplates: vi.fn() };
@@ -52,6 +52,7 @@ describe('ScriptTestRunService.run', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.value.error).toBeNull();
     expect(result.value.outcome).toBe('completed');
     expect(result.value.logs.map((l) => l.message)).toEqual(['NGUYEN', 'from-resource']);
     expect(result.value.destinations).toEqual(['To EHR']);

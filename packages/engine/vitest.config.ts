@@ -6,9 +6,9 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     passWithNoTests: true,
-    // Tests that compile or run scripts take seconds on a loaded machine (#125). A hung
-    // test still fails, just later; tests about a time limit set their own short budget.
-    testTimeout: 30_000,
+    // Longer than every limit the code under test sets itself, worker starts included, so that a
+    // test on a loaded machine sees the code's answer (D-368). Tests about a limit set a short one.
+    testTimeout: 120_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

@@ -1,8 +1,7 @@
-import { describe, it, expect, afterAll, vi } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { checkScriptTypesBatch, stopTypeChecker } from '../script-type-checker.js';
 import { checkScriptTypes } from '../script-type-check.js';
 
-vi.setConfig({ testTimeout: 60_000 });
 afterAll(async () => { await stopTypeChecker(); });
 
 const HL7 = { dataType: 'HL7V2', templateContext: 'SOURCE_FILTER_TRANSFORMER' } as const;
