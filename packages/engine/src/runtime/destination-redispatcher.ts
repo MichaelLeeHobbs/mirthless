@@ -14,8 +14,6 @@ import { sendFailureReason } from '../pipeline/send-failure.js';
 import { parseStoredVariables } from '../pipeline/stored-variables.js';
 import type { ConnectorMessageRecord } from './recovery-manager.js';
 
-const SEND_TIMEOUT_MS = 30_000;
-
 const NOTHING_TO_SEND = 'nothing is stored to send. The server stopped before this destination ran, '
   + "or the channel's storage mode does not keep what is sent and it may have been delivered. Reprocess the message to deliver it.";
 
@@ -94,8 +92,7 @@ export class DestinationRedispatcher {
     if (runSignal.aborted) throw new Error('Interrupted: the channel stopped');
     if (queueMode === 'ALWAYS') return this.enqueue(messageId, metaDataId);
 
-    const signal = AbortSignal.any([haltSignal, AbortSignal.timeout(SEND_TIMEOUT_MS)]);
-    const sent = await this.config.send(metaDataId, messageId, content, signal, undefined, variables);
+    const sent = await this.config.send(metaDataId, messageId, content, haltSignal, undefined, variables);
     if (sent.ok && sent.value.status === 'SENT') return this.recordSent(messageId, metaDataId, sent.value.content);
     // An answer, even a refusal, came by itself.
     if (!sent.ok && haltSignal.aborted) throw new Error('Interrupted: the channel was halted');

@@ -36,6 +36,7 @@ import {
   type LoadedAlert,
   type ResponseSource,
   parseForSandbox,
+  reportUnsaved,
   type DataTypeOptions,
 } from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -225,30 +226,58 @@ export function dataTypeOptionsFor(channel: ChannelDetail): DataTypeOptions {
   return { delimited: parsed.data };
 }
 
+export interface BatchRules {
+  /** The source never offers its input again, so no message may wait for that. */
+  readonly offeredOnce: boolean;
+  /** What the channel receives is stored as plain text, which cannot hold U+0000. */
+  readonly storesPlainText: boolean;
+}
+
+export function batchRulesFor(channel: Pick<ChannelDetail, 'sourceConnectorType' | 'encryptData' | 'messageStorageMode'>): BatchRules {
+  return {
+    offeredOnce: channel.sourceConnectorType === 'JAVASCRIPT',
+    storesPlainText: !channel.encryptData && shouldStoreContent(channel.messageStorageMode as MessageStorageMode, CONTENT_TYPE.RAW),
+  };
+}
+
+export interface BatchRun extends BatchRules {
+  readonly split: (content: string) => string[];
+  readonly processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>;
+}
+
+function splitBatch(content: string, run: BatchRun): readonly string[] {
+  const parts = run.split(content);
+  if (parts.length === 0) throw new Error('The batch holds no messages');
+  const unstorable = run.storesPlainText && !run.offeredOnce ? parts.findIndex((part) => part.includes('\0')) : -1;
+  if (unstorable !== -1) {
+    throw new Error(`Message ${String(unstorable + 1)} of ${String(parts.length)} in the batch holds U+0000, which the message store cannot hold as plain text; none of the batch was processed`);
+  }
+  return parts;
+}
+
 /**
- * Process each message of a batch, in order, and report the batch as one
- * outcome: an error if the batch could not be split or any message failed
- * (so the source keeps or quarantines it), otherwise the last message's
- * outcome. Every message is processed even after one fails, as Mirth does.
+ * Process each message of a batch, in order, as Mirth does, and report the batch as one outcome.
+ * A message that was not recorded ends it and the batch is not taken, so the source offers it
+ * again, and the messages before that one are then processed again (D-254, D-364). Otherwise the
+ * first error, if any message was recorded with one, or the last message's outcome.
  */
-export async function processBatch(
-  split: (content: string) => string[],
-  content: string,
-  processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>,
-): Promise<Result<SourceDispatchOutcome>> {
-  const parts = tryCatch((): string[] => {
-    const list = split(content);
-    if (list.length === 0) throw new Error('The batch holds no messages');
-    return list;
-  });
+export async function processBatch(content: string, run: BatchRun): Promise<Result<SourceDispatchOutcome>> {
+  const parts = tryCatch(() => splitBatch(content, run));
   if (!parts.ok) return { ok: false, value: null, error: parts.error } as Result<SourceDispatchOutcome>;
   let outcome: Result<SourceDispatchOutcome> | undefined;
   let failure: Result<SourceDispatchOutcome> | undefined;
-  for (const part of parts.value) {
-    outcome = await processOne(part);
-    if (!failure && (!outcome.ok || outcome.value.status === DISPATCH_STATUS.ERROR)) failure = outcome;
+  const unrecorded: { readonly number: number; readonly reason: string }[] = [];
+  for (const [index, part] of parts.value.entries()) {
+    if (unrecorded.length > 0 && !run.offeredOnce) break;
+    outcome = await run.processOne(part);
+    if (!outcome.ok) unrecorded.push({ number: index + 1, reason: outcome.error.message });
+    else if (outcome.value.status === DISPATCH_STATUS.ERROR) failure ??= outcome;
   }
-  return failure ?? outcome!;
+  const [first] = unrecorded;
+  if (first === undefined) return failure ?? outcome!;
+  const numbers = unrecorded.map((message) => String(message.number)).join(', ');
+  const error = new Error(`Not recorded of the ${String(parts.value.length)} messages in the batch: ${numbers}. ${first.reason}`);
+  return { ok: false, value: null, error } as Result<SourceDispatchOutcome>;
 }
 
 export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
@@ -307,9 +336,9 @@ export function shouldStoreContent(mode: MessageStorageMode, contentType: number
 
 /**
  * A storage mode stores enough content to deliver a queued message and recover it
- * after a crash (needs RAW + SENT). METADATA/DISABLED store neither, so a queued
- * destination on such a channel would lose 100% of messages. Used to reject the
- * combination at deploy time.
+ * after a crash (needs RAW + SENT). RAW does not store SENT and METADATA/DISABLED
+ * store neither, so a queued destination on such a channel would lose 100% of
+ * messages. Used to reject the combination at deploy time.
  */
 export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
   return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
@@ -486,6 +515,8 @@ function whyQueueHeld(dest: ChannelDetail['destinations'][number] | undefined): 
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
+const RAW_NOT_STORED = 'Not finished after a server stop: its raw content is not stored, so it cannot be run again. '
+  + 'No destination was sent to, but its scripts may have run. Check whether the channel has received it again before you send it again.';
 /** How long an undeploy waits for crash recovery to end the messages it was working on. */
 const RECOVERY_ENDS_MS = 10_000;
 
@@ -607,15 +638,15 @@ export class EngineManager {
     }
 
     // Fail loud, never silent: a queued destination needs stored RAW+SENT content
-    // to deliver and to recover after a crash. On METADATA/DISABLED storage that
-    // content is never written, so every queued message would error on delivery.
+    // to deliver and to recover after a crash. Any other storage mode never writes
+    // SENT, so every queued message would error on delivery.
     const storageMode = channel.messageStorageMode as MessageStorageMode;
     const hasQueuedDestination = channel.destinations.some((d) => d.queueMode !== 'NEVER');
     if (hasQueuedDestination && !storageModeSupportsQueue(storageMode)) {
       throw new Error(
         `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
         'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
-        'Use DEVELOPMENT, PRODUCTION, or RAW storage, or set every destination queue mode to NEVER.',
+        `Use ${Object.values(MESSAGE_STORAGE_MODE).filter(storageModeSupportsQueue).join(' or ')} storage, or set every destination queue mode to NEVER.`,
       );
     }
 
@@ -793,10 +824,12 @@ export class EngineManager {
       const sent = variables && Object.keys(variables).length > 0 ? variables : undefined;
       // Connectors apply their own configured timeouts; this is the backstop
       // that keeps a send from hanging forever if one does not.
-      return connector.send(
+      const called = await tryCatch(() => connector.send(
         { ...messageFor(metaDataId, messageId, content), correlationId, variables: sent },
         AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]),
-      );
+      ));
+      // One that throws fails this send, not the whole message with its other destinations.
+      return called.ok ? called.value : called;
     };
 
     const queueConsumers: QueueConsumer[] = [];
@@ -863,12 +896,20 @@ export class EngineManager {
     const processMessage = (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> =>
       this.track(channel.id, processOne(rawContent, sourceMap));
 
+    const processHl7Batch = async (raw: { readonly content: string; readonly sourceMap: Record<string, unknown> }): Promise<Result<SourceDispatchOutcome>> => {
+      const result = await processBatch(raw.content, { ...batchRulesFor(channel), split: splitHl7Batch, processOne: (part) => processMessage(part, raw.sourceMap) });
+      if (result.ok) return result;
+      logger.error({ channelId: channel.id, errMsg: result.error.message }, 'HL7 batch not recorded whole');
+      await raiseAlert({ channelId: channel.id, errorType: 'SOURCE_CONNECTOR', errorMessage: `HL7 batch not recorded whole: ${result.error.message}`, timestamp: Date.now() });
+      return result;
+    };
+
     const runtimeConfig: ChannelRuntimeConfig = {
       channelId: channel.id,
       source,
       destinations,
       onMessage: async (raw) => (batched
-        ? processBatch(splitHl7Batch, raw.content, (part) => processMessage(part, raw.sourceMap))
+        ? processHl7Batch(raw)
         : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) })))),
     };
 
@@ -978,7 +1019,7 @@ export class EngineManager {
     if (earlierWork.length === 0) return true;
     while (!(await settleWithin(Promise.all(earlierWork), SEND_BACKSTOP_MS, runSignal))) {
       if (runSignal.aborted) return false;
-      const errorMessage = 'Crash recovery is waiting: an earlier deployment of the channel is still sending a message that could not be cancelled. If that never ends, restart the server';
+      const errorMessage = 'Crash recovery is waiting: an earlier deployment of the channel is still sending a message. If that never ends, restart the server';
       logger.error({ channelId }, errorMessage);
       await raiseAlert({ channelId, errorType: 'DESTINATION_CONNECTOR', errorMessage, timestamp: Date.now() });
     }
@@ -1088,13 +1129,14 @@ export class EngineManager {
       const stopResult = await deployed.runtime.stop();
       if (!stopResult.ok) {
         // Fall back to a force-halt so teardown can still proceed.
-        await deployed.runtime.halt();
+        const halted = await deployed.runtime.halt();
+        if (!halted.ok) logger.error({ channelId, errMsg: halted.error.message }, 'A connector did not halt while its channel was being undeployed');
       }
     }
 
     // A halt does not wait for recovery, and its sends are to end before their destinations are undeployed.
     if (!(await deployed.runtime.backgroundEnds(RECOVERY_ENDS_MS))) {
-      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message that could not be cancelled');
+      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message');
     }
     // Nothing has been torn down yet.
     if (deployed.runtime.getState() !== 'STOPPED') {
@@ -1131,7 +1173,8 @@ export class EngineManager {
    *
    * - Stale PENDING claims (in-flight dispatches interrupted by a crash) are reset
    *   to QUEUED so the queue consumers redeliver them.
-   * - A message not routed yet is run again from its stored raw content, as the same message.
+   * - A message not routed yet is run again from its stored raw content, as the same message. Without
+   *   that it ends in ERROR.
    * - RECEIVED destination messages are redispatched from their stored SENT content and variables.
    * QUEUED messages are left for the queue consumers.
    * Resolves false when it is to go on at the next start.
@@ -1176,6 +1219,7 @@ export class EngineManager {
       }
     };
 
+    let toldOfUnstored = false;
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
       const leave = (error: Error): Result<void> => {
         logger.error({ channelId, messageId, errMsg: error.message }, 'Crash recovery could not run a message again and left it as it was');
@@ -1183,7 +1227,20 @@ export class EngineManager {
       };
       const raw = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.RAW);
       if (!raw.ok) return leave(raw.error);
-      if (raw.value === null) return leave(new Error('Its raw content is not stored'));
+      if (raw.value === null) {
+        if (runSignal.aborted) return INTERRUPTED;
+        const given = await this.giveUpUnstored(recovery, messageId);
+        if (!given.ok) return leave(given.error);
+        // One for all of them: an alert is sent at most once a minute.
+        if (!toldOfUnstored) {
+          toldOfUnstored = true;
+          await recovery.raiseAlert({
+            channelId, errorType: 'SOURCE_CONNECTOR', timestamp: Date.now(),
+            errorMessage: `Crash recovery marked message ${String(messageId)} ERROR; the server log names each one it does that to. ${RAW_NOT_STORED}`,
+          });
+        }
+        return { ok: false, value: null, error: new Error(RAW_NOT_STORED) } as Result<void>;
+      }
       const sourceMap = await loadSourceMap(channelId, messageId);
       if (!sourceMap.ok) return leave(sourceMap.error);
       if (runSignal.aborted) return INTERRUPTED;
@@ -1218,6 +1275,20 @@ export class EngineManager {
       logger.info({ channelId: channel.id, ...summary }, 'Channel recovery complete');
     }
     return !interrupted;
+  }
+
+  private async giveUpUnstored({ channel, store }: ChannelRecovery, messageId: number): Promise<Result<void>> {
+    const channelId = channel.id;
+    const failed = await MessageService.failUnrouted(channelId, messageId);
+    if (!failed.ok) return failed;
+    logger.error({ channelId, messageId, reason: RAW_NOT_STORED }, 'Crash recovery could not run a message again and marked it ERROR');
+    const saved = (what: string, write: Promise<Result<unknown>>): Promise<void> =>
+      reportUnsaved([write], { channelId, messageId, metaDataId: 0, what }, logStoreFailure);
+    await Promise.all([
+      saved('why a message failed', store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, RAW_NOT_STORED, 'TEXT')),
+      saved('the count of a failed message', store.incrementStats(channelId, 0, this.serverId, 'errored')),
+    ]);
+    return OK_VOID;
   }
 
   private redispatcherFor(recovery: ChannelRecovery): DestinationRedispatcher {

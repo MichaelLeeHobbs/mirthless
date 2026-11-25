@@ -32,7 +32,7 @@ A connector's properties are checked when the channel deploys. Every type reject
 
 | Property | Required | Notes |
 |---|---|---|
-| `processBatch` | No | Off by default. Split an inbound HL7 batch into one message per `MSH` segment. The Mirth importer sets it; the editor has no field for it. |
+| `processBatch` | No | Off by default. Split an inbound HL7 batch into one message per `MSH` segment, processed in order. A message recorded with an error does not stop the ones after it, and the batch is an error to the source. A message that could not be recorded at all (the database is down) ends the batch, and the source treats it as it treats a message that was not recorded: a polling source reads it again, Kafka and AMQP up to `maxStoreAttempts` times, and MLLP and HTTP answer an error. Offered again, the messages before that one are processed and sent again; a sender that does not offer it again has the rest of the batch to send. A JavaScript source, which never offers a batch again, goes on with the next message. A batch in which a message holds U+0000 is not taken at all by a channel that stores raw content without encryption, because it could never be recorded (a JavaScript source loses only that message). The log says which messages were not recorded, and an alert is raised. The Mirth importer sets it; the editor has no field for it. |
 
 ### Every destination
 
@@ -42,7 +42,11 @@ A connector's properties are checked when the channel deploys. Every type reject
 
 When the server stops while a destination is sending, the next start sends the message to it again, so the partner can get it twice. A send that then fails goes to the destination's queue if it has one, as any failed send does. The message's variables (what scripts put in the connector, channel and response maps) are kept only for a destination whose queue is on. A destination whose queue is off is not sent the message again when its settings use variables, because it would get other data; it ends in ERROR with the reason, and an alert. That is a `${name}` in a URL, parameter, header, topic, key, routing key, email field or target channel, a `${name}` in a database query that the message's own JSON does not hold, or a JavaScript script that names `channelMap`, `$`, `$c`, `connectorMessage` or `globalThis`, itself or in a code template linked to the channel. A `${name}` in `template` does not count: the filled text is stored. To have such a message sent again, turn the destination's queue on. Resending one message to one destination is refused for the same reason when no variables are stored for it.
 
-A message the server stopped on before it was routed to its destinations is run again as the same message, from its stored raw content. The source's scripts run again, and what they do outside the message (a database write, a message routed to another channel) happens again too. The source map is kept only in Development storage, so in Production and Raw storage those scripts see it empty. A message whose raw content is not stored, or cannot be read, stays RECEIVED, with an error in the log at each deploy.
+A message the server stopped on before it was routed to its destinations is run again as the same message, from its stored raw content. The source's scripts run again, and what they do outside the message (a database write, a message routed to another channel) happens again too. The source map is kept only in Development storage, so in Production and Raw storage those scripts see it empty. A message whose raw content is not stored (Metadata and Disabled storage) ends in ERROR, with an alert and an error in the log; no destination was sent to, but its scripts may have run. One whose raw content cannot be read stays RECEIVED, with an error in the log at each deploy.
+
+A send may take as long as the destination's own timeout, and 5 minutes at most, whether the message has just come in, waits on the queue or is sent again after a server stop. A longer timeout in the settings is accepted and does not make it longer. At 5 minutes the send is told to end; a destination that cannot cancel what it is doing ends by its own limits. A stop waits for the queued send in flight, and the channel stays started and takes messages until it has ended; a send of crash recovery it waits 10 seconds for. A halt ends a queued send and puts the message back on the queue without counting an attempt; the partner may have taken it all the same. A server that stops gives queued sends 20 seconds from the signal and then does what a halt does. It has 30 seconds in all, so its container needs a longer grace period than that.
+
+A destination that shows RECEIVED cannot be resent while its message is open: the pipeline or crash recovery is sending it, or is about to. If that does not end, redeploy the channel.
 
 A message is not sent again either, and ends in ERROR, when the destination it was prepared for is gone or switched off since the channel was deployed again.
 
@@ -95,7 +99,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `port` | Yes | Partner port. |
 | `maxConnections` | No | Size of the connection pool. |
 | `responseTimeout` | No | Milliseconds to wait for the acknowledgement before the send is an ERROR. |
-| `acquireTimeoutMs` | No | Milliseconds a message waits for a connection, a free pooled one or a new one. A queued message waits at most 30 seconds. While the partner refuses connections, each connection in the pool is tried again after a second (or a quarter of this, if that is shorter), and the outage is logged once. A stop waits for the messages that wait; a halt ends their sends at once. |
+| `acquireTimeoutMs` | No | Milliseconds a message waits for a connection, a free pooled one or a new one. While the partner refuses connections, each connection in the pool is tried again after a second (or a quarter of this, if that is shorter), and the outage is logged once. A stop waits for the messages that wait; a halt ends their sends at once. |
 | `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. A message with a character the charset does not have is an ERROR that names the character, and nothing is sent. A queued destination retries it like any failed send, with the message as it is stored: a new charset helps it, a changed transformer does not. |
 | `frameStart` | No | Start bytes in hex. API or Mirth import only. |
 | `frameEnd` | No | End bytes in hex. API or Mirth import only. |
@@ -319,7 +323,7 @@ The name in `${name}` is everything between the braces, without surrounding spac
 
 It talks to PostgreSQL and to MySQL or MariaDB, picked with `vendor` (D-259 in [DECISIONS.md](../progress/DECISIONS.md)). Any other vendor, such as SQL Server or Oracle, refuses to deploy. No test has run against MariaDB.
 
-How a value stands in a message (D-359):
+How a value stands in a message (D-365):
 
 - A PostgreSQL `date` is `2026-01-15`, a `timestamp` is `2026-01-15T00:30:00.123456`, in no time zone, and a `timestamptz` is the instant in UTC, `2026-01-15T08:30:00.123456Z`. Three to six digits of a second, whatever the time zone of the server. A value outside those forms (`infinity`, a year before 1 or after 9999, a `DateStyle` other than ISO) is the database's own text. MySQL dates and times are the database's own text.
 - A `bigint`, a `numeric` (in an array too) and a MySQL `DECIMAL` are text. So is a number inside a `json` or `jsonb` value that JavaScript cannot hold (MySQL: a whole number), and a `NaN` or `Infinity`, also as a coordinate of a `point` or `circle`. Other numbers are numbers.

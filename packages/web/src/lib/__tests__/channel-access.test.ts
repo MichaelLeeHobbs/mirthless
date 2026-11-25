@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChannelAccessView } from '@galvanigraph/core-models';
-import { accessCsv, describePath } from '../channel-access.js';
+import { accessCsv, describePath, groupNamer } from '../channel-access.js';
 
 const VIEW: ChannelAccessView = {
   asOf: null,
@@ -21,6 +21,13 @@ describe('describePath', () => {
   it('names the role, the scope and the end', () => {
     expect(describePath(VIEW.people[0]!.through[0]!, groupName, (t) => t)).toBe('Lab analyst · Lab, Radiology');
     expect(describePath(VIEW.people[0]!.through[1]!, groupName, () => 'Jan 1')).toBe('=viewer · All channels · until Jan 1');
+  });
+});
+
+describe('groupNamer', () => {
+  it('names a group, and gives the id of one it does not know', () => {
+    const named = groupNamer([{ id: 'g1', name: 'Lab' }]);
+    expect([named('g1'), named('g2'), groupNamer(undefined)('g1')]).toEqual(['Lab', 'g2', 'g1']);
   });
 });
 

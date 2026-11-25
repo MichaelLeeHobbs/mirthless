@@ -1,4 +1,4 @@
-// What a PostgreSQL value is in a row (D-359). A row becomes JSON, so a value pg would turn into
+// What a PostgreSQL value is in a row (D-365). A row becomes JSON, so a value pg would turn into
 // a Date (shifted into UTC, cut to milliseconds) or into a number that cannot hold it is text here.
 
 import pg from 'pg';

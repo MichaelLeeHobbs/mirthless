@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography';
 import { ALL_CHANNELS, PERMISSION_CATALOG, type Permission } from '@galvanigraph/core-models';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { useChannelGroups } from '../../hooks/use-channel-groups.js';
+import { groupNamer } from '../../lib/channel-access.js';
 import { formatTimestamp } from '../../lib/format.js';
 import { expiryState } from '../../lib/access-expiry.js';
 
@@ -33,7 +34,7 @@ export function MyAccessDialog({ open, onClose }: MyAccessDialogProps): ReactNod
 function MyAccessContent({ onClose }: { readonly onClose: () => void }): ReactNode {
   const user = useAuthStore((s) => s.user);
   const { data: groups } = useChannelGroups();
-  const groupName = (id: string): string => groups?.find((g) => g.id === id)?.name ?? id;
+  const groupName = groupNamer(groups);
   // A server that sends no grants gave every permission on every channel.
   const rows = user?.grants ?? user?.permissions.map((permission) => ({ permission, scope: ALL_CHANNELS })) ?? [];
 
