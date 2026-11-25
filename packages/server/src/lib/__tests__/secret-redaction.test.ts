@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } from '@galvanigraph/core-models';
 import {
   redactChannelDetail,
+  holdsRedacted,
   REDACTED,
   isSecretPropertyKey,
   redactSettingValue,
@@ -102,6 +103,81 @@ describe('secret-redaction — connector properties', () => {
   });
 });
 
+describe('secret-redaction: credentials under a key that names none', () => {
+  it('masks the secret lines of headers saved as text and keeps the rest', () => {
+    const out = redactConnectorProperties({
+      headers: 'Accept: application/json\r\n Authorization :  Bearer a:b\r\n\r\nX-Api-Key:k\nCookie:\nkey: k',
+    });
+    expect(out['headers']).toBe(
+      `Accept: application/json\r\n Authorization :  ${REDACTED}\r\n\r\nX-Api-Key:${REDACTED}\nCookie:\nkey: ${REDACTED}`,
+    );
+  });
+
+  it('masks whole a header line the connector would ignore, which may be the rest of a credential', () => {
+    expect(redactConnectorProperties({ headers: 'Authorization Bearer x\r\n: y\n  z\nAccept: a' }))
+      .toEqual({ headers: `${REDACTED}\r\n${REDACTED}\n  ${REDACTED}\nAccept: a` });
+  });
+
+  it.each([
+    ['a user and password', 'https://svc:hunter2@host.example:8443/in?a=1#f', `https://${REDACTED}@host.example:8443/in?a=1#f`],
+    ['a token as the user', 'https://hunter2@host.example/', `https://${REDACTED}@host.example/`],
+    ['a password that holds an @', 'https://svc:hun@ter2@host.example/', `https://${REDACTED}@host.example/`],
+    ['no path', 'amqp://svc:hunter2@mq', `amqp://${REDACTED}@mq`],
+    ['a backslash in the password of a scheme that allows one', 'amqp://svc:hun\\ter2@mq/v', `amqp://${REDACTED}@mq/v`],
+    ['spaces and capitals before it', '  HTTPS://svc:hunter2@host.example/', `  HTTPS://${REDACTED}@host.example/`],
+    ['no slashes, as the URL parser allows for http', 'https:svc:hunter2@host.example/', `https:${REDACTED}@host.example/`],
+    ['backslashes for slashes', 'https:\\\\svc:hunter2@host.example\\in', `https:\\\\${REDACTED}@host.example\\in`],
+    ['a message variable in the host', 'https://svc:hunter2@${site}.example/', `https://${REDACTED}@\${site}.example/`],
+    ['a message variable for its scheme', '${scheme}://svc:hunter2@host.example/', `${'${scheme}'}://${REDACTED}@host.example/`],
+    ['no scheme', '//svc:hunter2@host.example/', `//${REDACTED}@host.example/`],
+    ['no scheme or slashes', 'svc:hunter2@host.example/in', `${REDACTED}@host.example/in`],
+    ['a message variable in its scheme and no slashes', '${scheme}:svc:hunter2@host.example/', `${REDACTED}@host.example/`],
+    ['a message variable for its start', '${base}/in?token=hunter2', `${'${base}'}/in?token=${REDACTED}`],
+    ['a tab and line ends, which the URL parser drops', 'ht\ttps:\n//svc:hunter2@host.example/?to\r\nken=x', `https://${REDACTED}@host.example/?token=${REDACTED}`],
+    ['a control character before it', '\u0000\u001fhttps:svc:hunter2@host.example/', `\u0000\u001fhttps:${REDACTED}@host.example/`],
+    ['a secret query parameter', 'https://host.example/in?site=lab&apiKey=hunter2&token=&key=a=b#f', `https://host.example/in?site=lab&apiKey=${REDACTED}&token=&key=${REDACTED}#f`],
+    ['a percent-encoded parameter name', 'https://host.example/?api%4Bey=hunter2', `https://host.example/?api%4Bey=${REDACTED}`],
+    ['both', 'https://svc:hunter2@host.example?access_token=x', `https://${REDACTED}@host.example?access_token=${REDACTED}`],
+  ])('masks the credentials in a URL with %s', (_what, url, masked) => {
+    expect(redactConnectorProperties({ url, baseUrl: url })).toEqual({ url: masked, baseUrl: masked });
+  });
+
+  it.each([
+    'https://host.example/users/bob@example.org?mail=bob@example.org',
+    'https://host.example/%zz?%zz=1',
+    'https://${cfg.user}:${cfg.pw}@host.example/in?token=${cfg.token}',
+    'https://host.example/in\n?site=lab',
+    '',
+  ])('leaves %s as it is', (text) => {
+    expect(redactConnectorProperties({ url: text })).toEqual({ url: text });
+  });
+
+  // An import drops what is masked: without its body an SMTP destination would send the raw message.
+  it.each(['bodyTemplate', 'template', 'subject', 'script', 'query', 'fileFilter'])('leaves a URL in %s as it is', (key) => {
+    for (const text of ['https://svc:p@host.example/r?id=${id}&token=${tok}\n\nResults are ready.', 'HTTP: send failed. Contact ops@hospital.example', `see ${REDACTED}`]) {
+      expect(redactConnectorProperties({ [key]: text })).toEqual({ [key]: text });
+      expect(stripRedactedProperties({ [key]: text }, { [key]: 'other' })).toEqual({ [key]: text });
+    }
+  });
+
+  it('leaves a parameter or a header named like a URL or headers as it is', () => {
+    const properties = {
+      parameters: { headers: 'a,b', redirect_uri: 'https://h/cb?token=t&x=1' },
+      headers: { headers: 'plain value', 'X-Callback-Url': 'https://h?key=mrn' },
+    };
+    expect(redactConnectorProperties(properties)).toEqual(properties);
+    expect(stripRedactedProperties(properties)).toEqual(properties);
+  });
+
+  it.each(['keyStorePW', 'trustStorePW', 'keyStorePw', 'pw', 'db_pw', 'X-Pwd', 'userPwd', 'dbpwd', 'DBPWD'])('masks %s', (key) => {
+    expect(redactConnectorProperties({ [key]: 'hunter2' })).toEqual({ [key]: REDACTED });
+  });
+
+  it.each(['pwFile', 'spw', 'upward'])('does not mask %s', (key) => {
+    expect(redactConnectorProperties({ [key]: 'x' })).toEqual({ [key]: 'x' });
+  });
+});
+
 describe('secret-redaction — channel detail', () => {
   it('redacts source and destination properties and leaves the rest', () => {
     const out = redactChannelDetail({
@@ -183,6 +259,45 @@ describe('stripRedactedProperties with stored properties', () => {
     expect(stripRedactedProperties({ password: REDACTED, port: 1 }, ['p'])).toEqual({ port: 1 });
   });
 
+  const URL = 'https://svc:hunter2@host.example/in?token=t&a=1';
+  const HEADERS = 'Accept: text/plain\r\nAuthorization: Bearer b\nX-Api-Key: k';
+  const masked = (key: string, text: string): string => redactConnectorProperties({ [key]: text })[key] as string;
+
+  it.each([['url', URL], ['headers', HEADERS]])('puts back the stored %s when the file changes nothing but the masks', (key, stored) => {
+    expect(masked(key, stored)).not.toBe(stored);
+    expect(stripRedactedProperties({ [key]: masked(key, stored) }, { [key]: stored })).toEqual({ [key]: stored });
+  });
+
+  it.each([
+    ['another host', masked('url', URL).replace('host.example', 'attacker.example'), URL],
+    ['another parameter', masked('url', URL).replace('a=1', 'a=2'), URL],
+    ['nothing stored', masked('url', URL), undefined],
+    ['the marker stored', masked('url', URL), masked('url', URL)],
+    ['something that is not text stored', masked('url', URL), { url: URL }],
+  ])('drops a masked URL with %s, so that the deploy fails instead of sending the mask', (_what, file, stored) => {
+    expect(stripRedactedProperties({ url: file, port: 1 }, { url: stored })).toEqual({ port: 1 });
+  });
+
+  it.each([
+    ['another header', 'Accept: a/b\nAuthorization: Bearer b'],
+    ['nothing stored', undefined],
+    ['headers stored as a map', { Accept: 'text/plain', Authorization: 'Bearer b' }],
+  ])('drops only the masked lines of headers saved as text with %s', (_what, stored) => {
+    const file = `Accept: text/plain\nAuthorization: ${REDACTED}\r\n Cookie :${REDACTED}\nX-Site: lab`;
+    expect(stripRedactedProperties({ headers: file }, { headers: stored })).toEqual({ headers: 'Accept: text/plain\nX-Site: lab' });
+  });
+
+  it('keeps text that names the marker and is neither headers nor a URL', () => {
+    const script = `return msg === '${REDACTED}';`;
+    expect(stripRedactedProperties({ script }, { script: 'old' })).toEqual({ script });
+  });
+
+  it('puts back a header line that is masked whole', () => {
+    const stored = 'Authorization Bearer x';
+    expect(stripRedactedProperties({ headers: REDACTED }, { headers: stored })).toEqual({ headers: stored });
+    expect(stripRedactedProperties({ headers: REDACTED }, {})).toEqual({ headers: '' });
+  });
+
   it('follows deeply nested properties without recursion', () => {
     const DEPTH = 20_000;
     const nested = (password: string): Record<string, unknown> => {
@@ -193,5 +308,26 @@ describe('stripRedactedProperties with stored properties', () => {
     let found: unknown = stripRedactedProperties(nested(REDACTED), nested('p'));
     for (let i = 0; i < DEPTH; i++) found = (found as { a: unknown }).a;
     expect(found).toEqual({ password: 'p' });
+  });
+});
+
+describe('holdsRedacted', () => {
+  it.each([
+    { password: REDACTED },
+    { auth: { basic: { token: REDACTED } } },
+    { headers: `Accept: a\nAuthorization: ${REDACTED}` },
+    { url: `https://${REDACTED}@h/` },
+    { attachments: [{ apiToken: REDACTED }] },
+  ])('is true of %j', (properties) => {
+    expect(holdsRedacted(properties)).toBe(true);
+  });
+
+  it.each([
+    {},
+    { password: 'p', port: 1, tls: { key: '' }, list: ['a', { b: null }], on: true },
+    { headers: 'Accept: a\r\n\nAuthorization: Bearer b', url: 'https://u:p@h/?token=t' },
+    { script: `return msg === '${REDACTED}';` },
+  ])('is false of %j', (properties) => {
+    expect(holdsRedacted(properties)).toBe(false);
   });
 });

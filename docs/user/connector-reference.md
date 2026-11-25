@@ -160,7 +160,7 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 
 | Property | Required | Notes |
 |---|---|---|
-| `url` | Yes | Target URL. May use `${name}` message variables. |
+| `url` | Yes | Target URL. May use `${name}` message variables. Use `basicAuth` for a user name and password: in the URL, they work only with `scheme` HTTPS or custom TLS material, and every other send fails. |
 | `method` | No | `GET`, `POST` (default), `PUT`, `PATCH` or `DELETE`, in any case. |
 | `headers` | No | Name and value pairs; values may use `${name}`. Text saved by older editors is read as `Name: value` lines. |
 | `parameters` | No | Query parameters added to the URL; values may use `${name}`. API or Mirth import only. |
@@ -534,7 +534,7 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 
 | Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | Yes | FHIR server base URL, an absolute URL. Use the final address: a redirect is an ERROR. |
+| `baseUrl` | Yes | FHIR server base URL, an absolute URL without a user name or password. Use the final address: a redirect is an ERROR. |
 | `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
 | `authType` | No | `NONE` (default), `BASIC`, `BEARER` or `API_KEY`. Each type other than `NONE` refuses to deploy without its credentials below. |

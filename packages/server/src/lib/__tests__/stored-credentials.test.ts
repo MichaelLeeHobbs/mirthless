@@ -209,6 +209,28 @@ describe('overwriteProperties', () => {
     expect(out['url']).toBe(http.url);
   });
 
+  describe('in headers saved as text and in a URL', () => {
+    const stored = { url: 'https://svc:hunter2@api.example.org/in?token=t', headers: 'Accept: text/plain\nAuthorization: Bearer b', basicAuth: { username: 'svc', password: 'pw' } };
+    const over = (changes: Record<string, unknown>): Record<string, unknown> => overwriteProperties(
+      'destination',
+      { connectorType: 'HTTP', properties: { ...redactConnectorProperties(stored), ...changes } },
+      { connectorType: 'HTTP', properties: stored },
+    );
+
+    it('keeps the credentials when only free settings changed', () => {
+      expect(over({ method: 'PUT' })).toEqual({ ...stored, method: 'PUT' });
+    });
+
+    it.each([
+      ['the host', { url: `https://${REDACTED}@attacker.example/in?token=${REDACTED}` }],
+      ['a host with the credentials left out', { url: 'https://attacker.example/in' }],
+      ['a header line', { headers: `Accept: a/b\nAuthorization: ${REDACTED}` }],
+      ['headers as a map', { headers: { Accept: 'text/plain', Authorization: REDACTED } }],
+    ])('drops every one of them when the file changes %s', (_what, changes) => {
+      expect(JSON.stringify(over(changes))).not.toMatch(/hunter2|=t"|Bearer b|"pw"|__REDACTED__/);
+    });
+  });
+
   it('does not count a masked header the target never had', () => {
     const headers = { ...redactConnectorProperties(http.headers), Cookie: REDACTED };
     expect(overHttp({ headers })).toEqual(http);
