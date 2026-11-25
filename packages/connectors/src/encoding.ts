@@ -1,4 +1,5 @@
 import type { QueueCharset } from '@galvanigraph/core-models';
+import { decodeWindows1252 } from '@galvanigraph/core-util';
 
 // fs.readFile/writeFile reject IANA names like 'ISO-8859-1' or 'US-ASCII' with ERR_UNKNOWN_ENCODING.
 const ALIASES: Readonly<Record<string, BufferEncoding>> = {
@@ -45,29 +46,6 @@ export const INVALID_UTF8_MESSAGE = 'Payload is not valid UTF-8; invalid bytes w
 
 /** `fatal` makes invalid UTF-8 throw instead of being replaced in silence; `ignoreBOM` keeps a BOM as Buffer.toString does. */
 const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-/**
- * Built on first use: a Node without full ICU throws for windows-1252, and at
- * module load that would take every connector down with it.
- */
-let windows1252: InstanceType<typeof TextDecoder> | null = null;
-function windows1252Decoder(): InstanceType<typeof TextDecoder> {
-  windows1252 ??= new TextDecoder('windows-1252');
-  return windows1252;
-}
-
-/**
- * Throws so a queue source fails to deploy rather than on every message. Only
- * windows-1252 can be missing (a Node built without full ICU).
- */
-export function assertCharsetAvailable(charset: QueueCharset | undefined): void {
-  if (charset !== 'windows-1252') return;
-  try {
-    windows1252Decoder();
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(`Charset windows-1252 is not available on this server (${reason}); Node needs full ICU. Choose another charset.`, { cause: err });
-  }
-}
 
 export function decodePayload(bytes: Buffer, charset: QueueCharset): DecodedPayload {
   switch (charset) {
@@ -81,7 +59,7 @@ export function decodePayload(bytes: Buffer, charset: QueueCharset): DecodedPayl
     case 'base64':
       return { text: bytes.toString(charset), replaced: false };
     case 'windows-1252':
-      return { text: windows1252Decoder().decode(bytes), replaced: false };
+      return { text: decodeWindows1252(bytes), replaced: false };
     default: {
       const unreachable: never = charset;
       throw new Error(`Unknown charset ${String(unreachable)}`);

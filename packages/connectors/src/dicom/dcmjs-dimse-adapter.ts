@@ -1,8 +1,8 @@
 // ===========================================
-// dcmjs-dimse adapter for the DICOM connector
+// dcmjs-dimse SCP for the DICOM connector
 // ===========================================
-// Pure-JS DICOM DIMSE backing for the DICOM source (SCP / C-STORE receive) and
-// destination (SCU / C-STORE send), replacing the native @ubercode/dcmtk wrapper.
+// Pure-JS DICOM DIMSE backing for the DICOM source (SCP / C-STORE receive), replacing the
+// native @ubercode/dcmtk wrapper. The destination's side is dimse-sender.ts.
 //
 // The critical piece the native wrapper lacked is association negotiation: an SCP
 // must inspect the requested presentation contexts and ACCEPT the ones whose
@@ -16,11 +16,9 @@ import type { Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
-import type { DcmtkSender, DcmtkSendResult } from './dicom-dispatcher.js';
 
-const { Server, Scp, Client, Dataset, constants, requests, responses, log } = pkg;
+const { Server, Scp, Dataset, constants, responses, log } = pkg;
 const { SopClass, StorageClass, TransferSyntax, PresentationContextResult, Status } = constants;
-const { CStoreRequest } = requests;
 const { CEchoResponse, CStoreResponse } = responses;
 
 // Quiets the library's per-association INFO chatter; the connector logs failures itself.
@@ -274,79 +272,5 @@ export function createDimseReceiver(options: {
     aeTitle: options.aeTitle,
     connectionTimeoutMs: options.connectionTimeoutMs,
     roots: options.roots,
-  }));
-}
-
-interface SenderOptions {
-  readonly host: string;
-  readonly port: number;
-  readonly calledAETitle: string;
-  readonly callingAETitle: string;
-  readonly maxRetries: number;
-  readonly retryDelayMs: number;
-  readonly timeoutMs: number;
-}
-
-class DimseSender implements DcmtkSender {
-  constructor(private readonly options: SenderOptions) {}
-
-  private sendOnce(files: readonly string[]): Promise<Result<DcmtkSendResult>> {
-    return new Promise((resolve) => {
-      const startedAt = Date.now();
-      const client = new Client();
-      for (const file of files) {
-        client.addRequest(new CStoreRequest(file));
-      }
-
-      let rejection: Error | null = null;
-      client.on('associationRejected', (r: { result: number; source: number; reason: number }) => {
-        rejection = new Error(`DICOM association rejected: result=${String(r.result)} source=${String(r.source)} reason=${String(r.reason)}`);
-      });
-      client.on('networkError', (e: Error) => { resolve(fail(e)); });
-      client.on('closed', () => {
-        if (rejection) { resolve(fail(rejection)); return; }
-        resolve(ok({ files, fileCount: files.length, durationMs: Date.now() - startedAt }));
-      });
-
-      client.send(this.options.host, this.options.port, this.options.callingAETitle, this.options.calledAETitle, {
-        connectTimeout: this.options.timeoutMs,
-        associationTimeout: this.options.timeoutMs,
-        pduTimeout: this.options.timeoutMs,
-      });
-    });
-  }
-
-  async send(files: readonly string[]): Promise<Result<DcmtkSendResult>> {
-    let attempt = 0;
-    for (;;) {
-      const last = await this.sendOnce(files);
-      if (last.ok || attempt >= this.options.maxRetries) return last;
-      attempt += 1;
-      if (this.options.retryDelayMs > 0) {
-        await new Promise((r) => setTimeout(r, this.options.retryDelayMs));
-      }
-    }
-  }
-
-  async stop(): Promise<void> { /* clients are created per send */ }
-}
-
-export function createDimseSender(options: {
-  readonly host: string;
-  readonly port: number;
-  readonly calledAETitle: string;
-  readonly callingAETitle: string;
-  readonly maxRetries: number;
-  readonly retryDelayMs: number;
-  readonly timeoutMs: number;
-}): Result<DcmtkSender> {
-  return ok(new DimseSender({
-    host: options.host,
-    port: options.port,
-    calledAETitle: options.calledAETitle,
-    callingAETitle: options.callingAETitle,
-    maxRetries: options.maxRetries,
-    retryDelayMs: options.retryDelayMs,
-    timeoutMs: options.timeoutMs,
   }));
 }

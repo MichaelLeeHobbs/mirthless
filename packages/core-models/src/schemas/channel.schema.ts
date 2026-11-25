@@ -137,7 +137,7 @@ const updateDestinationInputSchema = withoutDefaults(destinationInputSchema)
 export type UpdateDestinationInput = z.infer<typeof updateDestinationInputSchema>;
 
 // Filters, transformers and metadata columns are replaced, and nothing says which stored rule or step one
-// is, so what the request leaves out of them cannot be kept. They are given whole (D-350).
+// is, so what the request leaves out of them cannot be kept. They are given whole (D-353).
 const updateFilterInputSchema = withoutDefaults(filterInputSchema).extend({
   metaDataId: connectorRefFields.metaDataId,
   rules: z.array(withoutDefaults(filterRuleInputSchema)),
@@ -161,7 +161,7 @@ const updateChannelBaseSchema = withoutDefaults(createChannelSchema.omit({ group
 
 /**
  * Update replaces rules and steps by position, so it cannot keep what the request leaves out of one;
- * a default language would turn TypeScript into JavaScript and switch off its deploy type check (D-294, D-350).
+ * a default language would turn TypeScript into JavaScript and switch off its deploy type check (D-294, D-353).
  */
 export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
   for (const s of updateScripts(input)) {
