@@ -39,13 +39,17 @@ export class SftpFileWrite {
   private tempRefused = false;
   /** The old file may be under another name, and the new one not in place yet. */
   private setAside: SetAside | null = null;
-  /** The old file, when it could not be removed after the new one took its place. */
-  private oldFileLeft: string | null = null;
+  private placed = false;
+  private aside: string | null = null;
 
   constructor(private readonly client: SftpClient, private readonly target: SftpFileTarget) {}
 
-  /** Once it ends well, the old file under its temporary name if it could not be removed. */
-  async run(data: Buffer): Promise<string | null> {
+  /** The old file, when the new one is in place and it is not known to be gone. */
+  get oldFileLeft(): string | null {
+    return this.placed ? this.aside : null;
+  }
+
+  async run(data: Buffer): Promise<void> {
     const { client, target } = this;
     await client.connect();
     this.stopIfGivenUp();
@@ -58,13 +62,13 @@ export class SftpFileWrite {
     } else {
       await this.writeInPlace((onOpen) => client.put(data, target.path, onOpen));
     }
-    return this.oldFileLeft;
   }
 
-  /** The error to report, or null when a rename under way put the file in place after all. */
+  /** The error to report, or null when the file is in place, or a rename under way put it there after all. */
   async giveUp(done: Promise<unknown>, cause: unknown): Promise<Error | null> {
     this.givenUp = true;
     if (this.renaming && await this.endsWell(done)) return null;
+    if (this.placed) return null;
     const left = [...this.filesLeft(), ...await this.removeTemp()];
     const message = cause instanceof Error ? cause.message : String(cause);
     return new Error([message, ...left].join('; '), { cause });
@@ -89,6 +93,7 @@ export class SftpFileWrite {
     this.temp = temp;
     const refused = await this.refusedToOpen((onOpen) => this.client.put(data, temp, onOpen));
     if (refused !== null) {
+      this.temp = null;
       this.tempRefused = true;
       throw refused;
     }
@@ -153,10 +158,18 @@ export class SftpFileWrite {
       throw err;
     }
     this.setAside = null;
+    this.placed = true;
+    await this.removeOld(aside);
+  }
+
+  /** Never fails the send: the new file is in place. */
+  private async removeOld(aside: string): Promise<void> {
+    this.aside = aside;
     try {
-      await client.delete(aside);
+      await withTimeout(this.client.delete(aside), WIND_UP_MS, 'SFTP delete');
+      this.aside = null;
     } catch {
-      this.oldFileLeft = aside;
+      // The dispatcher warns of it.
     }
   }
 

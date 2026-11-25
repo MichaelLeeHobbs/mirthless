@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import type { DispatchResult, RawMessage } from '../../base.js';
 import { FileReceiver, FILE_POST_ACTION, FILE_SORT_BY, type FileReceiverConfig } from '../file-receiver.js';
+import { moveWithoutReplacing } from '../file-move.js';
 import { tempFileName } from '../../temp-file.js';
 import { makeMockLogger, type MockLogger } from '../../__fixtures__/mock-logger.js';
 
@@ -269,6 +270,14 @@ describe('a File source that moves what it read (#412)', () => {
     await pollsPass(2);
     expect(await fs.readFile(path.join(inbound, 'a.hl7'), 'utf8')).toBe('A');
     expect(seen).toEqual(['A']);
+  });
+
+  it('keeps a file whose target folder is its own folder under another path', async () => {
+    await drop('a.hl7', 'A');
+    const other = path.join(root, 'other-path');
+    await fs.symlink(inbound, other, 'junction');
+    await expect(moveWithoutReplacing(path.join(inbound, 'a.hl7'), path.join(other, 'a.hl7'))).rejects.toThrow('already exists');
+    expect(await fs.readFile(path.join(inbound, 'a.hl7'), 'utf8')).toBe('A');
   });
 
   it('leaves no copy in the target folder when the file cannot leave the source folder', async () => {

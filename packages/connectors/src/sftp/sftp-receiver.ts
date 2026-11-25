@@ -2,7 +2,7 @@
 // (new instance) does not re-dispatch an already-dispatched file.
 
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
-import { stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { selectsFileName } from '../file/file-receiver.js';
@@ -66,8 +66,8 @@ interface Session {
   live: boolean;
   /** Ends once the file in hand is deleted, moved, quarantined or left. */
   file: Promise<void>;
-  /** The file in hand has gone into the pipeline. */
-  dispatched: boolean;
+  /** The file in hand was read: from here on it is processed and settled, whatever stops the source. */
+  taken: boolean;
 }
 
 export class SftpReceiver implements SourceConnectorRuntime {
@@ -125,7 +125,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
       if (!this.dispatcher) {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
-      const session: Session = { client: null, live: true, file: Promise.resolve(), dispatched: false };
+      const session: Session = { client: null, live: true, file: Promise.resolve(), taken: false };
       await this.connect(session);
       this.session = session;
       // Merge the current and legacy (pre-rename) ledgers, so entries
@@ -137,21 +137,21 @@ export class SftpReceiver implements SourceConnectorRuntime {
     });
   }
 
-  /** Waits for a file in the pipeline, so it is deleted, moved or quarantined before its connection goes. */
+  /** Waits for a file that was read, so it is deleted, moved or quarantined before its connection goes. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       const session = this.endSession();
       // Not only this session's: after a pause the session is gone, and its file may be in flight.
-      if (this.polling?.dispatched === true) await this.polling.file;
+      if (this.polling?.taken === true) await this.polling.file;
       if (session !== null) await this.disconnect(session);
     });
   }
 
-  /** Does not wait: a file in the pipeline keeps the connection, and the cycle closes it. */
+  /** Does not wait: a file that was read keeps the connection, and the cycle closes it. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
       const session = this.endSession();
-      if (session !== null && !session.dispatched) await this.disconnect(session);
+      if (session !== null && !session.taken) await this.disconnect(session);
     });
   }
 
@@ -203,11 +203,11 @@ export class SftpReceiver implements SourceConnectorRuntime {
       session.file = this.processFile(session, client, entry).catch((err: unknown) => {
         failed = true;
         // A stop or halt closes the connection under a file that is only being read.
-        if (!session.live) return;
+        if (!session.live && !session.taken) return;
         this.logger.error({ ...errorInfo(err), file: entry.name }, 'SFTP file could not be processed; continuing with the next file');
       });
       await session.file;
-      session.dispatched = false;
+      session.taken = false;
     }
     // The failure may have been the connection: start the next cycle on a fresh one.
     if (failed) await this.disconnect(session);
@@ -245,12 +245,13 @@ export class SftpReceiver implements SourceConnectorRuntime {
       file: entry.name,
       minAgeMs: this.config.minFileAgeMs,
       version: () => withTimeout(client.stat(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP stat'),
-      read: (version) => this.downloadMessage(client, entry.name, version),
-      dispatcher: async (raw) => {
-        if (!session.live) return { ok: false, value: null, error: stderr('The SFTP source was stopped before the file was taken') };
-        session.dispatched = true;
-        return dispatcher(raw);
+      read: async (version) => {
+        const message = await this.downloadMessage(client, entry.name, version);
+        session.taken = session.live;
+        return message;
       },
+      dispatcher,
+      stopped: () => !session.taken,
       postProcess: this.config.afterProcessing === SFTP_POST_ACTION.NONE ? null : () => this.postProcess(client, entry.name),
     });
   }

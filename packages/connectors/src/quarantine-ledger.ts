@@ -120,6 +120,8 @@ export interface QuarantinedFile {
   /** `null` skips the file this poll. */
   readonly read: (version: FileVersion) => Promise<RawMessage | null>;
   readonly dispatcher: MessageDispatcher;
+  /** True once the source takes no more files: one that was only read stays for the next start. */
+  readonly stopped?: () => boolean;
   /** `null` leaves the file where it is, to be read again. */
   readonly postProcess: (() => Promise<void>) | null;
 }
@@ -154,6 +156,8 @@ function skipsQuarantined(job: QuarantinedFile, version: FileVersion): boolean {
 interface ReadFile {
   readonly raw: RawMessage;
   readonly version: FileVersion;
+  /** What was read is all there is. */
+  readonly gone: boolean;
 }
 
 /** `null` when the file is not to be dispatched this poll. */
@@ -172,13 +176,13 @@ async function readWhole(job: QuarantinedFile): Promise<ReadFile | null> {
   if (raw === null) return null;
   const after = await job.version();
   if (after === null) {
-    // A pick-up folder's server takes a file away once it was downloaded: what was read is all there is.
+    // A pick-up folder's server takes a file away once it was downloaded.
     job.logger.warn({ file: job.file }, 'File was gone once it was read; processing what was read');
   } else if (!sameVersion(after, version)) {
     job.logger.warn({ file: job.file }, 'File changed while it was read; left for a later poll');
     return null;
   }
-  return { raw, version };
+  return { raw, version, gone: after === null };
 }
 
 async function settle(job: QuarantinedFile, postProcess: () => Promise<void>, version: FileVersion): Promise<void> {
@@ -205,11 +209,14 @@ async function settle(job: QuarantinedFile, postProcess: () => Promise<void>, ve
 export async function dispatchQuarantined(job: QuarantinedFile): Promise<void> {
   const { ledger, logger, name, file, postProcess } = job;
   const taken = await readWhole(job);
-  if (taken === null) return;
+  if (taken === null || (!taken.gone && job.stopped?.() === true)) return;
 
   const result = await job.dispatcher(taken.raw);
-  // Not taken by the pipeline at all: leave the file for the next poll.
-  if (!result.ok) return;
+  if (!result.ok) {
+    // Not taken by the pipeline at all: the file is there for the next poll, unless it is gone.
+    if (taken.gone) logger.error({ ...errorInfo(result.error), file }, 'File was gone once it was read, and the pipeline did not take it: its content is lost');
+    return;
+  }
 
   const failure = dispatchFailure(result);
   if (failure !== null) {

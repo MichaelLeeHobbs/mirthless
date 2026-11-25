@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import { SftpDispatcher, type SftpDispatcherConfig } from '../sftp-dispatcher.js';
 import type { SftpClient, SftpClientFactory } from '../sftp-client.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import { RemoteState, makeMockSftpClient, type MockFailures } from '../../__fixtures__/mock-sftp-client.js';
 
 function makeConfig(overrides?: Partial<SftpDispatcherConfig>): SftpDispatcherConfig {
@@ -250,6 +251,41 @@ describe('a send that cannot tell how its last step ended', () => {
     written!();
     await new Promise((resolve) => { setTimeout(resolve, 20); });
     expect(renames).toBe(0);
+  });
+
+  it('is sent, with a warning, when it is given up while the file it replaced is being deleted', async () => {
+    const state = new RemoteState();
+    state.addFile('42.dat', 'OLD', 0);
+    const client = makeMockSftpClient(state);
+    const { logger, warnings } = makeMockLogger();
+    const abort = new AbortController();
+    let renames = 0;
+    const d = new SftpDispatcher(makeConfig(), () => ({
+      ...client,
+      replace: async () => false,
+      rename: async (from, to) => {
+        if (++renames === 1) throw Object.assign(new Error('Failure'), { code: 4 });
+        await client.rename(from, to);
+      },
+      delete: () => { abort.abort(); return new Promise<void>(() => { /* never answered */ }); },
+    }), logger);
+    await d.onStart();
+    const result = await d.send(makeMessage({ content: 'NEW' }), abort.signal);
+    expect(result.ok).toBe(true);
+    expect(state.files.get('42.dat')?.content).toBe('NEW');
+    expect(warnings).toHaveLength(1);
+    expect(state.files.get(String(warnings[0]!.obj['file']).replace('/outbound/', ''))?.content).toBe('OLD');
+  });
+
+  it('says only that the server refused it when the temporary file cannot be opened', async () => {
+    const d = new SftpDispatcher(makeConfig(), () => ({
+      ...makeMockSftpClient(new RemoteState()),
+      put: () => Promise.reject(Object.assign(new Error('Permission denied'), { code: 3 })),
+      delete: () => Promise.reject(Object.assign(new Error('Permission denied'), { code: 3 })),
+    }));
+    await d.onStart();
+    const result = await d.send(makeMessage(), makeSignal());
+    expect(result.error?.message).toBe('Permission denied; the server refused the temporary file or its rename: turn tempFileEnabled off if it allows none');
   });
 
   it('touches no file when it is given up during the rename of the existing one', async () => {

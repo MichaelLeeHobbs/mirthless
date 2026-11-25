@@ -296,6 +296,29 @@ describe('dispatchQuarantined', () => {
     expect(storage.files.get(LEDGER)).toBe('["a.hl7:1"]');
   });
 
+  it('does not dispatch a file when the source was stopped while it was read', async () => {
+    const { job, calls } = makeJob({ stopped: () => true });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read']);
+  });
+
+  it('dispatches a file that was gone once it was read even when the source was stopped: there is no other copy', async () => {
+    const { job, calls } = makeJob({ version: versions(LISTED, null), stopped: () => true });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read', 'dispatch']);
+  });
+
+  it('reports a file that was gone once it was read and that the pipeline did not take', async () => {
+    const { job, log } = makeJob({
+      version: versions(LISTED, null), dispatcher: async () => ({ ok: false, value: null, error: stderr('database down') }),
+    });
+    await dispatchQuarantined(job);
+    expect(log.errors).toHaveLength(1);
+    expect(log.errors[0]!.obj['file']).toBe('/in/a.hl7');
+    expect(log.errors[0]!.obj['errMsg']).toBe('database down');
+    expect(log.errors[0]!.msg).toContain('its content is lost');
+  });
+
   it('does not dispatch a file it cannot look at again once it was read', async () => {
     let looks = 0;
     const { job, calls } = makeJob({

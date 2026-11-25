@@ -598,6 +598,38 @@ describe('robustness', () => {
     expect(errors).toEqual([]);
   });
 
+  it('a stop waits for a file that was downloaded and not dispatched yet, and it is processed', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'A', Date.now() - 10_000);
+    let checkAgain = (): void => undefined;
+    let looks = 0;
+    const factory: SftpClientFactory = () => {
+      const client = makeMockSftpClient(state);
+      return {
+        ...client,
+        stat: async (remotePath) => {
+          if (++looks === 2) await new Promise<void>((resolve) => { checkAgain = resolve; });
+          return client.stat(remotePath);
+        },
+      };
+    };
+    const seen: string[] = [];
+    const r = new SftpReceiver(makeConfig(), factory);
+    r.setDispatcher(makeDispatcher((raw) => { seen.push(raw.content); return { messageId: 1 }; }));
+    await r.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(looks).toBe(2);
+
+    const stopped = r.onStop();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(state.endCount).toBe(0);
+    checkAgain();
+    await stopped;
+    expect(seen).toEqual(['A']);
+    expect(state.deleted).toEqual(['a.hl7']);
+    expect(state.endCount).toBe(1);
+  });
+
   it('a halt with no file in the pipeline closes the connection at once, also after one was processed', async () => {
     const state = new RemoteState();
     state.addFile('a.hl7', 'A', Date.now() - 10_000);

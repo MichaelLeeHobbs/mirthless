@@ -515,7 +515,7 @@ A FILE destination's temporary file has the same form of name; it was the file's
 
 **A source that finds a file changed while its message was processed leaves it and reads it again.** Before, it deleted or moved the changed file unread. A file that grows by appending is delivered again whole, so set its minimum age longer than the sender's pauses.
 
-**A stop of an SFTP source waits for the file in the pipeline**, as a FILE source's does.
+**A stop of an SFTP source waits for a file it has downloaded** until that is processed and deleted, moved or quarantined, as a FILE source's does.
 
 **An SFTP write that the server stops taking part-way, such as on a full disk, is an ERROR.** Before, the message read SENT and the file was cut short. If a partner's disk or quota ran full, files from that time may be incomplete although their messages read SENT.
 

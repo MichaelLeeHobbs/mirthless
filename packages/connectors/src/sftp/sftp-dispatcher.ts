@@ -90,12 +90,13 @@ export class SftpDispatcher implements DestinationConnectorRuntime {
     const write = new SftpFileWrite(client, { directory: remoteDirectory, path: remotePath, appendMode, tempFileEnabled });
     const done = write.run(Buffer.from(content, 'utf8'));
     try {
-      const left = await withTimeoutSignal(done, SEND_TIMEOUT_MS, 'SFTP send', signal);
-      if (left !== null) this.logger.warn({ file: left }, 'SFTP file replaced, but the old one could not be removed from under its temporary name');
+      await withTimeoutSignal(done, SEND_TIMEOUT_MS, 'SFTP send', signal);
     } catch (err) {
       const failure = await write.giveUp(done, err);
       if (failure !== null) throw failure;
     }
+    const left = write.oldFileLeft;
+    if (left !== null) this.logger.warn({ file: left }, 'SFTP file replaced, but the old one may be left under its temporary name');
   }
 
   private async safeEnd(client: SftpClient): Promise<void> {

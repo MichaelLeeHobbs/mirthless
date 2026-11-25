@@ -354,6 +354,20 @@ describe('an SFTP destination writes under a temporary name', () => {
     expect(left).toMatch(/^\/out\/\.galvanigraph-.*\.tmp$/);
   });
 
+  it('is sent, with a warning, when it is given up as the file it replaced is put aside and that cannot be deleted', async () => {
+    server.put('/out/latest.hl7', 'old');
+    server.rules.denyDelete = true;
+    const abort = new AbortController();
+    let renames = 0;
+    server.rules.onRename = async () => { if (++renames === 3) { abort.abort(); await pollsPass(1); } };
+    const log = makeMockLogger();
+    const d = new SftpDispatcher(destinationConfig(), undefined, log.logger);
+    await d.onStart();
+    expect((await d.send(makeMessage('new'), abort.signal)).ok).toBe(true);
+    expect(server.text('/out/latest.hl7')).toBe('new');
+    expect(server.text(String(log.warnings[0]!.obj['file']))).toBe('old');
+  });
+
   it('puts the existing file back when the new one cannot take its place', async () => {
     server.put('/out/latest.hl7', 'old');
     let renames = 0;
