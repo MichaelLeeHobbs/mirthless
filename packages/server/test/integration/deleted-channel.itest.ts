@@ -92,6 +92,8 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
       await message(kept, { ageDays: 3, processed: false });
       await message(kept, { ageDays: 4, destination: 'QUEUED' });
       await message(kept, { ageDays: 5, processed: false, destination: 'PENDING' });
+      // Taken from its queue for a send that a stop or a crash cut short.
+      await message(kept, { ageDays: 6, destination: 'PENDING' });
       await mods.pool.query('UPDATE channels SET pruning_enabled = true, pruning_max_age_days = 12 WHERE id = $1', [pruned]);
       await mods.pool.query('UPDATE channels SET pruning_enabled = true WHERE id = $1', [noAge]);
       for (const id of [empty, kept, pruned, noAge]) await del(id);
@@ -101,7 +103,7 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
       expect(answer.status).toBe(200);
       const listed = new Map(answer.json.data!.map((c) => [c.channelId, c]));
       expect([live, empty].map((id) => listed.has(id))).toEqual([false, false]);
-      expect([kept, pruned, noAge].map((id) => [listed.get(id)?.messages, listed.get(id)?.undelivered, listed.get(id)?.prunedAfterDays])).toEqual([[5, 3, null], [1, 0, 12], [1, 0, 30]]);
+      expect([kept, pruned, noAge].map((id) => [listed.get(id)?.messages, listed.get(id)?.undelivered, listed.get(id)?.prunedAfterDays])).toEqual([[6, 4, null], [1, 0, 12], [1, 0, 30]]);
       const { name, deletedAt, firstReceivedAt, lastReceivedAt } = listed.get(kept)!;
       expect(name).toBe(`itest-${kept}`);
       expect(Math.abs(Date.parse(deletedAt) - Date.now())).toBeLessThan(DAY_MS / 24);
