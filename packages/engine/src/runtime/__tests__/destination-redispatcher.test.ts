@@ -340,18 +340,15 @@ describe('DestinationRedispatcher', () => {
     });
   });
 
-  it('a send has 30 seconds', async () => {
+  it('a send has no time limit of its own: one that takes long is delivered', async () => {
     const expiry = new AbortController();
     const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(expiry.signal);
     try {
-      send.mockImplementation((_d: number, _m: number, _c: string, signal: AbortSignal) => new Promise((resolve) => {
-        signal.addEventListener('abort', () => { resolve(fail('Send aborted')); });
-      }));
-      const done = redispatch();
-      await vi.waitFor(() => { expect(send).toHaveBeenCalledOnce(); });
-      expect(timeout).toHaveBeenCalledExactlyOnceWith(30_000);
-      expiry.abort();
-      expect(await done).toMatchObject({ ok: true, value: 'ERROR' });
+      send.mockImplementation(async (_d: number, _m: number, _c: string, signal: AbortSignal) => {
+        expiry.abort();
+        return signal.aborted ? fail('expired') : ok({ status: 'SENT', content: 'ACK' });
+      });
+      expect(await redispatch()).toMatchObject({ ok: true, value: 'SENT' });
     } finally {
       timeout.mockRestore();
     }

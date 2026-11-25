@@ -1,5 +1,5 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
@@ -72,7 +72,7 @@ export class MessageReprocessService {
         );
 
       if (!row?.content) {
-        throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}. Reprocess requires stored raw content (DEVELOPMENT/RAW storage mode).`);
+        throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}. Reprocess requires stored raw content (DEVELOPMENT, PRODUCTION or RAW storage mode).`);
       }
 
       const decrypted = decryptIfEncrypted(row.content);
@@ -146,7 +146,8 @@ export class MessageReprocessService {
   /**
    * Re-queues one destination; no other is touched. A NEVER-queue destination has no
    * consumer, so re-queuing would strand the message: refused. So is one that uses variables
-   * of a message routed when it did not queue, because they were not kept (#390).
+   * of a message routed when it did not queue, because they were not kept (#390), and one whose
+   * first send may be under way, which the queue would send beside it (#416).
    */
   static async resendDestination(
     channelId: string,
@@ -177,7 +178,11 @@ export class MessageReprocessService {
       }
 
       const [cm] = await db
-        .select({ status: connectorMessages.status })
+        .select({
+          status: connectorMessages.status,
+          // With the status, in one statement: read after it, a send that ended in between would look like none.
+          open: sql<boolean>`EXISTS (SELECT 1 FROM messages m WHERE m.channel_id = ${channelId} AND m.id = ${messageId} AND NOT m.processed)`,
+        })
         .from(connectorMessages)
         .where(and(
           eq(connectorMessages.channelId, channelId),
@@ -186,6 +191,9 @@ export class MessageReprocessService {
         ));
       if (!cm) {
         throw new ServiceError('NOT_FOUND', `No connector message for message ${String(messageId)} destination ${String(metaDataId)}.`);
+      }
+      if (cm.status === 'RECEIVED' && cm.open) {
+        throw new ServiceError('CONFLICT', `Message ${String(messageId)} is still being sent to "${dest.name}", or crash recovery is about to. Wait until that has ended; if it does not, redeploy the channel.`);
       }
       const its = await MessageService.isForItsNumber(channelId, messageId, metaDataId);
       if (!its.ok) throw its.error;

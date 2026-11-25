@@ -1,9 +1,12 @@
 import type { Logger } from 'pino';
+import { errorInfo } from '@galvanigraph/core-util';
 
 export interface ShutdownDeps {
   readonly logger: Logger;
   readonly stopAccepting: () => Promise<void>;
   readonly stopEngine: () => Promise<void>;
+  /** Ends the queued sends that are still under way. They go back on their queues. */
+  readonly haltQueues: () => Promise<void>;
   readonly stopSocketIO: () => Promise<void>;
   readonly stopPrunerScheduler: () => Promise<void>;
   readonly stopQueue: () => Promise<void>;
@@ -13,6 +16,9 @@ export interface ShutdownDeps {
 
 /** docker-compose.prod.yml gives the container longer than this to stop. */
 export const DRAIN_TIMEOUT_MS = 30_000;
+
+/** From the signal on. What is left of the drain timeout is for what waited for the sends. */
+const QUEUES_END_MS = 20_000;
 
 /**
  * Socket.IO goes before the HTTP close: open websockets keep server.close() from
@@ -36,6 +42,12 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
       process.exit(1);
     }, DRAIN_TIMEOUT_MS);
     forceTimer.unref();
+
+    // An undeploy waits for a queued send, and so does closing HTTP when a request to stop a channel does.
+    setTimeout(() => {
+      deps.logger.warn({ phase: 'shutdown', waitedMs: QUEUES_END_MS }, 'Halting the queued sends that have not ended');
+      deps.haltQueues().catch((err: unknown) => { deps.logger.error({ phase: 'shutdown', ...errorInfo(err) }, 'Could not halt the queued sends'); });
+    }, QUEUES_END_MS).unref();
 
     // Nothing is left that could finish the step shutdown is at, so it would end here as if it had been a success.
     process.once('beforeExit', () => {
@@ -85,13 +97,14 @@ export interface UndeployableEngine {
 
 /**
  * One channel failing to undeploy must not leave the others running or skip the
- * steps that follow (the global map flush).
+ * steps that follow (the global map flush). Nor must one that waits for a send, so
+ * they are undeployed at once.
  */
 export async function undeployAll(
   engine: UndeployableEngine,
   log: { error(obj: object, msg: string): void },
 ): Promise<void> {
-  for (const id of [...engine.getAll().keys()]) {
+  await Promise.all([...engine.getAll().keys()].map(async (id) => {
     try {
       await engine.undeploy(id);
     } catch (err) {
@@ -100,5 +113,5 @@ export async function undeployAll(
         'Channel failed to undeploy during shutdown',
       );
     }
-  }
+  }));
 }

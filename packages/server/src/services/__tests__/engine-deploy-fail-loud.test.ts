@@ -169,6 +169,18 @@ describe('EngineManager.deploy refuses to start a channel it cannot run as confi
       .rejects.toThrow('batch processing is only supported for HL7V2, not JSON');
   });
 
+  it.each(['RAW', 'METADATA', 'DISABLED'])('refuses a queued destination on %s storage, and names only storage modes that it takes', async (messageStorageMode) => {
+    const queued = (mode: string): DeploymentBundle => bundleOf(makeChannel({
+      messageStorageMode: mode,
+      destinations: [{ metaDataId: 1, name: 'Out', enabled: true, connectorType: 'HTTP', properties: {}, queueMode: 'ALWAYS', retryCount: 0, retryIntervalMs: 0, rotateQueue: false }],
+    }));
+    const refusal = await deployError(queued(messageStorageMode));
+
+    const named = /Use (.+?) storage/.exec(refusal)?.[1]?.match(/[A-Z]+/g) ?? [];
+    expect(named).toEqual(['DEVELOPMENT', 'PRODUCTION']);
+    for (const mode of named) expect(await deployError(queued(mode))).toBe('deployed');
+  });
+
   it('deploys a channel whose scripts all compile', async () => {
     const channel = makeChannel({
       ...sourceFilter(rule({ script: 'return msg.get("MSH.9.1") === "ADT";' })),

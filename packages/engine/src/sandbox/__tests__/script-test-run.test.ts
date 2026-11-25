@@ -122,6 +122,14 @@ describe('runScriptTest', () => {
     expect(result.error).toMatch(/^The sample is not valid HL7V2: /);
   });
 
+  it('gives a preprocessor such a sample as text, as the pipeline does, so that it can repair it', async () => {
+    const result = await run({
+      kind: 'script', surface: { dataType: 'HL7V2', templateContext: 'CHANNEL_PREPROCESSOR' },
+      sample: `junk ${ADT}`, script: "logger.info(typeof msg); return rawData.slice(rawData.indexOf('MSH'));",
+    });
+    expect(result).toMatchObject({ outcome: 'completed', error: null, output: ADT, logs: [{ message: 'string' }] });
+  });
+
   it('reports a script error and a compile error as outcomes, not failures', async () => {
     expect((await run({ kind: 'script', script: "throw new Error('bad MRN');" })).error).toContain('bad MRN');
     expect((await run({ kind: 'script', script: 'function (' })).outcome).toBe('error');

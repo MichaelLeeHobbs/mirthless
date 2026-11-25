@@ -80,6 +80,10 @@ const shutdown = createShutdownHandler({
     await undeployAll(engine, logger);
     await engine.dispose();
   },
+  haltQueues: async () => {
+    const { getEngine } = await import('./engine.js');
+    await Promise.all([...getEngine().getAll().values()].flatMap((c) => c.queueConsumers.map((q) => q.halt())));
+  },
   stopSocketIO: shutdownSocketIO,
   stopPrunerScheduler: async () => { await PrunerSchedulerService.stop(); },
   stopQueue,

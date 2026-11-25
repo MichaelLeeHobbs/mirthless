@@ -183,7 +183,6 @@ export class QueueConsumer {
 
   private async processQueuedMessage(msg: QueuedMessage): Promise<Outcome> {
     const halted = this.haltController.signal;
-    const signal = AbortSignal.any([halted, AbortSignal.timeout(30_000)]);
 
     const contentResult = await this.store.loadContent(
       msg.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.SENT,
@@ -222,7 +221,7 @@ export class QueueConsumer {
     }
 
     const sendResult: Result<DestinationResponse> = await this.sendFn(
-      msg.metaDataId, msg.messageId, contentResult.value, signal, undefined, variables,
+      msg.metaDataId, msg.messageId, contentResult.value, halted, undefined, variables,
     );
 
     if (sendResult.ok && sendResult.value.status === 'SENT') {
