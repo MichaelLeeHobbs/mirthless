@@ -584,6 +584,10 @@ A script that counted on the defaults must send them. These now get a 400:
 
 A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
+## Changed alerts are in force at once (#417)
+
+An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
+
 ## Database values, timeouts and marked rows (#411)
 
 **PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
@@ -612,9 +616,9 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 **MariaDB**: a connection set `max_execution_time`, which MariaDB does not document, so it should have failed. The connector now sets MariaDB's `max_statement_time` when the server does not know the other. This was written from MariaDB's documentation and has not been tested on a MariaDB server.
 
-## Changed alerts are in force at once (#417)
+## A stop finishes what a source took (#413)
 
-An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-371). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
+- A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start, which a redeploy or a restart before that loses ([JavaScript](../user/connector-reference.md#javascript), D-371).
 
 ## Standard upgrade (Docker)
 

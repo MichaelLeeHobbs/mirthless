@@ -386,6 +386,8 @@ A key neither table lists refuses to deploy, naming the key.
 
 The source runs a script on a timer and sends each value it returns as a message: a string is one message, an array is one message per item, and an empty string, null or undefined sends nothing. A number is sent as text (`NaN` and `Infinity` are null), an object or an array inside the array as JSON, and a message from `parseHL7` as its HL7 text. An item that holds no message is skipped, and a warning in the log counts them: empty text, null, undefined, `true` or `false` in an array, and an object or array without data, which is also what a promise becomes that the script did not await. The destination runs a script with the message in scope, and the script's return value becomes the response.
 
+A stop or a pause waits for the script under way and for every message it returned, however long that takes, because nothing else holds what a script returned. A halt does not wait: what is not sent yet is kept, with a warning in the log that counts it, and the next start sends it before the script runs again. A redeploy or a restart after the halt loses it, with an error in the log that counts it when the channel is undeployed. A server that stops has 30 seconds for all its channels, and what a script returned and is not sent by then is lost.
+
 Both run in the engine's script sandbox, with the same bridges as transformers. See [scripting-api.md](./scripting-api.md).
 
 ### JAVASCRIPT security
