@@ -161,7 +161,7 @@ How people and programs prove who they are: accounts and passwords, sign-in and 
 
 - AUTH-KEY-01: source: access-control.md "API keys" (the token is shown once); capabilities.md "API tokens for machine callers"; D-313.
 - AUTH-KEY-02: source: access-control.md "API keys" (a required end time) and "Cutting someone off" (a revoked or ended key can never be enabled again); D-313.
-- AUTH-KEY-03: source: access-control.md "API keys" (within its issuer, when the issuer's access narrows); D-313, D-320. conflict: one bullet there says a key works again when its issuer gets the access back, another that narrowing the issuer by an edit disables the key; both hold today, the first for access that lapses by itself and the second for an edit, after which the key stays disabled until someone enables it.
+- AUTH-KEY-03: source: access-control.md "API keys" (within its issuer, when the issuer's access narrows); D-313, D-320. The page says both what an edit that narrows the issuer does (disables the key, until someone enables it) and what access that lapses by itself does (stops the key until it is given back; AUTH-KEY-10).
 - AUTH-KEY-04: source: access-control.md "API keys" (within its issuer); D-313.
 - AUTH-KEY-05: source: access-control.md "API keys" (bearer only). The plan's refusal of a key sent beside a second credential (docs/design/20-rbac-access-plan.md, section 7) is not stated on that page and is not a row.
 - AUTH-KEY-06: source: access-control.md "API keys" (daily row ceiling, with the reads that count); D-313, D-321. Refusing when the count cannot be determined is from the code. The count assumes one server today; it has to hold in total when the product runs on more than one.
