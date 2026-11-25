@@ -10,11 +10,13 @@ import { MESSAGE_CHILD_TABLES } from './message-delete-helper.js';
 // so a statement that sees one of those and not the message sees a message that was deleted.
 
 const PAGE_ROWS = 2_000;
-/** "Run now" is a request that waits for it. What is left is for the next run. */
-const BUDGET_MS = 30_000;
+/** "Run now" is a request that waits for it; pg-boss ends a job after 15 minutes. What is left is for the next run. */
+export const SWEEP_BUDGET_MS = { REQUEST: 30_000, SCHEDULED: 300_000 } as const;
 
 export interface SweepResult {
   readonly rowsDeleted: number;
+  /** It got to the end, and nothing failed. */
+  readonly complete: boolean;
   readonly failed: boolean;
 }
 
@@ -88,8 +90,8 @@ async function sweepStep(from: Position, limit: number, deadline: number): Promi
 }
 
 async function sweep(budgetMs: number): Promise<SweepResult> {
-  const deadline = Date.now() + budgetMs;
   const limit = await idLimit();
+  const deadline = Date.now() + budgetMs;
   // Deleted channels and those without pruning too: these rows belong to no message.
   const ids = await db.select({ id: channels.id }).from(channels).orderBy(channels.id);
   const steps: Step[] = ids.flatMap(({ id }) => MESSAGE_CHILD_TABLES.map((table) => ({ channelId: id, table })));
@@ -99,8 +101,9 @@ async function sweep(budgetMs: number): Promise<SweepResult> {
 
   let rowsDeleted = 0;
   let failed = false;
-  for (const [index, step] of steps.slice(start).entries()) {
-    const from = { ...step, afterId: index === 0 ? resumed?.afterId ?? 0 : 0 };
+  for (const step of steps.slice(start)) {
+    const goesOn = step.channelId === resumed?.channelId && step.table === resumed.table;
+    const from = { ...step, afterId: goesOn ? resumed.afterId : 0 };
     // One that fails must not keep the others from being swept.
     const swept = await tryCatch(sweepStep(from, limit, deadline));
     if (!swept.ok) {
@@ -117,12 +120,12 @@ async function sweep(budgetMs: number): Promise<SweepResult> {
       break;
     }
   }
-  return { rowsDeleted, failed };
+  return { rowsDeleted, complete: !failed && resumeAt === null, failed };
 }
 
 /** Deletes rows of messages that are no longer there. A run that finds another under way does nothing. */
-export async function sweepLeftoverRows(budgetMs: number = BUDGET_MS): Promise<SweepResult> {
-  if (sweeping) return { rowsDeleted: 0, failed: false };
+export async function sweepLeftoverRows(budgetMs: number): Promise<SweepResult> {
+  if (sweeping) return { rowsDeleted: 0, complete: false, failed: false };
   sweeping = true;
   try {
     return await sweep(budgetMs);

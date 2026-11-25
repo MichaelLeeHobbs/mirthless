@@ -80,11 +80,11 @@ describeIntegration('Rows that deleted messages left behind (real Postgres)', ()
     const after = await message();
     await mods.pool.query('UPDATE messages SET processed = false WHERE channel_id = $1 AND id = $2', [channelId, open]);
 
-    expect(await sweep(AMPLE_MS)).toEqual({ rowsDeleted: 12, failed: false });
+    expect(await sweep(AMPLE_MS)).toEqual({ rowsDeleted: 12, complete: true, failed: false });
 
     expect([await rowsOf(gone), await rowsOf(alsoGone)]).toEqual([NONE, NONE]);
     expect([await rowsOf(before), await rowsOf(open), await rowsOf(after)]).toEqual([ALL, ALL, ALL]);
-    expect(await sweep(AMPLE_MS)).toEqual({ rowsDeleted: 0, failed: false });
+    expect(await sweep(AMPLE_MS)).toEqual({ rowsDeleted: 0, complete: true, failed: false });
   });
 
   it('deletes content that has nothing else left', async () => {
@@ -163,11 +163,11 @@ describeIntegration('Rows that deleted messages left behind (real Postgres)', ()
       return result;
     })) as unknown as typeof execute);
 
-    expect((await sweep(AMPLE_MS)).rowsDeleted).toBe(2);
+    expect(await sweep(AMPLE_MS)).toEqual({ rowsDeleted: 2, complete: false, failed: false });
     expect([await rowsOf(first), await rowsOf(second)]).toEqual([[2, 0, 0, 0], [2, 2, 0, 0]]);
     vi.restoreAllMocks();
 
-    expect((await sweep(AMPLE_MS)).rowsDeleted).toBe(6);
+    expect(await sweep(AMPLE_MS)).toEqual({ rowsDeleted: 6, complete: true, failed: false });
     expect([await rowsOf(first), await rowsOf(second)]).toEqual([NONE, NONE]);
     expect((await rowsOf(kept))[1]).toBe(2 + 5_199);
   });
@@ -176,7 +176,7 @@ describeIntegration('Rows that deleted messages left behind (real Postgres)', ()
     const gone = await leftover();
     await message();
 
-    expect(await sweep(0)).toEqual({ rowsDeleted: 0, failed: false });
+    expect(await sweep(0)).toEqual({ rowsDeleted: 0, complete: false, failed: false });
     expect(await rowsOf(gone)).toEqual(ALL);
     expect((await sweep(AMPLE_MS)).rowsDeleted).toBe(6);
   });
@@ -187,7 +187,7 @@ describeIntegration('Rows that deleted messages left behind (real Postgres)', ()
 
     const results = await Promise.all([sweep(AMPLE_MS), sweep(AMPLE_MS)]);
 
-    expect(results.map((r) => r.rowsDeleted)).toEqual([6, 0]);
+    expect(results.map((r) => [r.rowsDeleted, r.complete])).toEqual([[6, true], [0, false]]);
   });
 
   it('is part of a pruner run, which records how many rows there were', async () => {
@@ -196,16 +196,15 @@ describeIntegration('Rows that deleted messages left behind (real Postgres)', ()
 
     const pruned = unwrap(await mods.DataPrunerService.pruneAll());
 
-    expect(pruned.leftoverRowsDeleted).toBe(6);
+    expect(pruned).toMatchObject({ leftoverRowsDeleted: 6, leftoverRowsComplete: true });
     expect(await rowsOf(gone)).toEqual(NONE);
     await vi.waitFor(async () => {
       const { rows } = await mods.pool.query<{ attributes: unknown }>(`SELECT attributes FROM events WHERE name = 'DATA_PRUNER_RAN' ORDER BY id DESC LIMIT 1`);
-      expect(rows[0]!.attributes).toMatchObject({ leftoverRowsDeleted: 6 });
+      expect(rows[0]!.attributes).toMatchObject({ leftoverRowsDeleted: 6, leftoverRowsComplete: true });
     }, WAIT);
   });
 
-  it('is read through an index, a page at a time', async () => {
-    await message();
+  it('every table it reads has an index that starts with the channel and the message', async () => {
     for (const table of TABLES) {
       const { rows } = await mods.pool.query<{ indexdef: string }>(`SELECT indexdef FROM pg_indexes WHERE tablename = $1`, [table]);
       expect(rows.some(({ indexdef }) => indexdef.includes('(channel_id, message_id')), table).toBe(true);
