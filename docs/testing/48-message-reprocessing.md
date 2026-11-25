@@ -7,6 +7,7 @@
 - [ ] `DELETE /channels/:id/messages/bulk` — deletes messages in dependency order
 - [ ] `DELETE /channels/:id/messages/bulk` — returns 404 when no messages match
 - [ ] `DELETE /channels/:id/messages/bulk` — handles partial match (only existing messages deleted)
+- [ ] `DELETE /channels/:id/messages/bulk` — deletes what nothing works on and lists the rest in `refusedIds`; 409 when all are refused
 - [ ] Reprocess requires channels:deploy permission
 - [ ] Bulk delete requires channels:delete permission
 - [ ] Both require authentication (401 without token)

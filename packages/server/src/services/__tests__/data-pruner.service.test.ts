@@ -41,10 +41,12 @@ const mockDb = {
   select: mockSelect,
   delete: mockDelete,
   execute: mockExecute,
-  transaction: vi.fn(async (fn: (tx: { execute: typeof mockExecute }) => Promise<void>) => {
-    await fn({ execute: mockExecute });
-  }),
 };
+
+const mockDeleteMessagesByIds = vi.fn();
+vi.mock('../message-delete-helper.js', () => ({ DELETE_BATCH_SIZE: 1_000, deleteMessagesByIds: mockDeleteMessagesByIds }));
+const mockSweep = vi.fn();
+vi.mock('../leftover-rows.js', () => ({ sweepLeftoverRows: mockSweep }));
 
 vi.mock('../../lib/db.js', () => ({
   db: mockDb,
@@ -85,13 +87,12 @@ function isBatchSelect(query: unknown): boolean {
 
 // Id batches the pruner reads, in order: one per channel, or several for one channel.
 let staleBatches: Array<readonly number[] | Error> = [];
-let deleteStatements = 0;
 function queueStale(...batches: Array<readonly number[] | Error>): void {
   staleBatches = [...batches];
 }
 function installExecute(): void {
   mockExecute.mockImplementation(async (query: unknown) => {
-    if (!isBatchSelect(query)) { deleteStatements += 1; return { rows: [] }; }
+    if (!isBatchSelect(query)) return { rows: [] };
     const next = staleBatches.shift() ?? [];
     if (next instanceof Error) throw next;
     return { rows: next.map((id) => ({ id })) };
@@ -105,7 +106,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
   staleBatches = [];
-  deleteStatements = 0;
+  mockDeleteMessagesByIds.mockImplementation((_channelId: string, ids: readonly number[]) => Promise.resolve({ deletedIds: ids, unfinishedIds: [], refusedIds: [] }));
+  mockSweep.mockResolvedValue({ rowsDeleted: 0, failed: false });
   installExecute();
   mockDeleteWhere.mockResolvedValue(undefined);
   mockSelectWhere.mockImplementation(() => {
@@ -126,8 +128,8 @@ describe('DataPrunerService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.deletedCount).toBe(3);
-      // attachments, custom metadata, content, connector_messages, messages
-      expect(deleteStatements).toBe(5);
+      expect(mockDeleteMessagesByIds).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID_1, [100, 200, 300], { unfinished: expect.any(Function), queued: false });
+      expect((mockDeleteMessagesByIds.mock.calls[0]![2] as { unfinished: () => boolean }).unfinished()).toBe(false);
     });
 
     it('keeps reading batches until one comes back short', async () => {
@@ -137,7 +139,7 @@ describe('DataPrunerService', () => {
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
 
       expect(result.ok && result.value.deletedCount).toBe(2001);
-      expect(deleteStatements).toBe(15);
+      expect(mockDeleteMessagesByIds).toHaveBeenCalledTimes(3);
     });
 
     it('stops after a full batch when nothing is left', async () => {
@@ -148,13 +150,24 @@ describe('DataPrunerService', () => {
       expect(result.ok && result.value.deletedCount).toBe(1000);
     });
 
+    it('does not count a message that a resend has put back on a queue, and goes on behind it', async () => {
+      queueStale(Array.from({ length: 1000 }, (_, i) => i + 1), [2000]);
+      mockDeleteMessagesByIds.mockResolvedValueOnce({ deletedIds: [1, 2], unfinishedIds: [], refusedIds: [3] });
+
+      const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
+
+      expect(result.ok && result.value.deletedCount).toBe(3);
+      const after = mockExecute.mock.calls.map(([query]) => (query as { values: readonly unknown[] }).values.find((v) => typeof v === 'number'));
+      expect(after).toEqual([0, 1000]);
+    });
+
     it('returns zero when no messages are old enough', async () => {
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 30);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.deletedCount).toBe(0);
-      expect(deleteStatements).toBe(0);
+      expect(mockDeleteMessagesByIds).not.toHaveBeenCalled();
     });
 
     it('returns error on DB failure during message select', async () => {
@@ -166,10 +179,8 @@ describe('DataPrunerService', () => {
     });
 
     it('returns error on DB failure during delete execution', async () => {
-      mockExecute.mockImplementation(async (query: unknown) => {
-        if (isBatchSelect(query)) return { rows: [{ id: 100 }] };
-        throw new Error('Delete failed');
-      });
+      queueStale([100]);
+      mockDeleteMessagesByIds.mockRejectedValue(new Error('Delete failed'));
 
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
 
@@ -284,11 +295,32 @@ describe('DataPrunerService', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value).toEqual({ channelsPruned: 1, totalDeleted: 2, failedChannelIds: [CHANNEL_ID_1] });
+      expect(result.value).toEqual({ channelsPruned: 1, totalDeleted: 2, failedChannelIds: [CHANNEL_ID_1], leftoverRowsDeleted: 0 });
       expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'FAILURE',
         attributes: expect.objectContaining({ failedChannelIds: [CHANNEL_ID_1] }),
       }));
+    });
+  });
+
+  describe('pruneAll, for rows that deleted messages left behind', () => {
+    beforeEach(() => { pushSelectResponse([]); });
+
+    it('records how many it deleted', async () => {
+      mockSweep.mockResolvedValue({ rowsDeleted: 12, failed: false });
+
+      expect(await DataPrunerService.pruneAll()).toMatchObject({ ok: true, value: { leftoverRowsDeleted: 12 } });
+      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCESS', attributes: expect.objectContaining({ leftoverRowsDeleted: 12 }) }));
+    });
+
+    it.each([
+      ['not all of them could be looked at', (): void => { mockSweep.mockResolvedValue({ rowsDeleted: 3, failed: true }); }, 3],
+      ['they could not be looked for', (): void => { mockSweep.mockRejectedValue(new Error('db down')); }, 0],
+    ])('is recorded as failed when %s', async (_what, given, leftoverRowsDeleted) => {
+      given();
+
+      expect(await DataPrunerService.pruneAll()).toMatchObject({ ok: true, value: { leftoverRowsDeleted } });
+      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({ level: 'ERROR', outcome: 'FAILURE' }));
     });
   });
 

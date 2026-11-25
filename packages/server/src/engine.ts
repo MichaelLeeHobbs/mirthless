@@ -1082,6 +1082,11 @@ export class EngineManager {
     }
   }
 
+  /** Nothing works on the channel's messages. A stopped channel may still be ending a queued send. */
+  isAtRest(channelId: string): boolean {
+    return !this.runtimes.has(channelId) && !this.deploying.has(channelId) && (this.working.get(channelId)?.size ?? 0) === 0;
+  }
+
   getRuntime(channelId: string): DeployedChannel | undefined {
     return this.runtimes.get(channelId);
   }

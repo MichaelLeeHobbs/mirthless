@@ -612,6 +612,20 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 **MariaDB**: a connection set `max_execution_time`, which MariaDB does not document, so it should have failed. The connector now sets MariaDB's `max_statement_time` when the server does not know the other. This was written from MariaDB's documentation and has not been tested on a MariaDB server.
 
+## Deleting a message that is still being processed (#403)
+
+Before, a message could be deleted while the engine worked on it. What was stored for it after that (what was sent, the partner's answer, errors) stayed in the database, where neither the message browser nor the pruner found it, and a destination that was to be queued was not sent to, without a word. Such a delete is now refused with 409 until the message is done ([which messages](../user/connector-reference.md#every-destination), D-369), and a bulk delete deletes the others and lists the refused ones in `refusedIds`. A script that deletes messages through the API should expect that. Resend is refused for a destination whose queue is sending it.
+
+**Rows left behind before the upgrade are deleted by the data pruner**, in the scheduled run or with **Run now** on the Pruner page. The schedule is off on a new install, so run it once after the upgrade if you do not use it. It reads every channel's message tables, also those of channels without pruning and of deleted channels, for at most 30 seconds a run and goes on from there in the next one, until the server restarts. It deletes a row only if its message is not there, and looks only at messages from before the last day. A row of a message that still waits on a queue stays until the queue has sent it. `DATA_PRUNER_RAN` records how many rows went (`leftoverRowsDeleted`), and the server log says which tables of which channels. To count them first:
+
+```sql
+SELECT c.channel_id, count(*) FROM message_content c
+WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.channel_id = c.channel_id AND m.id = c.message_id)
+GROUP BY c.channel_id;
+```
+
+This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

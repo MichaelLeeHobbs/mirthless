@@ -28,6 +28,7 @@ import { useNotification } from '../stores/notification.store.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { sentDateTimeLocal } from '../lib/datetime-local.js';
 import { PERMISSION } from '../lib/permissions.js';
+import { DELETE_WARNING, deleteNotice } from '../lib/message-delete.js';
 
 export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -78,7 +79,7 @@ export function MessageBrowserPage(): ReactNode {
       { channelId, messageIds: [selectedMessageId] },
       {
         onSuccess: (data) => {
-          notify(`Deleted ${String(data.deletedCount)} message(s)`, 'success');
+          notify(...deleteNotice(data));
           setSelectedMessageId(null);
         },
       },
@@ -322,7 +323,7 @@ export function MessageBrowserPage(): ReactNode {
       <ConfirmDialog
         open={confirmDeleteOpen}
         title="Delete Message"
-        message={`Delete message #${selectedMessageId !== null ? String(selectedMessageId) : ''}? This cannot be undone.`}
+        message={`Delete message #${selectedMessageId !== null ? String(selectedMessageId) : ''}? ${DELETE_WARNING}`}
         confirmLabel="Delete"
         severity="error"
         isPending={bulkDeleteMutation.isPending}
