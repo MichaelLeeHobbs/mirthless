@@ -242,7 +242,21 @@ describe('DicomReceiver PER_FILE dispatch', () => {
 
     await receiver.onUndeploy();
 
-    await expect(mock.fileHandler!(makeFileData())).rejects.toThrow('not deployed');
+    await expect(mock.fileHandler!(makeFileData())).rejects.toThrow('stopping');
+    expect(dispatcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('DicomReceiver while it stops', () => {
+  it.each(['PER_FILE', 'PER_ASSOCIATION'] as const)('refuses a file, so its sender keeps it (%s)', async (dispatchMode) => {
+    const mock = makeMockReceiver();
+    const dispatcher = makeDispatcher();
+    const receiver = new DicomReceiver(makeConfig({ dispatchMode }), makeMockFactory(mock));
+    receiver.setDispatcher(dispatcher);
+    await receiver.onStart();
+    await receiver.onStop();
+
+    await expect(mock.fileHandler!(makeFileData())).rejects.toThrow('stopping');
     expect(dispatcher).not.toHaveBeenCalled();
   });
 });

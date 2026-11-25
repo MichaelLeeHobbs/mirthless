@@ -68,7 +68,7 @@ export interface DcmtkAssociationData {
 }
 
 export interface DcmtkReceiver {
-  /** The sender's answer waits for the listener: stored when it resolves, failed (and the file removed) when it rejects. */
+  /** The sender's answer waits for the listener: stored when it resolves, failed when it rejects. The file is the listener's. */
   onFileReceived(listener: (data: DcmtkFileData) => Promise<void>): void;
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void;
   onEvent(event: 'error', listener: (data: { readonly error: Error }) => void): void;
@@ -95,6 +95,12 @@ function filesIn(content: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** What to log of a failed file operation: its message names the file, which is a SOP Instance UID. */
+function failureCode(err: unknown): string {
+  if (err instanceof Error && 'code' in err && typeof err.code === 'string') return err.code;
+  return err instanceof Error ? err.name : 'unknown';
 }
 
 /** How often a listener looks for associations whose message still has to be made. */
@@ -228,14 +234,16 @@ export class DicomReceiver implements SourceConnectorRuntime {
   /**
    * Take a file the SCP has written. The sender is told "stored" once this resolves, so in PER_FILE
    * it resolves when the message is in the store, and in PER_ASSOCIATION when the file is on the
-   * list its message is made from. When it rejects, the sender is told the store failed.
+   * list its message is made from. When it rejects, the sender is told the store failed and keeps
+   * the image.
    */
   private async takeFile(data: DcmtkFileData): Promise<void> {
     if (this.config.dispatchMode === DICOM_DISPATCH_MODE.PER_ASSOCIATION) {
-      await this.pending.add(data, data.filePath);
+      const list = await this.orDiscard(data.filePath, () => this.pending.prepare(data.associationId));
+      await this.pending.append(list, data, data.filePath);
       return;
     }
-    const { stored, done } = this.dispatch({
+    const raw: RawMessage = {
       content: data.filePath,
       sourceMap: {
         ...data.instance.dataset,
@@ -244,13 +252,33 @@ export class DicomReceiver implements SourceConnectorRuntime {
         associationId: data.associationId,
         source: data.source,
       },
+    };
+    const dispatched = await this.orDiscard(data.filePath, async () => {
+      const { stored, done } = this.dispatch(raw);
+      await stored;
+      return { done };
     });
-    await stored;
     // Not awaited: the destinations can take longer than a sender waits for its answer.
-    void done.then((result) => this.finish(result, [data.filePath], { associationId: data.associationId, callingAE: data.callingAE }));
+    void dispatched.done.then((result) => this.finish(result, [data.filePath], { associationId: data.associationId, callingAE: data.callingAE }));
+  }
+
+  /** Nothing has the file if the step fails, and its sender has the image: copies of it would fill the disk during an outage. */
+  private async orDiscard<T>(filePath: string, step: () => Promise<T>): Promise<T> {
+    try {
+      if (this.stopping) throw new Error('The DICOM Listener is stopping');
+      return await step();
+    } catch (err) {
+      await fs.rm(filePath, { force: true });
+      throw err;
+    }
   }
 
   private async handleAssociationComplete(data: DcmtkAssociationData): Promise<void> {
+    if (data.files.length === 0) {
+      // A C-ECHO, or images that were all refused.
+      await this.pending.remove(data.associationId);
+      return;
+    }
     const context = { associationId: data.associationId, callingAE: data.callingAE, fileCount: data.files.length };
     if (!data.released) {
       this.logger.warn(context, 'DICOM association ended without a release; its message has the files stored until then');
@@ -279,7 +307,9 @@ export class DicomReceiver implements SourceConnectorRuntime {
       this.pending.release(associationId);
       return false;
     }
-    // Before the post-action, so no list names a file that is deleted or moved.
+    // Until it has run, only the list can make such a message again.
+    if (!taken.value) await done;
+    // Before the post-action, so it takes no file that a list names.
     const removed = await this.pending.remove(associationId);
     const result = await done;
     if (removed) await this.finish(result, files, { associationId, fileCount: files.length });
@@ -292,35 +322,51 @@ export class DicomReceiver implements SourceConnectorRuntime {
     this.sweeping = true;
     try {
       for (const id of await this.pending.ids()) {
-        const association = await this.pending.open(id);
-        // Checked after each wait: what a stop left to the next start must not be taken here.
-        if (this.stopping) {
-          if (association) this.pending.release(id);
-          return;
-        }
-        if (association === null) continue;
-        if (association.files.length === 0) await this.pending.remove(id);
         // The store is down: the rest would fail too.
-        else if (!(await this.dispatchAssociation(association, { source: DIMSE_SOURCE }))) return;
+        if (this.stopping || !(await this.recover(id))) return;
       }
     } catch (err) {
-      this.logger.error(errorInfo(err), 'DICOM associations waiting for their message could not be read; tried again');
+      this.logger.error({ code: failureCode(err) }, 'DICOM associations waiting for their message could not be listed; tried again');
     } finally {
       this.sweeping = false;
     }
   }
 
-  /** `stored` resolves once the message is in the store, and rejects when it was not stored. `done` is the pipeline's result. */
-  private dispatch(raw: RawMessage): { readonly stored: Promise<unknown>; readonly done: Promise<Result<DispatchResult>> } {
-    let onStored = (): void => undefined;
-    const inStore = new Promise<void>((resolve) => { onStored = resolve; });
+  /** False when the pipeline could not store the message. A list that cannot be read is left and does not hold up the others. */
+  private async recover(associationId: string): Promise<boolean> {
+    let association: PendingAssociation | null;
+    try {
+      association = await this.pending.open(associationId);
+    } catch (err) {
+      this.logger.error({ code: failureCode(err), associationId }, 'A DICOM association waiting for its message could not be read; tried again');
+      return true;
+    }
+    if (association === null) return true;
+    // Checked after the wait: what a stop left to the next start must not be taken here.
+    if (this.stopping) this.pending.release(associationId);
+    else if (association.files.length === 0) await this.pending.remove(associationId);
+    else return this.dispatchAssociation(association, { source: DIMSE_SOURCE });
+    return true;
+  }
+
+  /**
+   * `stored` resolves once the message is in the store, with whether a restart can run it again, and
+   * rejects when it was not stored. `done` is the pipeline's result.
+   */
+  private dispatch(raw: RawMessage): { readonly stored: Promise<boolean>; readonly done: Promise<Result<DispatchResult>> } {
+    let onStored: NonNullable<RawMessage['onStored']> = () => undefined;
+    const inStore = new Promise<boolean>((resolve) => { onStored = ({ recoverable }): void => { resolve(recoverable); }; });
     const done = tryCatch(async () => {
       if (!this.dispatcher) throw new Error('The channel is not deployed');
       const result = await this.dispatcher({ ...raw, onStored });
       if (!result.ok) throw result.error;
       return result.value;
     });
-    const stored = Promise.race([inStore, done.then((result) => { if (!result.ok) throw result.error; })]);
+    const ended = done.then((result) => {
+      if (!result.ok) throw result.error;
+      return true;
+    });
+    const stored = Promise.race([inStore, ended]);
     return { stored, done };
   }
 

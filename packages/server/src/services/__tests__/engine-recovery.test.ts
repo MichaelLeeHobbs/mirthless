@@ -182,17 +182,20 @@ async function deployAndRecover(destination: Record<string, unknown> = DEST): Pr
 }
 
 describe('EngineManager recovery', () => {
-  it('tells a source that a message it dispatched is stored, before it is sent', async () => {
+  it.each([
+    ['DEVELOPMENT', true],
+    ['DISABLED', false],
+  ])('tells a source that a message it dispatched is stored, and whether it can be run again, before it is sent (%s)', async (messageStorageMode, recoverable) => {
     ms.initializeMessage.mockResolvedValue(ok({ messageId: 41, correlationId: 'c' }));
     const engine = new EngineManager('test-server');
-    await engine.deploy(bundleOf(makeChannel({ destinations: [DEST], inboundDataType: 'RAW' })));
+    await engine.deploy(bundleOf(makeChannel({ destinations: [DEST], inboundDataType: 'RAW', messageStorageMode })));
     const source = vi.mocked(createSourceConnector).mock.results.at(-1)?.value as { setDispatcher: ReturnType<typeof vi.fn> };
     const dispatch = source.setDispatcher.mock.lastCall?.[0] as MessageDispatcher;
-    const sentBefore: number[] = [];
+    const told: unknown[] = [];
 
-    await dispatch({ content: 'x', sourceMap: {}, onStored: () => { sentBefore.push(mockSend.mock.calls.length); } });
+    await dispatch({ content: 'x', sourceMap: {}, onStored: (stored) => { told.push([stored.recoverable, mockSend.mock.calls.length]); } });
 
-    expect(sentBefore).toEqual([0]);
+    expect(told).toEqual([[recoverable, 0]]);
     expect(mockSend).toHaveBeenCalledOnce();
     await engine.dispose();
   });

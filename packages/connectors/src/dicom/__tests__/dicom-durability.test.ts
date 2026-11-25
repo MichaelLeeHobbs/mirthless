@@ -2,6 +2,7 @@
 // associations with the listener, and a pipeline that stores, fails or is cut off as told.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -11,6 +12,24 @@ import type { DispatchResult, MessageDispatcher, RawMessage } from '../../base.j
 import { DicomReceiver, type DicomReceiverConfig } from '../dicom-receiver.js';
 import { freePort } from '../../__fixtures__/free-port.js';
 
+/** What fails, as a full disk or a locked file makes it fail. */
+const broken = vi.hoisted(() => ({ sync: false, remove: false }));
+vi.mock('../durable-file.js', async (importActual) => {
+  const actual = await importActual<typeof import('../durable-file.js')>();
+  return {
+    ...actual,
+    syncFile: (file: string) => (broken.sync && file.endsWith('.jsonl') ? Promise.reject(Object.assign(new Error('no space'), { code: 'ENOSPC' })) : actual.syncFile(file)),
+  };
+});
+vi.mock('node:fs/promises', async (importActual) => {
+  const actual = await importActual<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    rm: (target: string, options?: object) => (broken.remove && target.endsWith('.jsonl')
+      ? Promise.reject(Object.assign(new Error('locked'), { code: 'EPERM' })) : actual.rm(target, options)),
+  };
+});
+
 const { Client, Dataset, constants, requests } = pkg;
 const { CStoreRequest } = requests;
 const { AbortReason, AbortSource, Status, StorageClass, TransferSyntax } = constants;
@@ -19,6 +38,7 @@ type CStoreResponseType = InstanceType<typeof pkg.responses.CStoreResponse>;
 const CHANNEL = 'channel-1';
 const SWEEP_MS = 100;
 const PROCESSED: Result<DispatchResult> = { ok: true, value: { messageId: 1, status: 'PROCESSED' }, error: null };
+const RECOVERABLE = { recoverable: true };
 const STORE_DOWN: Result<DispatchResult> = { ok: false, value: null, error: stderr('the store is down') };
 
 let storageDir: string;
@@ -26,11 +46,14 @@ let port: number;
 const listeners: DicomReceiver[] = [];
 
 beforeEach(async () => {
+  broken.sync = false;
+  broken.remove = false;
   storageDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dicom-durable-')));
   port = await freePort();
 });
 
 afterEach(async () => {
+  broken.remove = false;
   for (const listener of listeners.splice(0)) {
     await listener.onStop();
     await listener.onUndeploy();
@@ -85,7 +108,7 @@ function store(uids: readonly string[], ending: Ending = 'release'): Promise<num
     client.on('closed', () => { resolve(statuses); });
     // Keeps the association open after the last answer, so the ending is the test's.
     client.send('127.0.0.1', port, 'SCANNER', 'LISTENER', {
-      connectTimeout: 10_000, associationTimeout: 10_000, pduTimeout: 10_000, associationLingerTimeout: ending === 'release' ? 0 : 2_000,
+      connectTimeout: 10_000, associationTimeout: 10_000, pduTimeout: 10_000, associationLingerTimeout: ending === 'release' ? 0 : 10_000,
     });
   });
 }
@@ -119,7 +142,7 @@ describe('PER_FILE', () => {
     let end = (): void => undefined;
     await listen(async (raw) => {
       seen.push(raw);
-      raw.onStored?.();
+      raw.onStored?.(RECOVERABLE);
       await new Promise<void>((resolve) => { end = resolve; });
       return PROCESSED;
     });
@@ -136,7 +159,7 @@ describe('PER_FILE', () => {
     await listen(async (raw) => {
       await new Promise((resolve) => { setTimeout(resolve, 200); });
       order.push('stored');
-      raw.onStored?.();
+      raw.onStored?.(RECOVERABLE);
       return PROCESSED;
     });
 
@@ -176,7 +199,7 @@ describe('PER_FILE', () => {
 
   it('keeps the file of a message that failed after it was stored', async () => {
     await listen(async (raw) => {
-      raw.onStored?.();
+      raw.onStored?.(RECOVERABLE);
       return { ok: true, value: { messageId: 1, status: 'ERROR' }, error: null };
     }, { postAction: 'DELETE' });
 
@@ -196,7 +219,7 @@ describe('PER_ASSOCIATION', () => {
     ['cut off', 'hang-up'],
   ])('makes one message of the answered images of an association that was %s', async (_case, ending) => {
     const seen: RawMessage[] = [];
-    await listen(async (raw) => { seen.push(raw); raw.onStored?.(); return PROCESSED; }, PER_ASSOCIATION);
+    await listen(async (raw) => { seen.push(raw); raw.onStored?.(RECOVERABLE); return PROCESSED; }, PER_ASSOCIATION);
 
     expect(await store(['1.2.1', '1.2.2'], ending)).toEqual([Status.Success, Status.Success]);
 
@@ -208,7 +231,18 @@ describe('PER_ASSOCIATION', () => {
     expect(seen).toHaveLength(1);
   });
 
-  it('makes no message of an association that stored nothing and did not release', async () => {
+  it('makes no message of an association whose images were all refused, and leaves no list', async () => {
+    await fs.writeFile(path.join(storageDir, '.galvanigraph-pending'), 'in the way');
+    const pipeline = vi.fn(async () => PROCESSED);
+    await listen(pipeline, PER_ASSOCIATION);
+
+    expect(await store(['1.2.1'])).toEqual([Status.ProcessingFailure]);
+
+    expect(await images()).toEqual([]);
+    expect(pipeline).not.toHaveBeenCalled();
+  });
+
+  it('makes no message of a connection that stored nothing and did not release', async () => {
     const pipeline = vi.fn(async () => PROCESSED);
     await listen(pipeline, PER_ASSOCIATION);
 
@@ -221,21 +255,20 @@ describe('PER_ASSOCIATION', () => {
 
   it('has the images on the list before it answers', async () => {
     await listen(async () => PROCESSED, PER_ASSOCIATION);
-    const answered: string[][] = [];
+    const answered: string[] = [];
     const client = new Client();
     const request = new CStoreRequest(new Dataset({ SOPClassUID: StorageClass.CtImageStorage, SOPInstanceUID: '1.2.3' }, TransferSyntax.ImplicitVRLittleEndian));
     await new Promise<void>((resolve) => {
       request.on('response', () => {
-        void lists().then(async ([name]) => {
-          answered.push((await fs.readFile(path.join(pendingDir(), name ?? ''), 'utf8')).trim().split('\n'));
-        });
+        const [name] = fsSync.readdirSync(pendingDir());
+        answered.push(...fsSync.readFileSync(path.join(pendingDir(), name ?? ''), 'utf8').trim().split('\n'));
       });
       client.addRequest(request);
       client.on('closed', () => { resolve(); });
       client.send('127.0.0.1', port, 'SCANNER', 'LISTENER', { connectTimeout: 10_000, associationTimeout: 10_000, pduTimeout: 10_000, associationLingerTimeout: 500 });
     });
 
-    expect(answered.flat().map((line) => JSON.parse(line) as unknown)).toEqual([{ file: '1.2.3.dcm', callingAE: 'SCANNER', calledAE: 'LISTENER' }]);
+    expect(answered.map((line) => JSON.parse(line) as unknown)).toEqual([{ file: '1.2.3.dcm', callingAE: 'SCANNER', calledAE: 'LISTENER' }]);
   });
 
   it('makes the message later when the store was down, once', async () => {
@@ -261,7 +294,7 @@ describe('PER_ASSOCIATION', () => {
     await crashed.onStop();
 
     const seen: RawMessage[] = [];
-    await listen(async (raw) => { seen.push(raw); raw.onStored?.(); return PROCESSED; }, PER_ASSOCIATION, await restarted());
+    await listen(async (raw) => { seen.push(raw); raw.onStored?.(RECOVERABLE); return PROCESSED; }, PER_ASSOCIATION, await restarted());
 
     await waitFor(() => { expect(seen).toHaveLength(1); });
     expect(filesOf(seen[0]!)).toEqual(['1.2.1.dcm', '1.2.2.dcm']);
@@ -269,7 +302,7 @@ describe('PER_ASSOCIATION', () => {
   });
 
   it('makes no second message after a crash while the stored one was being processed', async () => {
-    const crashed = await listen((raw) => { raw.onStored?.(); return new Promise(() => undefined); }, PER_ASSOCIATION);
+    const crashed = await listen((raw) => { raw.onStored?.(RECOVERABLE); return new Promise(() => undefined); }, PER_ASSOCIATION);
     expect(await store(['1.2.1'])).toEqual([Status.Success]);
     await waitFor(async () => { expect(await lists()).toEqual([]); });
     await crashed.onStop();
@@ -284,9 +317,10 @@ describe('PER_ASSOCIATION', () => {
 
   it('leaves an association a stop interrupted to the next start', async () => {
     const seen: RawMessage[] = [];
-    const pipeline: Pipeline = async (raw) => { seen.push(raw); raw.onStored?.(); return PROCESSED; };
+    const pipeline: Pipeline = async (raw) => { seen.push(raw); raw.onStored?.(RECOVERABLE); return PROCESSED; };
     const listener = await listen(pipeline, PER_ASSOCIATION);
-    const sent = store(['1.2.1'], 'stay-open');
+    // The stop resets the connection.
+    const sent = store(['1.2.1'], 'stay-open').catch(() => []);
     await waitFor(async () => { expect(await lists()).toHaveLength(1); });
     await listener.onStop();
     await sent;
@@ -310,14 +344,68 @@ describe('PER_ASSOCIATION', () => {
     expect(await lists('channel-2')).toEqual(['assoc-x.jsonl']);
   });
 
-  it('answers a failure and keeps no file when the list cannot be written', async () => {
-    await fs.writeFile(path.join(storageDir, '.galvanigraph-pending'), 'in the way');
-    const pipeline = vi.fn(async () => PROCESSED);
-    await listen(pipeline, PER_ASSOCIATION);
+  describe('an image refused because the list could not be synced', () => {
+    // The line may be on the list all the same, and a list's files are its message's: a name that
+    // went to the image sent again would be deleted by whichever message is done first.
+    it('keeps its file, so the image sent again gets another', async () => {
+      const seen: RawMessage[] = [];
+      await listen(async (raw) => { seen.push(raw); raw.onStored?.(RECOVERABLE); return PROCESSED; }, PER_ASSOCIATION);
 
-    expect(await store(['1.2.1'])).toEqual([Status.ProcessingFailure]);
+      broken.sync = true;
+      expect(await store(['1.2.1'])).toEqual([Status.ProcessingFailure]);
+      broken.sync = false;
+      expect(await store(['1.2.1'])).toEqual([Status.Success]);
 
-    expect(await images()).toEqual([]);
+      await waitFor(() => { expect(seen).toHaveLength(1); });
+      expect(filesOf(seen[0]!)).toEqual(['1.2.1_2.dcm']);
+      expect(await images()).toEqual(['1.2.1.dcm', '1.2.1_2.dcm']);
+    });
+
+    it('leaves no list when nothing else was stored, so a restart makes no message of it', async () => {
+      const first = await listen(async () => PROCESSED, PER_ASSOCIATION);
+      broken.sync = true;
+      expect(await store(['1.2.1'], 'abort')).toEqual([Status.ProcessingFailure]);
+      broken.sync = false;
+      await waitFor(async () => { expect(await lists()).toEqual([]); });
+      await first.onStop();
+
+      const pipeline = vi.fn(async () => PROCESSED);
+      await listen(pipeline, PER_ASSOCIATION, await restarted());
+      await new Promise((resolve) => { setTimeout(resolve, SWEEP_MS * 3); });
+      expect(pipeline).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps the list until the pipeline ends when a restart could not run the message again', async () => {
+    let end = (): void => undefined;
+    let told = false;
+    await listen(async (raw) => {
+      raw.onStored?.({ recoverable: false });
+      told = true;
+      await new Promise<void>((resolve) => { end = resolve; });
+      return PROCESSED;
+    }, PER_ASSOCIATION);
+
+    expect(await store(['1.2.1'])).toEqual([Status.Success]);
+    await waitFor(() => { expect(told).toBe(true); });
+    await new Promise((resolve) => { setTimeout(resolve, SWEEP_MS * 3); });
+    expect(await lists()).toHaveLength(1);
+
+    end();
+    await waitFor(async () => { expect(await lists()).toEqual([]); });
+  });
+
+  it('makes one message, and keeps its files, while its list cannot be removed', async () => {
+    broken.remove = true;
+    const seen: RawMessage[] = [];
+    await listen(async (raw) => { seen.push(raw); raw.onStored?.(RECOVERABLE); return PROCESSED; }, { ...PER_ASSOCIATION, postAction: 'DELETE' });
+
+    expect(await store(['1.2.1'])).toEqual([Status.Success]);
+
+    await waitFor(() => { expect(seen).toHaveLength(1); });
+    await new Promise((resolve) => { setTimeout(resolve, SWEEP_MS * 5); });
+    expect(seen).toHaveLength(1);
+    expect(await images()).toEqual(['1.2.1.dcm']);
   });
 
   describe('a list left on disk', () => {
@@ -339,6 +427,19 @@ describe('PER_ASSOCIATION', () => {
       expect(filesOf(seen[0]!)).toEqual(['here.dcm']);
       await waitFor(async () => { expect(await lists()).toEqual([]); });
       expect(await fs.readdir(path.join(storageDir, 'sub'))).toEqual(['elsewhere.dcm']);
+    });
+
+    it('does not wait for one that cannot be read', async () => {
+      await fs.mkdir(path.join(pendingDir(), 'assoc-a.jsonl'), { recursive: true });
+      await fs.utimes(path.join(pendingDir(), 'assoc-a.jsonl'), new Date(0), new Date(0));
+      await fs.writeFile(path.join(storageDir, 'here.dcm'), 'DICM');
+      await leftBehind([line('here.dcm')]);
+      const seen: RawMessage[] = [];
+      await listen(async (raw) => { seen.push(raw); return PROCESSED; }, PER_ASSOCIATION);
+
+      await waitFor(() => { expect(seen).toHaveLength(1); });
+      expect(filesOf(seen[0]!)).toEqual(['here.dcm']);
+      expect(await lists()).toContain('assoc-a.jsonl');
     });
 
     it('is dropped when every file is gone', async () => {

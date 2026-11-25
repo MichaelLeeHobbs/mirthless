@@ -868,7 +868,7 @@ export class EngineManager {
       destinations,
       onMessage: async (raw) => (batched
         ? processBatch(splitHl7Batch, raw.content, (part) => processMessage(part, raw.sourceMap))
-        : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, raw.onStored))),
+        : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) })))),
     };
 
     // Taken before the channel can receive anything: every unprocessed message

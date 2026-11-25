@@ -14,11 +14,12 @@ export interface RawMessage {
   readonly content: string;
   readonly sourceMap: Readonly<Record<string, unknown>>;
   /**
-   * Called once the message is in the store, where a restart finds it, and before any script or
-   * destination runs: a source that only answers "received" need not wait for them. Not every
+   * Called once the message is in the store and before any script or destination runs: a source
+   * that only answers "received" need not wait for them. `recoverable` is false when the channel
+   * does not store raw content, so a restart finds the message and cannot run it again. Not every
    * dispatcher calls it. Must not throw.
    */
-  readonly onStored?: (() => void) | undefined;
+  readonly onStored?: ((stored: { readonly recoverable: boolean }) => void) | undefined;
 }
 
 /**

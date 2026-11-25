@@ -1,6 +1,6 @@
 // PER_ASSOCIATION answers each image as it arrives and makes the message when the association
 // ends. Until that message is stored, the list of what was answered is kept beside the images, so
-// an abort, a crash or a failed store loses none of them (#410, D-351).
+// an abort, a crash or a failed store loses none of them (#410, D-352).
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -31,7 +31,7 @@ interface PendingLine {
   readonly calledAE: string;
 }
 
-/** A line of a list, or null: one whose write failed or was cut short was never answered. */
+/** A line of a list, or null: one whose write was cut short was never answered. */
 function parseLine(line: string): PendingLine | null {
   try {
     const value: unknown = JSON.parse(line);
@@ -57,12 +57,20 @@ export class PendingAssociations {
     readonly logger: ConnectorLogger;
   }) {}
 
-  /** An image is on the list, and on disk there, once this resolves. The list is in hand until {@link release}. */
-  async add(association: Omit<PendingAssociation, 'files'>, filePath: string): Promise<void> {
-    const list = await this.pathOf(association.associationId);
-    this.hold(association.associationId, list);
-    const line: PendingLine = { file: path.basename(filePath), callingAE: association.callingAE, calledAE: association.calledAE };
+  /** Take an association's list in hand, until {@link release}, and make the place for it. */
+  async prepare(associationId: string): Promise<string> {
+    const list = await this.pathOf(associationId);
+    this.hold(associationId, list);
     await makeDirectory(path.dirname(list));
+    return list;
+  }
+
+  /**
+   * An image is on the list, and on disk there, once this resolves. When it rejects it may be on the
+   * list all the same, so its file must stay: the name would go to another image.
+   */
+  async append(list: string, association: Omit<PendingAssociation, 'files'>, filePath: string): Promise<void> {
+    const line: PendingLine = { file: path.basename(filePath), callingAE: association.callingAE, calledAE: association.calledAE };
     // The newline comes first, so a line cut short by a full disk does not spoil the next one.
     await fs.appendFile(list, `\n${JSON.stringify(line)}`);
     await syncFile(list);

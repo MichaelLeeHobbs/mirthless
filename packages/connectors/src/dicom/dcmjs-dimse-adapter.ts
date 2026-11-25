@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { settleWithin, type Result } from '@galvanigraph/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
@@ -119,9 +119,6 @@ function writeDataset(dataset: DatasetType, filePath: string): Promise<void> {
 /** What the source map of a message from this SCP names as its source. */
 export const DIMSE_SOURCE = 'dcmjs-dimse';
 
-/** How long an association that ended waits for its images that are still being stored. */
-const STORES_END_MS = 30_000;
-
 /** Copies of one instance that may wait in the storage directory at once. */
 const MAX_COPIES = 100;
 
@@ -159,8 +156,7 @@ class DimseReceiver implements DcmtkReceiver {
 
   /**
    * Persist a received dataset to a .dcm file and hand it to the listener. Once this resolves the
-   * file is on disk and the listener has taken it, so the sender can be told it is stored; when it
-   * rejects the sender keeps the image, and the file is removed. The storage directory is checked
+   * file is on disk and the listener has taken it, so the sender can be told it is stored. The storage directory is checked
    * against the roots before every write, so one swapped for a link out of them since deploy is
    * refused.
    */
@@ -174,19 +170,19 @@ class DimseReceiver implements DcmtkReceiver {
       await writeDataset(dataset, filePath);
       await syncFile(filePath);
       await syncDirectory(dir);
-      await this.fileListener?.({
-        filePath,
-        associationId: assocId,
-        associationDir: this.options.storageDir,
-        callingAE: callingAe,
-        calledAE: calledAe,
-        source: DIMSE_SOURCE,
-        instance: { dataset: elements },
-      });
     } catch (err) {
       await fs.rm(filePath, { force: true });
       throw err;
     }
+    await this.fileListener?.({
+      filePath,
+      associationId: assocId,
+      associationDir: this.options.storageDir,
+      callingAE: callingAe,
+      calledAE: calledAe,
+      source: DIMSE_SOURCE,
+      instance: { dataset: elements },
+    });
     files.push(filePath);
   }
 
@@ -214,8 +210,7 @@ class DimseReceiver implements DcmtkReceiver {
       private end(released: boolean): void {
         if (this.ended) return;
         this.ended = true;
-        void settleWithin(Promise.all(this.storing), STORES_END_MS).then(() => {
-          if (!released && this.files.length === 0) return;
+        void Promise.allSettled(this.storing).then(() => {
           emitAssociation({
             associationId: this.assocId,
             associationDir: storageDir,

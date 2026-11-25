@@ -330,7 +330,7 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
     source: spec.source,
     destinations,
     onMessage: async (raw) => toDispatchResult(await processor.processMessage(
-      { rawContent: raw.content, sourceMap: raw.sourceMap, onStored: raw.onStored },
+      { rawContent: raw.content, sourceMap: raw.sourceMap, onStored: () => raw.onStored?.({ recoverable: true }) },
       AbortSignal.timeout(30_000),
     )),
   };

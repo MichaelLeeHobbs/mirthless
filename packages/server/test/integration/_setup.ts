@@ -3,7 +3,8 @@
 // database; without one they skip.
 
 import { randomUUID } from 'node:crypto';
-import { describe } from 'vitest';
+import type { IssuedApiKey } from '@galvanigraph/core-models';
+import { describe, expect } from 'vitest';
 
 function isTestDatabaseConfigured(): boolean {
   const url = process.env.DATABASE_URL;
@@ -142,6 +143,15 @@ export async function apiCall<T = unknown>(base: string, token: string, method: 
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return { status: res.status, json: res.status === 204 ? {} : await res.json() as ApiAnswer<T>['json'] };
+}
+
+/** On every channel, for 30 days. The caller deletes the key's user before its issuer. */
+export async function issueKey(base: string, as: TestUser, permissions: readonly string[]): Promise<IssuedApiKey> {
+  const res = await apiCall<IssuedApiKey>(base, as.token, 'POST', '/api-keys', {
+    name: `itest-key-${randomUUID().slice(0, 8)}`, permissions, groupIds: null, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+  });
+  expect(res.status).toBe(201);
+  return res.json.data!;
 }
 
 export async function deleteTestChannel(mods: ServerModules, id: string): Promise<void> {
