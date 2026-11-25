@@ -9,7 +9,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { CollectionRecord, CollectionSummary } from '../../hooks/use-collections.js';
-import { filledFields, formatTtl } from '../../lib/collections.js';
+import { filledFields, formatTtl, isExpired } from '../../lib/collections.js';
 import { fromDateTimeLocal, toDateTimeLocal } from '../../lib/datetime-local.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
@@ -38,10 +38,11 @@ function dialogTitle(record: CollectionRecord | null, readOnly: boolean): string
   return readOnly ? 'Record' : 'Edit record';
 }
 
-function expiryHelp(collection: CollectionSummary, isNew: boolean): string {
-  if (!isNew) return 'Leave blank to keep it forever.';
-  return collection.defaultTtlSeconds === null
-    ? 'Leave blank to keep it forever.'
+function expiryHelp(collection: CollectionSummary, record: CollectionRecord | null, readOnly: boolean): string {
+  const expired = isExpired(record?.expireAt ?? null) ? 'Expired: scripts no longer find this record. ' : '';
+  if (readOnly) return expired;
+  return record !== null || collection.defaultTtlSeconds === null
+    ? `${expired}Leave blank to keep it forever.`
     : `Leave blank to use the collection default (${formatTtl(collection.defaultTtlSeconds)}).`;
 }
 
@@ -101,7 +102,7 @@ export function RecordDialog({ collection, record, readOnly, isPending, error, o
           size="small"
           value={expires}
           onChange={(e) => { setExpires(e.target.value); }}
-          helperText={readOnly ? undefined : expiryHelp(collection, record === null)}
+          helperText={expiryHelp(collection, record, readOnly)}
           slotProps={{ input: { readOnly }, inputLabel: { shrink: true }, htmlInput: { step: 1 } }}
           sx={{ width: 280, maxWidth: '100%' }}
         />

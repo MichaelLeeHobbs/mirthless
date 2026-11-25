@@ -32,7 +32,7 @@ scenario('S08 JavaScript Writer reports SENT with a reply, or ERROR by throwing'
 
   await sendMllp(PORT, orm('GOOD1'));
   await sendMllp(PORT, orm('BAD'));
-  await expect.poll(async () => (await api.messages(channelId)).total, { timeout: 15_000 }).toBe(2);
+  await expect.poll(async () => (await api.messages(channelId)).total).toBe(2);
 
   const items = [...(await api.messages(channelId)).items].sort((a, b) => a.messageId - b.messageId);
   const good = (await api.message(channelId, items[0]!.messageId)).connectors.find((c) => c.metaDataId === 1)!;

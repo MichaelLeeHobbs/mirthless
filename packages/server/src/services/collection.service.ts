@@ -1,7 +1,7 @@
 // Design: docs/design/10-collections.md.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { and, eq, asc, desc, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, asc, desc, gt, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type {
   CreateCollectionInput,
   UpdateCollectionInput,
@@ -156,7 +156,7 @@ export class CollectionService {
       assertKnownFields(Object.keys(query.match), collection.indexedFields, 'find match');
       assertKnownFields(Object.keys(query.filter ?? {}), collection.indexedFields, 'find filter');
 
-      const conditions: SQL[] = [eq(collectionRecords.collectionId, collection.id)];
+      const conditions: (SQL | undefined)[] = [eq(collectionRecords.collectionId, collection.id), livesOn()];
 
       if (Object.keys(query.match).length > 0) {
         const matchJson = JSON.stringify(stringifyFields(query.match));
@@ -241,9 +241,12 @@ export class CollectionService {
     });
   }
 
-  /** Null when the record is gone (deleted or pruned), so a script can decide. */
+  /**
+   * Null when the record is gone (deleted, pruned, or expired and not given a new life), so a script
+   * can decide: what it wrote to an expired one would never be found, and then be pruned.
+   */
   static async updateByName(name: string, recordId: string, input: UpdateRecordInput): Promise<Result<CollectionRecordResult | null>> {
-    return tryCatch(async () => patchRecord(await requireByName(name), recordId, input));
+    return tryCatch(async () => patchRecord(await requireByName(name), recordId, input, givesLife(input) ? undefined : livesOn()));
   }
 
   /** False when it was already gone. */
@@ -292,10 +295,20 @@ async function insertRecord(
   return toRecord(row!);
 }
 
+/** By the clock that a TTL is counted from, which is not the database's. */
+function livesOn(): SQL | undefined {
+  return or(isNull(collectionRecords.expireAt), gt(collectionRecords.expireAt, new Date()));
+}
+
+function givesLife({ expireAt }: UpdateRecordInput): boolean {
+  return expireAt === null || (expireAt !== undefined && Date.parse(expireAt) > Date.now());
+}
+
 async function patchRecord(
   collection: typeof collections.$inferSelect,
   recordId: string,
   input: UpdateRecordInput,
+  only?: SQL,
 ): Promise<CollectionRecordResult | null> {
   const changes: Partial<typeof collectionRecords.$inferInsert> = {};
   if (input.fields !== undefined) {
@@ -310,7 +323,7 @@ async function patchRecord(
   const [row] = await db
     .update(collectionRecords)
     .set(changes)
-    .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collection.id)))
+    .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collection.id), only))
     .returning();
   return row ? toRecord(row) : null;
 }

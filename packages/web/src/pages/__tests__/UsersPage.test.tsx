@@ -148,13 +148,49 @@ describe('UsersPage edit dialog password change', () => {
   });
 });
 
-describe('UsersPage editing your own account', () => {
-  function openEdit(row: number): void {
-    const edit = screen.getAllByRole('button', { name: 'Edit user' })[row];
-    if (!edit) throw new Error(`no Edit user button in row ${String(row)}`);
-    fireEvent.click(edit);
-  }
+function openEdit(row: number): void {
+  const edit = screen.getAllByRole('button', { name: 'Edit user' })[row];
+  if (!edit) throw new Error(`no Edit user button in row ${String(row)}`);
+  fireEvent.click(edit);
+}
 
+describe('UsersPage editing a disabled account', () => {
+  const emailField = (): HTMLInputElement => screen.getByLabelText(/Email/);
+
+  it('locks the email, and says how to change it', () => {
+    renderPage();
+
+    openEdit(1);
+
+    expect(emailField().disabled).toBe(true);
+    expect(screen.getByText(/Enable the account to change its email/)).toBeTruthy();
+  });
+
+  it('saves the name, and sends no email', async () => {
+    renderPage();
+
+    openEdit(1);
+    fireEvent.change(screen.getByLabelText(/First Name/), { target: { value: 'Kiran' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => { expect(updateAsync).toHaveBeenCalledWith({ id: 'u2', input: { firstName: 'Kiran' } }); });
+  });
+
+  it('leaves the email of an enabled account and of a new one open', () => {
+    renderPage();
+
+    openEdit(0);
+    expect(emailField().disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    cleanup();
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Create User' }));
+    expect(emailField().disabled).toBe(false);
+    expect(screen.queryByText(/Enable the account to change its email/)).toBeNull();
+  });
+});
+
+describe('UsersPage editing your own account', () => {
   it('offers no password field, and says where to change it', () => {
     myId = 'u1';
     renderPage();
