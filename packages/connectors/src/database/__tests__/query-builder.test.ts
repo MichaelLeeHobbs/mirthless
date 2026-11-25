@@ -135,6 +135,40 @@ describe('prepare', () => {
     expect(result.params).toEqual([3, 2, 1]);
   });
 
+  it.each([
+    ['a name with a dot', 'a.b'],
+    ['a name with a dash', 'patient-id'],
+    ['a name that starts with a digit', '1st'],
+  ])('binds %s that the context has', (_what, name) => {
+    const result = prepare(`UPDATE t SET a = \${${name}} WHERE b = \${${name}}`, { [name]: 'x' });
+
+    expect(result).toEqual({ sql: 'UPDATE t SET a = $1 WHERE b = $1', params: ['x'] });
+  });
+
+  it('reads a dotted name as one key, not as a path', () => {
+    expect(prepare('SELECT ${a.b}', { a: { b: 1 } })).toEqual({ sql: 'SELECT ${a.b}', params: [] });
+  });
+
+  it('leaves a name that is not a plain one and that the context lacks as written, so the database refuses it', () => {
+    expect(prepare('SELECT ${patient-id}, ${}, ${x}', { x: 1 })).toEqual({ sql: 'SELECT ${patient-id}, ${}, $1', params: [1] });
+  });
+
+  it('binds null under any name the context has', () => {
+    expect(prepare('SELECT ${patient-id}', { 'patient-id': null })).toEqual({ sql: 'SELECT $1', params: [null] });
+  });
+
+  it('trims a name', () => {
+    expect(prepare('SELECT ${ x }, ${x}', { x: 1 })).toEqual({ sql: 'SELECT $1, $1', params: [1] });
+  });
+
+  it('does not find an inherited name', () => {
+    expect(prepare('SELECT ${toString}', {}).params).toEqual([undefined]);
+  });
+
+  it('never reads a bound value as a placeholder', () => {
+    expect(prepare('SELECT ${x}', { x: '${y}', y: 'no' })).toEqual({ sql: 'SELECT $1', params: ['${y}'] });
+  });
+
   it('writes ? per use in question style, passing a repeated name once per use', () => {
     const result = prepare('UPDATE t SET a = ${x}, b = ${y} WHERE a <> ${x} AND c = ${missing}', { x: 1, y: 2 }, 'question');
     expect(result.sql).toBe('UPDATE t SET a = ?, b = ? WHERE a <> ? AND c = ?');

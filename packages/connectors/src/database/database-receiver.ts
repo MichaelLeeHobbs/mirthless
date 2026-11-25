@@ -2,8 +2,10 @@ import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { toPoolConfig, type DatabasePool, type TxQuery } from './connection-pool.js';
+import { appendLockClause, withSkippedRows } from './lock-clause.js';
 import { prepare } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
+import { UnmarkedRows, rowKey, type Row, type TakenRow } from './unmarked-rows.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 const UPDATE_MODE = {
@@ -41,29 +43,46 @@ export type { UpdateMode, RowFormat };
 
 const STATEMENT_TIMEOUT_MS = 30_000;
 
-/**
- * Locks hold only for a plain SELECT (one table, no GROUP BY/DISTINCT/aggregate). PostgreSQL
- * rejects any other with this clause, and the failure is logged rather than reopening double
- * processing.
- */
-export function appendLockClause(selectQuery: string): string {
-  const trimmed = selectQuery.trim().replace(/;\s*$/, '');
-  if (/\bfor\s+(update|share)\b/i.test(trimmed)) return trimmed;
-  return `${trimmed} FOR UPDATE SKIP LOCKED`;
+/** PostgreSQL's and MySQL's code for a write in a read-only transaction. */
+function isWriteRefused(error: Error): boolean {
+  const { code } = error as { readonly code?: unknown };
+  return code === '25006' || code === 'ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION';
+}
+
+/** One start of the source. A cycle that outlives a halt keeps its own pool, not a later start's. */
+interface Session {
+  readonly pool: DatabasePool;
+  readonly dispatcher: MessageDispatcher;
+  /** False once stop or halt is asked for: the cycle in flight takes no more rows. */
+  live: boolean;
+}
+
+interface PolledRow {
+  readonly row: Row;
+  readonly content: string;
 }
 
 export class DatabaseReceiver implements SourceConnectorRuntime {
   private readonly config: DatabaseReceiverConfig;
-  private readonly pool: DatabasePool;
+  private readonly openPool: () => DatabasePool;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private polling = false;
+  private session: Session | null = null;
+  /** The poll cycle in flight, of this session or of one that was halted; there is never a second. */
+  private cycle: { readonly session: Session; readonly ended: Promise<void> } | null = null;
+  private readonly unmarked = new UnmarkedRows();
+  private readonly claimQuery: string;
 
   constructor(config: DatabaseReceiverConfig, pool?: DatabasePool, logger?: ConnectorLogger) {
     this.config = config;
-    this.pool = pool ?? createPool(config.vendor ?? DATABASE_VENDOR.POSTGRESQL);
+    this.openPool = (): DatabasePool => pool ?? createPool(this.vendor);
+    this.claimQuery = appendLockClause(config.selectQuery, this.vendor);
     this.logger = logger ?? createConnectorLogger('DATABASE');
+  }
+
+  private get vendor(): DatabaseVendor {
+    return this.config.vendor ?? DATABASE_VENDOR.POSTGRESQL;
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -95,30 +114,45 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
       if (!this.dispatcher) {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
+      const session: Session = { pool: this.openPool(), dispatcher: this.dispatcher, live: true };
 
-      const createResult = await this.pool.create(toPoolConfig(this.config, STATEMENT_TIMEOUT_MS));
+      const createResult = await session.pool.create(toPoolConfig(this.config, STATEMENT_TIMEOUT_MS));
       if (!createResult.ok) {
         throw createResult.error;
       }
 
+      this.session = session;
       this.pollTimer = setInterval(() => {
-        void this.pollCycle();
+        this.poll(session);
       }, this.config.pollingIntervalMs);
     });
   }
 
+  /** Waits for the row being processed, so it is marked before its connection goes. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.clearPollTimer();
-      await this.drainPool();
+      const session = this.endSession();
+      const { cycle } = this;
+      // Not only this session's: after a halt the session is gone, and its row may be in flight.
+      if (cycle !== null) await cycle.ended;
+      if (session !== null && session !== cycle?.session) await this.drainPool(session);
     });
   }
 
+  /** Does not wait: the cycle in flight marks the row it dispatched, and closes its pool. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.clearPollTimer();
-      await this.drainPool();
+      const session = this.endSession();
+      if (session !== null && session !== this.cycle?.session) await this.drainPool(session);
     });
+  }
+
+  private endSession(): Session | null {
+    const { session } = this;
+    this.clearPollTimer();
+    if (session !== null) session.live = false;
+    this.session = null;
+    return session;
   }
 
   async onUndeploy(): Promise<Result<void>> {
@@ -127,28 +161,33 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     });
   }
 
-  private async pollCycle(): Promise<void> {
-    if (this.polling || !this.dispatcher) return;
-    this.polling = true;
+  private poll(session: Session): void {
+    if (this.cycle !== null) return;
+    const ended = this.pollCycle(session).finally(async () => {
+      this.cycle = null;
+      if (!session.live) await this.drainPool(session);
+    });
+    this.cycle = { session, ended };
+  }
+
+  private async pollCycle(session: Session): Promise<void> {
     try {
       if (this.config.updateMode === UPDATE_MODE.NEVER) {
-        await this.pollNoAck();
+        await this.pollNoAck(session);
       } else {
-        await this.pollWithClaim();
+        await this.pollWithClaim(session);
       }
     } catch (err) {
       this.logger.error(
         { ...errorInfo(err), database: this.config.database },
         'Database poll cycle failed',
       );
-    } finally {
-      this.polling = false;
     }
   }
 
   /** Nothing to lock or ack: the query's own WHERE must exclude processed rows. */
-  private async pollNoAck(): Promise<void> {
-    const queryResult = await this.pool.query(this.config.selectQuery, []);
+  private async pollNoAck(session: Session): Promise<void> {
+    const queryResult = await session.pool.query(this.config.selectQuery, []);
     if (!queryResult.ok) {
       // Expired credentials / dropped connection otherwise leave the channel
       // STARTED yet silently idle — surface it loudly.
@@ -159,7 +198,8 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
       return;
     }
     for (const row of this.capRows(queryResult.value.rows)) {
-      await this.dispatchRow(row);
+      if (!session.live) return;
+      await this.dispatchRow(session, { row, content: JSON.stringify(row) });
     }
   }
 
@@ -167,38 +207,78 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
    * Dispatch and ack happen while holding the row locks, so a second poller or engine cannot
    * double-process. At-least-once: a crash after dispatch but before COMMIT delivers the row again.
    */
-  private async pollWithClaim(): Promise<void> {
-    const lockedSelect = appendLockClause(this.config.selectQuery);
-    const dispatched: Array<{ row: Readonly<Record<string, unknown>>; recorded: boolean }> = [];
-    const txResult = await this.pool.transaction(async (tx) => {
-      const selectResult = await tx.query(lockedSelect, []);
-      for (const row of this.capRows(selectResult.rows)) {
-        const recorded = await this.dispatchRow(row);
-        dispatched.push({ row, recorded });
-        await this.ackRow(tx, row, recorded);
-      }
+  private async pollWithClaim(session: Session): Promise<void> {
+    const taken: TakenRow[] = [];
+    const txResult = await session.pool.transaction(async (tx) => {
+      const { rows } = await tx.query(this.claimQuery, []);
+      await this.forgetGone(session, rows);
+      await this.takeRows(session, tx, rows, taken);
     });
-    if (txResult.ok) return;
-    // SELECT/lock failure, a broken connection, or (MySQL) a deadlock, which
-    // rolls back the whole transaction and with it every ack of this poll.
-    this.logger.error(
-      { ...errorInfo(txResult.error), database: this.config.database, dispatched: dispatched.length },
-      'Database poll transaction failed',
-    );
-    if (dispatched.length > 0) await this.reackDispatched(dispatched);
+    if (!txResult.ok) {
+      // SELECT/lock failure, a broken connection, or (MySQL) a deadlock, which
+      // rolls back the whole transaction and with it every ack of this poll.
+      this.logger.error(
+        { ...errorInfo(txResult.error), database: this.config.database, dispatched: taken.length },
+        'Database poll transaction failed',
+      );
+      if (taken.length > 0) await this.reack(session, taken);
+    }
+    this.unmarked.settle(taken);
   }
 
-  /** Without dispatching again: read again next poll, these rows would become duplicate messages. */
-  private async reackDispatched(dispatched: ReadonlyArray<{ row: Readonly<Record<string, unknown>>; recorded: boolean }>): Promise<void> {
-    const retry = await this.pool.transaction(async (tx) => {
-      for (const { row, recorded } of dispatched) await this.ackRow(tx, row, recorded);
-    });
-    if (!retry.ok) {
+  /**
+   * A row that another transaction holds is missing too, and is not gone. Read-only, because the
+   * query may be one that writes: the database refuses that one, and what it misses counts as gone.
+   */
+  private async forgetGone(session: Session, rows: readonly Row[]): Promise<void> {
+    const claimed = this.unmarked.countIn(rows);
+    if (!this.unmarked.hasMoreThan(claimed)) return;
+    const query = withSkippedRows(this.claimQuery, this.vendor);
+    if (query === this.claimQuery) {
+      this.unmarked.keepOnly(claimed);
+      return;
+    }
+    const all = await session.pool.queryReadOnly(query, []);
+    if (all.ok) {
+      this.unmarked.keepOnly(this.unmarked.countIn(all.value.rows));
+    } else if (isWriteRefused(all.error)) {
+      this.unmarked.keepOnly(claimed);
+    } else {
       this.logger.error(
-        { ...errorInfo(retry.error), database: this.config.database, rows: dispatched.length },
-        'Rows were dispatched but could not be marked processed; the next poll reads and dispatches them again',
+        { ...errorInfo(all.error), database: this.config.database },
+        'Could not look for rows that were dispatched and not marked; they stay remembered, and are not dispatched again',
       );
     }
+  }
+
+  private async takeRows(session: Session, tx: TxQuery, rows: readonly Row[], taken: TakenRow[]): Promise<void> {
+    const unmarked = this.unmarked.remaining();
+    for (const row of this.capRows(rows)) {
+      if (!session.live) return;
+      const content = JSON.stringify(row);
+      const key = rowKey(content);
+      const left = unmarked.get(key) ?? 0;
+      const known = left > 0;
+      if (known) unmarked.set(key, left - 1);
+      const recorded = known || await this.dispatchRow(session, { row, content });
+      const entry: TakenRow = { row, key, recorded, known, marked: false };
+      taken.push(entry);
+      entry.marked = await this.ackRow(tx, entry);
+    }
+  }
+
+  /** Without dispatching again, in a transaction of its own. */
+  private async reack(session: Session, taken: readonly TakenRow[]): Promise<void> {
+    for (const entry of taken) entry.marked = false;
+    const retry = await session.pool.transaction(async (tx) => {
+      for (const entry of taken) entry.marked = await this.ackRow(tx, entry);
+    });
+    if (retry.ok) return;
+    for (const entry of taken) entry.marked = false;
+    this.logger.error(
+      { ...errorInfo(retry.error), database: this.config.database, rows: taken.length },
+      'Rows were dispatched but could not be marked processed; each poll tries again, without dispatching a recorded row',
+    );
   }
 
   /**
@@ -206,10 +286,7 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
    * status can be reprocessed from the store; leaving its row unacked would deliver it again to
    * every healthy destination on every poll.
    */
-  private async dispatchRow(row: Readonly<Record<string, unknown>>): Promise<boolean> {
-    if (!this.dispatcher) return false;
-
-    const content = JSON.stringify(row);
+  private async dispatchRow(session: Session, { row, content }: PolledRow): Promise<boolean> {
     const raw: RawMessage = {
       content,
       sourceMap: {
@@ -220,7 +297,7 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
       },
     };
 
-    const result = await this.dispatcher(raw);
+    const result = await session.dispatcher(raw);
     const failure = dispatchFailure(result);
     if (failure !== null) {
       this.logger.error(errorInfo(failure), 'Database row dispatch failed');
@@ -228,28 +305,27 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     return result.ok;
   }
 
-  private async ackRow(
-    tx: TxQuery,
-    row: Readonly<Record<string, unknown>>,
-    recorded: boolean,
-  ): Promise<void> {
-    if (this.config.updateMode === UPDATE_MODE.ON_SUCCESS && !recorded) return;
+  /** Whether the row is marked processed. */
+  private async ackRow(tx: TxQuery, { row, recorded }: TakenRow): Promise<boolean> {
+    if (this.config.updateMode === UPDATE_MODE.ON_SUCCESS && !recorded) return false;
 
-    const prepared = prepare(this.config.updateQuery, row as Record<string, unknown>, placeholderStyle(this.config.vendor ?? DATABASE_VENDOR.POSTGRESQL));
+    const prepared = prepare(this.config.updateQuery, row, placeholderStyle(this.vendor));
     // A failed statement aborts a PostgreSQL transaction, and COMMIT then rolls back the acks
     // of rows already dispatched. The savepoint confines the failure to this row.
     await tx.query('SAVEPOINT ack_row', []);
     try {
       await tx.query(prepared.sql, prepared.params);
       await tx.query('RELEASE SAVEPOINT ack_row', []);
+      return true;
     } catch (err) {
-      this.logger.error(errorInfo(err), 'Database mark-as-processed UPDATE failed');
+      this.logger.error(errorInfo(err), 'Database mark-as-processed UPDATE failed; each poll tries again, without dispatching a recorded row');
       await tx.query('ROLLBACK TO SAVEPOINT ack_row', []);
+      return false;
     }
   }
 
   /** Bounds how long row locks are held; the rest are read again next cycle. */
-  private capRows(rows: readonly Record<string, unknown>[]): readonly Record<string, unknown>[] {
+  private capRows<T>(rows: readonly T[]): readonly T[] {
     if (rows.length <= MAX_ROWS_PER_POLL) return rows;
     this.logger.warn(
       { database: this.config.database, rows: rows.length, limit: MAX_ROWS_PER_POLL },
@@ -265,8 +341,8 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     }
   }
 
-  private async drainPool(): Promise<void> {
-    const destroyResult = await this.pool.destroy();
+  private async drainPool(session: Session): Promise<void> {
+    const destroyResult = await session.pool.destroy();
     if (!destroyResult.ok) {
       // Pool destruction failure is non-fatal during stop
     }

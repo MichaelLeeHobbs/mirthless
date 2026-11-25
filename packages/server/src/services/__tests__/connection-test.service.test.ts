@@ -805,20 +805,15 @@ describe('ConnectionTestService', () => {
       expect(result.value.message).toContain('timed out');
     });
 
-    it('closes a session whose connect completes after the test gave up', async () => {
+    it('gives up a connect that never ends, so its connection does not stay open (#434)', async () => {
       vi.useFakeTimers();
-      let finishConnect: () => void = () => undefined;
-      mockSftpConnect.mockReturnValue(new Promise<void>((resolve) => { finishConnect = resolve; }));
+      mockSftpConnect.mockReturnValue(new Promise<void>(() => undefined));
 
       const pending = ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
       await vi.advanceTimersByTimeAsync(_testing.TEST_TIMEOUT_MS);
       const result = await pending;
-      expect(result.ok && result.value.success).toBe(false);
-      // ssh2-sftp-client's end() does nothing while connect is pending, so it must wait for the connect.
-      expect(mockSftpEnd).not.toHaveBeenCalled();
 
-      finishConnect();
-      await vi.advanceTimersByTimeAsync(0);
+      expect(result.ok && result.value.success).toBe(false);
       expect(mockSftpEnd).toHaveBeenCalledOnce();
     });
 

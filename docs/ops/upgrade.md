@@ -584,6 +584,34 @@ A script that counted on the defaults must send them. These now get a 400:
 
 A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
+## Database values, timeouts and marked rows (#411)
+
+**PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
+
+| Column | Before | Now |
+|---|---|---|
+| `date` | midnight in the server's time zone, as UTC: `2026-01-15T08:00:00.000Z` for a server in Los Angeles, the day before for one in Tokyo | `2026-01-15` |
+| `timestamp` | shifted from the server's time zone into UTC and cut to milliseconds: `2026-01-15T08:30:00.123Z` | `2026-01-15T00:30:00.123456`, as the database has it. With a server in UTC, as the Docker image is, only the `Z` goes and digits after the third come |
+| `timestamptz` | `2026-01-15T08:30:00.123Z` | the same, with the digits after the third: `2026-01-15T08:30:00.123456Z`. A value without any is as before |
+| `numeric[]` | numbers, with digits lost | text, as a `numeric` was and is |
+| a number in `json` or `jsonb` | a number, with digits lost where JavaScript cannot hold it | text where JavaScript cannot hold it; every other number as before |
+| `NaN`, `Infinity` in a `real`, `double precision`, `point` or `circle`, `infinity` in a date or an interval | `null` (an interval: `{}`, a coordinate: `null`) | the database's text |
+| a date, time or interval from a database whose `DateStyle` or `IntervalStyle` is not the default | `null` or `{}` | the database's text |
+
+Arrays of these hold the same. `rowData` in the source map held Date objects while a message was processed and holds the text above. A script that calls `new Date(...)` on a `timestamp` now reads it in the server's time zone, as the database has it, where it read a UTC time. A script that cuts the `Z` off by position, or compares such a value with one stored before the upgrade, needs a look. An `updateQuery` that finds its row by a time now finds one with microseconds, where it found none.
+
+**A row whose `updateQuery` fails is no longer sent at every poll**: each poll tries the update again instead ([limits](../user/connector-reference.md#database-limits)). If a channel has been sending the same rows for a while, its log has `Database mark-as-processed UPDATE failed`; correct the query or the rights it needs.
+
+**A DATABASE source's `FOR SHARE` is sent as `FOR UPDATE`** when the source has an update mode, so two sources no longer take the same row. That includes a `FOR SHARE` inside a `WITH` query or a subquery in `FROM`; the query around it gets the lock as well, which PostgreSQL refuses on an aggregate, so such a channel logs an ERROR at each poll. `FOR SHARE OF r` becomes `FOR UPDATE OF r`: name the table whose rows the source takes. The database user needs the right to update the table, as it did for PostgreSQL's `FOR SHARE`. A comment at the end of the query, which hid the lock, is left off.
+
+**MySQL statements are stopped on the server** when they take more than 25 seconds, with `KILL QUERY` on a second connection of the same user: leave that user one connection more than the channels use when it has a limit (`max_user_connections`). Before, an INSERT, UPDATE or DELETE failed at 30 seconds and could take effect later, so a queue's retry wrote it twice; rows written twice before the upgrade stay. An error that ends in `may still take effect` means that the server never answered. A PostgreSQL statement still has 30 seconds, and its error now says `canceling statement due to statement timeout`, where it usually said `Query read timeout`.
+
+**A stop of a DATABASE source waits for the row being processed** and takes no more rows. Before, a PostgreSQL source sent the rest of the poll first, and a MySQL source closed its connection and sent the row again at the next start.
+
+**`${patient-id}`, `${a.b}` and `${ name }` are parameters** in a query, where they were sent to the database as written, which refused them. Each is one key, not a path.
+
+**MariaDB**: a connection set `max_execution_time`, which MariaDB does not document, so it should have failed. The connector now sets MariaDB's `max_statement_time` when the server does not know the other. This was written from MariaDB's documentation and has not been tested on a MariaDB server.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
