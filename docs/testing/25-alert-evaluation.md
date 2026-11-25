@@ -58,3 +58,4 @@
 | 32 | clearThrottleState resets counters | Fire alert 3 times (maxAlerts=3), clearThrottleState, fire again | Alert fires again after clearing | |
 | 33 | resetAlert clears single alert state | Fire alertA 3 times (maxAlerts=3), resetAlert(alertA), fire again | alertA fires again; other alerts' throttle state unchanged | |
 | 34 | A change is in force without a redeploy | With a channel deployed, create an alert on it, then disable it, triggering an error after each | The alert fires after the first error and not after the second | |
+| 35 | An outage of a source is one alert | Deploy and start a File source, with an alert on it, then rename its directory for a few polls and back | One alert with the reason, and the source reads again without a restart | |

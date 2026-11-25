@@ -661,6 +661,96 @@ describe('FileReceiver', () => {
       expect(errors[0]!.msg).toContain('poll cycle failed');
     });
 
+    describe('reported to the engine (#417)', () => {
+      const seen: Array<string | null> = [];
+
+      async function start(): Promise<ReturnType<typeof makeMockLogger>> {
+        const log = makeMockLogger();
+        seen.length = 0;
+        receiver = new FileReceiver(makeConfig(), log.logger);
+        receiver.setDispatcher(makeDispatcher());
+        receiver.setHealthHandler((failure) => { seen.push(failure?.message ?? null); });
+        await receiver.onStart();
+        return log;
+      }
+
+      const eacces = (): Error => Object.assign(new Error('EACCES: permission denied, stat'), { code: 'EACCES' });
+
+      it('is a directory in which no file can be looked at, and the log says how many and which is the first', async () => {
+        mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7')] as never);
+        mockStat.mockRejectedValue(eacces());
+        const { errors } = await start();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(seen).toEqual(['EACCES: permission denied, stat']);
+        expect(errors[0]?.obj).toMatchObject({ files: 2, file: expect.stringContaining('a.hl7') as string });
+      });
+
+      it('is not one that cannot be looked at beside one that is too new', async () => {
+        mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7')] as never);
+        mockStat.mockImplementation(async (p) => {
+          if (String(p).endsWith('a.hl7')) throw eacces();
+          return makeStatResult(Date.now(), 100) as never;
+        });
+        await start();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(seen).toEqual([null]);
+      });
+
+      it('is not a long listing that goes on', async () => {
+        mockReaddir.mockResolvedValue(['a.hl7', 'b.hl7', 'c.hl7'].map((name) => makeDirent(name)) as never);
+        let looks = 0;
+        mockStat.mockImplementation(async () => {
+          looks += 1;
+          // As the listing looks at each; not as the files are then taken.
+          if (looks <= 3) await new Promise((resolve) => { setTimeout(resolve, 40_000); });
+          return makeStatResult(0, 100) as never;
+        });
+        mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+        await start();
+
+        await vi.advanceTimersByTimeAsync(5_000 + 3 * 40_000 - 1);
+
+        expect(seen).toEqual([]);
+        // The poll that is due then comes too.
+        await vi.advanceTimersByTimeAsync(1);
+        expect(new Set(seen)).toEqual(new Set([null]));
+      });
+
+      it('is not one file among others that cannot be looked at, and the log names it', async () => {
+        mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7')] as never);
+        mockStat.mockImplementation(async (p) => {
+          if (String(p).endsWith('a.hl7')) throw eacces();
+          return makeStatResult(Date.now() - 5_000, 100) as never;
+        });
+        mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+        const { errors } = await start();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(seen).toEqual([null]);
+        expect(errors.filter((e) => String(e.obj['file']).endsWith('a.hl7'))).toHaveLength(1);
+      });
+
+      it('is a listing that hangs, as that of a mount that is gone does, and no second one is begun', async () => {
+        let end: (entries: never) => void = () => undefined;
+        mockReaddir.mockImplementation(() => new Promise((resolve) => { end = resolve; }));
+        const { errors } = await start();
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(seen).toEqual([]);
+        await vi.advanceTimersByTimeAsync(15_000);
+
+        expect(new Set(seen)).toEqual(new Set(['Listing the directory has not gone on for 60 s']));
+        expect(errors).toHaveLength(1);
+        expect(mockReaddir).toHaveBeenCalledTimes(1);
+        end([] as never);
+      });
+    });
+
     it('quarantines a file whose post-action fails, preventing re-dispatch', async () => {
       const { logger, errors } = makeMockLogger();
       const now = Date.now();

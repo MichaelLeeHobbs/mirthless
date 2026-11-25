@@ -627,6 +627,10 @@ WHERE collection_id = '<id>' AND expire_at < now() + interval '30 days';
 
 The same goes for a single record that you give a new life on the records page. Records that scripts stored with a life of their own need a look each. Set an expiry to `NULL` (never) only for all of a collection's records together, after clearing its default TTL; they and the PHI in them are then kept until someone deletes them.
 
+## A source that cannot receive raises an alert (#417)
+
+A source that cannot poll, or has lost its partner, used to be in the server log only. It now raises a `SOURCE_CONNECTOR` alert, once for an outage and again each hour while it lasts ([connector reference](../user/connector-reference.md#every-source)). Alerts that match it (`Any` or `Source connector`) start to send for sources that are failing already, so expect some after the upgrade: correct those sources, or stop channels nobody uses.
+
 ## Database values, timeouts and marked rows (#411)
 
 **PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
@@ -675,6 +679,21 @@ GROUP BY c.channel_id;
 ```
 
 This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
+
+## Delimited columns keep their order (#372)
+
+A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read (D-378). Messages sent before stay as they were, so check them with the partner. Look at the channels with such names before the upgrade: a partner that reads the columns swapped must stop doing that, and a script that swaps them back, or gives such a row another order, must give the row as an array instead or stop. Such a script and the server have to change together: disable the channel before the upgrade, so that it stays down, change the script after it, and enable and deploy the channel.
+
+A column name that a later column without a name has is refused when the channel deploys, for example `column2` as the only name, or `column9` as the second of two: a row wide enough to have that later column lost the earlier one when it was read. The refusal does not depend on how wide the rows are. Before the upgrade rename such a column, change what scripts call it, and redeploy the channel: a restart deploys what was last deployed, not what was saved, and one that is refused is reported as a channel that failed to redeploy.
+
+This lists the saved column names of every Delimited channel:
+
+```sql
+SELECT c.id, c.name, t.inbound_properties->'delimited'->'columnNames' AS column_names
+FROM channels c JOIN channel_transformers t ON t.channel_id = c.id AND t.connector_id IS NULL
+WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
+  AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
+```
 
 ## Standard upgrade (Docker)
 

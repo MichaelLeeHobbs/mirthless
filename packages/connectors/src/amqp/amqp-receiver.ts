@@ -1,8 +1,8 @@
 // At-least-once (D-266): a message is acked only after the pipeline stores it.
 // One the pipeline never stores stops the channel and stays on the queue (D-271).
 
-import { settleUnlessAborted, tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
+import { settleUnlessAborted, stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, SourceFatalHandler, SourceHealthHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { HALT_CLOSE_MS, STOP_CLOSE_MS } from '../client-lifecycle.js';
@@ -57,6 +57,7 @@ export class AmqpReceiver implements SourceConnectorRuntime {
   private readonly logger: ConnectorLogger;
   private readonly retryDelayMs: number;
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private run: Run | null = null;
   private onFatal: SourceFatalHandler | null = null;
   /**
@@ -76,6 +77,10 @@ export class AmqpReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   setFatalHandler(handler: SourceFatalHandler): void {
@@ -149,13 +154,17 @@ export class AmqpReceiver implements SourceConnectorRuntime {
           if (!run.live) break;
           this.logger.info({ queue: this.config.queue }, 'AMQP consumer reconnected');
         }
+        this.health(null);
         const reason = await run.consumer.closed;
         if (run.live) {
           this.logger.error({ ...errorInfo(reason), queue: this.config.queue }, 'AMQP connection lost; unacknowledged messages return to the queue; reconnecting');
+          this.health(null);
+          this.health(reason);
         }
       } catch (err) {
         if (run.live) {
           this.logger.error({ ...errorInfo(err), queue: this.config.queue }, 'AMQP reconnect failed; retrying');
+          this.health(stderr(err));
         }
       }
       // `closed` also settles when only the channel ends (a cancelled consumer,

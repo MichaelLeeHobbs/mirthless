@@ -4,8 +4,8 @@
 // would block its partition forever, so after `maxStoreAttempts` failures in a row the
 // receiver stops the channel and leaves it uncommitted.
 
-import { settleUnlessAborted, settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
+import { settleUnlessAborted, settleWithin, stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, SourceFatalHandler, SourceHealthHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
@@ -84,6 +84,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   private readonly logger: ConnectorLogger;
   private readonly retryDelayMs: number;
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private run: Run | null = null;
   /** The run before it: a halt may have left a record of it in hand. */
   private earlier: Run | null = null;
@@ -99,6 +100,10 @@ export class KafkaReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   setFatalHandler(handler: SourceFatalHandler): void {
@@ -178,10 +183,15 @@ export class KafkaReceiver implements SourceConnectorRuntime {
       try {
         run.subscription ??= await this.subscribe(this.config);
         // A stop or halt during the subscribe above must not leave it open.
-        if (run.live) await this.consume(run, run.subscription);
+        if (run.live) {
+          this.health(null);
+          await this.consume(run, run.subscription);
+        }
       } catch (err) {
         if (run.live) {
           this.logger.error({ ...errorInfo(err), topic: this.config.topic }, 'Kafka consumer failed; rejoining from the last committed offset');
+          if (run.subscription) this.health(null);
+          this.health(stderr(err));
         }
       }
       await this.closeSubscription(run, run.live || run.halted.signal.aborted, STOP_CLOSE_MS);
@@ -197,7 +207,11 @@ export class KafkaReceiver implements SourceConnectorRuntime {
       run.inHand = null;
       if (!stored || !run.live) return;
     }
-    if (run.live) this.logger.warn({ topic: this.config.topic }, 'Kafka stream ended; rejoining');
+    if (run.live) {
+      this.logger.warn({ topic: this.config.topic }, 'Kafka stream ended; rejoining');
+      this.health(null);
+      this.health(new Error('The Kafka stream ended'));
+    }
   }
 
   /** A throw becomes a failed result, so it counts toward the cap like any record not stored. */
