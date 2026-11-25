@@ -189,6 +189,9 @@ export class UserService {
       const oldRoles = await db.transaction(async (tx) => {
         // First (grant.service), so what the actor and the target hold stays as checked.
         await lockAccessFor(tx, actorId, PERMISSIONS.USERS_WRITE);
+        if (id === actorId && beingDisabled) {
+          throw new ServiceError('SELF_ACTION', 'Cannot disable your own account');
+        }
         if (id === actorId && input.role !== undefined) {
           const current = await GrantService.heldRoleNames(tx, id);
           if (!(current.length === 1 && current[0] === input.role)) {
