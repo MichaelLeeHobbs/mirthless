@@ -70,7 +70,7 @@ export class MessageReprocessController {
       return;
     }
 
-    logger.info({ channelId, deletedCount: result.value.deletedCount }, 'Messages bulk deleted');
+    logger.info({ channelId, deletedCount: result.value.deletedCount, refused: result.value.refusedIds.length }, 'Messages bulk deleted');
     res.json({ success: true, data: result.value });
   }
 }

@@ -584,6 +584,10 @@ A script that counted on the defaults must send them. These now get a 400:
 
 A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
+## Changed alerts are in force at once (#417)
+
+An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
+
 ## Database values, timeouts and marked rows (#411)
 
 **PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
@@ -615,6 +619,20 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 ## A stop finishes what a source took (#413)
 
 - A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start, which a redeploy or a restart before that loses ([JavaScript](../user/connector-reference.md#javascript), D-371).
+
+## Deleting a message that is still being processed (#403)
+
+Before, a message could be deleted while the engine worked on it. What was stored for it after that (what was sent, the partner's answer, errors) stayed in the database, where neither the message browser nor the pruner found it, and a destination that was to be queued was not sent to, without a word. Such a delete is now refused with 409 until the message is done ([which messages](../user/connector-reference.md#every-destination), D-372), and a bulk delete deletes the others and lists the refused ones in `refusedIds`. A script that deletes messages through the API should expect that. Resend is refused for a destination whose queue is sending it.
+
+**Rows left behind before the upgrade are deleted by the data pruner**, in the scheduled run or with **Run now** on the Pruner page. The schedule is off on a new install: if you do not use it, run it by hand after the upgrade. It reads every channel's message tables, also those of channels without pruning and of deleted channels, for at most 5 minutes in a scheduled run and 30 seconds in **Run now**, and the next run goes on from there; a restart of the server begins again. Run it until the event `DATA_PRUNER_RAN` has `leftoverRowsComplete: true`, more than a day after the upgrade: it leaves what is younger than a day for a later run. It deletes a row only if its message is not there, and looks only at messages from before the last day. A row of a message that still waits on a queue stays until the queue has sent it. The event records how many rows went (`leftoverRowsDeleted`), and the server log says which tables of which channels. To count them first:
+
+```sql
+SELECT c.channel_id, count(*) FROM message_content c
+WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.channel_id = c.channel_id AND m.id = c.message_id)
+GROUP BY c.channel_id;
+```
+
+This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
 
 ## Standard upgrade (Docker)
 

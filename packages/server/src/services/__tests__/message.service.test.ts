@@ -8,7 +8,9 @@ const mockInsertValues = vi.fn().mockImplementation(() => ({
 }));
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
-const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+/** Awaited as it is, or through `returning`, which gives the rows that matched. */
+const mockUpdateWhere = vi.fn();
+const mockUpdateReturning = vi.fn();
 const mockSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
 const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 
@@ -103,7 +105,8 @@ beforeEach(() => {
   mockOnConflict.mockResolvedValue(undefined);
   mockInsertReturning.mockResolvedValue([{ messageId: MESSAGE_ID }]);
   mockSet.mockReturnValue({ where: mockUpdateWhere });
-  mockUpdateWhere.mockResolvedValue(undefined);
+  mockUpdateWhere.mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: mockUpdateReturning }));
+  mockUpdateReturning.mockResolvedValue([{ messageId: MESSAGE_ID }]);
   mockExecute.mockResolvedValue([]);
   mockDelete.mockReturnValue({ where: mockDeleteWhere });
   mockDeleteWhere.mockResolvedValue(undefined);
@@ -196,8 +199,14 @@ describe('MessageService', () => {
       );
     });
 
+    it('fails when the message is gone', async () => {
+      mockUpdateReturning.mockResolvedValue([]);
+
+      expect(await MessageService.updateConnectorMessageStatus(CHANNEL_ID, MESSAGE_ID, 0, 'TRANSFORMED')).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    });
+
     it('returns error on DB failure', async () => {
-      mockUpdateWhere.mockRejectedValue(new Error('DB timeout'));
+      mockUpdateReturning.mockRejectedValue(new Error('DB timeout'));
 
       const result = await MessageService.updateConnectorMessageStatus(
         CHANNEL_ID, MESSAGE_ID, 0, 'ERROR',
@@ -271,8 +280,14 @@ describe('MessageService', () => {
       expect(mockSet).toHaveBeenCalledWith({ status: 'QUEUED' });
     });
 
+    it('fails when the message is gone, so the destination is not taken for queued', async () => {
+      mockUpdateReturning.mockResolvedValue([]);
+
+      expect(await MessageService.enqueue(CHANNEL_ID, MESSAGE_ID, 1)).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    });
+
     it('returns error on DB failure', async () => {
-      mockUpdateWhere.mockRejectedValue(new Error('DB error'));
+      mockUpdateReturning.mockRejectedValue(new Error('DB error'));
 
       const result = await MessageService.enqueue(CHANNEL_ID, MESSAGE_ID, 1);
 
