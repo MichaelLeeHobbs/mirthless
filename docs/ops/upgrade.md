@@ -623,6 +623,10 @@ WHERE collection_id = '<id>' AND expire_at < now() + interval '30 days';
 
 The same goes for a single record that you give a new life on the records page. Records that scripts stored with a life of their own need a look each. Set an expiry to `NULL` (never) only for all of a collection's records together, after clearing its default TTL; they and the PHI in them are then kept until someone deletes them.
 
+## A source that cannot receive raises an alert (#417)
+
+A source that cannot poll, or has lost its partner, used to be in the server log only. It now raises a `SOURCE_CONNECTOR` alert, once for an outage and again each hour while it lasts ([connector reference](../user/connector-reference.md#every-source)). Alerts that match it (`Any` or `Source connector`) start to send for sources that are failing already, so expect some after the upgrade: correct those sources, or stop channels nobody uses.
+
 ## Database values, timeouts and marked rows (#411)
 
 **PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:

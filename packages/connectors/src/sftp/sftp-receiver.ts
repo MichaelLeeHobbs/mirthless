@@ -2,8 +2,8 @@
 // (new instance) does not re-dispatch an already-dispatched file.
 
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
-import { settleUnlessAborted, tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { settleUnlessAborted, stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { selectsFileName } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
@@ -85,6 +85,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
   private readonly createClient: SftpClientFactory;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private session: Session | null = null;
   /** Of the latest start: a halt aborts it, which ends what a stop waits for. */
@@ -105,6 +106,10 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -201,6 +206,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
           { ...errorInfo(err), remoteDirectory: this.config.remoteDirectory },
           'SFTP poll cycle failed; will reconnect',
         );
+        this.health(stderr(err));
       }
       await this.disconnect(session);
     } finally {
@@ -210,9 +216,8 @@ export class SftpReceiver implements SourceConnectorRuntime {
   }
 
   private async takeFiles(session: Session): Promise<void> {
-    const client = session.client ?? await this.connect(session);
-    if (!session.live) return;
-    const entries = await this.listMatchingFiles(client);
+    const { client, entries } = await this.list(session);
+    if (session.live) this.health(null);
     let failed = false;
     for (const entry of entries) {
       if (!session.live) break;
@@ -240,6 +245,22 @@ export class SftpReceiver implements SourceConnectorRuntime {
       session.connecting = null;
     }
     return session.client;
+  }
+
+  /** A server may close a connection that is kept from poll to poll, so one that fails is replaced at once. */
+  private async list(session: Session): Promise<{ readonly client: SftpClient; readonly entries: readonly SftpFileInfo[] }> {
+    const kept = session.client;
+    if (kept !== null) {
+      const listed = await tryCatch(() => this.listMatchingFiles(kept));
+      if (listed.ok) return { client: kept, entries: listed.value };
+      if (!session.live) throw listed.error;
+      this.logger.warn({ ...errorInfo(listed.error), remoteDirectory: this.config.remoteDirectory }, 'SFTP listing failed on the connection kept from the last poll; trying a new one');
+      await this.disconnect(session);
+      if (!session.live) throw listed.error;
+    }
+    const client = await this.connect(session);
+    if (!session.live) throw new Error('The source was stopped while it connected');
+    return { client, entries: await this.listMatchingFiles(client) };
   }
 
   private async listMatchingFiles(client: SftpClient): Promise<readonly SftpFileInfo[]> {

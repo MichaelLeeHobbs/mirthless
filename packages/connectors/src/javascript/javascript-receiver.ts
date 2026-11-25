@@ -1,5 +1,5 @@
-import { settleUnlessAborted, tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { settleUnlessAborted, stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
@@ -18,6 +18,7 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
   private readonly config: JavaScriptReceiverConfig;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private scriptRunner: ScriptRunner | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** The poll cycle in flight, of this start or of one that was halted; there is never a second. */
@@ -38,6 +39,10 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -102,12 +107,17 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
 
   private async pollCycle(halted: AbortSignal): Promise<void> {
     try {
-      if (this.waiting.length === 0) this.waiting = [...await this.executeScript()].reverse();
+      if (this.waiting.length === 0) this.waiting = [...await this.executeScript(halted)].reverse();
       await this.sendWaiting(halted);
     } catch (err) {
       // Log it: otherwise a broken script leaves the channel STARTED yet silently producing nothing.
       this.logger.error(errorInfo(err), 'JavaScript source poll cycle failed');
+      this.reportHealth(halted, stderr(err));
     }
+  }
+
+  private reportHealth(halted: AbortSignal, failure: Error | null): void {
+    if (this.pollTimer !== null && !halted.aborted) this.health(failure);
   }
 
   private async sendWaiting(halted: AbortSignal): Promise<void> {
@@ -139,7 +149,7 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     this.waiting = [];
   }
 
-  private async executeScript(): Promise<readonly string[]> {
+  private async executeScript(halted: AbortSignal): Promise<readonly string[]> {
     if (!this.scriptRunner) {
       return this.executeScriptFallback();
     }
@@ -148,8 +158,10 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     if (!result.ok) {
       // The caller logs only thrown errors; unlogged, this leaves a silently dead channel.
       this.logger.error(errorInfo(result.error), 'JavaScript source script returned an error');
+      this.reportHealth(halted, result.error);
       return [];
     }
+    this.reportHealth(halted, null);
     const messages = normalizeScriptResult(result.value);
     const items = itemCount(result.value);
     if (items > messages.length) {

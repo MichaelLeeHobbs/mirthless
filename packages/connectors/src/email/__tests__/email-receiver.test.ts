@@ -494,7 +494,8 @@ describe('EmailReceiver', () => {
       let callCount = 0;
       vi.mocked(client.fetchUnread).mockImplementation(async () => {
         callCount++;
-        if (callCount === 1) throw new Error('Connection lost');
+        // On the kept connection and on the one that replaces it.
+        if (callCount <= 2) throw new Error('Connection lost');
         return listing([msg]);
       });
 
@@ -791,12 +792,14 @@ describe('EmailReceiver', () => {
   });
 
   describe('failure visibility & reconnect', () => {
-    it('logs a poll failure and reconnects on the next cycle', async () => {
+    it('logs a poll failure when a new connection fails too, and reconnects on the next cycle', async () => {
+      const kept = makeMockClient();
+      vi.mocked(kept.fetchUnread).mockRejectedValue(new Error('IMAP connection dropped'));
       const client1 = makeMockClient();
       vi.mocked(client1.fetchUnread).mockRejectedValue(new Error('IMAP connection dropped'));
       const client2 = makeMockClient([makeMessage()]);
 
-      const clients = [client1, client2];
+      const clients = [kept, client1, client2];
       let idx = 0;
       const factory: ImapClientFactory = (): ImapClient => clients[idx++]!;
 
@@ -824,9 +827,9 @@ describe('EmailReceiver', () => {
       receiver.setDispatcher(makeDispatcher());
       await receiver.onStart();
 
-      // Trigger a poll, then let the 30s op timeout elapse.
+      // Trigger a poll, then let the 30s op timeout elapse, on the kept connection and on a new one.
       await vi.advanceTimersByTimeAsync(1_000);
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
 
       expect(errors.some((e) => e.msg.includes('poll cycle failed'))).toBe(true);
     });
