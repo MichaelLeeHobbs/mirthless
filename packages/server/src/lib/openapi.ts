@@ -667,7 +667,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
       '/users/{id}/password': {
         post: {
           tags: ['Users'],
-          summary: 'Reset another user\'s password (your own: POST /users/me/password)',
+          summary: 'Reset another user\'s password',
           operationId: 'userChangePassword',
           security: bearerSecurity,
           parameters: [

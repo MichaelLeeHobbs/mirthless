@@ -40,7 +40,8 @@ export const updateUserSchema = z.object({
  */
 export const deleteUserQuerySchema = z.object({
   takeOwnership: z.string().max(4000).optional()
-    .transform((v) => (v === undefined || v === '' ? [] : v.split(',')))
+    // Lower case, since a key's id goes into its new token, which is read in lower case only.
+    .transform((v) => (v === undefined || v === '' ? [] : v.toLowerCase().split(',')))
     .pipe(z.array(z.string().uuid()).max(100)),
 });
 

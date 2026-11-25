@@ -21,6 +21,10 @@ describe('deleteUserQuerySchema', () => {
     expect(deleteUserQuerySchema.parse({ takeOwnership: `${A},${B}` })).toEqual({ takeOwnership: [A, B] });
   });
 
+  it('reads a key id in capitals as the stored id, which the new token carries', () => {
+    expect(deleteUserQuerySchema.parse({ takeOwnership: A.toUpperCase() })).toEqual({ takeOwnership: [A] });
+  });
+
   it('refuses anything that is not a key id', () => {
     expect(deleteUserQuerySchema.safeParse({ takeOwnership: `${A},nope` }).success).toBe(false);
     expect(deleteUserQuerySchema.safeParse({ takeOwnership: 'x'.repeat(4001) }).success).toBe(false);
