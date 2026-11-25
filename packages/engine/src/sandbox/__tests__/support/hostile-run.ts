@@ -4,7 +4,7 @@ import type { HostileCase, HostileOutcome, HostileRun } from './hostile-script-c
 
 const CHILD = fileURLToPath(new URL('./hostile-script-child.ts', import.meta.url));
 const ENGINE = fileURLToPath(new URL('../../../..', import.meta.url));
-/** A case takes a second, and a worker's on a busy machine as long as its limits: 60 s to start, then 35 s. */
+/** A case takes a second, and a worker's on a busy machine as long as its limits: 60 s to start, then up to 45 s. */
 const SILENT_MS = 120_000;
 /** For a child that hangs, and one that answers slowly but goes on. */
 export const CHILD_HOOK_TIMEOUT_MS = 5 * SILENT_MS;
