@@ -1,9 +1,11 @@
-import { describe, it, expect, afterAll, vi } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { checkScriptTypesBatch, stopTypeChecker } from '../script-type-checker.js';
 import { checkScriptTypes } from '../script-type-check.js';
 
-vi.setConfig({ testTimeout: 60_000 });
 afterAll(async () => { await stopTypeChecker(); });
+
+// Longer than the product's: from source, the worker also loads tsx and compiles what it imports (D-373).
+const CHECK = { timeoutMs: 60_000 } as const;
 
 const HL7 = { dataType: 'HL7V2', templateContext: 'SOURCE_FILTER_TRANSFORMER' } as const;
 
@@ -13,9 +15,8 @@ describe('checkScriptTypesBatch', () => {
       { code: "const n: number = '1';", surface: HL7 },
       { code: "logger.info(msg.get('PID.3.1'));", surface: HL7 },
     ];
-    const batch = await checkScriptTypesBatch(jobs, []);
-    expect(batch.ok).toBe(true);
-    if (!batch.ok) return;
+    const batch = await checkScriptTypesBatch(jobs, [], CHECK);
+    if (!batch.ok) throw batch.error;
     const direct = await Promise.all(jobs.map((j) => checkScriptTypes(j.code, j.surface, [])));
     expect(batch.value).toEqual(direct.map((d) => (d.ok ? d.value : null)));
     expect(batch.value[0]![0]?.message).toContain("Type 'string' is not assignable to type 'number'");
@@ -24,9 +25,10 @@ describe('checkScriptTypesBatch', () => {
 
   it('answers a repeated check from its cache', async () => {
     const job = { code: "const s: string = 1; // cache me", surface: HL7 };
-    const first = await checkScriptTypesBatch([job], []);
-    const second = await checkScriptTypesBatch([job], []);
-    if (!first.ok || !second.ok) throw new Error('check failed');
+    const first = await checkScriptTypesBatch([job], [], CHECK);
+    const second = await checkScriptTypesBatch([job], [], CHECK);
+    if (!first.ok) throw first.error;
+    if (!second.ok) throw second.error;
     // The very same array comes back: the second call never reached the worker.
     expect(second.value[0]).toBe(first.value[0]);
   });
@@ -38,7 +40,7 @@ describe('checkScriptTypesBatch', () => {
     const slow = await checkScriptTypesBatch([{ code: 'const x = 1; // not cached', surface: HL7 }], [], { timeoutMs: 1 });
     expect(slow.ok).toBe(false);
     if (!slow.ok) expect(slow.error.message).toMatch(/took longer than 1 ms/);
-    const next = await checkScriptTypesBatch([{ code: 'const y = 2;', surface: HL7 }], []);
-    expect(next.ok).toBe(true);
+    const next = await checkScriptTypesBatch([{ code: 'const y = 2;', surface: HL7 }], [], CHECK);
+    if (!next.ok) throw next.error;
   });
 });

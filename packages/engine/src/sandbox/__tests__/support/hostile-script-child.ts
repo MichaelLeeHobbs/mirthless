@@ -38,7 +38,7 @@ async function isolated(c: HostileCase): Promise<Ran> {
   const result = await runScriptTestIsolated(
     { script: c.script, kind: 'script', sample: 'x', templates, surface: { templateContext: 'SOURCE_FILTER_TRANSFORMER' } },
     {},
-    { timeoutMs: c.timeout, maxOldGenerationSizeMb: 64, maxMemoryGrowthMb: 512 },
+    { startLimitMs: 60_000, timeoutMs: c.timeout, maxOldGenerationSizeMb: 64, maxMemoryGrowthMb: 512 },
   );
   return { error: result.error, returned: result.returned };
 }
