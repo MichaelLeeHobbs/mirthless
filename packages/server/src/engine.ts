@@ -65,6 +65,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from './services/connector-tls-resolver.js';
 import { ServiceError } from './lib/service-error.js';
+import { whyNotTaking } from './lib/taking-messages.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
@@ -745,7 +746,7 @@ export class EngineManager {
         throw new Error('An alert cannot be sent into the channel it is about');
       }
       const target = this.runtimes.get(targetChannelId);
-      if (!target || target.runtime.getState() !== 'STARTED') {
+      if (!target || whyNotTaking(target.runtime) !== null) {
         throw new Error(`Alert target channel ${targetChannelId} is not deployed and started`);
       }
       const sent = await target.processMessage(content, { alertSourceChannelId: channel.id });
@@ -1097,9 +1098,9 @@ export class EngineManager {
       if (!deployed) {
         throw new ServiceError('NOT_FOUND', `Channel ${channelId} is not deployed`);
       }
-      const state = deployed.runtime.getState();
-      if (state !== 'STARTED') {
-        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to receive messages`);
+      const why = whyNotTaking(deployed.runtime);
+      if (why !== null) {
+        throw new ServiceError('CONFLICT', `Channel is ${why}, must be STARTED to receive messages`);
       }
       return deployed;
     });

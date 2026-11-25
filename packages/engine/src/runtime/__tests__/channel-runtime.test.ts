@@ -593,7 +593,10 @@ describe('ChannelRuntime', () => {
         expect(calls).toEqual(['source', 'queue', 'destination']);
       });
 
-      it('takes no pause and no resume while a queued send holds the stop up', async () => {
+      it.each([
+        ['pause', 'STARTED'],
+        ['resume', 'PAUSED'],
+      ] as const)('takes no %s while a queued send holds the stop of a %s channel up', async (action, state) => {
         const source = makeSource();
         let sendEnds = (): void => undefined;
         const queue: RuntimeQueue = {
@@ -602,12 +605,12 @@ describe('ChannelRuntime', () => {
         };
         await runtime.deploy(makeConfig({ source, queues: [queue] }));
         await runtime.start();
+        if (state === 'PAUSED') await runtime.pause();
 
         const stopped = runtime.stop();
         await settle();
-        expect(source.onStop).toHaveBeenCalledOnce();
-        expect((await runtime.pause()).error?.message).toBe('Cannot pause: the channel is stopping');
-        expect((await runtime.resume()).ok).toBe(false);
+        expect(runtime.getState()).toBe(state);
+        expect((await runtime[action]()).error?.message).toBe(`Cannot ${action}: the channel is stopping`);
         sendEnds();
 
         expect((await stopped).ok).toBe(true);
