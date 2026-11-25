@@ -487,6 +487,12 @@ export class DeploymentService {
     });
   }
 
+  /** As `sendMessage` would refuse a message now. Nothing is recorded or sent. */
+  static checkTakesMessages(channelId: string): Result<void> {
+    const taking = getEngine().takingMessages(channelId);
+    return taking.ok ? { ok: true, value: undefined, error: null } : taking;
+  }
+
   /** NOT_FOUND when not deployed; CONFLICT when not STARTED or the message could not be processed. */
   static async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return getEngine().sendMessage(channelId, content);

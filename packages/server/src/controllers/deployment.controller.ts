@@ -6,6 +6,11 @@ import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 import { channelScopeOf, inScope } from '../lib/channel-scope.js';
 
+function refuseSend(res: Response, channelId: string, error: Error): void {
+  logger.warn({ errMsg: error.message, channelId }, 'Failed to send message');
+  res.status(mapErrorToStatus(error)).json({ success: false, error: errorResponse(error) });
+}
+
 export class DeploymentController {
   static async deploy(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
@@ -157,6 +162,12 @@ export class DeploymentController {
   static async sendMessage(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const { content } = req.body as { content: string };
+    // Refused first: the record below counts a row against an API key's day.
+    const taken = DeploymentService.checkTakesMessages(id);
+    if (!taken.ok) {
+      refuseSend(res, id, taken.error);
+      return;
+    }
     // The response carries the processed message, so the send is recorded first
     // (D-312): a refusal then means nothing was sent, and a retry is safe.
     const recorded = await recordReadOrRefuse(req, res, {
@@ -166,9 +177,7 @@ export class DeploymentController {
     const result = await DeploymentService.sendMessage(id, content);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
-      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to send message');
-      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      refuseSend(res, id, result.error);
       return;
     }
 
