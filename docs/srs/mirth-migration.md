@@ -116,6 +116,8 @@ What a Mirth Connect channel export or server backup becomes when it is imported
 |---|---|---|---|---|
 | MIG-PAR-01 | Every Mirth migration scenario that passed for the previous release shall pass before a release, each one importing a file in the form Mirth exports, deploying it, and checking what real partner systems receive. | P1 | Demonstration | Proposed |
 | MIG-PAR-02 | The user documentation shall say what each Mirth feature becomes, whether it deploys and whether the preview warns, kept true by a check that fails when it and the importer disagree, and how to preview, import, rewrite, compare side by side and cut over. | P2 | Inspection | Proposed |
+| MIG-PAR-03 | The migration documentation shall say, for each Mirth password, lockout, log-off and API sign-in setting, what replaces it or that nothing does. | P2 | Inspection | Proposed |
 
 - MIG-PAR-01: source: D-237; docs/testing/migration-scenarios.md; AGENTS.md verification matrix ("nothing that passed may fail"); docs/progress/ROADMAP.md "Mirth migration suite" (65/65 on 2026-11-15). The suite runs on a developer machine only (docs/user/capabilities.md "Mirth migration").
 - MIG-PAR-02: source: docs/user/capabilities.md "Mirth migration"; D-279; docs/design/12-connector-parity-gap-analysis.md section 7 ("which a docs guard keeps current"); docs/research/voice-of-user/ranking.md UPG3 ("prove behaviour is the same"). The step-by-step guide has no other source.
+- MIG-PAR-03: source: srs-debate 2026-11-24, finding A29 (Domain 9; Scope would merge it into MIG-PAR-02, kept apart because MIG-PAR-02 is about channel features).

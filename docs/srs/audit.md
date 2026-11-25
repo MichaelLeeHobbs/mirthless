@@ -18,11 +18,13 @@ The protected record of who signed in, who was refused, who saw patient data, an
 | AUD-SIGN-02 | The system shall record each API request refused for its credential or its permission, with the method, the operation, the reason and the request's identifier. | P1 | Test | Proposed |
 | AUD-SIGN-03 | The system shall record the first refusal for a given caller, operation and reason at once, and shall record the number of repeats in the following 60 seconds as one further record when those 60 seconds end. | P2 | Test | Proposed |
 | AUD-SIGN-04 | The system shall record in the same way a refusal to give access the person does not hold, and a refusal to join a live feed. | P1 | Test | Proposed |
+| AUD-SIGN-05 | The record of a sign-in shall identify the text of the system use notice the person agreed to, when one was shown. | P2 | Test | Proposed |
 
 - AUD-SIGN-01: source: docs/user/capabilities.md "Audit sign-ins and sign-outs" (Yes, rate-limited requests excluded); docs/user/access-control.md "Signing in". Conflict: capabilities.md lists a rate-limited sign-in as not recorded; drafted as recorded, because a password-guessing run is mostly rate-limited. Records of these are best effort (D-312).
 - AUD-SIGN-02: source: D-314; docs/user/access-control.md "Refused requests".
 - AUD-SIGN-03: source: D-314; docs/user/access-control.md "Refused requests".
 - AUD-SIGN-04: source: docs/design/20-rbac-access-plan.md slice 10a "Open after 10a" (an access refusal is answered but not recorded); for live feeds, code only (a refused join is logged, not recorded).
+- AUD-SIGN-05: source: srs-debate 2026-11-24, finding A26 (Scope 5; Domain agrees). Replaces AUTH-SUN-02: when this row is accepted, that row becomes Superseded by AUD-SIGN-05.
 
 ## Reads of patient data and secrets (PHI)
 
@@ -55,12 +57,14 @@ The protected record of who signed in, who was refused, who saw patient data, an
 | AUD-CHG-03 | The system shall record in the protected audit record, with who did it, each message reprocessed, resent, deleted or pruned on demand. | P1 | Test | Proposed |
 | AUD-CHG-04 | When the record of a change in AUD-CHG-02 or AUD-CHG-03 cannot be written, the system shall refuse the change. | P2 | Test | Proposed |
 | AUD-CHG-05 | The system shall record each purge of operational events, with the age chosen and the number removed, and shall remove nothing when that record cannot be written. | P1 | Test | Proposed |
+| AUD-CHG-06 | The system shall record in the audit log, or refuse, each account creation, change of an account's email address, change of a user's own password, second-factor change and identity link. | P1 | Test | Proposed |
 
 - AUD-CHG-01: source: D-312, D-319, D-320; docs/design/20-rbac-access-plan.md section 6 and slice 11a (one record per change, proved by a test).
 - AUD-CHG-02: source: docs/design/20-rbac-access-plan.md section 6 ("who authored code and config, who deployed, who restored"); docs/user/capabilities.md "Keep the audit record where the server cannot change it" (Partial: configuration changes are still events that can be purged); docs/user/access-control.md "What is not audited" (an extension change names no user, and unlocks, statistics resets and connection tests are unrecorded). Conflict: capabilities.md says these move "when grant changes move there in #265"; grant changes moved, configuration changes did not.
 - AUD-CHG-03: source: docs/user/access-control.md "Where PHI and secrets can leave" and "Exports and backups need a reason" (these are events, which can be purged after 1 day); docs/ops/hipaa-security-checklist.md "Audit controls".
 - AUD-CHG-04: source: docs/ops/hipaa-security-checklist.md "Known gaps" 5 (audit events can be dropped). Conflict: D-044 chose that a failed event write never stops the operation; D-312 made only reads, exports and access changes refuse.
 - AUD-CHG-05: source: D-316, D-312; docs/user/access-control.md "What is not audited".
+- AUD-CHG-06: source: srs-debate 2026-11-24, finding A27 (Domain 8, moved here by Scope).
 
 ## Exports (EXP)
 
@@ -102,11 +106,13 @@ The protected record of who signed in, who was refused, who saw patient data, an
 | AUD-USE-02 | The system shall let that person find records by action, outcome, person, channel and time, and by the record number in an exported file's header. | P1 | Test | Proposed |
 | AUD-USE-03 | The system shall let that person export the audit records for a chosen period, with a reason, as AUD-EXP-01 and AUD-EXP-02 require of other exports. | P2 | Test | Proposed |
 | AUD-USE-04 | The system shall record each search and view of the audit record, with the filters used. | P2 | Test | Proposed |
+| AUD-USE-05 | The system shall let only a person holding the permission to read the audit record read it, and shall refuse that permission to every assignment on chosen groups, and on a new install to every built-in role but admin. | P1 | Test | Proposed |
 
 - AUD-USE-01: source: D-312, D-316; docs/design/20-rbac-access-plan.md decision 8; docs/user/access-control.md "Role and permission matrix" (`audit:read`). Conflict: the `events:read` row of that matrix still says it reads every user's sign-ins and client addresses; the text below the matrix and D-316 say sign-ins moved to the audit record, and are kept.
 - AUD-USE-02: source: docs/ops/audit-log.md "Tracing an exported file"; docs/user/access-control.md "What scope promises". The list of filters comes from the query schema.
 - AUD-USE-03: source: docs/progress/ROADMAP.md v1.2 "Compliance reporting" (open).
 - AUD-USE-04: source: docs/user/access-control.md "What is not audited" (the audit log itself), which states the gap without asking for it; search terms in the record can be patient data.
+- AUD-USE-05: source: srs-debate 2026-11-24, finding A26 (Scope 9). That an API key cannot hold it is AUTH-KEY-04's. Replaces AUD-USE-01: when this row is accepted, that row becomes Superseded by AUD-USE-05.
 
 ## What must never be in it (NEV)
 

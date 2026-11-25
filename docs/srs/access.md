@@ -91,12 +91,14 @@ Who may do what, on which channels, until when, and how anyone can find out. It 
 | ACC-ESC-03 | The system shall let a person edit, disable, delete, unlock or reset the password of another, or edit a role others hold, only when they hold every permission those people hold, on every channel they hold it. | P1 | Test | Proposed |
 | ACC-ESC-04 | The system shall refuse a person's attempt to change their own roles or assignments. | P1 | Test | Proposed |
 | ACC-ESC-05 | The system shall refuse any change to assignments, including two made at the same moment, that would leave no enabled person holding the admin role with no end time. | P1 | Test | Proposed |
+| ACC-ESC-06 | The system shall refuse any change to assignments, and any disabling or deletion of a person, including two made at the same moment, that would leave no enabled person holding the admin role with no end time. | P1 | Test | Proposed |
 
 - ACC-ESC-01: source: D-310 ("refuses a write that gives more than the actor holds"), D-311, D-333 (checked as the change commits, and ended assignments counted); #359; docs/design/20-rbac-access-plan.md section 5. The exception for a restore, which can already run code and so reach every channel, is slice 11a there.
 - ACC-ESC-02: source: D-330, D-333; #355, #359; docs/user/access-control.md "Role and permission matrix" (`users:write`, `system:restore`). Re-sending, shortening or narrowing what someone already has is not giving (D-330).
 - ACC-ESC-03: source: docs/design/20-rbac-access-plan.md section 5 "Target rule"; docs/user/access-control.md "Role and permission matrix" (`users:write`).
 - ACC-ESC-04: source: docs/user/access-control.md "Cutting someone off"; docs/design/20-rbac-access-plan.md section 5 "Self and admin". Disabling or deleting your own account is AUTH-CUT-07 (#398).
 - ACC-ESC-05: source: docs/user/access-control.md "Cutting someone off"; D-333; docs/design/20-rbac-access-plan.md section 5 "Self and admin". That a temporary admin does not count comes from code. Disabling or deleting the last administrator is AUTH-CUT-06.
+- ACC-ESC-06: source: srs-debate 2026-11-24, finding A24 (Domain 5, Scope 1). One invariant had two definitions: disabling the permanent administrator while a temporary one remains satisfied AUTH-CUT-06 and locks the site out when the temporary one ends. Replaces ACC-ESC-05, AUTH-CUT-06: when this row is accepted, those rows become Superseded by ACC-ESC-06.
 
 ## Who can reach a channel (WHO)
 
@@ -107,9 +109,11 @@ Who may do what, on which channels, until when, and how anyone can find out. It 
 | ACC-WHO-03 | The system shall give the same answer for any past second back to the start of the kept access history, as access stood then. | P1 | Test | Proposed |
 | ACC-WHO-04 | When the asked time is before the access history starts, or any record the answer needs cannot be read, the system shall refuse with the reason and shall not give a partial answer. | P1 | Test | Proposed |
 | ACC-WHO-05 | The system should answer who could reach a channel at a past time after that channel has been deleted. | P3 | Test | Proposed |
+| ACC-WHO-06 | The system shall let a person who may read users list every account, deleted ones included, with its state, last sign-in and second-factor state, and download the list. | P2 | Test | Proposed |
 
 - ACC-WHO-01: source: docs/user/access-control.md "What is supported and what is not" (Per-channel access) and "Role and permission matrix" (`users:read`); docs/design/20-rbac-access-plan.md section 8 and slice 11a; D-320 (keys listed like people).
 - ACC-WHO-02: source: docs/design/20-rbac-access-plan.md sections 3 and 8, and slice 11a "Open" (holders of map, data source and alert changes are not listed today, left as a decision).
 - ACC-WHO-03: source: D-319; docs/user/capabilities.md "Limit a user to some channels" (Yes). The history covers the audit retention (AUD-PROT-04).
 - ACC-WHO-04: source: D-319.
 - ACC-WHO-05: source: D-319 "Limits" (a channel deleted now has no answer for any past time).
+- ACC-WHO-06: source: srs-debate 2026-11-24, finding A28 (Customer 9, limited by Domain, moved here by Scope).

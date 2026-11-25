@@ -40,6 +40,7 @@ Seeing what every channel is doing, being told when one is wrong, and giving oth
 | MON-ALT-10 | The system shall keep the time and number of alerts already sent across a server restart, so that a restart sends no alert the repeat interval or maximum would have held back. | P2 | Test | Proposed |
 | MON-ALT-11 | The system shall not delay a message's processing or its reply to the sender for the sending of an alert. | P1 | Test | Proposed |
 | MON-ALT-12 | The system shall refuse to save an enabled alert that can never fire or reach anyone, such as one whose pattern does not compile or that has no action, and say why. | P2 | Test | Proposed |
+| MON-ALT-13 | The system shall send an alert 30 days and again 7 days before a working API key ends, naming the key and its issuer. | P1 | Test | Proposed |
 
 - MON-ALT-01: source: docs/user/capabilities.md "Alert by email on channel errors" (Yes); D-060, D-122, D-132, D-228; a queued delivery alerts on the first failure of a streak, not when retries run out (D-230).
 - MON-ALT-02: source: docs/user/capabilities.md "Scope an alert to one connector or error stage" (No); ROADMAP N15; docs/design/13-non-connector-gap-analysis.md section 7 ("stage mapping thin").
@@ -53,6 +54,7 @@ Seeing what every channel is doing, being told when one is wrong, and giving oth
 - MON-ALT-10: source: ROADMAP "Persist alert throttle state"; docs/user/capabilities.md "Alert by email on channel errors" (limit). conflict: D-217 and D-062 accept the loss, ROADMAP plans to end it; ROADMAP kept.
 - MON-ALT-11: source: D-217.
 - MON-ALT-12: source: docs/ops/upgrade.md "An alert's regex must compile (#133)" for the pattern; the missing action is the drafter's extension of the same rule.
+- MON-ALT-13: source: srs-debate 2026-11-24, finding A20 (Domain 3 and Customer 5 at P1; Scope moved it here at P2).
 
 ## Alert delivery (DLV)
 

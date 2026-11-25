@@ -12,11 +12,13 @@ In this file, the reference host is one machine with 4 CPU cores and 16 GB of me
 | OPS-INS-02 | The system shall refuse to start when a setting it reads at start is missing or malformed, and shall name every such setting in that one attempt. | P1 | Test | Proposed |
 | OPS-INS-03 | A new install shall contain no example channel, example message or other demonstration data unless the installer asked for it. | P1 | Test | Proposed |
 | OPS-INS-04 | The project shall provide a documented install for Kubernetes that one command carries out and that gives the result named in OPS-INS-01. | P3 | Demonstration | Proposed |
+| OPS-INS-05 | The system shall treat an install as a production install unless its operator explicitly declares it a development one. | P1 | Test | Proposed |
 
 - OPS-INS-01: source: docs/user/capabilities.md "Run in production with Docker Compose" (Partial, no automated test proves the stack); docs/ops/deployment.md "First install". Conflict: deployment.md says there are no published images, the release workflow publishes them for each version tag; published images kept, since no release is tagged yet.
 - OPS-INS-02: source: docs/ops/deployment.md "First install" (the stack refuses to start without its passwords). A weak signing secret is a Security rule. The server's configuration tests are the only source for the other settings, and its code the only source for naming them all in one attempt.
 - OPS-INS-03: source: docs/ops/deployment.md "First install"; docs/ops/release-notes-v0.1.0.md "Breaking changes".
 - OPS-INS-04: source: docs/progress/ROADMAP.md v3.0 "Helm chart"; doc 09 section 3.6 "Cloud-Native Deployment".
+- OPS-INS-05: source: srs-debate 2026-11-24, finding A13 (Contractor 5, moved here by Scope). AUTH-LOG-08, AUTH-SES-06 and API-LIM-01 depend on the words "production install".
 
 ## Start and stop (RUN)
 

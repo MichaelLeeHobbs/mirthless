@@ -49,12 +49,14 @@ What every screen of the web console must do, whatever it shows. Area code `UI`.
 | UI-ACT-03 | The console shall offer no setting, control or option that has no effect. | P1 | Inspection | Proposed |
 | UI-ACT-04 | The console shall let a user with the permission see and change every channel, connector, code template library and server setting that the engine acts on. | P2 | Test | Proposed |
 | UI-ACT-05 | When a request fails or is refused, the console shall show what was not done, the reason the server gave and what the user can do next, and shall never show the failure as an empty list or a success. | P1 | Test | Proposed |
+| UI-ACT-06 | When a session ends while a page holds unsaved edits, the console shall give those edits back only to the same user, after they sign in again on that page. | P2 | Test | Proposed |
 
 - UI-ACT-01: source: doc 15 "Interaction" (asks before navigating away with unsaved changes). Six editor pages do so today.
 - UI-ACT-02: source: doc 15 "Interaction" (confirm, and name the target); docs/testing/61-confirm-dialogs.md; #339 (reprocess guardrails). "How many" is the drafter's addition.
 - UI-ACT-03: source: D-189, D-153 (controls that change nothing are removed, not kept); #154; #133. The Settings page text for maintenance mode says it is stored but blocks no one, so it breaks this row today.
 - UI-ACT-04: source: ROADMAP v1.0 "Editor controls for what the engine now supports"; docs/user/capabilities.md Limits of "Receive and send HL7 over TCP/MLLP", "Receive and send over HTTP", "Custom metadata columns" and "Limit a code template library to some channels". That a save keeps settings the editor does not show is a Channels rule (#400).
 - UI-ACT-05: source: doc 15 "Layout and page anatomy" ("A failed request must never look like 'no data'"); D-312 (a refused read is explained to the user); AGENTS.md "Fail safe, not silent".
+- UI-ACT-06: source: srs-debate 2026-11-24, finding A10 (Customer 6 at P2; Scope moved it here and would make it P3).
 
 ## Permissions on screen (PRM)
 
@@ -83,10 +85,12 @@ What every screen of the web console must do, whatever it shows. Area code `UI`.
 | UI-NOT-01 | The console shall show a notice that an administrator has set, in plain text at the top, the bottom or both, on every page including the sign-in page, until an administrator removes it, without covering any other content and without a way for a user to dismiss it. | P2 | Test | Proposed |
 | UI-NOT-02 | The sign-in notice, when one is set, shall stand in place of the sign-in form until it is answered, readable in full at a width of 390 pixels and by keyboard, and shall render no markup beyond its formatting. | P2 | Test | Proposed |
 | UI-NOT-03 | Every page shall show the server's name as the administrator set it, so that a user can tell one install from another. | P2 | Test | Proposed |
+| UI-NOT-04 | The sign-in notice, when one is set, shall be readable in full at a width of 390 pixels and by keyboard, and shall render no markup beyond its formatting. | P2 | Test | Proposed |
 
 - UI-NOT-01: source: #132; doc 18 theme UI12. That it cannot be dismissed is #132's open question 1, answered as the issue leans.
 - UI-NOT-02: source: #135. Whether one is required, who agreed and how that is recorded belong to Authentication.
 - UI-NOT-03: source: the Settings page text for the server name ("so people can tell instances apart"); doc 18 theme UI12 ("prevents production mistakes"). The name is stored and shown nowhere else today.
+- UI-NOT-04: source: srs-debate 2026-11-24, finding A26 (Scope 5). The gate itself is AUTH-SUN-01's. Replaces UI-NOT-02: when this row is accepted, that row becomes Superseded by UI-NOT-04.
 
 ## Time and language (LOC)
 

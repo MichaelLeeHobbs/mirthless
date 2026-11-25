@@ -62,11 +62,13 @@ How the product keeps secrets, encrypts traffic, limits what it can reach and wh
 | SEC-NET-02 | The system shall refuse a script's HTTP call to a private network address unless the operator has listed that exact host in the server's own configuration, which no person, API key, channel or import can change. | P1 | Test | Proposed |
 | SEC-NET-03 | In the shipped production deployment with default settings, the system shall answer a caller who has not signed in only with the console's static files, sign-in and session renewal, health status without error detail, and the published channel listeners; metrics, the API description and the database shall not be reachable. | P1 | Test | Proposed |
 | SEC-NET-04 | The system shall open no network connection that no administrator, operator or channel author configured, and the console shall load nothing from any host but its own server. | P1 | Test | Proposed |
+| SEC-NET-05 | Wherever it limits or records a client address, the system shall take that address only from proxies the operator has declared. | P1 | Test | Proposed |
 
 - SEC-NET-01: source: D-185 and D-235 (script calls); D-262 (Test Connection). Test Connection may reach private networks, because the endpoints an administrator tests are there.
 - SEC-NET-02: source: D-185, D-235; docs/user/capabilities.md "Call HTTP, databases, collections and other channels from scripts". D-235 rejects ranges and wildcards.
 - SEC-NET-03: source: SECURITY.md "Security Model Notes"; docs/user/access-control.md "Endpoints any signed-in user, or anyone, can call"; docs/ops/deployment.md "Listener ports"; docs/ops/resource-and-observability.md "Metrics". Permission checks behind sign-in are in Access control.
 - SEC-NET-04: source: D-260 ("no phone-home"); docs/design/18-voice-of-the-user.md LIC5; D-283. Conflict: docs/user/capabilities.md "Write scripts in JavaScript or TypeScript" says the script editor loads from a public CDN; D-283 says it is bundled, and the console's code holds no such address. D-283 kept.
+- SEC-NET-05: source: srs-debate 2026-11-24, finding A5 (Scope 7). Held once instead of in AUTH-LOG-04, API-LIM-01 and AUD-REC-01.
 
 ## Privileges and files (PRV)
 
