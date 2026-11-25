@@ -1,9 +1,11 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import type { DcmtkSender, DcmtkSendResult } from './dicom-dispatcher.js';
+import { StoredDataset } from './stored-dataset.js';
 
-const { Client, constants, requests, responses, log } = pkg;
-const { Status } = constants;
+const { Client, association: associations, constants, requests, responses, log } = pkg;
+const { PresentationContext } = associations;
+const { Status, TransferSyntax } = constants;
 const { CStoreRequest } = requests;
 const { CStoreResponse } = responses;
 
@@ -11,6 +13,7 @@ const { CStoreResponse } = responses;
 log.setLevel('warn');
 
 type AssociationType = InstanceType<typeof pkg.association.Association>;
+type PresentationContextType = InstanceType<typeof pkg.association.PresentationContext>;
 type CStoreRequestType = InstanceType<typeof pkg.requests.CStoreRequest>;
 type ResponseType = InstanceType<typeof pkg.responses.Response>;
 
@@ -78,10 +81,6 @@ class StoreAnswers {
     this.answers.set(store, status);
   }
 
-  has(store: CStoreRequestType): boolean {
-    return this.answers.has(store);
-  }
-
   /** Why the files are not delivered, or null when the remote AE said it stored every one. */
   failure(cause: Error): Error | null {
     const statuses = this.stores.map((store) => this.answers.get(store));
@@ -97,16 +96,42 @@ class StoreAnswers {
   }
 }
 
+/**
+ * The remote AE takes one transfer syntax of those proposed in a context, so the file's own is
+ * proposed alone as well: whatever it prefers, it can take the bytes as they are.
+ */
+function proposeAsStored(client: InstanceType<typeof Client>, dataset: StoredDataset): void {
+  client.addAdditionalPresentationContext(new PresentationContext(0, dataset.getElement('SOPClassUID') ?? '', dataset.getTransferSyntaxUid()), true);
+}
+
+/** How this dataset goes to the remote AE on the context it accepted, or why it cannot. */
+function encodeFor(dataset: StoredDataset, accepted: PresentationContextType | undefined): StoredDataset | Error {
+  const transferSyntax = dataset.getTransferSyntaxUid();
+  if (accepted?.getAcceptedTransferSyntaxUid() === transferSyntax) return dataset;
+  if (accepted === undefined) {
+    return new Error(`The remote AE accepted no presentation context for SOP class ${dataset.getElement('SOPClassUID') ?? ''}; the image was not sent`);
+  }
+  const implicit = accepted.getAcceptedTransferSyntaxUid() === TransferSyntax.ImplicitVRLittleEndian ? dataset.asImplicit() : null;
+  return implicit ?? new Error(`The remote AE does not accept the image's transfer syntax ${transferSyntax}, and it cannot be converted unchanged; the image was not sent`);
+}
+
 class DimseSender implements DcmtkSender {
   constructor(private readonly options: SenderOptions) {}
 
-  private sendOnce(files: readonly string[]): Promise<DcmtkSendResult> {
+  private async sendOnce(files: readonly string[]): Promise<DcmtkSendResult> {
+    return this.associate(files, await Promise.all(files.map((file) => StoredDataset.ofFile(file))));
+  }
+
+  private associate(files: readonly string[], datasets: readonly StoredDataset[]): Promise<DcmtkSendResult> {
     return new Promise((resolve, reject) => {
       const startedAt = Date.now();
       const client = new Client();
-      const stores = files.map((file) => new CStoreRequest(file));
-      const answers = new StoreAnswers(stores);
-      for (const store of stores) client.addRequest(store);
+      const stores = new Map(datasets.map((dataset) => [new CStoreRequest(dataset), dataset]));
+      const answers = new StoreAnswers([...stores.keys()]);
+      for (const [store, dataset] of stores) {
+        client.addRequest(store);
+        proposeAsStored(client, dataset);
+      }
 
       // The association's end decides nothing by itself: an archive can answer and then abort,
       // and what it answered as stored must not be sent again.
@@ -116,16 +141,17 @@ class DimseSender implements DcmtkSender {
         if (failure !== null) reject(failure);
         else resolve({ files, fileCount: files.length, durationMs: Date.now() - startedAt, warnings: answers.warnings() });
       };
-      for (const store of stores) {
-        // How the library reports a request it could not encode, after which it ends normally.
-        store.on('done', () => {
-          if (!answers.has(store)) cause = new Error('The image could not be converted to the transfer syntax the remote AE accepted; it was not sent');
-        });
-      }
       client.on('associationAccepted', (association: AssociationType) => {
-        // The library leaves out a request with no accepted context, and still ends normally.
-        const left = stores.find((store) => association.getAcceptedPresentationContextFromRequest(store) === undefined);
-        if (left) cause = new Error(`The remote AE accepted no presentation context for SOP class ${left.getAffectedSopClassUid() ?? 'unknown'}; the image was not sent`);
+        try {
+          for (const [store, dataset] of stores) {
+            const encoded = encodeFor(dataset, association.getAcceptedPresentationContextFromRequest(store));
+            // Left as it is, the library sends nothing of it and still ends normally.
+            if (encoded instanceof Error) cause = encoded;
+            else store.setDataset(encoded);
+          }
+        } catch (err) {
+          cause = err instanceof Error ? err : new Error(String(err));
+        }
       });
       client.on('associationRejected', (r: { result: number; source: number; reason: number }) => {
         cause = new Error(`DICOM association rejected: result=${String(r.result)} source=${String(r.source)} reason=${String(r.reason)}`);

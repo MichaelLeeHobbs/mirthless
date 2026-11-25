@@ -12,6 +12,7 @@ import {
   DicomDispatcher,
   clearChannelRegistry,
 } from '../../index.js';
+import { readDicomFile } from '../../dicom/dicom-file.js';
 import { createDimseSender } from '../../dicom/dimse-sender.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
@@ -323,6 +324,66 @@ describe('DICOM association that its sender aborts (#410)', () => {
     await waitFor(async () => (await fs.readdir(storageDir)).every((name) => !name.endsWith('.dcm')), 5_000);
     expect(channel.store.messageCount()).toBe(1);
   }, 30_000);
+});
+
+describe('DICOM image through a Listener and a Sender (#410)', () => {
+  it('reaches the archive byte for byte, private attributes and number text included', async () => {
+    const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mless-dicom-bytes-'));
+    const fileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mless-dicom-file-'));
+    tempDirs.push(storageDir, fileDir);
+    const port = await freePort();
+    const archive = await startFakeScp({ answer: 0x0000 });
+    try {
+      deployed.push(await deployChannel({
+        channelId: '00000000-0000-0000-0000-conndicom0by',
+        dataType: 'RAW',
+        source: new DicomReceiver({
+          port,
+          storageDir,
+          aeTitle: 'LISTENER',
+          connectionTimeoutMs: 15_000,
+          dispatchMode: 'PER_FILE',
+          postAction: 'DELETE',
+          moveToDirectory: '',
+          channelId: 'e2e',
+          roots: TMP_ROOTS,
+        }),
+        destinations: [{
+          metaDataId: 1,
+          name: 'Archive',
+          connector: new DicomDispatcher({
+            host: '127.0.0.1',
+            port: archive.port,
+            calledAETitle: 'ARCHIVE',
+            callingAETitle: 'LISTENER',
+            maxRetries: 0,
+            retryDelayMs: 0,
+            timeoutMs: 10_000,
+            roots: { allowed: [storageDir], denied: [] },
+          }),
+        }],
+      }));
+      // The sample with a private creator and value, in explicit VR, and "1.50" as DS. Both sort
+      // after everything the sample has, as elements must.
+      const sample = readDicomFile(await fs.readFile(SAMPLE_DCM));
+      const last = Buffer.from('e17f1000' + '4c4f0400' + Buffer.from('ACME').toString('hex') + 'e17f0110' + '44530400' + Buffer.from('1.50').toString('hex'), 'hex');
+      const dataset = Buffer.concat([sample.dataset, last]);
+      const file = path.join(fileDir, 'private.dcm');
+      await fs.writeFile(file, Buffer.concat([(await fs.readFile(SAMPLE_DCM)).subarray(0, -sample.dataset.length), dataset]));
+      const modality = createDimseSender({ host: '127.0.0.1', port, calledAETitle: 'LISTENER', callingAETitle: 'MODALITY', maxRetries: 0, retryDelayMs: 0, timeoutMs: 10_000 });
+      if (!modality.ok) throw modality.error;
+
+      const sent = await modality.value.send([file]);
+      if (!sent.ok) throw sent.error;
+
+      await waitFor(() => archive.received.length > 0, 15_000);
+      expect(archive.received[0]?.transferSyntax).toBe(sample.transferSyntax);
+      expect(archive.received[0]?.dataset.equals(dataset)).toBe(true);
+      await waitFor(async () => (await fs.readdir(storageDir)).every((name) => !name.endsWith('.dcm')), 5_000);
+    } finally {
+      archive.close();
+    }
+  }, 45_000);
 });
 
 /** Poll until `check` holds, or fail after `timeoutMs`. */

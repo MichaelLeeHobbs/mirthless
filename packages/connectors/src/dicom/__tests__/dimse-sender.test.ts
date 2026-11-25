@@ -3,11 +3,8 @@
 // archive that answers as told.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import pkg from 'dcmjs-dimse';
 import type { Result } from '@galvanigraph/core-util';
 import type { ConnectorResponse } from '../../base.js';
 import { createDimseSender } from '../dimse-sender.js';
@@ -15,8 +12,6 @@ import { DicomDispatcher, type DcmtkSendResult } from '../dicom-dispatcher.js';
 import { startFakeScp, type FakeScp, type ScpBehaviour } from '../../__fixtures__/fake-scp.js';
 import { freePort } from '../../__fixtures__/free-port.js';
 
-const { Dataset, constants } = pkg;
-const { StorageClass, TransferSyntax } = constants;
 const SAMPLE_DCM = fileURLToPath(new URL('../../__tests__/e2e/fixtures/sample.dcm', import.meta.url));
 
 interface SendOptions {
@@ -183,21 +178,6 @@ describe('a C-STORE the remote AE did not store', () => {
 
     expect((await sendFile(fileURLToPath(import.meta.url), scp.port)).ok).toBe(false);
     expect(scp.stores()).toBe(0);
-  });
-
-  // The remote AE takes the SOP class, not this transfer syntax, and nothing here decompresses.
-  it('fails, saying so, when the image cannot be converted to what the remote AE accepts', async () => {
-    const compressed = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'dimse-sender-')), 'compressed.dcm');
-    const frame = new Uint8Array([0xff, 0x4f, 0xff, 0xd9]).buffer;
-    new Dataset({ SOPClassUID: StorageClass.MrImageStorage, SOPInstanceUID: '1.2.3', PixelData: [frame] }, TransferSyntax.Jpeg2000Lossless)
-      .toFile(compressed);
-    scp = await startFakeScp('uncompressed-only');
-
-    const result = await sendFile(compressed, scp.port);
-    await fs.rm(path.dirname(compressed), { recursive: true, force: true });
-
-    expect(scp.stores()).toBe(0);
-    expect(outcomeOf(result)).toContain('could not be converted');
   });
 
   it('stays a failure when a success follows the refusal', async () => {

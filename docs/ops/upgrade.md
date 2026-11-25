@@ -492,6 +492,12 @@ Messages stored that way stay as they are. Their text has characters from U+0080
 
 A DICOM Listener answered success before the message was stored. In `PER_FILE` mode it now answers when the message is in the database, and a sender gets a C-STORE failure while the database is down. In `PER_ASSOCIATION` mode it keeps a list of answered files under `.galvanigraph-pending` in the storage directory until the message is stored ([DICOM](../user/connector-reference.md#dicom), D-353): include that folder in the backup of the storage directory, and let nothing clean it up. An association that was aborted now gives a message of the images it answered, where it gave none; one that stored nothing (a C-ECHO) gives none, where it gave a message with an empty list. `associationId` in the source map is now unique (`assoc-<uuid>`), where it started again at `assoc-1` with each start. Files that were left in a storage directory without a message before the upgrade are not picked up.
 
+## DICOM images pass byte for byte (#410)
+
+The DICOM Listener and Sender read and rewrote every dataset, which dropped private attributes and tags the library does not know and rewrote numbers as text (`1.50` became `1.5`). The Listener now stores the dataset as it came, and the Sender sends the stored bytes ([DICOM](../user/connector-reference.md#dicom), D-354). Images received before the upgrade stay as they were stored.
+
+An image in a transfer syntax the archive does not take is now an ERROR that names it. A compressed one never went out uncompressed (it was not sent, and read SENT); one in explicit VR big endian or in implicit VR was rewritten in the archive's, with that loss, and no longer is.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
