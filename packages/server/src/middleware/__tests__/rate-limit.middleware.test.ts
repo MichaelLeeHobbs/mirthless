@@ -223,13 +223,15 @@ describe('authRateLimiter (production)', () => {
     process.on('warning', note);
     try {
       const client = await rawClient(1, '/login');
-      await once(client, 'data');
+      let received = '';
+      client.on('data', (chunk: Buffer) => { received += chunk.toString('latin1'); });
+      const answers = (n: number): Promise<void> => reached(() => received.split('HTTP/1.1 200').length - 1, n);
+      await answers(1);
       const listeners = sockets[0]!.listenerCount('close');
       client.write(REQUEST('/login').repeat(30));
-      await handlerCalls(31);
+      await answers(31);
       client.write(REQUEST('/login'));
-      await handlerCalls(32);
-      await new Promise((resolve) => { setTimeout(resolve, 50); });
+      await answers(32);
 
       expect(sockets[0]!.listenerCount('close')).toBe(listeners);
       await new Promise((resolve) => { setImmediate(resolve); });
