@@ -24,6 +24,13 @@ describe('crumbEntity', () => {
     expect(crumbEntity('/collections/c1/records')).toEqual({ kind: 'collection', id: 'c1' });
   });
 
+  // The router matches an address in any case, and the server writes ids in lower case (#406, D-349).
+  it('reads an address in capitals as the page it opens', () => {
+    expect(crumbEntity('/channels/ABC/messages')).toEqual({ kind: 'channel', id: 'abc' });
+    expect(crumbEntity('/Channels/ABC')).toEqual({ kind: 'channel', id: 'abc' });
+    expect(crumbEntity('/channels/NEW')).toBeNull();
+  });
+
   it('returns null for new records, lists and other pages', () => {
     expect(crumbEntity('/channels/new')).toBeNull();
     expect(crumbEntity('/alerts/new')).toBeNull();
@@ -60,6 +67,10 @@ describe('breadcrumbsFor', () => {
     expect(breadcrumbsFor('/channels/c1/messages', PAGES, 'ADT in')).toEqual([
       { label: 'Dashboard', href: '/' }, { label: 'ADT in', href: '/channels/c1' }, { label: 'Messages' },
     ]);
+  });
+
+  it('links a channel opened at an address in capitals as the server writes its id', () => {
+    expect(breadcrumbsFor('/channels/C1/messages', PAGES, 'ADT in')[1]).toEqual({ label: 'ADT in', href: '/channels/c1' });
   });
 
   it('uses a placeholder until the channel name loads', () => {
