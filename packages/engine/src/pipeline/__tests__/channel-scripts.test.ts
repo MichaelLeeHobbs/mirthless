@@ -156,6 +156,71 @@ describe('channel preprocessor', () => {
     expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
+  describe('and a message its data type cannot read', () => {
+    const HL7 = 'MSH|^~\\&|S|F|R|F|20260329||ADT^A01|C1|P|2.5\rPID|||99999^^^MRN';
+    const BROKEN = `junk ${HL7}`;
+    const strip = { code: 'return rawData.slice(rawData.indexOf("MSH"));' };
+
+    async function run(scripts: PipelineConfig['scripts'], rawContent: string): Promise<{ readonly sent: unknown[]; readonly outcome: unknown; readonly kept: unknown[]; readonly alerted: unknown[] }> {
+      const store = makeStore();
+      const sendFn = makeSendFn();
+      const alerted: unknown[] = [];
+      const config = makeConfig({ dataType: 'HL7V2', scripts, onError: async (e) => { alerted.push([e.errorType, e.errorMessage]); } });
+      const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+      const result = await processor.processMessage(makeInput(rawContent), AbortSignal.timeout(5_000));
+      const value = result.ok ? result.value : null;
+      return {
+        sent: vi.mocked(sendFn).mock.calls.map((c) => c[2]),
+        outcome: [value?.status, value?.errorStage],
+        kept: vi.mocked(store.storeContent).mock.calls.filter((c) => c[3] === 13).map((c) => c[4]),
+        alerted,
+      };
+    }
+
+    it.each([
+      ['channel', { preprocessor: strip }],
+      ['global', { globalPreprocessor: strip }],
+    ])('the %s preprocessor can repair it: the repaired message is what the scripts after it read and what is sent', async (_which, scripts) => {
+      const { sent, outcome } = await run({ ...scripts, sourceFilter: { code: 'return msg.get("PID.3.1") === "99999";' } }, BROKEN);
+
+      expect(outcome).toEqual(['SENT', undefined]);
+      expect(sent).toEqual([HL7]);
+    });
+
+    it.each([
+      ['with no preprocessor', {}, BROKEN],
+      ['that the preprocessors leave as it is', { globalPreprocessor: { code: 'logger.info("seen");' }, preprocessor: { code: 'return true;' } }, BROKEN],
+    ])('%s: it fails before it is filtered, with the reason and an alert', async (_which, scripts, rawContent) => {
+      const { sent, outcome, kept, alerted } = await run({ ...scripts, sourceFilter: { code: 'return true;' } }, rawContent);
+
+      expect(outcome).toEqual(['ERROR', 'SOURCE']);
+      expect(sent).toEqual([]);
+      expect(kept).toEqual([expect.stringMatching(/^Invalid HL7V2: /)]);
+      expect(alerted).toEqual([['SOURCE_CONNECTOR', expect.stringMatching(/^Invalid HL7V2: /)]]);
+    });
+
+    it.each(['preprocessor', 'globalPreprocessor'] as const)('the reason says so too when the %s fails on it', async (which) => {
+      const { outcome, kept, alerted } = await run({ [which]: { code: 'return msg.get("MSH.9");' } }, BROKEN);
+
+      expect(outcome).toEqual(['ERROR', 'SOURCE']);
+      expect(kept).toEqual([expect.stringMatching(/msg\.get is not a function \(as received: Invalid HL7V2: /)]);
+      expect(alerted).toEqual([['SOURCE_CONNECTOR', expect.stringMatching(new RegExp(`^Script error in ${which}: .*Invalid HL7V2: `))]]);
+    });
+
+    it('the reason is the script\'s alone when the message was readable', async () => {
+      const { kept } = await run({ preprocessor: { code: 'throw new Error("pre boom");' } }, HL7);
+
+      expect(kept).toEqual([expect.stringMatching(/^(?!.*as received).*pre boom/)]);
+    });
+
+    it('a preprocessor that turns a readable message into another format leaves the scripts after it the text', async () => {
+      const { sent, outcome } = await run({ preprocessor: { code: 'return "converted " + rawData;' }, sourceFilter: { code: 'return typeof msg === "string";' } }, HL7);
+
+      expect(outcome).toEqual(['SENT', undefined]);
+      expect(sent).toEqual([`converted ${HL7}`]);
+    });
+  });
+
   it('a throwing preprocessor surfaces as ERROR, stores error content, and does not send', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
