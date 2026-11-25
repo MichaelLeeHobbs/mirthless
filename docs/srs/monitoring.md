@@ -19,10 +19,12 @@ Seeing what every channel is doing, being told when one is wrong, and giving oth
 | MON-CST-01 | The system shall show, for each source and destination of a deployed channel, whether it is idle, connected, receiving, polling, sending, waiting to retry or disconnected, the number of open connections, the deliveries queued for it, and the time and reason of its last failure, within 5 seconds of a change. | P2 | Test | Proposed |
 | MON-CST-02 | The system shall list the errors of a chosen period across every channel the user may see, grouped by channel, connector, processing stage and cause, with a count and the first and last time, and open the messages behind each group. | P2 | Demonstration | Proposed |
 | MON-CST-03 | The system shall mark a running channel as degraded when its error rate or processing time over the last 15 minutes is worse than limits an operator can set, with the reason. | P3 | Test | Proposed |
+| MON-CST-04 | An operator shall be able to find each input a listening source refused, with its time, channel, sender address and reason, and none of its content. | P1 | Test | Proposed |
 
 - MON-CST-01: source: docs/user/capabilities.md "Connection status per connector" (No); ROADMAP N10; docs/design/13-non-connector-gap-analysis.md section 7. The 5 seconds is the drafter's.
 - MON-CST-02: source: ROADMAP V1 (error triage view); docs/research/voice-of-user/ranking.md MON7; D-248 for the kept failure reason. The grouping is the drafter's reading of "triage".
 - MON-CST-03: source: ROADMAP v1.2 "Channel health scoring" ("automated detection of degraded channels (error rate, latency spikes)"). The 15 minutes is the drafter's.
+- MON-CST-04: source: srs-debate 2026-11-24, finding C24 (Customer 3, moved here by Scope without an alert per refusal).
 
 ## Alert conditions (ALT)
 

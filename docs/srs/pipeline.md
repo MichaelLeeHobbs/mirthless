@@ -70,6 +70,8 @@ How a message moves through a channel: its stages and statuses, the destinations
 | PIPE-QUE-06 | The system shall show on a waiting message why its latest attempt failed, raise an alert when a run of failed attempts begins and another for each message it gives up on, and show no failure reason once the message is delivered. | P1 | Test | Proposed |
 | PIPE-QUE-07 | The system shall let a destination's queue be sent with more than one send at a time, the number set per destination and 1 unless set. | P2 | Test | Proposed |
 | PIPE-QUE-08 | When a destination's queue has more than one send at a time, the system shall send messages that share the value of a key the channel names, such as the patient identifier, one at a time in the order received. | P2 | Test | Proposed |
+| PIPE-QUE-09 | The system shall let each destination be set never to queue, to queue a message whose direct send failed other than by a refusal CONN-DST-08 or CONN-DST-09 ends in error, or always to queue, and shall keep a queued message across restarts until it is delivered, given up on or deleted. | P1 | Test | Proposed |
+| PIPE-QUE-10 | The system shall let a destination be set to queue again (the default) or to hold as an error a send that may have reached its partner without an answer. | P1 | Test | Proposed |
 
 - PIPE-QUE-01: source: docs/design/01-core-models.md queue modes; docs/design/02-engine.md "Destination Queue Manager"; docs/user/capabilities.md Mirth migration "Destination queue settings" (Yes).
 - PIPE-QUE-02: source: D-230; the 10-second default is from the channel schema. Supersedes docs/design/02-engine.md "Queue Consumer", where 0 was one attempt.
@@ -79,6 +81,8 @@ How a message moves through a channel: its stages and statuses, the destinations
 - PIPE-QUE-06: source: D-230 (one alert on the first failure of a streak), D-248 (the latest reason is kept).
 - PIPE-QUE-07: source: docs/user/capabilities.md "Multiple threads per destination queue" (No); ROADMAP N7; D-189; docs/design/02-engine.md "Resolved Decisions" 3.
 - PIPE-QUE-08: source: docs/user/capabilities.md "Keep per-patient order while scaling out" (No); ROADMAP B3; docs/design/14 section 5. Must hold from the day PIPE-QUE-07 ships; scaling over several servers is in Operations.
+- PIPE-QUE-09: source: srs-debate 2026-11-24, finding C1 (Scope). Keeps Pipeline in step with CONN-DST-08 and CONN-DST-09. Replaces PIPE-QUE-01: when this row is accepted, that row becomes Superseded by PIPE-QUE-09.
+- PIPE-QUE-10: source: srs-debate 2026-11-24, finding C27 (Domain 4, moved here by Scope). Mirth's "queue on response timeout".
 
 ## Stopping with messages in flight (LIF)
 
@@ -86,9 +90,11 @@ How a message moves through a channel: its stages and statuses, the destinations
 |---|---|---|---|---|
 | PIPE-LIF-01 | On a stop, the system shall take no new message and shall give messages already being processed at least 5 seconds to end; one that has not ended by the time the channel is stopped shall either still end with a final status or be finished at the next start, as PIPE-REC-01 says. | P1 | Test | Proposed |
 | PIPE-LIF-02 | On a halt, the system shall end every script and every send of the channel that can be ended without waiting for its own time limit, put a queued message whose send it ended back on its queue without counting an attempt, and show any other message it ended as error. | P1 | Test | Proposed |
+| PIPE-LIF-03 | On a stop, the system shall take no new message and shall not report the channel stopped until every message already being processed has a final status and its waiting sender its answer, unless a person halts the channel. | P1 | Test | Proposed |
 
 - PIPE-LIF-01: source: docs/design/02-engine.md "Stop Sequence"; D-342; #390 (a TCP source gives live messages 5 s; other sources differ). The least time is from code. Server shutdown is in Operations.
 - PIPE-LIF-02: source: D-342. A database query, a file write, a DICOM send, a JavaScript destination's script and a send to another channel cannot be ended and run to their end (D-342).
+- PIPE-LIF-03: source: srs-debate 2026-11-24, finding C17 (chair, so that Pipeline agrees with CONN-SRC-13). PIPE-LIF-01 gave at least 5 seconds. Replaces PIPE-LIF-01: when this row is accepted, that row becomes Superseded by PIPE-LIF-03.
 
 ## Recovery after a server stop (REC)
 

@@ -99,6 +99,7 @@ A channel has one of five storage modes: DEVELOPMENT, PRODUCTION, RAW, METADATA 
 | MSG-RET-07 | On a channel with archiving on, the system shall prune a message only after writing it, with its content and attachments, to the archive, and shall keep a message whose archiving failed and report the failure. | P2 | Test | Proposed |
 | MSG-RET-08 | On a channel set to remove content, or attachments, on completion, the system shall remove them only once the source and every destination, queued ones included, ended SENT or FILTERED, and shall keep them when any ended in ERROR. | P1 | Test | Proposed |
 | MSG-RET-09 | When a channel is deleted, the system shall keep its messages searchable and marked as a deleted channel's, shall go on pruning them by the channel's settings, and shall let an administrator remove them all at once. | P2 | Test | Proposed |
+| MSG-RET-10 | When a message that names a file the DICOM source stored is deleted or pruned, the system shall remove that file too, or raise an alert naming the message. | P1 | Test | Proposed |
 
 - MSG-RET-01: source: D-209 and the code (a delete also removes attachments and custom metadata, "which hold PHI"); issue #403 (content left behind by a delete).
 - MSG-RET-02: source: issue #403, which lists three ways (refuse, wait, or stop and clean up) and asks for a way to delete a message that will never finish. Refusing is this draft's choice. The issue also asks that rows already left behind are found and pruned, a one-time repair that is not a row.
@@ -109,3 +110,4 @@ A channel has one of five storage modes: DEVELOPMENT, PRODUCTION, RAW, METADATA 
 - MSG-RET-07: source: ROADMAP N8; docs/user/capabilities.md "Archive messages before pruning" (No); docs/design/13-non-connector-gap-analysis.md "archive-then-prune".
 - MSG-RET-08: source: D-090 as refined by the content rules in D-325 (a message counts as delivered only when every connector is SENT or FILTERED).
 - MSG-RET-09: source: issue #202 (an open choice: mark them as deleted or hide them); docs/user/access-control.md `channels:delete` ("Deleting hides the channel; its messages are kept"). Conflict: D-052 drops a channel's messages when it is deleted; access-control.md and the code keep them, kept here. Pruning on, and removing them all, are this draft's: today nothing removes them.
+- MSG-RET-10: source: srs-debate 2026-11-24, finding C30 (Domain 11, moved here by Scope).
