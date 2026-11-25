@@ -11,7 +11,8 @@ export interface ShutdownDeps {
   readonly closePool: () => Promise<void>;
 }
 
-const DRAIN_TIMEOUT_MS = 30_000;
+/** docker-compose.prod.yml gives the container longer than this to stop. */
+export const DRAIN_TIMEOUT_MS = 30_000;
 
 /**
  * Socket.IO goes before the HTTP close: open websockets keep server.close() from

@@ -64,6 +64,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
+    # The server takes up to 30 s to stop: it lets the messages under way end.
+    # Docker's default kills it after 10 s.
+    stop_grace_period: 45s
     restart: unless-stopped
     networks:
       - galvanigraph
