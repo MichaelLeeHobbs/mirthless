@@ -30,7 +30,7 @@ const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return moc
 
 const mockSandboxExecute = vi.fn().mockResolvedValue({
   ok: true,
-  value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
+  value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }},
   error: null,
 });
 const mockSandboxDispose = vi.fn();
@@ -67,6 +67,8 @@ vi.mock('@galvanigraph/engine', () => ({
   QueueConsumer: vi.fn().mockImplementation(function () {
     return { start: vi.fn(), stop: vi.fn().mockResolvedValue(undefined), halt: vi.fn().mockResolvedValue(undefined) };
   }),
+  ScriptRunLog: vi.fn().mockImplementation(function () { return { run: () => null }; }),
+  reportUnsaved: async (writes: readonly Promise<unknown>[]) => { await Promise.all(writes); },
   compileScript: mockCompileScript,
   globalsNamed: mockGlobalsNamed,
   compileFilterRulesToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
@@ -419,6 +421,33 @@ describe('EngineManager', () => {
       // What recovery goes by (#390): what the script, with its code templates, can read the variables by.
       expect(mockGlobalsNamed).toHaveBeenCalledExactlyOnceWith({ code: 'compiled-code' }, ['channelMap', '$c', '$', 'connectorMessage', 'globalThis']);
       expect(mockSetDestScriptRunner.mock.calls[0]![1]).toEqual(['$c']);
+    });
+
+    // A message that is processed can be deleted, and what is stored after that outlives it (#164, D-372).
+    it('stores what a JavaScript destination logged before its send has ended', async () => {
+      const run = { script: 'JavaScript destination', lines: [{ level: 'INFO', time: 't', text: 'x' }], leftOut: 0 };
+      const { ScriptRunLog } = await import('@galvanigraph/engine');
+      const { MessageService } = await import('../message.service.js');
+      vi.mocked(ScriptRunLog).mockImplementationOnce(function () { return { run: () => run } as never; });
+      const channel = makeChannel({
+        destinations: [{
+          id: 'dest-1', metaDataId: 1, name: 'JS Dest', enabled: true, connectorType: 'JAVASCRIPT',
+          properties: { script: 'return msg;' },
+          queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 5000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+        }],
+      });
+      await new EngineManager('test-server').deploy(bundleOf(channel as never));
+      const send = mockSetDestScriptRunner.mock.calls[0]![0] as (s: string, c: string, m: unknown) => Promise<unknown>;
+      let stored: () => void = () => undefined;
+      vi.mocked(MessageService.loadContent).mockResolvedValue({ ok: true, value: null, error: null });
+      vi.mocked(MessageService.storeContent).mockImplementationOnce(() => new Promise((resolve) => { stored = () => { resolve({ ok: true, value: undefined, error: null }); }; }));
+      let ended = false;
+
+      const sending = send('', 'hello', { channelId: 'ch', messageId: 7, metaDataId: 1, dataType: 'RAW' }).then(() => { ended = true; });
+      await vi.waitFor(() => { expect(MessageService.storeContent).toHaveBeenCalledWith(expect.anything(), 7, 1, 14, JSON.stringify({ runs: [run], runsLeftOut: 0 }), 'JSON', false); });
+      expect(ended).toBe(false);
+      stored();
+      await sending;
     });
 
     it('does not deploy a JavaScript destination whose script could not be looked through', async () => {

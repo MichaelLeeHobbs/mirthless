@@ -13,7 +13,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { useHistoricalLogs, useLogStream, type LogEntry } from '../../hooks/use-logs.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
-import { formatTimestampWith } from '../../lib/format.js';
+import { formatClockTime } from '../../lib/format.js';
 import { saveFile } from '../../lib/download.js';
 
 const LEVELS = [
@@ -23,23 +23,14 @@ const LEVELS = [
   { value: 50, label: 'ERROR', color: 'error.main' },
 ] as const;
 
+/** More rows than this take the page seconds to draw. */
+const MAX_ROWS = 1_000;
+
 function getLevelColor(level: number): string {
   if (level >= 50) return 'status.critical';
   if (level >= 40) return 'status.warning';
   if (level <= 20) return 'text.disabled';
   return 'text.primary';
-}
-
-function clockTime(d: Date): string {
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  return `${hh}:${mm}:${ss}.${ms}`;
-}
-
-export function formatClockTime(iso: string | null | undefined): string {
-  return formatTimestampWith(iso, clockTime);
 }
 
 function formatLogLine(entry: LogEntry): string {
@@ -63,7 +54,7 @@ export function LogViewer(): ReactNode {
     const combined: LogEntry[] = [];
 
     for (const entry of streamEntries) {
-      const key = `${entry.timestamp}:${entry.message}`;
+      const key = `${entry.timestamp}:${String(entry.seq)}`;
       if (!seen.has(key)) {
         seen.add(key);
         combined.push(entry);
@@ -71,7 +62,7 @@ export function LogViewer(): ReactNode {
     }
 
     for (const entry of historical) {
-      const key = `${entry.timestamp}:${entry.message}`;
+      const key = `${entry.timestamp}:${String(entry.seq)}`;
       if (!seen.has(key)) {
         seen.add(key);
         combined.push(entry);
@@ -167,7 +158,7 @@ export function LogViewer(): ReactNode {
         <Typography variant="body2" sx={{
           color: 'text.secondary'
         }}>
-          {filteredEntries.length} entries
+          {filteredEntries.length} entries{filteredEntries.length > MAX_ROWS ? `, the newest ${String(MAX_ROWS)} shown` : ''}
         </Typography>
       </Box>
 
@@ -184,7 +175,7 @@ export function LogViewer(): ReactNode {
           lineHeight: 1.6,
         }}
       >
-        {filteredEntries.map((entry, idx) => (
+        {filteredEntries.slice(0, MAX_ROWS).map((entry, idx) => (
           <Box
             key={`${entry.timestamp}-${String(idx)}`}
             sx={{ color: getLevelColor(entry.level), whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}

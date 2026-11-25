@@ -138,8 +138,13 @@ string included. Treat the web container's error output like the server log.
 ### PHI in logs
 
 Never log message content. The application avoids logging PHI and credentials (a failed database statement is logged without its parameters, D-347; a DICOM image by a hash of its file name, D-386); if you add
-logging in custom scripts or forks, keep PHI and secrets out of log lines — logs are
-generally less protected than the database.
+logging in forks, keep PHI and secrets out of log lines — logs are generally less protected
+than the database. What channel scripts write with `logger` is stored with the message. It goes
+to the server log (`component: "channel-script"`) only while **Log what channel scripts write**
+is on in the settings; it is off by default, because a script's text can hold PHI (D-387). Turn it
+on to look for something and off again, or where the log is protected as PHI is. Off again, the
+Server Log page no longer shows those lines; what has been collected from the output stays where
+it is. `LOG_LEVEL` applies to them as to every line, and a line keeps its first 1,000 characters.
 
 ---
 

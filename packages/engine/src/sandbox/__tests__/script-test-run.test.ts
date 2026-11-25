@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { MAX_SCRIPT_LOG_LINES } from '@galvanigraph/core-models';
 import {
-  runScriptTest, MAX_TEST_LOG_LINES, MAX_TEST_OUTPUT_CHARS, type ScriptTestInput, type ScriptTestResult,
+  runScriptTest, MAX_TEST_OUTPUT_CHARS, type ScriptTestInput, type ScriptTestResult,
 } from '../script-test-run.js';
 
 const ADT = [
@@ -109,13 +110,19 @@ describe('runScriptTest', () => {
   it('caps logger lines and output size, and says what it cut', async () => {
     const chatty = await run({ kind: 'script', script: 'for (let i = 0; i < 1000; i++) logger.info(String(i));' });
     expect(chatty.error).toBeNull();
-    expect(chatty.logs).toHaveLength(MAX_TEST_LOG_LINES + 1);
-    expect(chatty.logs.at(-1)?.message).toBe(`${String(1000 - MAX_TEST_LOG_LINES)} more logger lines not shown`);
+    expect(chatty.logs).toHaveLength(MAX_SCRIPT_LOG_LINES + 1);
+    expect(chatty.logs.at(-1)?.message).toBe(`${String(1000 - MAX_SCRIPT_LOG_LINES)} more logger lines not shown`);
 
     const big = await run({ kind: 'transformer', script: `return 'x'.repeat(${String(MAX_TEST_OUTPUT_CHARS + 10)});` });
     expect(big.error).toBeNull();
     expect(big.output).toHaveLength(MAX_TEST_OUTPUT_CHARS);
     expect(big.logs.at(-1)?.message).toBe(`Output cut to the first ${String(MAX_TEST_OUTPUT_CHARS)} characters`);
+  });
+
+  it('has what a script logged before it failed', async () => {
+    const result = await run({ kind: 'script', script: 'logger.warn("got this far"); throw new Error("broke");' });
+    expect(result.outcome).toBe('error');
+    expect(result.logs).toEqual([{ level: 'WARN', message: 'got this far' }]);
   });
 
   it('reports a sample that does not parse as the channel data type', async () => {

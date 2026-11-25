@@ -181,6 +181,20 @@ const messages = Array.from({ length: 14 }, (_, i) => ({
   ],
 }));
 
+const SCRIPT_LOG = JSON.stringify({
+  runsLeftOut: 0,
+  runs: [
+    { script: 'Source filter', leftOut: 0, lines: [{ level: 'INFO', time: ago(3), text: 'ADT^A08 for MRN 4821193 accepted' }] },
+    {
+      script: 'Source transformer', leftOut: 37, lines: [
+        { level: 'DEBUG', time: ago(3), text: 'PID-3 has 2 repetitions' },
+        { level: 'WARN', time: ago(3), text: 'No assigning authority in PID-3.4, using the sending facility' },
+        { level: 'ERROR', time: ago(3), text: 'Lookup table "units" has no entry for "ICU-7B"; the location is sent as received, so the receiving system has to map it' },
+      ],
+    },
+  ],
+});
+
 const traffic = messages.map((m, i) => ({
   messageId: m.messageId, channelId: CHANNELS[i % 4][0], channelName: CHANNELS[i % 4][1], channelDeleted: i % 4 === 2, receivedAt: m.receivedAt,
   processed: true, status: m.connectors[1].status, connectorName: 'To EHR',
@@ -286,6 +300,7 @@ const settings = [
   ['s10', 'pruner.cron_expression', '0 3 * * *', 'string', null, 'pruner'],
   ['s11', 'features.maintenance_mode', 'false', 'boolean', null, 'features'],
   ['s12', 'audit.retention_years', '6', 'number', null, 'audit'],
+  ['s14', 'logging.script_output', 'false', 'boolean', null, 'logging'],
 ].map(([id, key, value, type, description, category]) => ({ id, key, value, type, description, category, createdAt: ago(90000), updatedAt: ago(500) }));
 
 const deletedChannels = [
@@ -310,7 +325,7 @@ const logs = [
   [50, 'ERROR', 'pipeline', 'Destination "To EHR" failed after 3 attempts: ECONNREFUSED'],
   [20, 'DEBUG', 'pruner', 'Next pruner run scheduled for 02:00'],
   [30, 'INFO', 'http', 'GET /api/v1/channels/statistics 200 4ms'],
-].map(([level, levelLabel, logger, message], i) => ({ timestamp: ago(i * 2), level, levelLabel, logger, message }));
+].map(([level, levelLabel, logger, message], i) => ({ timestamp: ago(i * 2), level, levelLabel, logger, message, seq: 100 - i }));
 
 const libraries = [
   { id: 'l1', name: 'HL7 helpers', description: 'Segment and field utilities', revision: 4, templateCount: 2, channelIds: ['c1', 'c2'], outsideScopeCount: 3, createdAt: ago(90000), updatedAt: ago(800) },
@@ -370,7 +385,7 @@ export function route(pathname, search) {
   if (p === '/channels/c7') return sftpDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   const opened = messages.find((m) => p === `/channels/c1/messages/${String(m.messageId)}`);
-  if (opened) return { ...opened, serverId: 'server-01', connectors: opened.connectors.map((c) => ({ ...c, content: {} })) };
+  if (opened) return { ...opened, serverId: 'server-01', connectors: opened.connectors.map((c) => ({ ...c, content: c.metaDataId === 0 ? { scriptLog: SCRIPT_LOG } : {} })) };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;
     return { items, total: items.length, limit: 25, offset: 0 };

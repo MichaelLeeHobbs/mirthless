@@ -495,6 +495,7 @@ export const CONTENT_TYPE = {
   ERROR: 11,
   RESPONSE_ERROR: 12,
   PROCESSING_ERROR: 13,
+  SCRIPT_LOG: 14,
 } as const;
 
 export const messageContent = pgTable('message_content', {

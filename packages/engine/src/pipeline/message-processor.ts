@@ -1,8 +1,9 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-import { CONTENT_TYPE } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, type ScriptLogRun } from '@galvanigraph/core-models';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import type { SandboxContext } from '../sandbox/sandbox-context.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
+import { ScriptRunLog, type ScriptLogSink, type ScriptRunAt } from '../sandbox/script-run-log.js';
 import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
@@ -104,6 +105,8 @@ export interface MessageStore {
   /** Drops an earlier failure reason once delivered. */
   removeContent?(channelId: string, messageId: number, metaDataId: number, contentType: number): Promise<Result<void>>;
   storeCustomMetadata?(channelId: string, messageId: number, metaDataId: number, metadata: Readonly<Record<string, unknown>>): Promise<Result<void>>;
+  /** Adds to what the connector's scripts logged before. */
+  storeScriptLog?(channelId: string, messageId: number, metaDataId: number, run: ScriptLogRun): Promise<Result<void>>;
 
   /** Message, source connector, content rows and stats in one round-trip; without it the pipeline makes individual calls. */
   initializeMessage?(
@@ -218,6 +221,8 @@ export interface PipelineConfig {
   readonly responseSource?: ResponseSource | undefined;
   /** Absent: no destination uses any. */
   readonly variablesUsed?: VariablesUsed | undefined;
+  /** For the server log: where what a script logs goes besides the message. */
+  readonly scriptLog?: ((at: ScriptRunAt) => ScriptLogSink) | undefined;
   /** Filled after the source transformer. */
   readonly metadataColumns?: readonly MetadataColumnConfig[] | undefined;
 }
@@ -250,6 +255,13 @@ export interface StoreReadFailure {
   /** Absent when it was a queue. */
   readonly messageId?: number | undefined;
   readonly errorMessage: string;
+}
+
+/** The connector a script runs for, and the script's name for a reader. */
+interface RunFor {
+  readonly messageId: number;
+  readonly metaDataId: number;
+  readonly script: string;
 }
 
 interface PipelineMapState {
@@ -379,7 +391,7 @@ export class MessageProcessor {
 
       if (this.config.scripts.globalPreprocessor) {
         const gpreResult = await this.runScript(
-          this.config.scripts.globalPreprocessor, content, input, signal, mapState,
+          { messageId, metaDataId: 0, script: 'Global preprocessor' }, this.config.scripts.globalPreprocessor, content, input, signal, mapState,
         );
         if (!gpreResult.ok) return preprocessorFailed('globalPreprocessor', gpreResult.error.message);
         const gpreVal = scriptReplacement(gpreResult.value.returnValue, gpreResult.value.msg);
@@ -392,7 +404,7 @@ export class MessageProcessor {
 
       if (this.config.scripts.preprocessor) {
         const preResult = await this.runScript(
-          this.config.scripts.preprocessor, content, input, signal, mapState,
+          { messageId, metaDataId: 0, script: 'Preprocessor' }, this.config.scripts.preprocessor, content, input, signal, mapState,
         );
         if (!preResult.ok) return preprocessorFailed('preprocessor', preResult.error.message);
         const preVal = scriptReplacement(preResult.value.returnValue, preResult.value.msg);
@@ -413,7 +425,7 @@ export class MessageProcessor {
 
       if (this.config.scripts.sourceFilter) {
         const filterResult = await this.runScript(
-          this.config.scripts.sourceFilter, content, input, signal, mapState, destSetExtras,
+          { messageId, metaDataId: 0, script: 'Source filter' }, this.config.scripts.sourceFilter, content, input, signal, mapState, destSetExtras,
         );
         if (!filterResult.ok) return errorOut('sourceFilter', filterResult.error.message);
         mark('sourceFilter');
@@ -431,7 +443,7 @@ export class MessageProcessor {
 
       if (this.config.scripts.sourceTransformer) {
         const txResult = await this.runScript(
-          this.config.scripts.sourceTransformer, content, input, signal, mapState, destSetExtras,
+          { messageId, metaDataId: 0, script: 'Source transformer' }, this.config.scripts.sourceTransformer, content, input, signal, mapState, destSetExtras,
         );
         if (!txResult.ok) return errorOut('sourceTransformer', txResult.error.message);
         const transformed = scriptReplacement(txResult.value.returnValue, txResult.value.msg);
@@ -473,7 +485,7 @@ export class MessageProcessor {
       let postprocessorResponse: string | undefined;
       if (this.config.scripts.postprocessor) {
         const postResult = await this.runScript(
-          this.config.scripts.postprocessor, content, input, signal, mapState,
+          { messageId, metaDataId: 0, script: 'Postprocessor' }, this.config.scripts.postprocessor, content, input, signal, mapState,
         );
         if (!postResult.ok) {
           postErrors.push(`Script error in postprocessor: ${postResult.error.message}`);
@@ -485,7 +497,7 @@ export class MessageProcessor {
 
       if (this.config.scripts.globalPostprocessor) {
         const gpostResult = await this.runScript(
-          this.config.scripts.globalPostprocessor, content, input, signal, mapState,
+          { messageId, metaDataId: 0, script: 'Global postprocessor' }, this.config.scripts.globalPostprocessor, content, input, signal, mapState,
         );
         if (!gpostResult.ok) {
           postErrors.push(`Script error in globalPostprocessor: ${gpostResult.error.message}`);
@@ -667,7 +679,7 @@ export class MessageProcessor {
       // as if the filter passed (which would send unfiltered PHI downstream).
       if (dest.scripts.filter) {
         const filterResult = await this.runScript(
-          dest.scripts.filter, destContent, input, signal, destMaps,
+          { messageId, metaDataId: dest.metaDataId, script: 'Destination filter' }, dest.scripts.filter, destContent, input, signal, destMaps,
         );
         if (!filterResult.ok) {
           return this.destErrorOut(messageId, dest, 'destinationFilter', filterResult.error.message);
@@ -684,7 +696,7 @@ export class MessageProcessor {
       // Never send untransformed content downstream on a transformer failure.
       if (dest.scripts.transformer) {
         const txResult = await this.runScript(
-          dest.scripts.transformer, destContent, input, signal, destMaps,
+          { messageId, metaDataId: dest.metaDataId, script: 'Destination transformer' }, dest.scripts.transformer, destContent, input, signal, destMaps,
         );
         if (!txResult.ok) {
           return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
@@ -756,7 +768,7 @@ export class MessageProcessor {
         let responseContent = response.content;
         if (dest.scripts.responseTransformer) {
           const rtResult = await this.runScript(
-            dest.scripts.responseTransformer, response.content, input, signal, destMaps,
+            { messageId, metaDataId: dest.metaDataId, script: 'Response transformer' }, dest.scripts.responseTransformer, response.content, input, signal, destMaps,
           );
           if (rtResult.ok) {
             const transformed = scriptReplacement(rtResult.value.returnValue, rtResult.value.msg);
@@ -922,7 +934,16 @@ export class MessageProcessor {
     return destResults.find((r) => r.response)?.response;
   }
 
+  /** Before the caller writes a status: a message that is processed can be deleted, and what is stored after that outlives it. */
+  private async storeScriptLog(at: RunFor, run: ScriptLogRun | null): Promise<void> {
+    if (run === null || !this.store.storeScriptLog) return;
+    await this.saved(at.messageId, at.metaDataId, 'what a script logged', [
+      this.store.storeScriptLog(this.config.channelId, at.messageId, at.metaDataId, run),
+    ]);
+  }
+
   private async runScript(
+    at: RunFor,
     script: CompiledScript,
     content: string,
     input: PipelineInput,
@@ -956,7 +977,9 @@ export class MessageProcessor {
       ...(this.config.configMap ? { configMap: this.config.configMap } : {}),
       ...(extras ? { extras } : {}),
     };
-    const result = await this.sandbox.execute(script, context, { ...this.execOptions, signal });
+    const log = new ScriptRunLog(at.script, this.config.scriptLog?.({ channelId: this.config.channelId, ...at }));
+    const result = await this.sandbox.execute(script, context, { ...this.execOptions, signal, log });
+    // Before anything is waited for: what another message's script reads in that time has these changes.
     if (result.ok) {
       const updates = result.value.mapUpdates;
       Object.assign(mapState.channelMap, updates.channelMap);
@@ -965,6 +988,7 @@ export class MessageProcessor {
       if (gcm && gcmBefore) gcm.applyChanges(gcmBefore, updates.globalChannelMap);
       if (globalMapProxy && globalBefore) globalMapProxy.applyChanges(globalBefore, updates.globalMap);
     }
+    await this.storeScriptLog(at, log.run());
     return result;
   }
 }

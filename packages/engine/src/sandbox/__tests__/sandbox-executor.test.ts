@@ -7,8 +7,10 @@ import {
 } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy, createX12Proxy } from '../../pipeline/data-type-handler.js';
+import { MAX_SCRIPT_LOG_LATER_LINE_CHARS, MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS, MAX_SCRIPT_LOG_RUN_CHARS } from '@galvanigraph/core-models';
 import { Hl7Message, X12Message } from '@galvanigraph/core-util';
 import type { BridgeDependencies } from '../bridge-functions.js';
+import { ScriptRunLog } from '../script-run-log.js';
 
 function makeScript(code: string): CompiledScript {
   return { code };
@@ -89,13 +91,12 @@ describe('VmSandboxExecutor', () => {
     it('captures logger.info calls', async () => {
       const script = makeScript('logger.info("hello from sandbox"); return true;');
 
-      const result = await executor.execute(script, makeContext(), makeOptions());
+      const log = new ScriptRunLog('Source filter');
+
+      const result = await executor.execute(script, makeContext(), { ...makeOptions(), log });
 
       expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.logs).toHaveLength(1);
-      expect(result.value.logs[0]!.level).toBe('INFO');
-      expect(result.value.logs[0]!.message).toBe('hello from sandbox');
+      expect(log.run()).toEqual({ script: 'Source filter', lines: [{ level: 'INFO', time: expect.stringMatching(/^\d{4}-.*Z$/) as string, text: 'hello from sandbox' }], leftOut: 0 });
     });
 
     it('captures multiple log levels', async () => {
@@ -107,15 +108,103 @@ describe('VmSandboxExecutor', () => {
         return true;
       `);
 
-      const result = await executor.execute(script, makeContext(), makeOptions());
+      const log = new ScriptRunLog('Source filter');
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.logs).toHaveLength(4);
-      expect(result.value.logs[0]!.level).toBe('INFO');
-      expect(result.value.logs[1]!.level).toBe('WARN');
-      expect(result.value.logs[2]!.level).toBe('ERROR');
-      expect(result.value.logs[3]!.level).toBe('DEBUG');
+      await executor.execute(script, makeContext(), { ...makeOptions(), log });
+
+      expect(log.run()?.lines.map((l) => [l.level, l.text])).toEqual([['INFO', 'info msg'], ['WARN', 'warn msg'], ['ERROR', 'error msg'], ['DEBUG', 'debug msg']]);
+    });
+
+    it('has no run of a script that wrote nothing', async () => {
+      const log = new ScriptRunLog('Source filter');
+
+      await executor.execute(makeScript('return true;'), makeContext(), { ...makeOptions(), log });
+
+      expect(log.run()).toBeNull();
+    });
+
+    it.each([
+      ['throws', 'throw new Error("broke");'],
+      ['runs out of time', 'while (true) { /* never ends */ }'],
+      ['has a result that cannot be read', 'return { get x() { logger.warn("in a getter"); throw new Error("unreadable"); } };'],
+    ])('keeps what a script wrote before it %s', async (_case, rest) => {
+      const log = new ScriptRunLog('Source filter');
+
+      const result = await executor.execute(makeScript(`logger.info("before"); ${rest}`), makeContext(), { ...makeOptions(), timeout: 500, log });
+
+      expect(result.ok).toBe(false);
+      expect(log.run()?.lines[0]).toMatchObject({ level: 'INFO', text: 'before' });
+    });
+
+    it.each([
+      ['as many lines as are kept', MAX_SCRIPT_LOG_LINES, 0],
+      ['one line more', MAX_SCRIPT_LOG_LINES + 1, 1],
+      ['many more lines', 5_000, 5_000 - MAX_SCRIPT_LOG_LINES],
+    ])('keeps the first lines of a run and counts the rest: %s', async (_case, count, leftOut) => {
+      const log = new ScriptRunLog('Source filter');
+
+      await executor.execute(makeScript(`for (let i = 1; i <= ${String(count)}; i++) logger.info(i);`), makeContext(), { ...makeOptions(), log });
+
+      const run = log.run();
+      expect(run?.lines).toHaveLength(MAX_SCRIPT_LOG_LINES);
+      expect(run?.lines.at(-1)?.text).toBe(String(MAX_SCRIPT_LOG_LINES));
+      expect(run?.leftOut).toBe(leftOut);
+    });
+
+    it('counts the lines left out of a run that fails', async () => {
+      const log = new ScriptRunLog('Source filter');
+
+      await executor.execute(makeScript('for (let i = 0; i < 300; i++) logger.info(i); throw new Error("broke");'), makeContext(), { ...makeOptions(), log });
+
+      expect(log.run()).toMatchObject({ leftOut: 300 - MAX_SCRIPT_LOG_LINES });
+    });
+
+    it('cuts a line that is too long, and says by how much', async () => {
+      const log = new ScriptRunLog('Source filter');
+
+      await executor.execute(makeScript(`logger.info("x".repeat(${String(MAX_SCRIPT_LOG_LINE_CHARS)})); logger.info("x".repeat(${String(MAX_SCRIPT_LOG_LINE_CHARS + 7)}));`), makeContext(), { ...makeOptions(), log });
+
+      const texts = log.run()?.lines.map((l) => l.text);
+      expect(texts?.[0]).toBe('x'.repeat(MAX_SCRIPT_LOG_LINE_CHARS));
+      expect(texts?.[1]).toBe(`${'x'.repeat(MAX_SCRIPT_LOG_LINE_CHARS)}... (7 more characters)`);
+    });
+
+    it('keeps all of the first lines of a run, and less of each once they hold much', async () => {
+      const log = new ScriptRunLog('Source filter');
+      const long = String(MAX_SCRIPT_LOG_LINE_CHARS);
+      const full = MAX_SCRIPT_LOG_RUN_CHARS / MAX_SCRIPT_LOG_LINE_CHARS;
+
+      await executor.execute(makeScript(`for (let i = 0; i < 210; i++) logger.info("x".repeat(${long}));`), makeContext(), { ...makeOptions(), log });
+
+      const texts = log.run()?.lines.map((l) => l.text) ?? [];
+      expect(texts).toHaveLength(MAX_SCRIPT_LOG_LINES);
+      expect(texts.slice(0, full)).toEqual(Array<string>(full).fill('x'.repeat(MAX_SCRIPT_LOG_LINE_CHARS)));
+      const cut = `${'x'.repeat(MAX_SCRIPT_LOG_LATER_LINE_CHARS)}... (${String(MAX_SCRIPT_LOG_LINE_CHARS - MAX_SCRIPT_LOG_LATER_LINE_CHARS)} more characters)`;
+      expect(new Set(texts.slice(full))).toEqual(new Set([cut]));
+      expect(log.run()?.leftOut).toBe(10);
+    });
+
+    it('keeps the first lines of a run whole whose one line is very long', async () => {
+      const log = new ScriptRunLog('Source filter');
+
+      await executor.execute(makeScript('logger.info("x".repeat(5000000)); logger.info("y".repeat(500));'), makeContext(), { ...makeOptions(), log });
+
+      expect(log.run()?.lines.map((l) => l.text.length)).toEqual([MAX_SCRIPT_LOG_LINE_CHARS + '... (4990000 more characters)'.length, 500]);
+    });
+
+    it('keeps text as it is, lone surrogates and U+0000 too', async () => {
+      const log = new ScriptRunLog('Source filter');
+      await executor.execute(makeScript('logger.info("a\\u0000b\\ud800c \\u{1f600}");'), makeContext(), { ...makeOptions(), log });
+      expect(log.run()?.lines[0]?.text).toBe('a\u0000b\ud800c \u{1f600}');
+    });
+
+    it('passes each line on as it is written, and the count at the end', async () => {
+      const seen: unknown[] = [];
+      const log = new ScriptRunLog('Source filter', { line: (l) => { seen.push(l.text); }, leftOut: (count) => { seen.push(count); } });
+
+      await executor.execute(makeScript(`for (let i = 1; i <= ${String(MAX_SCRIPT_LOG_LINES + 2)}; i++) logger.info(i);`), makeContext(), { ...makeOptions(), log });
+
+      expect(seen).toEqual([...Array.from({ length: MAX_SCRIPT_LOG_LINES }, (_, i) => String(i + 1)), 2]);
     });
 
     it('enforces timeout on long-running script', async () => {

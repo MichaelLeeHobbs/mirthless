@@ -80,6 +80,7 @@ const CONTENT_TYPE_NAMES: Readonly<Record<number, string>> = {
   [CONTENT_TYPE.ERROR]: 'error',
   [CONTENT_TYPE.RESPONSE_ERROR]: 'responseError',
   [CONTENT_TYPE.PROCESSING_ERROR]: 'processingError',
+  [CONTENT_TYPE.SCRIPT_LOG]: 'scriptLog',
 } satisfies Record<ContentType, string>;
 
 export class MessageQueryService {
@@ -118,7 +119,7 @@ export class MessageQueryService {
       if (hasContentSearch) {
         const searchTerm = containsPattern(filters.contentSearch!);
         conditions.push(
-          sql`${messages.id} IN (SELECT DISTINCT mc.message_id FROM message_content mc WHERE mc.channel_id = ${channelId} AND mc.content ILIKE ${searchTerm})`
+          sql`${messages.id} IN (SELECT DISTINCT mc.message_id FROM message_content mc WHERE mc.channel_id = ${channelId} AND mc.content_type <> ${CONTENT_TYPE.SCRIPT_LOG} AND mc.content ILIKE ${searchTerm})`
         );
       }
 

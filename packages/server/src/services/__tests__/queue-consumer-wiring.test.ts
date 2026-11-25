@@ -41,7 +41,7 @@ const MockVmSandboxExecutor = vi.fn().mockImplementation(function () {
   return {
     execute: vi.fn().mockResolvedValue({
       ok: true,
-      value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
+      value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }},
       error: null,
     }),
     dispose: vi.fn(),
