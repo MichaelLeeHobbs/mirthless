@@ -45,7 +45,6 @@ function makeMessage({ body = 'MSH|^~\\&|SENDER|HOSPITAL', ...overrides }: Parti
     to: 'receiver@clinic.org',
     date: '2026-01-15T10:30:00.000Z',
     source: Buffer.from(body),
-    attachmentCount: 0,
     dispatched: false,
     held: false,
     ...overrides,
@@ -255,7 +254,7 @@ describe('EmailReceiver', () => {
         from: 'lab@hospital.org',
         to: 'ehr@clinic.org',
         date: '2026-01-15T10:30:00.000Z',
-        attachmentCount: 3,
+        source: Buffer.from('Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\n\r\ntext\r\n--b\r\nContent-Type: application/pdf\r\n\r\n%PDF\r\n--b--\r\n'),
       });
       const client = makeMockClient([msg]);
 
@@ -273,7 +272,7 @@ describe('EmailReceiver', () => {
       expect(capturedRaw!.sourceMap['from']).toBe('lab@hospital.org');
       expect(capturedRaw!.sourceMap['to']).toBe('ehr@clinic.org');
       expect(capturedRaw!.sourceMap['date']).toBe('2026-01-15T10:30:00.000Z');
-      expect(capturedRaw!.sourceMap['attachmentCount']).toBe(3);
+      expect(capturedRaw!.sourceMap['attachmentCount']).toBe(1);
     });
   });
 
@@ -309,15 +308,6 @@ describe('EmailReceiver', () => {
       expect(raw?.content).toContain(text);
       expect(Buffer.from(raw!.content, 'latin1').equals(source)).toBe(true);
     });
-  });
-
-  it.each([2, 0, null])('passes on how many attachments the server says the email has: %s (#369)', async (attachmentCount) => {
-    const taken: RawMessage[] = [];
-    receiver = new EmailReceiver(makeConfig(), makeClientFactory(makeMockClient([makeMessage({ attachmentCount })])));
-    receiver.setDispatcher(makeDispatcher((raw) => { taken.push(raw); return { messageId: 1 }; }));
-    await receiver.onStart();
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(taken.map((raw) => raw.sourceMap['attachmentCount'])).toEqual([attachmentCount]);
   });
 
   describe('subject filter', () => {
@@ -1163,7 +1153,7 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
     expect(client.mark).toHaveBeenCalledExactlyOnceWith(6, ERROR_KEYWORD);
   });
 
-  it('deletes an email that is not valid UTF-8, whose message holds all its bytes too (#369)', async () => {
+  it('marks an email read, and does not delete it, when it is not valid UTF-8', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread)
       .mockResolvedValueOnce(listing([makeMessage({ uid: 7, source: Buffer.from('M\xfcller', 'latin1') })]))
@@ -1172,9 +1162,9 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
 
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(client.deleteMessage).toHaveBeenCalledExactlyOnceWith(7);
-    expect(client.markRead).not.toHaveBeenCalled();
-    expect(errors).toEqual([]);
+    expect(client.deleteMessage).not.toHaveBeenCalled();
+    expect(client.markRead).toHaveBeenCalledExactlyOnceWith(7);
+    expect(errors.map((e) => e.msg)).toEqual([expect.stringContaining('marked read, not deleted')]);
   });
 });
 

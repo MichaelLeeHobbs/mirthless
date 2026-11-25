@@ -318,7 +318,9 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
     ]);
     for (const [subject, { bytes }] of read) expect(bytes.equals(held.get(subject)!)).toBe(true);
     expect(held.get(`${run}-latin1`)!.includes(Buffer.from('M\u00fcller', 'latin1'))).toBe(true);
-    await vi.waitFor(async () => { expect((await inMailbox(run)).size).toBe(0); }, WAIT);
+    await vi.waitFor(async () => {
+      expect([...await inMailbox(run)].map(([subject, flags]) => [subject, flags.has('\\Seen')])).toEqual([[`${run}-latin1`, true]]);
+    }, WAIT);
   }, TEST_TIMEOUT);
 
   it('DELETE removes the emails it recorded and no other, whoever flagged that deleted (#413)', async () => {

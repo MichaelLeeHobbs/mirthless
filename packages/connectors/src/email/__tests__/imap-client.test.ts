@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, type Mock } from 'vitest';
-import { ImapRefusal, wrapImapFlow, type ImapFlowBodyPart, type ImapFlowFetchMessage, type ImapFlowInstance } from '../imap-client.js';
+import { ImapRefusal, wrapImapFlow, type ImapFlowFetchMessage, type ImapFlowInstance } from '../imap-client.js';
 
 interface FakeFlow {
   readonly flow: ImapFlowInstance;
   readonly ranges: readonly string[];
-  readonly queries: ReadonlyArray<Record<string, unknown>>;
   readonly messageDelete: Mock;
   readonly messageMove: Mock;
   readonly messageFlagsAdd: Mock;
@@ -16,7 +15,6 @@ function fakeFlow(
   uids: unknown = rows.map((row) => row.uid),
 ): FakeFlow {
   const ranges: string[] = [];
-  const queries: Array<Record<string, unknown>> = [];
   const messageDelete = vi.fn().mockResolvedValue(true);
   const messageMove = vi.fn().mockResolvedValue({ path: 'INBOX' });
   const messageFlagsAdd = vi.fn().mockResolvedValue(true);
@@ -25,11 +23,7 @@ function fakeFlow(
     on: () => undefined,
     getMailboxLock: async () => ({ release: () => undefined }),
     search: async () => uids,
-    async *fetch(range, query) {
-      ranges.push(range);
-      queries.push(query);
-      yield* rows;
-    },
+    async *fetch(range) { ranges.push(range); yield* rows; },
     messageFlagsAdd,
     messageMove,
     messageDelete,
@@ -39,7 +33,7 @@ function fakeFlow(
     logout: async () => undefined,
     close: () => undefined,
   };
-  return { flow, ranges, queries, messageDelete, messageMove, messageFlagsAdd };
+  return { flow, ranges, messageDelete, messageMove, messageFlagsAdd };
 }
 
 const ROW = { uid: 4, source: Buffer.from('raw'), envelope: { subject: 'ORU' }, flags: new Set<string>() };
@@ -157,49 +151,6 @@ describe('the IMAP client\'s fetch', () => {
   it('fails when the folder is not open', async () => {
     const { flow } = fakeFlow();
     await expect(wrapImapFlow({ ...flow, mailbox: false }).fetchUnread('INBOX')).rejects.toThrow('"INBOX" is not open');
-  });
-});
-
-describe('the attachments of an email (#369)', () => {
-  const text: ImapFlowBodyPart = { type: 'text/plain' };
-  const html: ImapFlowBodyPart = { type: 'text/html' };
-  const pdf: ImapFlowBodyPart = { type: 'application/pdf', disposition: 'attachment', dispositionParameters: { filename: 'report.pdf' } };
-  const mixed = (...childNodes: readonly ImapFlowBodyPart[]): ImapFlowBodyPart => ({ type: 'multipart/mixed', childNodes });
-
-  async function counted(bodyStructure: ImapFlowBodyPart | undefined): Promise<number | null | undefined> {
-    const { flow, queries } = fakeFlow([], [{ ...ROW, ...(bodyStructure ? { bodyStructure } : {}) }]);
-    const { emails } = await wrapImapFlow(flow).fetchUnread('INBOX');
-    expect(queries).toEqual([expect.objectContaining({ bodyStructure: true })]);
-    return emails[0]?.attachmentCount;
-  }
-
-  it.each<readonly [string, ImapFlowBodyPart, number]>([
-    ['a plain text email', text, 0],
-    ['text and HTML of the same', { type: 'multipart/alternative', childNodes: [text, html] }, 0],
-    ['one file', mixed(text, pdf), 1],
-    ['files beside text and HTML', mixed({ type: 'multipart/alternative', childNodes: [text, html] }, pdf, pdf), 2],
-    ['a file without a name or a disposition', mixed(text, { type: 'application/pdf' }), 1],
-    ['text that is an attachment', mixed(text, { type: 'text/plain', disposition: 'attachment' }), 1],
-    ['text with a file name', mixed(text, { type: 'text/plain', disposition: 'inline', dispositionParameters: { filename: 'oru.hl7' } }), 1],
-    ['HTML with a name in its type', mixed(text, { type: 'text/html', parameters: { name: 'report.html', charset: 'utf-8' } }), 1],
-    ['text of any other kind', mixed(text, { type: 'text/csv' }), 1],
-    ['an image in the HTML', { type: 'multipart/related', childNodes: [html, { type: 'image/png', disposition: 'inline' }] }, 1],
-    ['an email that is nothing but a file', pdf, 1],
-    ['an email in it, which counts once whatever it holds', mixed(text, { type: 'message/rfc822', childNodes: [mixed(text, pdf, pdf)] }), 1],
-    ['parts in parts', mixed(mixed(mixed(text, pdf), pdf), pdf), 3],
-    ['a multipart that holds nothing', { type: 'multipart/mixed' }, 0],
-    ['text that says it is inline, and its charset', { type: 'text/plain', disposition: 'inline', dispositionParameters: {}, parameters: { charset: 'utf-8' } }, 0],
-  ])('are counted in %s', async (_what, structure, attachments) => {
-    expect(await counted(structure)).toBe(attachments);
-  });
-
-  it('are not counted when the server does not say what the email is made of, which is not none', async () => {
-    expect(await counted(undefined)).toBeNull();
-  });
-
-  it('are counted in an email of very many parts', async () => {
-    const many = Array.from({ length: 200_000 }, () => pdf);
-    expect(await counted(mixed(...many.slice(0, 1), { type: 'multipart/mixed', childNodes: many }))).toBe(200_001);
   });
 });
 
