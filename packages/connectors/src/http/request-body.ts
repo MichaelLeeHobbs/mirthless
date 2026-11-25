@@ -2,10 +2,8 @@
 // sender is told, and still has the message (D-334).
 
 import type { IncomingMessage } from 'node:http';
-import { TextDecoder } from 'node:util';
 import type { QueueCharset } from '@galvanigraph/core-models';
-import { decodeWindows1252 } from '@galvanigraph/core-util';
-import { decodePayload } from '../encoding.js';
+import { declaredCharset, decodePayload, strictDecoder } from '../encoding.js';
 import { contentCoding, type Decompressor } from './decompression.js';
 import { RefusedBodyError, stoppingStillArriving, tooLarge, tooLargeStillArriving } from './refused-body.js';
 
@@ -105,7 +103,7 @@ function refuseTransferCoding(header: string | undefined): void {
  * non-ASCII character without any error. A byte order mark is kept.
  */
 function bodyDecoder(contentType: string | undefined, bodyCharset: QueueCharset): BodyDecoder {
-  const declared = bodyCharset === 'base64' ? undefined : /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType ?? '')?.[1];
+  const declared = bodyCharset === 'base64' ? undefined : declaredCharset(contentType);
   if (declared === undefined) {
     return (bytes) => {
       const decoded = decodePayload(bytes, bodyCharset);
@@ -113,9 +111,8 @@ function bodyDecoder(contentType: string | undefined, bodyCharset: QueueCharset)
       return decoded.text;
     };
   }
-  const decoder = strictDecoder(declared);
+  const decoder = strictDecoder(declared, true);
   if (decoder === null) throw new RefusedBodyError(415, `Unsupported character set in Content-Type: ${contentType ?? ''}`);
-  if (decoder.encoding === 'windows-1252') return decodeWindows1252;
   return (bytes) => {
     try {
       return decoder.decode(bytes);
@@ -123,14 +120,6 @@ function bodyDecoder(contentType: string | undefined, bodyCharset: QueueCharset)
       throw invalidText(decoder.encoding);
     }
   };
-}
-
-function strictDecoder(charset: string): TextDecoder | null {
-  try {
-    return new TextDecoder(charset, { fatal: true, ignoreBOM: true });
-  } catch {
-    return null;
-  }
 }
 
 function invalidText(charset: string): RefusedBodyError {

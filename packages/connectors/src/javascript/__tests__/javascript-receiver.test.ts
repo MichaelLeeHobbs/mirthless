@@ -68,17 +68,30 @@ describe('normalizeScriptResult', () => {
     expect(normalizeScriptResult('hello')).toEqual(['hello']);
   });
 
-  it('filters string arrays, removing non-strings', () => {
-    expect(normalizeScriptResult(['a', 42, 'b', null, ''])).toEqual(['a', 'b']);
+  it('makes every array item a message, and skips the ones that hold none (#415)', () => {
+    expect(normalizeScriptResult(['a', 42, 'b', null, '', undefined, { id: 7 }, ['x', 'y'], 0]))
+      .toEqual(['a', '42', 'b', '{"id":7}', '["x","y"]', '0']);
   });
 
-  it('stringifies non-string, non-array values', () => {
+  it('skips what is left of a promise, and an item a condition left out', () => {
+    expect(normalizeScriptResult([{}, 'a', [], false, true])).toEqual(['a']);
+    expect(normalizeScriptResult({})).toEqual([]);
+  });
+
+  it('stringifies a boolean that is the whole result', () => {
+    expect(normalizeScriptResult(false)).toEqual(['false']);
+  });
+
+  it('stringifies a number', () => {
     expect(normalizeScriptResult(42)).toEqual(['42']);
   });
 
-  it('stringifies objects', () => {
-    const result = normalizeScriptResult({ key: 'val' });
-    expect(result).toEqual(['[object Object]']);
+  it('makes an object JSON text', () => {
+    expect(normalizeScriptResult({ key: 'val', toString: 'data' })).toEqual(['{"key":"val","toString":"data"}']);
+  });
+
+  it('takes the text of a message object, which is how the engine hands back a parsed message', () => {
+    expect(normalizeScriptResult({ get: () => '', toString: () => 'MSH|^~\\&|' })).toEqual(['MSH|^~\\&|']);
   });
 
   it('returns empty array for empty array', () => {
@@ -181,6 +194,45 @@ describe('JavaScriptReceiver poll cycle', () => {
     expect(dispatched).toHaveLength(3);
     expect(dispatched[0]?.content).toBe('msg1');
     expect(dispatched[2]?.content).toBe('msg3');
+  });
+
+  it('says how many array items held no message (#415)', async () => {
+    const { logger, warnings } = makeMockLogger();
+    const dispatched: string[] = [];
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }), logger);
+    receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw.content); return { messageId: 1 }; }));
+    receiver.setScriptRunner(makeScriptRunner(['secret', null, { id: 7 }, '']));
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(dispatched).toEqual(['secret', '{"id":7}']);
+    expect(warnings).toEqual([{ obj: { items: 4, skipped: 2 }, msg: expect.stringContaining('skipped') as string }]);
+  });
+
+  it('says that an object without data, which a promise becomes, was not sent (#415)', async () => {
+    const { logger, warnings } = makeMockLogger();
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }), logger);
+    receiver.setDispatcher(makeDispatcher());
+    receiver.setScriptRunner(makeScriptRunner({}));
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(warnings).toEqual([{ obj: { items: 1, skipped: 1 }, msg: expect.stringContaining('promise') as string }]);
+  });
+
+  it('logs nothing about items when every one is a message, or there are none', async () => {
+    const { logger, warnings } = makeMockLogger();
+    let value: unknown = ['a', 1];
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }), logger);
+    receiver.setDispatcher(makeDispatcher());
+    receiver.setScriptRunner(async () => ({ ok: true as const, value, error: null }));
+    await receiver.onStart();
+
+    for (value of [['a', 1], [], null, '']) await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(warnings).toEqual([]);
   });
 
   it('dispatches nothing when script returns null', async () => {

@@ -115,6 +115,26 @@ describe('TcpMllpDispatcher', () => {
     expect(result.value.content).toBe('MSA|AA|12345');
   });
 
+  it('connects and sends nothing when the charset cannot hold the message (#415)', async () => {
+    let connections = 0;
+    mockServer = createMockServer(DEST_PORT);
+    mockServer.server.on('connection', () => { connections += 1; });
+    await new Promise<void>((resolve) => {
+      mockServer!.server.once('listening', resolve);
+    });
+    dispatcher = new TcpMllpDispatcher(makeConfig({ charset: 'latin1' }));
+    await dispatcher.onStart();
+
+    // Node would write U+010D as 0x0D, the end of an HL7 segment.
+    const result = await dispatcher.send(makeMessage({ content: 'PID|1||DO\u010dEK' }), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.message).toBe('The text holds the character U+010D, which the charset latin1 does not have');
+    const next = await dispatcher.send(makeMessage({ content: 'PID|1||DO\u00dfEK' }), AbortSignal.timeout(5_000));
+    expect(next.value?.status).toBe('SENT');
+    expect(connections).toBe(1);
+  });
+
   it('sends custom content and gets custom response', async () => {
     mockServer = createMockServer(DEST_PORT, (msg) => `ACK:${msg}`);
     await new Promise<void>((resolve) => {
