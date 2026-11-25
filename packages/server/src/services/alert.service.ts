@@ -195,22 +195,28 @@ async function fetchAlertDetailsBatch(reader: DbReader, where: SQL): Promise<Ale
 
 let changeListener: (() => void) | null = null;
 
-function notify(): void {
-  if (changeListener) changeListener();
+/** Also when the write fails: one whose connection was lost may have been committed. */
+async function notifying<T>(write: Promise<T>): Promise<T> {
+  try {
+    return await write;
+  } finally {
+    changeListener?.();
+  }
+}
+
+/** In one snapshot: an alert read without its channels would be about every channel. */
+function readAlerts(where: SQL): Promise<AlertDetail[]> {
+  return db.transaction((tx) => fetchAlertDetailsBatch(tx, where), { isolationLevel: 'repeatable read', accessMode: 'read only' });
 }
 
 export class AlertService {
-  /** Called after each change to an alert is saved. */
+  /** Called after each write to an alert, saved or not. */
   static onChange(listener: () => void): void {
     changeListener = listener;
   }
 
-  /** In one snapshot: an alert read without its channels would be about every channel. */
   static async listEnabled(): Promise<Result<AlertDetail[]>> {
-    return tryCatch(() => db.transaction(
-      (tx) => fetchAlertDetailsBatch(tx, eq(alerts.enabled, true)),
-      { isolationLevel: 'repeatable read', accessMode: 'read only' },
-    ));
+    return tryCatch(() => readAlerts(eq(alerts.enabled, true)));
   }
 
   static async list(query: {
@@ -277,7 +283,7 @@ export class AlertService {
   static async getByIds(ids: readonly string[]): Promise<Result<AlertDetail[]>> {
     return tryCatch(async () => {
       if (ids.length === 0) return [];
-      return fetchAlertDetailsBatch(db, inArray(alerts.id, [...ids]));
+      return readAlerts(inArray(alerts.id, [...ids]));
     });
   }
 
@@ -294,7 +300,7 @@ export class AlertService {
 
       const triggerScript = serializeTrigger(input.trigger);
 
-      const [row] = await db.transaction(async (tx) => {
+      const [row] = await notifying(db.transaction(async (tx) => {
         const inserted = await tx
           .insert(alerts)
           .values({
@@ -334,8 +340,7 @@ export class AlertService {
         }
 
         return inserted;
-      });
-      notify();
+      }));
 
       const detail = await fetchAlertDetail(row!.id);
 
@@ -397,7 +402,7 @@ export class AlertService {
         updates['triggerScript'] = serializeTrigger(input.trigger);
       }
 
-      await db.transaction(async (tx) => {
+      await notifying(db.transaction(async (tx) => {
         await tx
           .update(alerts)
           .set(updates)
@@ -429,8 +434,7 @@ export class AlertService {
             );
           }
         }
-      });
-      notify();
+      }));
 
       const detail = await fetchAlertDetail(id);
 
@@ -456,8 +460,7 @@ export class AlertService {
         throw new ServiceError('NOT_FOUND', `Alert ${id} not found`);
       }
 
-      await db.delete(alerts).where(eq(alerts.id, id));
-      notify();
+      await notifying(db.delete(alerts).where(eq(alerts.id, id)));
 
       emitEvent({
         level: 'INFO', name: 'ALERT_UPDATED', outcome: 'SUCCESS',
@@ -483,11 +486,10 @@ export class AlertService {
         throw new ServiceError('NOT_FOUND', `Alert ${id} not found`);
       }
 
-      await db
+      await notifying(db
         .update(alerts)
         .set({ enabled, updatedAt: new Date() })
-        .where(eq(alerts.id, id));
-      notify();
+        .where(eq(alerts.id, id)));
 
       return fetchAlertDetail(id);
     });

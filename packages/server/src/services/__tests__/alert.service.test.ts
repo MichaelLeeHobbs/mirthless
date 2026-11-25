@@ -451,6 +451,25 @@ describe('AlertService', () => {
     });
   });
 
+  describe('read in one snapshot, so that none is read without its channels', () => {
+    it.each([
+      ['listEnabled', () => AlertService.listEnabled()],
+      ['getByIds', () => AlertService.getByIds([ALERT_ID])],
+    ])('%s', async (_name, read) => {
+      const select = vi.fn().mockReturnValue({ from: mockSelectFrom });
+      mockTransaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn({ select }));
+      mockSelect.mockClear();
+      pushResponse([makeAlertRow()]);
+      pushResponse([makeChannelRow()]);
+      pushResponse([makeActionRow()]);
+
+      expect(await read()).toMatchObject({ ok: true, value: [{ id: ALERT_ID, channelIds: [CHANNEL_ID] }] });
+
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), { isolationLevel: 'repeatable read', accessMode: 'read only' });
+      expect(mockSelect).not.toHaveBeenCalled();
+    });
+  });
+
   describe('onChange', () => {
     const base = {
       name: 'New alert', description: '', enabled: true, trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null },
@@ -483,6 +502,17 @@ describe('AlertService', () => {
       await AlertService.delete(ALERT_ID);
 
       expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('is told of a change whose write failed, since it may have been saved', async () => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      pushResponse([{ id: ALERT_ID }]);
+      mockDeleteWhere.mockRejectedValueOnce(new Error('connection lost'));
+
+      expect(await AlertService.delete(ALERT_ID)).toMatchObject({ ok: false });
+
+      expect(listener).toHaveBeenCalledTimes(1);
     });
 
     it('is told of a change that was saved, although the alert could not be read back', async () => {

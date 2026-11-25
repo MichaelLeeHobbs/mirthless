@@ -75,6 +75,67 @@ describe('AlertManager.loadAlerts', () => {
 
 describe('AlertManager.loadAlerts on a channel that is running', () => {
   const limited = makeAlert({ maxAlerts: 1, reAlertIntervalMs: 0 });
+  const silent = makeAlert({ trigger: { type: 'NO_MESSAGES', errorTypes: [], regex: null, windowMinutes: 1 } });
+  const to = (recipient: string): Pick<LoadedAlert, 'actions'> => ({ actions: [{ id: recipient, actionType: 'EMAIL', recipients: [recipient], properties: null }] });
+
+  /** Reloads while the first email is being sent, as a mail server that hangs allows. */
+  function reloadingDuringTheFirstSend(reload: () => void): string[] {
+    const sent: string[] = [];
+    manager = new AlertManager({
+      ...deps,
+      emailSender: async (recipients) => {
+        sent.push(...recipients);
+        if (sent.length === 1) reload();
+      },
+    });
+    return sent;
+  }
+
+  describe.each([
+    ['an error', makeAlert({ maxAlerts: 1, reAlertIntervalMs: 0 }), (): Promise<void> => manager.handleEvent(makeEvent())],
+    ['a silence', { ...silent, maxAlerts: 1 }, (): Promise<void> => manager.checkSilence('ch-001', 0, 120_000)],
+  ] as const)('while an alert on %s is being sent', (_on, alert, raise) => {
+    const first = { ...alert, ...to('first@test.com'), id: 'a' };
+    const second = { ...alert, ...to('old@test.com'), id: 'b' };
+
+    it('does not send one that was disabled or deleted meanwhile', async () => {
+      const sent = reloadingDuringTheFirstSend(() => { manager.loadAlerts([{ ...first }]); });
+      manager.loadAlerts([first, second]);
+
+      await raise();
+
+      expect(sent).toEqual(['first@test.com']);
+    });
+
+    it('does not send one as it was before it changed, nor take that for the new one', async () => {
+      const sent = reloadingDuringTheFirstSend(() => { manager.loadAlerts([{ ...first }, { ...second, ...to('new@test.com') }]); });
+      manager.loadAlerts([first, second]);
+
+      await raise();
+      await raise();
+
+      expect(sent).toEqual(['first@test.com', 'new@test.com']);
+    });
+
+    it('counts the one being sent before it is changed, so the new one still alerts', async () => {
+      const sent = reloadingDuringTheFirstSend(() => { manager.loadAlerts([{ ...first, ...to('new@test.com') }]); });
+      manager.loadAlerts([first]);
+
+      await raise();
+      await raise();
+
+      expect(sent).toEqual(['first@test.com', 'new@test.com']);
+    });
+
+    it('still sends one that was loaded again as it was', async () => {
+      const sent = reloadingDuringTheFirstSend(() => { manager.loadAlerts([{ ...first }, { ...second }]); });
+      manager.loadAlerts([first, second]);
+
+      await raise();
+
+      expect(sent).toEqual(['first@test.com', 'old@test.com']);
+    });
+  });
 
   it('keeps counting an alert that did not change', async () => {
     manager.loadAlerts([limited]);
@@ -107,8 +168,17 @@ describe('AlertManager.loadAlerts on a channel that is running', () => {
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
   });
 
+  it('alerts again on a silence when the alert itself changed', async () => {
+    manager.loadAlerts([silent]);
+    await manager.checkSilence('ch-001', 0, 120_000);
+
+    manager.loadAlerts([{ ...silent, name: 'Renamed' }]);
+    await manager.checkSilence('ch-001', 0, 240_000);
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(2);
+  });
+
   it('does not alert again on a silence when another alert changed', async () => {
-    const silent = makeAlert({ trigger: { type: 'NO_MESSAGES', errorTypes: [], regex: null, windowMinutes: 1 } });
     manager.loadAlerts([silent]);
     await manager.checkSilence('ch-001', 0, 120_000);
 

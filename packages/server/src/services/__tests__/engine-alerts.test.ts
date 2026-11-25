@@ -293,7 +293,37 @@ describe('a change to an alert, on a channel that is running (#417)', () => {
     alerts.listEnabled.mockResolvedValue(OK_EMPTY);
     await engine.checkSilentChannels();
 
-    expect(loaded()).toHaveLength(0);
+    await vi.waitFor(() => { expect(loaded()).toHaveLength(0); }, WAIT);
+  });
+
+  it('does not wait for a read that hangs: it says so, and takes the change at the next check', async () => {
+    const logger = (await import('../../lib/logger.js')).default;
+    vi.useFakeTimers();
+    try {
+      alerts.listEnabled.mockImplementationOnce(() => new Promise(() => undefined));
+      alertsChanged();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(logger.error).toHaveBeenCalledWith({ errMsg: expect.stringContaining('30 s') as string }, expect.stringContaining('alerts'));
+
+      alertWith(EMAIL);
+      await engine.checkSilentChannels();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(loaded()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('goes on taking changes after alerts that could not be loaded', async () => {
+    alerts.listEnabled.mockResolvedValueOnce(ok([{ ...alertDetail(EMAIL), actions: null }]));
+    alertsChanged();
+    await vi.waitFor(() => { expect(alerts.listEnabled).toHaveBeenCalledTimes(2); }, WAIT);
+
+    alertWith(EMAIL);
+    alertsChanged();
+
+    await vi.waitFor(() => { expect(loaded()).toHaveLength(1); }, WAIT);
   });
 
   it('reads the alerts for the checks only when a change is outstanding', async () => {
@@ -316,7 +346,7 @@ describe('a change to an alert, on a channel that is running (#417)', () => {
     release(OK_EMPTY);
     await deploying;
 
-    expect(engine.getRuntime(TARGET_ID)!.alertManager.getAlerts()).toHaveLength(1);
+    await vi.waitFor(() => { expect(engine.getRuntime(TARGET_ID)!.alertManager.getAlerts()).toHaveLength(1); }, WAIT);
   });
 
   it('reads the alerts once more, not once for each, when many changes come at once', async () => {

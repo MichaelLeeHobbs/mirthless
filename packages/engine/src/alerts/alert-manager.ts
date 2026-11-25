@@ -26,13 +26,17 @@ export class AlertManager {
    * one that did starts again.
    */
   loadAlerts(alerts: readonly LoadedAlert[]): void {
-    const before = new Map(this.alerts.map((alert) => [alert.id, JSON.stringify(alert)]));
-    const unchanged = new Set(alerts.filter((alert) => before.get(alert.id) === JSON.stringify(alert)).map((alert) => alert.id));
+    const before = new Map(this.alerts.map((alert) => [alert.id, alert]));
+    // An unchanged alert stays the same object, which is how one being sent finds out whether it still is in force.
+    this.alerts = alerts.map((alert) => {
+      const known = before.get(alert.id);
+      return known && JSON.stringify(known) === JSON.stringify(alert) ? known : alert;
+    });
+    const unchanged = new Set(this.alerts.filter((alert) => before.get(alert.id) === alert).map((alert) => alert.id));
     for (const id of [...this.throttleState.keys(), ...this.silenceAlertedFor.keys()]) {
       if (!unchanged.has(id)) this.resetAlert(id);
     }
-    this.alerts = alerts;
-    for (const alert of alerts) {
+    for (const alert of this.alerts) {
       if (!unchanged.has(alert.id)) this.warnOfBadRegex(alert);
     }
   }
@@ -55,6 +59,7 @@ export class AlertManager {
     const matched = evaluateAlerts(event, this.alerts);
 
     for (const alert of matched) {
+      if (!this.isInForce(alert)) continue;
       if (this.isThrottled(alert, event.timestamp)) continue;
       if (this.isMaxedOut(alert)) continue;
 
@@ -72,17 +77,22 @@ export class AlertManager {
       if (!alert.enabled || alert.trigger.type !== 'NO_MESSAGES' || !windowMinutes) continue;
       if (alert.channelIds.length > 0 && !alert.channelIds.includes(channelId)) continue;
       if (now - lastActivityAt < windowMinutes * 60_000) continue;
-      if (!this.shouldRealertSilence(alert, lastActivityAt, now)) continue;
+      if (!this.isInForce(alert) || !this.shouldRealertSilence(alert, lastActivityAt, now)) continue;
 
+      this.recordAlert(alert.id, now);
+      this.silenceAlertedFor.set(alert.id, lastActivityAt);
       await dispatchActions(alert, {
         channelId,
         errorType: 'NO_MESSAGES',
         errorMessage: `No messages received in the last ${String(windowMinutes)} minutes`,
         timestamp: now,
       }, this.deps);
-      this.recordAlert(alert.id, now);
-      this.silenceAlertedFor.set(alert.id, lastActivityAt);
     }
+  }
+
+  /** Alerts can be loaded again while one before it is being sent. */
+  private isInForce(alert: LoadedAlert): boolean {
+    return this.alerts.includes(alert);
   }
 
   private shouldRealertSilence(alert: LoadedAlert, lastActivityAt: number, now: number): boolean {

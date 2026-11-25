@@ -351,7 +351,7 @@ export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
   return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
 }
 
-/** For text that says what went wrong, never for a message (D-367). */
+/** For the server's own text, never for what a channel receives from a partner (D-367). */
 function shownNul(text: string): string {
   return text.replaceAll('\u0000', '\u2400');
 }
@@ -532,6 +532,8 @@ function whyQueueHeld(dest: ChannelDetail['destinations'][number] | undefined): 
 }
 
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
+/** A read on a dead connection would keep every later change from the running channels. */
+const ALERTS_READ_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
 const RAW_NOT_STORED = 'Not finished after a server stop: its raw content is not stored, so it cannot be run again. '
@@ -999,7 +1001,7 @@ export class EngineManager {
     };
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, variablesUsed, recoverOnce, resetClaimsOnce, activity });
-    if (alertChanges !== this.alertChanges) await this.refreshAlerts();
+    if (alertChanges !== this.alertChanges) void this.refreshAlerts();
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
   }
 
@@ -1105,13 +1107,15 @@ export class EngineManager {
   }
 
   private async readAlerts(): Promise<void> {
-    const enabled = await AlertService.listEnabled();
-    this.alertsStale = !enabled.ok;
-    if (!enabled.ok) {
-      logger.error({ errMsg: enabled.error.message }, 'Changed alerts could not be read: the running channels keep those they have, and it is tried again');
-      return;
-    }
-    for (const { channelId, alertManager } of this.runtimes.values()) alertManager.loadAlerts(alertsFor(channelId, enabled.value));
+    const read = await tryCatch(async () => {
+      const reading = AlertService.listEnabled();
+      if (!(await settleWithin(reading, ALERTS_READ_MS))) throw new Error(`No answer within ${String(ALERTS_READ_MS / 1_000)} s`);
+      const enabled = await reading;
+      if (!enabled.ok) throw enabled.error;
+      for (const { channelId, alertManager } of this.runtimes.values()) alertManager.loadAlerts(alertsFor(channelId, enabled.value));
+    });
+    this.alertsStale = !read.ok;
+    if (!read.ok) logger.error({ errMsg: read.error.message }, 'Changed alerts could not be read: the running channels keep those they have, and it is tried again');
   }
 
   /**
@@ -1119,7 +1123,7 @@ export class EngineManager {
    * never alerts and a restart gets a full window before the first alert.
    */
   async checkSilentChannels(now: number = Date.now()): Promise<void> {
-    if (this.alertsStale) await this.refreshAlerts();
+    if (this.alertsStale) void this.refreshAlerts();
     for (const deployed of this.runtimes.values()) {
       if (deployed.runtime.getState() !== 'STARTED') {
         deployed.activity.lastAt = now;
