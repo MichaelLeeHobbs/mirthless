@@ -35,8 +35,8 @@ vi.mock('../global-map.service.js', () => ({
   GlobalMapService: { list: vi.fn().mockResolvedValue(EMPTY), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() },
 }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn().mockResolvedValue(EMPTY) } }));
-const alerts = vi.hoisted(() => ({ list: vi.fn(), getByIds: vi.fn(), sendMail: vi.fn() }));
-vi.mock('../alert.service.js', () => ({ AlertService: { list: alerts.list, getByIds: alerts.getByIds } }));
+const alerts = vi.hoisted(() => ({ listEnabled: vi.fn(), onChange: vi.fn(), sendMail: vi.fn() }));
+vi.mock('../alert.service.js', () => ({ AlertService: { listEnabled: alerts.listEnabled, onChange: alerts.onChange } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: alerts.sendMail } }));
 
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
@@ -87,8 +87,7 @@ beforeEach(() => {
     actions: [{ id: 'act1', actionType: 'EMAIL', recipients: ['oncall@example.org'], properties: null }],
     subjectTemplate: null, bodyTemplate: 'ALERT ${errorMessage}', reAlertIntervalMs: null, maxAlerts: null,
   };
-  alerts.list.mockResolvedValue(ok({ data: [alert], pagination: { page: 1, pageSize: 1000, total: 1, totalPages: 1 } }));
-  alerts.getByIds.mockResolvedValue(ok([alert]));
+  alerts.listEnabled.mockResolvedValue(ok([alert]));
   alerts.sendMail.mockResolvedValue(ok(undefined));
 });
 

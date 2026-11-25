@@ -16,6 +16,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { useMessageDetail, useDeleteMessage, type ConnectorDetail } from '../../hooks/use-messages.js';
+import { DELETE_WARNING } from '../../lib/message-delete.js';
 import { useResendDestination } from '../../hooks/use-message-actions.js';
 import { ContentViewer } from './ContentViewer.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
@@ -181,7 +182,7 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
       <ConfirmDialog
         open={confirmDeleteOpen}
         title="Delete Message"
-        message={`Delete message #${String(messageId)}? This cannot be undone.`}
+        message={`Delete message #${String(messageId)}? ${DELETE_WARNING}`}
         confirmLabel="Delete"
         severity="error"
         isPending={deleteMutation.isPending}

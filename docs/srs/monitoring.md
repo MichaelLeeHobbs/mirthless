@@ -51,8 +51,8 @@ Seeing what every channel is doing, being told when one is wrong, and giving oth
 - MON-ALT-05: source: #338 (active hours); ROADMAP V1, B1.
 - MON-ALT-06: source: docs/user/capabilities.md "Alert on queue depth and error rate" (No); #338; ROADMAP B1.
 - MON-ALT-07: source: docs/user/capabilities.md "Alert on queue depth and error rate" (No); #338; ROADMAP V1.
-- MON-ALT-08: source: code only: alerts are read when a channel deploys (D-328 "read live at every deploy", D-062 "reload alerts on redeploy"). conflict: those make an alert change wait for a redeploy, while nothing on the Alerts page says so; immediate kept, because an alert someone believes is on and is not is a silent failure.
-- MON-ALT-09: source: D-060; D-217 ("counted before they are sent"; once a minute by default, 0 means every error). conflict: docs/testing/25-alert-evaluation.md says no interval means no limit; D-217 kept.
+- MON-ALT-08: source: D-376 (replaces "reload alerts on redeploy" of D-062), because an alert someone believes is on and is not is a silent failure.
+- MON-ALT-09: source: D-060; D-217 ("counted before they are sent"; once a minute by default, 0 means every error).
 - MON-ALT-10: source: ROADMAP "Persist alert throttle state"; docs/user/capabilities.md "Alert by email on channel errors" (limit). conflict: D-217 and D-062 accept the loss, ROADMAP plans to end it; ROADMAP kept.
 - MON-ALT-11: source: D-217.
 - MON-ALT-12: source: docs/ops/upgrade.md "An alert's regex must compile (#133)" for the pattern; the missing action is the drafter's extension of the same rule.

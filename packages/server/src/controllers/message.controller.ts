@@ -1,8 +1,8 @@
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type MessageSearchQuery } from '@galvanigraph/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
+import { MessageReprocessService } from '../services/message-reprocess.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
-import { emitEvent } from '../lib/event-emitter.js';
 import { recordReadOrRefuse } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
@@ -58,7 +58,7 @@ export class MessageController {
   static async delete(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const msgId = Number(req.params['msgId']);
-    const result = await MessageQueryService.deleteMessage(channelId, msgId);
+    const result = await MessageReprocessService.deleteMessage(channelId, msgId, { userId: req.user?.id ?? null, ipAddress: req.ip ?? null });
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -66,14 +66,6 @@ export class MessageController {
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
-
-    // HIPAA: deleting a message destroys PHI and must be recorded.
-    emitEvent({
-      level: 'WARN', name: 'MESSAGE_DELETED', outcome: 'SUCCESS',
-      userId: req.user?.id ?? null, channelId,
-      serverId: null, ipAddress: req.ip ?? null,
-      attributes: { messageId: msgId },
-    });
 
     logger.info({ channelId, msgId }, 'Message deleted');
     res.status(204).send();

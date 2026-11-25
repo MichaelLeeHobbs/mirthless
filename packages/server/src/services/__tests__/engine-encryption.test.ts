@@ -65,7 +65,7 @@ vi.mock('../message.service.js', () => ({
 
 vi.mock('../global-map.service.js', () => ({ GlobalMapService: { list: vi.fn(), upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() } }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn() } }));
-vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds: vi.fn() } }));
+vi.mock('../alert.service.js', () => ({ AlertService: { listEnabled: vi.fn(), onChange: vi.fn() } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/db.js', () => ({ db: { select: vi.fn(), execute: vi.fn() }, default: {} }));
 vi.mock('../../lib/logger.js', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: mockWarn, debug: vi.fn(), level: 'info' } }));
