@@ -48,7 +48,7 @@ Named data that every channel's scripts can use, whoever wrote the channel: the 
 - SHR-COL-04: source: D-204 ("A script `update` changes only the keys given"); the simultaneous case is from code only.
 - SHR-COL-05: source: docs/user/scripting-api.md "Collections" (`delete` returns true, or false if already gone) and its order and report matching example; that exactly one caller is told is from code only.
 - SHR-COL-06: source: D-177 point 5; docs/testing/66-collections.md "TTL / Pruning".
-- SHR-COL-07: source: docs/design/10-collections.md "Model" ("default record lifetime"). The design ties removal to the pruner run and is silent on the time between; intent (a lifetime) kept.
+- SHR-COL-07: source: docs/design/10-collections.md "Model" ("default record lifetime"). D-377: a script does not find an expired record; a person still sees it on the records page, marked, until it is pruned.
 - SHR-COL-08: source: D-177 point 5; docs/design/10-collections.md "TTL". The 24 hours is the daily pruner schedule. conflict: the design reuses the pruner schedule, which is off until an administrator turns it on, while a collection promises a lifetime with no such condition; the lifetime kept.
 - SHR-COL-09: source: code only: a script may ask for at most 1,000 records, and a search that asks for no limit has none. Compare ROADMAP "Apply row limits in the database" for data sources.
 

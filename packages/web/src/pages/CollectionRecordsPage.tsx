@@ -40,7 +40,9 @@ import {
 import { useAddressId } from '../hooks/use-address-id.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
-import { fieldColumn, formatTtl, nextSort, payloadPreview, type RecordColumn } from '../lib/collections.js';
+import { fieldColumn, formatTtl, isExpired, nextSort, payloadPreview, type RecordColumn } from '../lib/collections.js';
+import { expiredRecordLevel } from '../lib/status.js';
+import { StatusChip } from '../components/common/StatusChip.js';
 import { RecordDialog, type RecordDraft } from '../components/collections/RecordDialog.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotificationStore } from '../stores/notification.store.js';
@@ -58,7 +60,7 @@ const MONO_CELL = { fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' } as const
 type DialogTarget = { readonly record: CollectionRecord | null } | null;
 
 function collectionSubtitle(collection: CollectionSummary): string {
-  const ttl = collection.defaultTtlSeconds === null ? 'Records never expire' : `Records expire after ${formatTtl(collection.defaultTtlSeconds)}`;
+  const ttl = collection.defaultTtlSeconds === null ? 'New records never expire' : `New records expire after ${formatTtl(collection.defaultTtlSeconds)}`;
   return collection.description ? `${collection.description}. ${ttl}.` : `${ttl}.`;
 }
 
@@ -236,11 +238,16 @@ function RecordsGrid({ collection }: { readonly collection: CollectionSummary })
                   {collection.indexedFields.map((f) => (
                     <TableCell key={f} sx={{ ...MONO_CELL, whiteSpace: 'nowrap' }}>{record.fields[f] ?? ''}</TableCell>
                   ))}
-                  <TableCell sx={{ ...MONO_CELL, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <TableCell sx={{ ...MONO_CELL, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {payloadPreview(record.payload)}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.createdAt).toLocaleString()}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{record.expireAt ? new Date(record.expireAt).toLocaleString() : 'Never'}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    {record.expireAt ? new Date(record.expireAt).toLocaleString() : 'Never'}
+                    {isExpired(record.expireAt) && (
+                      <Box component="span" sx={{ ml: 1 }}><StatusChip label="Expired" level={expiredRecordLevel()} /></Box>
+                    )}
+                  </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} onClick={(e) => { e.stopPropagation(); }}>
                     <Tooltip title={canWrite ? 'Edit' : 'View'}>
                       <IconButton aria-label={canWrite ? 'Edit record' : 'View record'} size="small" onClick={() => { openDialog(record); }}>

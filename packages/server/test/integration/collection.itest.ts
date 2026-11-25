@@ -1,6 +1,6 @@
 // What mock-DB unit tests cannot verify: the real jsonb queries, ordering, TTL and pruning.
 
-import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
+import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('CollectionService (real Postgres)', () => {
@@ -85,6 +85,93 @@ describeIntegration('CollectionService (real Postgres)', () => {
     }));
 
     expect(rows.map((r) => r.payload)).toEqual(['MATCH']);
+  });
+
+  describe('an expired record (#417)', () => {
+    const query = (match: Record<string, string>, latest = false): { match: Record<string, string>; latest: boolean; order: 'desc' } =>
+      ({ match, latest, order: 'desc' });
+
+    it('does not match, by its key or by a filter, and one that lives on does', async () => {
+      const { CollectionService } = mods;
+      const { name } = await makeCollection(['k', 'kind']);
+      const past = new Date(Date.now() - 1_000).toISOString();
+      unwrap(await CollectionService.store(name, { fields: { k: 'a', kind: 'x' }, payload: 'never expires' }));
+      unwrap(await CollectionService.store(name, { fields: { k: 'a', kind: 'x' }, payload: 'lives on', ttlSeconds: 3600 }));
+      unwrap(await CollectionService.store(name, { fields: { k: 'a', kind: 'x' }, payload: 'expired', expireAt: past }));
+
+      const found = unwrap(await CollectionService.find(name, { ...query({ k: 'a' }), filter: { kind: ['x'] } }));
+
+      expect(found.map((r) => r.payload).sort()).toEqual(['lives on', 'never expires']);
+    });
+
+    it('is not the newest match: the newest that lives on is', async () => {
+      const { CollectionService } = mods;
+      const { name } = await makeCollection(['k']);
+      unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'older' }));
+      unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'newer, expired', expireAt: new Date(Date.now() - 1_000).toISOString() }));
+
+      expect(unwrap(await CollectionService.find(name, query({ k: 'a' }, true))).map((r) => r.payload)).toEqual(['older']);
+    });
+
+    it('does not take the place of one that lives on under a limit', async () => {
+      const { CollectionService } = mods;
+      const { name } = await makeCollection(['k']);
+      unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'lives on' }));
+      for (let i = 0; i < 3; i++) unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'expired', expireAt: new Date(Date.now() - 1_000).toISOString() }));
+
+      expect(unwrap(await CollectionService.find(name, { ...query({ k: 'a' }), limit: 2 })).map((r) => r.payload)).toEqual(['lives on']);
+    });
+
+    it('is one whose life is over at this moment, as one stored with no life at all is', async () => {
+      const { CollectionService } = mods;
+      const { name } = await makeCollection(['k']);
+      unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p', ttlSeconds: 0 }));
+
+      expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toEqual([]);
+    });
+
+    it('keeps the life it was stored with when the collection default changes', async () => {
+      const { CollectionService } = mods;
+      const { id, name } = await makeCollection(['k'], 1);
+      const record = unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p' }));
+      unwrap(await CollectionService.update(id, { defaultTtlSeconds: null }));
+      await mods.db.update(mods.schema.collectionRecords).set({ expireAt: new Date(record.expireAt!.getTime() - 60_000) }).where(mods.eq(mods.schema.collectionRecords.id, record.id));
+
+      expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toEqual([]);
+    });
+
+    it('is gone for a script that changes it, and nothing is changed, unless the script extends its life', async () => {
+      const { CollectionService } = mods;
+      const { id, name } = await makeCollection(['k']);
+      const expireAt = new Date(Date.now() - 1_000).toISOString();
+      const record = unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'first', expireAt }));
+
+      expect(unwrap(await CollectionService.updateByName(name, record.id, { payload: 'second' }))).toBeNull();
+      expect(unwrap(await CollectionService.listRecords(id, { page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' })).items[0]?.payload).toBe('first');
+
+      const later = new Date(Date.now() + 60_000).toISOString();
+      expect(unwrap(await CollectionService.updateByName(name, record.id, { payload: 'second', expireAt: later }))).toMatchObject({ payload: 'second' });
+    });
+
+    it('is still there for a person, who can correct it, and for a script to delete', async () => {
+      const { CollectionService } = mods;
+      const { id, name } = await makeCollection(['k']);
+      const record = unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p', expireAt: new Date(Date.now() - 1_000).toISOString() }));
+
+      expect(unwrap(await CollectionService.updateRecord(id, record.id, { payload: 'q' }))).toMatchObject({ payload: 'q' });
+      expect(unwrap(await CollectionService.removeByName(name, record.id))).toBe(true);
+    });
+
+    it('matches again once its life is extended, or it is to live for ever', async () => {
+      const { CollectionService } = mods;
+      const { name } = await makeCollection(['k']);
+      const record = unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p', expireAt: new Date(Date.now() - 1_000).toISOString() }));
+      expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toEqual([]);
+
+      unwrap(await CollectionService.updateByName(name, record.id, { expireAt: null }));
+
+      expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toHaveLength(1);
+    });
   });
 
   it('applies the collection default TTL and prunes expired records', async () => {

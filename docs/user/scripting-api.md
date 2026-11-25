@@ -209,23 +209,28 @@ const [order] = await dbQuery('reporting-db',
 
 ## Collections
 
-A **collection** is a durable, queryable, TTL-pruned keyed record store, shared across
+A **collection** is a durable, queryable keyed record store whose records expire, shared across
 channels. Define one under **Collections** in the admin UI (a name, the field names records
 are indexed by, and a default TTL). Then `getCollection(name)` returns a handle:
 
 - `await store(fields, payload, options?)` — append a record. `fields` keys must be among the
   collection's indexed fields; `payload` is your value (HL7/JSON/text — you parse it).
   `options` may override the TTL with `{ expireAt }` (ISO) or `{ ttlSeconds }`; otherwise the
-  collection default applies. `store()` always adds a new record (no upsert).
+  collection default applies. `store()` always adds a new record (no upsert). Any other option is
+  ignored, and `{ ttlSeconds: 0 }` stores a record that is never found. The life is set when the
+  record is stored: a later change of the collection's default does not change it.
 - `await find(match, options?)` — query. `match` is equality on indexed fields; `options.filter`
   adds more field predicates (a scalar is equality, an array is `IN`, multiple fields are AND'd);
   `options.latest` returns only the single newest match; `options.limit`/`options.order` page and
   order by creation time (default newest-first). Returns an array of
-  `{ id, fields, payload, expireAt, createdAt }`.
+  `{ id, fields, payload, expireAt, createdAt }`. A record whose life is over does not match. With
+  `latest` that means the newest record that lives on, so give the records of one key the same life:
+  an older order that never expires is found once a newer one has expired.
 - `await update(id, changes)` — change one record by its `id`. `changes` may hold `fields`
   (replaces the whole field set), `payload` and `expireAt` (ISO, or `null` to never expire);
-  keys you leave out stay as they are. Returns the updated record, or `null` if it no longer
-  exists (deleted or pruned).
+  keys you leave out stay as they are, the expiry too: an update does not renew a record's life.
+  Returns the updated record, or `null` if it no longer exists (deleted or pruned) or has expired
+  and `expireAt` is not among the changes.
 - `await delete(id)` — remove one record by its `id`. Returns `true`, or `false` if it was
   already gone.
 

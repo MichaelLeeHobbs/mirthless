@@ -52,6 +52,20 @@ function renderPage(permissions: readonly string[] = ALL): void {
   );
 }
 
+it('marks a record whose life is over, which no script finds, and no other', () => {
+  items = [
+    { ...record('r1', 'ACC1', 'a'), expireAt: '2020-01-01T00:00:00Z' },
+    { ...record('r2', 'ACC2', 'b'), expireAt: '2999-01-01T00:00:00Z' },
+    record('r3', 'ACC3', 'c'),
+  ];
+  renderPage();
+
+  const marked = screen.getAllByRole('row').filter((row) => within(row).queryByText('Expired') !== null);
+
+  expect(marked).toHaveLength(1);
+  expect(within(marked[0]!).getByText('ACC1')).toBeTruthy();
+});
+
 const lastParams = (): RecordListParams => listCalls[listCalls.length - 1]!;
 
 beforeEach(() => {

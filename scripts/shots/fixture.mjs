@@ -337,7 +337,8 @@ const collectionRecords = Array.from({ length: 12 }, (_, i) => ({
   payload: i % 4 === 3
     ? `{"orderId":"ORD-${String(7700 + i)}","test":"CBC","status":"pending"}`
     : `MSH|^~\\&|EPIC|${FACILITIES[i % 3].toUpperCase().replace(' ', '_')}|LAB|LAB|20261026${String(1000 + i)}||ORM^O01|MSG${String(90000 + i)}|P|2.5.1\rPID|1||MRN${String(400 + i)}`,
-  expireAt: new Date(NOW + (30 * 86400000) - i * 3600000).toISOString(),
+  // Two are past their expiry. The page asks the real clock, so the others expire years from now.
+  expireAt: new Date(NOW + (i === 2 || i === 9 ? 0 : 3650 * 86400000) - i * 3600000).toISOString(),
   createdAt: ago(i * 7 + 2),
 }));
 

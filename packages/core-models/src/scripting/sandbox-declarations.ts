@@ -155,7 +155,7 @@ interface CollectionHandle {
    * Append a record. Field keys must be in the collection's indexed fields.
    * @param fields Indexed field values (strings/numbers/booleans).
    * @param payload The value to store.
-   * @param options Optional per-write TTL override (expireAt ISO or ttlSeconds); else the collection default applies.
+   * @param options Optional per-write TTL override (expireAt ISO or ttlSeconds); else the collection default applies. A record is no longer found once its life is over.
    */
   store(
     fields: Record<string, string | number | boolean>,
@@ -165,6 +165,7 @@ interface CollectionHandle {
   /**
    * Query records. "match" is equality on indexed fields; "filter" adds
    * per-field equality (scalar) or IN (array); "latest" returns only the newest.
+   * An expired record does not match, so "latest" returns the newest that lives on.
    */
   find(
     match: Record<string, string | number | boolean>,
@@ -177,8 +178,9 @@ interface CollectionHandle {
   ): Promise<CollectionRecord[]>;
   /**
    * Change one record by id. Only the keys given change: "fields" replaces the
-   * whole field set, "expireAt" null means never expire.
-   * @returns The updated record, or null if it no longer exists.
+   * whole field set, "expireAt" null means never expire. An update does not renew
+   * a record's life: only "expireAt" does.
+   * @returns The updated record, or null if it no longer exists, or has expired and "expireAt" is not given.
    */
   update(
     id: string,

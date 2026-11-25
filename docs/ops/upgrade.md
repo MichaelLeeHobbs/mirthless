@@ -588,6 +588,30 @@ A script saved on a channel that was imported without that script is now stored.
 
 An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
 
+## Expired collection records are no longer found (#417)
+
+A collection record's expiry was stored and shown, and nothing asked about it: a script's `find` returned an expired record like any other. From this version on it does not match, and a script's `update` of it answers `null` unless it sets `expireAt` (D-377). Nothing is deleted by the upgrade. **Look at your collections before upgrading**, because a channel may rely on records whose life was over without anyone noticing:
+
+- A record keeps the expiry it was stored with. After a longer default TTL, or none, was set on the collection, its older records still expire when they first would have. The records page used to say "Records never expire" for such a collection.
+- A script's `update` does not renew a record's life. A record that a channel updates every day still expires when it was first to.
+- `{ ttlSeconds: 0 }` now means that a record is never found, and a misspelled option (`ttl`, `expiresAt`) takes the collection's default.
+- With `latest`, an older record that lives longer is found where the newer one has expired. This is so in a collection whose records have different lives, for example one whose default was set late: the older records never expire and the newer ones do.
+- A reprocessed message that finds its record today may not find it after the upgrade.
+
+This lists, for each collection, its current default, how many records have no expiry, how many have expired and how many will, with the first and last expiry:
+
+```sql
+SELECT c.name, c.default_ttl_seconds,
+       count(*) FILTER (WHERE r.expire_at IS NULL) AS never,
+       count(*) FILTER (WHERE r.expire_at <= now()) AS expired,
+       count(*) FILTER (WHERE r.expire_at > now()) AS to_expire,
+       min(r.expire_at) AS first_expiry, max(r.expire_at) AS last_expiry
+FROM collections c JOIN collection_records r ON r.collection_id = c.id
+GROUP BY c.id ORDER BY c.name;
+```
+
+To keep a collection's records found, give them another expiry or none: one at a time on the records page, or all of them in the database, `UPDATE collection_records SET expire_at = NULL WHERE collection_id = '<id>';`. Take a database backup first: a JSON server backup has no collections in it.
+
 ## Database values, timeouts and marked rows (#411)
 
 **PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
