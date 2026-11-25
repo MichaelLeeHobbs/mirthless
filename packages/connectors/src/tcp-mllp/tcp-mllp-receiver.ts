@@ -234,20 +234,27 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     };
 
     const result = await this.dispatcher(raw);
-    const response = this.buildResponse(content, result);
-    if (response !== null && socket.writable) {
-      socket.write(wrapMllp(response, this.config.charset, this.config.framing));
-    }
+    const answer = this.passthroughFrame(result) ?? this.frame(buildAck(content, ackCodeFor(result)));
+    if (socket.writable) socket.write(answer);
   }
 
-  private buildResponse(content: string, result: Result<DispatchResult>): string | null {
-    if (this.config.responseMode === MLLP_RESPONSE_MODE.PASSTHROUGH) {
-      if (result.ok && result.value.response !== undefined) return result.value.response;
-      // No passthrough content available — fall back to an ACK/NAK so the
-      // sender is never left without a response.
-      return buildAck(content, ackCodeFor(result));
+  private frame(text: string): Buffer {
+    return wrapMllp(text, this.config.charset, this.config.framing);
+  }
+
+  /** Null when there is no response to pass through, so the sender gets an ACK or NAK: it is never left without an answer. */
+  private passthroughFrame(result: Result<DispatchResult>): Buffer | null {
+    if (this.config.responseMode !== MLLP_RESPONSE_MODE.PASSTHROUGH) return null;
+    if (!result.ok || result.value.response === undefined) return null;
+    try {
+      return this.frame(result.value.response);
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), messageId: result.value.messageId },
+        'The response cannot be written in the charset of the source; sending an ACK or NAK instead',
+      );
+      return null;
     }
-    return buildAck(content, ackCodeFor(result));
   }
 }
 

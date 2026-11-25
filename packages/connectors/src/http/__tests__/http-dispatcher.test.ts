@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as https from 'node:https';
+import type { AddressInfo } from 'node:net';
 import { HttpDispatcher, type HttpDispatcherConfig } from '../http-dispatcher.js';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import type { ConnectorMessage } from '../../base.js';
 import { freePort } from '../../__fixtures__/free-port.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 const DEST_PORT = await freePort();
 const DEST_HTTPS_PORT = await freePort();
@@ -305,6 +307,23 @@ describe('HttpDispatcher', () => {
     expect(result.value.content).toBe('SECURE-OK');
   });
 
+  it('reads an answer in the charset it declares, over node:https too (#415)', async () => {
+    mockHttpsServer = {
+      server: https.createServer({ cert: TEST_CERT_PEM, key: TEST_KEY_PEM }, (_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=ISO-8859-1' });
+        res.end(Buffer.from([0x4d, 0xfc, 0x6c]));
+      }),
+      close: () => new Promise<void>((resolve) => { mockHttpsServer!.server.close(() => { resolve(); }); }),
+    };
+    await new Promise<void>((resolve) => { mockHttpsServer!.server.listen(DEST_HTTPS_PORT, '127.0.0.1', () => { resolve(); }); });
+    dispatcher = new HttpDispatcher(makeConfig({ url: httpsUrl, tls: { rejectUnauthorized: false } }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.value).toEqual({ status: 'SENT', content: 'M\u00fcl' });
+  });
+
   it('rejects a self-signed HTTPS server when no TLS options are provided', async () => {
     await startHttpsServer();
 
@@ -529,5 +548,65 @@ describe('HttpDispatcher redirects', () => {
 
     expect(result.ok && result.value.status).toBe('ERROR');
     expect(result.ok && result.value.errorMessage).toContain('https://elsewhere.example/login');
+  });
+});
+
+describe('HttpDispatcher answer charset (#415)', () => {
+  let server: http.Server | null = null;
+
+  afterEach(async () => {
+    await new Promise((resolve) => { if (server) server.close(resolve); else resolve(null); });
+    server = null;
+  });
+
+  async function answering(status: number, contentType: string | undefined, body: Buffer): Promise<string> {
+    server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(status, contentType === undefined ? {} : { 'Content-Type': contentType });
+        res.end(body);
+      });
+    });
+    await new Promise<void>((resolve) => { server!.listen(0, '127.0.0.1', resolve); });
+    return `http://127.0.0.1:${String((server.address() as AddressInfo).port)}/receive`;
+  }
+
+  it.each([
+    ['text/plain; charset=ISO-8859-1', [0x4d, 0xfc, 0x6c], 'Mül'],
+    ['text/plain; charset=windows-1252', [0x93, 0x41, 0x94], '“A”'],
+    ['text/plain', [...Buffer.from('Mül')], 'Mül'],
+    [undefined, [...Buffer.from('Mül')], 'Mül'],
+  ])('reads an answer sent as %s', async (contentType, bytes, text) => {
+    const { logger, warnings } = makeMockLogger();
+    dispatcher = new HttpDispatcher(makeConfig({ url: await answering(200, contentType, Buffer.from(bytes)) }), logger);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.value).toEqual({ status: 'SENT', content: text });
+    expect(warnings).toEqual([]);
+  });
+
+  it('reads a refusal in its charset too', async () => {
+    dispatcher = new HttpDispatcher(makeConfig({ url: await answering(422, 'text/plain; charset=ISO-8859-1', Buffer.from([0xfc])) }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.value).toEqual({ status: 'ERROR', content: 'ü', errorMessage: 'HTTP 422' });
+  });
+
+  it('keeps a delivered message SENT when its answer cannot be read, and logs it without the answer', async () => {
+    const { logger, warnings } = makeMockLogger();
+    dispatcher = new HttpDispatcher(makeConfig({ url: await answering(200, 'text/plain', Buffer.from([0x4d, 0xfc, 0x6c])) }), logger);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.value).toEqual({ status: 'SENT', content: 'M�l' });
+    expect(warnings).toEqual([{
+      obj: { channelId: makeMessage().channelId, messageId: 1, metaDataId: 1, status: 200, contentType: 'text/plain', problem: 'it is not valid utf-8' },
+      msg: expect.stringContaining('U+FFFD') as string,
+    }]);
   });
 });

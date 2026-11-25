@@ -67,6 +67,62 @@ export function decodePayload(bytes: Buffer, charset: QueueCharset): DecodedPayl
   }
 }
 
+export interface CharsetDecoder {
+  /** As the Encoding Standard names it. */
+  readonly encoding: string;
+  /** Throws on bytes that are not valid in the charset. */
+  readonly decode: (bytes: Uint8Array) => string;
+}
+
+/** Null for a charset this Node does not know. `keepBom` keeps a byte order mark as a character. */
+export function strictDecoder(charset: string, keepBom: boolean): CharsetDecoder | null {
+  try {
+    const decoder = new TextDecoder(charset, { fatal: true, ignoreBOM: keepBom });
+    const { encoding } = decoder;
+    return { encoding, decode: encoding === 'windows-1252' ? decodeWindows1252 : (bytes): string => decoder.decode(bytes) };
+  } catch {
+    return null;
+  }
+}
+
+export function declaredCharset(contentType: string | null | undefined): string | undefined {
+  return /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType ?? '')?.[1];
+}
+
+export interface DecodedAnswer {
+  readonly text: string;
+  /** Why the text may not be what was sent; null when it is. */
+  readonly problem: string | null;
+}
+
+/**
+ * The body of an HTTP answer: in the charset its Content-Type declares, else UTF-8 without a
+ * byte order mark, as fetch reads it. Never refused, since the request was handled by then.
+ */
+export function decodeAnswer(bytes: Uint8Array, contentType: string | null | undefined): DecodedAnswer {
+  if (bytes.length === 0) return { text: '', problem: null };
+  const declared = strictDecoder(declaredCharset(contentType) ?? 'utf-8', false);
+  const { encoding, decode } = declared ?? strictDecoder('utf-8', false)!;
+  const unknown = declared === null ? 'its charset is not known, so it was read as utf-8' : null;
+  try {
+    return { text: decode(bytes), problem: unknown };
+  } catch {
+    const problem = unknown === null ? `it is not valid ${encoding}` : `${unknown}, which it is not`;
+    return { text: new TextDecoder(encoding).decode(bytes), problem };
+  }
+}
+
+/** Node writes another character in place of one the charset does not have, without an error. */
+export function encodeText(text: string, charset: BufferEncoding): Buffer {
+  const bytes = Buffer.from(text, charset);
+  const written = bytes.toString(charset);
+  if (written === text) return bytes;
+  let at = 0;
+  while (written[at] === text[at]) at += 1;
+  const character = `U+${text.codePointAt(at)!.toString(16).toUpperCase().padStart(4, '0')}`;
+  throw new Error(`The message holds the character ${character}, which the charset ${charset} does not have. Nothing was sent; change the charset of the destination, or the text.`);
+}
+
 export function unknownEncodingMessage(charset: string): string {
   return `Unknown character set "${charset}". Supported: utf-8, iso-8859-1 (latin1), us-ascii, utf-16le.`;
 }

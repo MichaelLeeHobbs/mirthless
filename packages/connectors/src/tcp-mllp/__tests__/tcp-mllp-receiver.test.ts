@@ -343,6 +343,23 @@ describe('TcpMllpReceiver acknowledgements', () => {
   });
 });
 
+describe('TcpMllpReceiver answer charset (#415)', () => {
+  it('answers with the ACK when the charset cannot hold the response, and logs it without the response', async () => {
+    const { logger, errors } = makeLogger();
+    receiver = new TcpMllpReceiver(makeConfig({ charset: 'latin1', responseMode: MLLP_RESPONSE_MODE.PASSTHROUGH }), logger);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 7, response: 'MSH|^~\\&|DO\u010dEK' })));
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const answer = await connectAndSend(TEST_PORT, VALID_HL7);
+
+    expect(answer).toContain('MSA|AA|MSGID123');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.msg).toContain('sending an ACK or NAK instead');
+    expect(JSON.stringify(errors[0])).not.toContain('EK');
+  });
+});
+
 describe('TcpMllpReceiver stop', () => {
   /** Open a connection that stays open, as real HL7 senders do. */
   async function openPersistent(port: number): Promise<{ client: net.Socket; acks: string[]; closed: Promise<void> }> {

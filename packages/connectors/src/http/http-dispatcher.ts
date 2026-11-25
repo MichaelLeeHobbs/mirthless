@@ -4,6 +4,8 @@
 import * as https from 'node:https';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import { fillVariables, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
+import { answerText } from '../answer.js';
+import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { redirectMessage } from '../redirect.js';
 import { refuseQuotedCredentials } from '../request-credentials.js';
 import type { TlsClientOptions } from '../tls.js';
@@ -35,10 +37,12 @@ function hasActiveTlsOptions(tls: TlsClientOptions | undefined): boolean {
 
 export class HttpDispatcher implements DestinationConnectorRuntime {
   private readonly config: HttpDispatcherConfig;
+  private readonly logger: ConnectorLogger;
   private started = false;
 
-  constructor(config: HttpDispatcherConfig) {
+  constructor(config: HttpDispatcherConfig, logger?: ConnectorLogger) {
     this.config = config;
+    this.logger = logger ?? createConnectorLogger('HTTP');
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -114,7 +118,11 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
         redirect: 'manual',
       });
 
-      const responseBody = await response.text();
+      const responseBody = answerText({
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      }, message, this.logger);
 
       if (response.status >= 300 && response.status < 400) {
         return {
@@ -158,8 +166,9 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
           const chunks: Buffer[] = [];
           res.on('data', (chunk: Buffer) => { chunks.push(chunk); });
           res.on('end', () => {
-            const responseBody = Buffer.concat(chunks).toString('utf-8');
             const status = res.statusCode ?? 0;
+            const contentType = res.headers['content-type'] ?? null;
+            const responseBody = answerText({ status, contentType, bytes: Buffer.concat(chunks) }, message, this.logger);
             if (status >= 200 && status < 300) {
               resolve({ status: 'SENT', content: responseBody });
               return;

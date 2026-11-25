@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { normalizeEncoding, isKnownEncoding } from '../encoding.js';
+import { normalizeEncoding, isKnownEncoding, decodeAnswer, encodeText } from '../encoding.js';
 
 /** TextDecoder's options; the DOM lib that names them is not loaded here. */
 type DecoderOptions = ConstructorParameters<typeof TextDecoder>[1];
@@ -74,5 +74,55 @@ describe('decodePayload in windows-1252, whatever the TextDecoder of this Node d
     expect(decodePayload(Buffer.from([0x93, 0x41, 0xfc, 0x94, 0x20, 0x80]), 'windows-1252')).toEqual({ text: '\u201cAü\u201d \u20ac', replaced: false });
     expect(decodePayload(Buffer.from([0x93]), 'latin1').text).toBe('\u0093');
     expect(decodePayload(Buffer.from('MSH|1'), 'utf-8')).toEqual({ text: 'MSH|1', replaced: false });
+  });
+});
+
+describe('decodeAnswer (#415)', () => {
+  it.each([
+    ['ISO-8859-1', 'text/plain; charset=ISO-8859-1', [0x4d, 0xfc, 0x6c], 'Mül'],
+    ['a quoted charset in any case', 'text/xml; Charset="iso-8859-1"; x=y', [0xe9], 'é'],
+    ['Windows-1252, whatever TextDecoder does with it', 'text/plain;charset=windows-1252', [0x93, 0x41, 0x94], '“A”'],
+    ['UTF-16', 'text/plain; charset=utf-16le', [0xff, 0xfe, 0x41, 0x00, 0x7c, 0x20], 'A⁼'],
+    ['UTF-8 declared', 'application/json; charset=UTF-8', [...Buffer.from('Mül')], 'Mül'],
+    ['UTF-8 when no charset is declared', 'application/json', [...Buffer.from('Mül')], 'Mül'],
+    ['UTF-8 with no Content-Type', null, [...Buffer.from('Mül')], 'Mül'],
+    ['UTF-8 without its byte order mark, as fetch reads it', undefined, [0xef, 0xbb, 0xbf, 0x7b, 0x7d], '{}'],
+    ['an empty answer in a charset nobody knows', 'text/plain; charset=x-none', [], ''],
+  ])('reads %s', (_name, contentType, bytes, text) => {
+    expect(decodeAnswer(Buffer.from(bytes), contentType)).toEqual({ text, problem: null });
+  });
+
+  it('says what it could not read, and keeps what it could', () => {
+    expect(decodeAnswer(Buffer.from([0x4d, 0xfc, 0x6c]), 'text/plain')).toEqual({ text: 'M�l', problem: 'it is not valid utf-8' });
+    expect(decodeAnswer(Buffer.from([0x41, 0x82]), 'text/plain; charset=shift_jis')).toEqual({ text: 'A�', problem: 'it is not valid shift_jis' });
+    expect(decodeAnswer(Buffer.from('Mül'), 'text/plain; charset=x-none')).toEqual({ text: 'Mül', problem: 'its charset is not known, so it was read as utf-8' });
+    expect(decodeAnswer(Buffer.from([0x4d, 0xfc]), 'text/plain; charset=x-none')).toEqual({ text: 'M�', problem: 'its charset is not known, so it was read as utf-8, which it is not' });
+  });
+});
+
+describe('encodeText (#415)', () => {
+  it.each([
+    ['utf-8', 'Mül “A” 😀'],
+    ['latin1', 'Mül \u0080ÿ'],
+    ['ascii', 'MSH|^~\\&|\r\n\u007f'],
+    ['utf16le', 'Mül 😀 \ud83d'],
+    ['utf-8', ''],
+  ] as const)('writes text that %s can hold', (charset, text) => {
+    expect(encodeText(text, charset)).toEqual(Buffer.from(text, charset));
+  });
+
+  it.each([
+    ['latin1', 'a’b', 'U+2019'],
+    // Node writes its low byte, 0x0D: the end of an HL7 segment.
+    ['latin1', 'PID|č', 'U+010D'],
+    ['latin1', '😀', 'U+1F600'],
+    ['ascii', 'café', 'U+00E9'],
+    ['utf-8', 'x\ud83dy', 'U+D83D'],
+  ] as const)('refuses text that %s cannot hold (%j)', (charset, text, character) => {
+    expect(() => encodeText(text, charset)).toThrow(`The message holds the character ${character}, which the charset ${charset} does not have`);
+  });
+
+  it('quotes no more of the text than that character', () => {
+    expect(() => encodeText('SECRET’NAME', 'latin1')).toThrow(/^(?!.*(SECRET|NAME)).*$/);
   });
 });

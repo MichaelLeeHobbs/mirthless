@@ -11,6 +11,8 @@ export type {
 } from './base.js';
 export { DISPATCH_STATUS } from './base.js';
 
+export { decodeAnswer, type DecodedAnswer } from './encoding.js';
+
 export { createConnectorLogger, errorInfo, type ConnectorLogger } from './logger.js';
 export {
   readTlsServerOptions,
