@@ -95,6 +95,28 @@ describe('DestinationRedispatcher', () => {
         channelId: CHANNEL_ID, messageId: 7, metaDataId: DESTINATION, what: 'the SENT status of a delivered destination', errorMessage: 'db down',
       });
     });
+
+    it.each([
+      ['its response', 'storeContent', 'the response of a delivered destination'],
+      ['the removal of an earlier failure', 'removeContent', 'the removal of why an earlier attempt failed'],
+    ] as const)('stays SENT when %s cannot be saved, and the report names it', async (_what, write, what) => {
+      store[write].mockResolvedValue(fail('db down'));
+
+      expect(await redispatch()).toMatchObject({ ok: true, value: 'SENT' });
+
+      expect(statuses()).toEqual([[7, DESTINATION, 'SENT']]);
+      expect(onStoreFailure).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, metaDataId: DESTINATION, what, errorMessage: 'db down' });
+    });
+
+    it('reports its status and its response when neither can be saved', async () => {
+      store.updateConnectorMessageStatus.mockResolvedValue(fail('db down'));
+      store.storeContent.mockResolvedValue(fail('db down'));
+
+      expect(await redispatch()).toMatchObject({ ok: true, value: 'SENT' });
+
+      expect(onStoreFailure.mock.calls.map(([f]: unknown[]) => (f as { what: string }).what).sort())
+        .toEqual(['the SENT status of a delivered destination', 'the response of a delivered destination']);
+    });
   });
 
   describe('the destination it was prepared for', () => {

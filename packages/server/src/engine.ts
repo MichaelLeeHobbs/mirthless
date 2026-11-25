@@ -812,6 +812,7 @@ export class EngineManager {
         batchSize: 10,
         pollIntervalMs: 1_000,
         onError: raiseAlert,
+        onStoreFailure: logStoreFailure,
         // A source that keeps its input until every destination delivered (DICOM).
         onMessageDelivered: source.onMessageDelivered
           ? (_messageId, rawContent) => source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
@@ -1538,7 +1539,7 @@ export class EngineManager {
 function logStoreFailure(failure: StoreFailure): void {
   logger.error(
     { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
-    'Message store write failed: part of a message status could not be saved',
+    'Message store write failed: part of a message could not be saved',
   );
 }
 

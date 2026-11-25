@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach, type Mock } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { QueueConsumer } from '../queue-consumer.js';
 import type { QueueConsumerConfig } from '../queue-consumer.js';
@@ -199,20 +199,125 @@ describe('QueueConsumer', () => {
         }));
       });
 
-      it('still finalizes as ERROR but alerts when the error reason was not saved', async () => {
+      const onStoreFailure = vi.fn();
+      const reported = (): unknown[] => onStoreFailure.mock.calls.map((c: unknown[]) => c[0]);
+      const failure = (what: string): unknown => ({ channelId: CH, messageId: 12, metaDataId: 1, what, errorMessage: 'db down' });
+      const refuse = (write: 'storeContent' | 'incrementStats' | 'release' | 'updateConnectorMessageStatus'): MessageStore => {
         const store = makeStore();
-        (store.storeContent as ReturnType<typeof vi.fn>).mockResolvedValue(fail('disk full'));
+        (store[write] as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
+        return store;
+      };
+      beforeEach(() => { onStoreFailure.mockReset(); });
+
+      it('still ends as SENT when the answer was not saved, which is reported and alerted without it', async () => {
+        const store = refuse('storeContent');
+        const onError = vi.fn().mockResolvedValue(undefined);
+        queue(store, 0);
+
+        consumer = new QueueConsumer(makeConfig({ onError, onStoreFailure }), store, makeSendFn({ status: 'SENT', content: 'MRN-8675309' }));
+        await consumer.poll();
+
+        expect(store.release).toHaveBeenCalledExactlyOnceWith(CH, 12, 1, 'SENT');
+        expect(reported()).toEqual([failure('the response of a delivered destination')]);
+        expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          errorMessage: 'Queued destination 1 delivered message 12, but its response could not be saved: db down. A response the message shows is from an earlier attempt.',
+        }));
+      });
+
+      it('alerts only that the message is sent again when nothing about a delivery was saved, and reports each', async () => {
+        const store: MessageStore = { ...refuse('storeContent'), removeContent: vi.fn().mockResolvedValue(fail('db down')) };
+        (store.release as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
+        const onError = vi.fn().mockResolvedValue(undefined);
+        queue(store, 0);
+
+        consumer = new QueueConsumer(makeConfig({ onError, onStoreFailure }), store, makeSendFn());
+        await consumer.poll();
+
+        expect(reported()).toEqual([
+          failure('the response of a delivered destination'),
+          failure('the removal of why an earlier attempt failed'),
+          failure('the SENT status of a delivered destination'),
+        ]);
+        expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errorMessage: expect.stringMatching(/could not save SENT.*PENDING/) as unknown as string }));
+      });
+
+      it('still ends as SENT when the count was not saved, which is reported, and tells the source', async () => {
+        const store: MessageStore = { ...refuse('incrementStats'), isFullyDelivered: vi.fn().mockResolvedValue(ok(true)) };
+        const onMessageDelivered = vi.fn().mockResolvedValue(undefined);
+        queue(store, 0);
+        (store.loadContent as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) => ok(contentType === 10 ? null : 'content'));
+
+        consumer = new QueueConsumer(makeConfig({ onStoreFailure, onMessageDelivered }), store, makeSendFn());
+        await consumer.poll();
+
+        expect(store.release).toHaveBeenCalledExactlyOnceWith(CH, 12, 1, 'SENT');
+        expect(reported()).toEqual([failure('the count of a delivered destination')]);
+        expect(onMessageDelivered).toHaveBeenCalledExactlyOnceWith(12, 'content');
+      });
+
+      it('still ends as ERROR and alerts when the count of a give-up was not saved, which is reported', async () => {
+        const store = refuse('incrementStats');
         const onError = vi.fn().mockResolvedValue(undefined);
         queue(store, 3);
 
-        consumer = new QueueConsumer(makeConfig({ retryCount: 3, onError }), store, vi.fn().mockResolvedValue(fail('refused')));
+        consumer = new QueueConsumer(makeConfig({ retryCount: 3, onError, onStoreFailure }), store, vi.fn().mockResolvedValue(fail('refused')));
+        await consumer.poll();
+
+        expect(store.release).toHaveBeenCalledExactlyOnceWith(CH, 12, 1, 'ERROR');
+        expect(reported()).toEqual([failure('the count of a failed destination')]);
+        expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errorMessage: expect.stringContaining('gave up on message 12') as unknown as string }));
+      });
+
+      it('still ends as ERROR when the reason was not saved, which is reported, and the alert gives it', async () => {
+        const store = refuse('storeContent');
+        const onError = vi.fn().mockResolvedValue(undefined);
+        queue(store, 3);
+
+        consumer = new QueueConsumer(makeConfig({ retryCount: 3, onError, onStoreFailure }), store, vi.fn().mockResolvedValue(fail('refused')));
         await consumer.poll();
 
         expect(store.release).toHaveBeenCalledWith(CH, 12, 1, 'ERROR');
         expect(store.incrementStats).toHaveBeenCalledWith(CH, 1, 'server-01', 'errored');
-        expect(onError).toHaveBeenCalledWith(expect.objectContaining({
-          errorMessage: expect.stringContaining('could not save the error reason for message 12: disk full') as unknown as string,
-        }));
+        expect(reported()).toEqual([failure('why a destination failed')]);
+        expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errorMessage: expect.stringMatching(/gave up on message 12: .*refused/) as unknown as string }));
+      });
+
+      it('is retried when the reason of a failed attempt was not saved, which is reported', async () => {
+        const store = refuse('storeContent');
+        queue(store, 0);
+
+        consumer = new QueueConsumer(makeConfig({ retryCount: 3, onStoreFailure }), store, vi.fn().mockResolvedValue(fail('refused')));
+        await consumer.poll();
+
+        expect(store.updateConnectorMessageStatus).toHaveBeenCalledExactlyOnceWith(CH, 12, 1, 'QUEUED');
+        expect(reported()).toEqual([failure('why a destination failed')]);
+      });
+
+      it.each([
+        ['the SENT status of a delivered destination', 'release', 0, ok({ status: 'SENT' as const, content: 'MRN-8675309' })],
+        ['the ERROR status of a failed destination', 'release', 3, fail('partner said MRN-8675309')],
+        ['the QUEUED status of a destination', 'updateConnectorMessageStatus', 0, fail('partner said MRN-8675309')],
+      ] as const)('reports %s that was not saved, without what the partner said', async (what, write, sendAttempts, answer) => {
+        const store = refuse(write);
+        queue(store, sendAttempts);
+
+        consumer = new QueueConsumer(makeConfig({ retryCount: 3, onStoreFailure }), store, vi.fn().mockResolvedValue(answer));
+        await consumer.poll();
+
+        expect(reported()).toEqual([failure(what)]);
+      });
+
+      it.each([
+        ['removeContent', 'the removal of why an earlier attempt failed'],
+        ['removeContentIfDelivered', 'the removal of the content of a completed message'],
+      ] as const)('reports a %s that failed', async (removal, what) => {
+        const store: MessageStore = { ...makeStore(), [removal]: vi.fn().mockResolvedValue(fail('db down')) };
+        queue(store, 0);
+
+        consumer = new QueueConsumer(makeConfig({ onStoreFailure }), store, makeSendFn());
+        await consumer.poll();
+
+        expect(reported()).toEqual([failure(what)]);
       });
 
       it('alerts when a retry could not be re-queued', async () => {
