@@ -5,6 +5,7 @@ import * as https from 'node:https';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import { fillVariables, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { redirectMessage } from '../redirect.js';
+import { refuseQuotedCredentials } from '../request-credentials.js';
 import type { TlsClientOptions } from '../tls.js';
 
 export interface HttpDispatcherConfig {
@@ -45,12 +46,9 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
       if (!this.config.url) {
         throw new Error('URL is required');
       }
-      try {
-        // A URL that names message variables is checked per message instead.
-        if (!this.config.url.includes('${')) new URL(this.config.url);
-      } catch {
-        throw new Error(`Invalid URL: ${this.config.url}`);
-      }
+      // A URL that names message variables is checked per message instead.
+      // Not quoted in the error: it may hold credentials.
+      if (!this.config.url.includes('${') && !URL.canParse(this.config.url)) throw new Error('Invalid URL');
       const validMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
       if (!validMethods.includes(this.config.method.toUpperCase())) {
         throw new Error(`Invalid method: ${this.config.method}`);
@@ -104,6 +102,7 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
       if (isHttps && (schemeHttps || hasActiveTlsOptions(this.config.tls))) {
         return this.sendViaHttps(message, request, combinedSignal, bodyAllowed);
       }
+      refuseQuotedCredentials(request.url, request.headers);
 
       const response = await fetch(request.url, {
         method: this.config.method,
