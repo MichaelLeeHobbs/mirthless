@@ -325,16 +325,6 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
   const destinations = new Map<number, DestinationConnectorRuntime>(
     spec.destinations.map((d) => [d.metaDataId, d.connector]),
   );
-  const runtimeConfig: ChannelRuntimeConfig = {
-    channelId: spec.channelId,
-    source: spec.source,
-    destinations,
-    onMessage: async (raw) => toDispatchResult(await processor.processMessage(
-      { rawContent: raw.content, sourceMap: raw.sourceMap, onStored: () => raw.onStored?.({ recoverable: true }) },
-      AbortSignal.timeout(30_000),
-    )),
-  };
-
   const queueConsumers = spec.destinations
     .filter((d) => (d.queueMode ?? 'NEVER') !== 'NEVER')
     .map((d) => new QueueConsumer({
@@ -351,6 +341,17 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
         : undefined,
     }, store, sendFn));
 
+  const runtimeConfig: ChannelRuntimeConfig = {
+    channelId: spec.channelId,
+    source: spec.source,
+    destinations,
+    queues: queueConsumers,
+    onMessage: async (raw) => toDispatchResult(await processor.processMessage(
+      { rawContent: raw.content, sourceMap: raw.sourceMap, onStored: () => raw.onStored?.({ recoverable: true }) },
+      AbortSignal.timeout(30_000),
+    )),
+  };
+
   const deployResult = await runtime.deploy(runtimeConfig);
   if (!deployResult.ok) throw new Error(`deploy failed: ${deployResult.error.message}`);
   const startResult = await runtime.start();
@@ -361,7 +362,6 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
     runtime,
     store,
     teardown: async () => {
-      for (const consumer of queueConsumers) await consumer.stop();
       const state = runtime.getState();
       if (state === 'STARTED' || state === 'PAUSED') await runtime.stop();
       if (runtime.getState() === 'STOPPED') await runtime.undeploy();

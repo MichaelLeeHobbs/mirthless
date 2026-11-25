@@ -312,7 +312,7 @@ describe('undeployAll', () => {
     const { undeployAll } = await import('../shutdown.js');
     const undeployed: string[] = [];
     const engine = {
-      getAll: () => new Map([['a', {}], ['b', {}], ['c', {}]]),
+      getAll: () => new Map(['a', 'b', 'c'].map((id) => [id, { queueConsumers: [] }])),
       undeploy: async (id: string): Promise<void> => {
         if (id === 'b') throw new Error('undeploy script failed');
         undeployed.push(id);
@@ -334,7 +334,7 @@ describe('undeployAll', () => {
     const undeployed: string[] = [];
     let end = (): void => undefined;
     const engine = {
-      getAll: () => new Map([['waits', {}], ['b', {}]]),
+      getAll: () => new Map(['waits', 'b'].map((id) => [id, { queueConsumers: [] }])),
       undeploy: async (id: string): Promise<void> => {
         if (id === 'waits') await new Promise<void>((resolve) => { end = resolve; });
         undeployed.push(id);
@@ -347,5 +347,22 @@ describe('undeployAll', () => {
     end();
     await done;
     expect(undeployed).toEqual(['b', 'waits']);
+  });
+
+  it('stops the queues of every channel first, so none sends to a channel that is already stopping (#413)', async () => {
+    const { undeployAll } = await import('../shutdown.js');
+    const calls: string[] = [];
+    let sendEnds = (): void => undefined;
+    const sending = new Promise<void>((resolve) => { sendEnds = resolve; });
+    const queueOf = (id: string): { stop: () => Promise<void> } => ({ stop: () => { calls.push(`${id} queue`); return sending; } });
+    const engine = {
+      getAll: () => new Map(['a', 'b'].map((id) => [id, { queueConsumers: [queueOf(id)] }])),
+      undeploy: async (id: string): Promise<void> => { calls.push(id); },
+    };
+
+    const done = undeployAll(engine, { error: vi.fn() });
+    expect(calls).toEqual(['a queue', 'b queue', 'a', 'b']);
+    sendEnds();
+    await done;
   });
 });
