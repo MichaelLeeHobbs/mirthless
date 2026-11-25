@@ -62,6 +62,7 @@ export function groupDestinationChains(
   return chains;
 }
 
+/** Limits how long the send may take; the signal is only a halt's. */
 export type SendToDestination = (
   metaDataId: number,
   messageId: number,
@@ -348,40 +349,28 @@ export class MessageProcessor {
       input.onStored?.();
       let content = input.rawContent;
 
-      try {
-        parseForSandbox(content, dataType, this.config.dataTypeOptions);
-      } catch (parseErr) {
-        const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-        await this.recordSourceError(messageId, `Invalid ${dataType}: ${parseMsg}`);
-        mark('parseInbound');
-        if (this.config.onError) {
-          await this.config.onError({
-            channelId, errorType: 'SOURCE_CONNECTOR',
-            errorMessage: `Invalid ${dataType}: ${parseMsg}`, timestamp: Date.now(),
-          });
-        }
-        if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
-        return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
-      }
-
-      const errorOut = async (stage: string, errMsg: string): Promise<ProcessedMessage> => {
+      const failSource = async (stage: string, errMsg: string, alertText: string): Promise<ProcessedMessage> => {
         await this.recordSourceError(messageId, errMsg);
         mark(stage);
         if (this.config.onError) {
-          await this.config.onError({
-            channelId, errorType: 'SOURCE_CONNECTOR',
-            errorMessage: `Script error in ${stage}: ${errMsg}`, timestamp: Date.now(),
-          });
+          await this.config.onError({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: alertText, timestamp: Date.now() });
         }
         if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
         return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       };
+      const errorOut = (stage: string, errMsg: string): Promise<ProcessedMessage> =>
+        failSource(stage, errMsg, `Script error in ${stage}: ${errMsg}`);
+
+      // A preprocessor may repair it, so it is refused only if it does not parse after them either.
+      const invalid = this.whyInvalid(content);
+      const preprocessorFailed = (stage: string, errMsg: string): Promise<ProcessedMessage> =>
+        errorOut(stage, invalid === null ? errMsg : `${errMsg} (as received: ${invalid})`);
 
       if (this.config.scripts.globalPreprocessor) {
         const gpreResult = await this.runScript(
           this.config.scripts.globalPreprocessor, content, input, signal, mapState,
         );
-        if (!gpreResult.ok) return errorOut('globalPreprocessor', gpreResult.error.message);
+        if (!gpreResult.ok) return preprocessorFailed('globalPreprocessor', gpreResult.error.message);
         const gpreVal = scriptReplacement(gpreResult.value.returnValue, gpreResult.value.msg);
         // A preprocessor that changed nothing leaves the text exactly as received.
         if (gpreVal != null) {
@@ -394,13 +383,16 @@ export class MessageProcessor {
         const preResult = await this.runScript(
           this.config.scripts.preprocessor, content, input, signal, mapState,
         );
-        if (!preResult.ok) return errorOut('preprocessor', preResult.error.message);
+        if (!preResult.ok) return preprocessorFailed('preprocessor', preResult.error.message);
         const preVal = scriptReplacement(preResult.value.returnValue, preResult.value.msg);
         if (preVal != null) {
           content = serializeTransformed(preVal, content, dataType, this.config.dataTypeOptions);
         }
         mark('preprocessor');
       }
+
+      const stillInvalid = invalid === null ? null : this.whyInvalid(content);
+      if (stillInvalid !== null) return failSource('parseInbound', stillInvalid, stillInvalid);
 
       const enabledDests = this.config.destinations.filter((d) => d.enabled);
       const destSet = new DestinationSet(
@@ -558,6 +550,16 @@ export class MessageProcessor {
         return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       }
     });
+  }
+
+  /** Null for content its data type can be read as. */
+  private whyInvalid(content: string): string | null {
+    try {
+      parseForSandbox(content, this.config.dataType, this.config.dataTypeOptions);
+      return null;
+    } catch (error) {
+      return `Invalid ${this.config.dataType}: ${error instanceof Error ? error.message : String(error)}`;
+    }
   }
 
   private async createMessage(input: PipelineInput): Promise<ReceivedMessage> {

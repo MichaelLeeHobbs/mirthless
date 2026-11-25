@@ -57,6 +57,23 @@ function isForItsNumber(channelId: string): SQL {
     OR connector_messages.connector_name = ${old} -> 'names' ->> connector_messages.meta_data_id::text)`;
 }
 
+/** Locks its connectors. Throws unless the message is open and nothing has been sent. */
+async function lockUnrouted(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], channelId: string, messageId: number): Promise<CreateMessageResult> {
+  const [source, ...destinations] = await tx.select({ metaDataId: connectorMessages.metaDataId, status: connectorMessages.status })
+    .from(connectorMessages).where(and(eq(connectorMessages.channelId, channelId), eq(connectorMessages.messageId, messageId)))
+    .orderBy(asc(connectorMessages.metaDataId)).for('update');
+  const [message] = await tx.select({ messageId: messages.id, correlationId: messages.correlationId }).from(messages)
+    .where(and(eq(messages.channelId, channelId), eq(messages.id, messageId), eq(messages.processed, false)));
+  // A source is TRANSFORMED once its destinations are recorded, and they are sent to only after that.
+  const unrouted = source?.metaDataId === 0 && (source.status === 'RECEIVED'
+    ? destinations.every((d) => d.status === 'RECEIVED')
+    : source.status === 'TRANSFORMED' && destinations.length === 0);
+  if (!unrouted || message === undefined) {
+    throw new ServiceError('CONFLICT', `Message ${String(messageId)} cannot be run again: it has been routed, finished or deleted`);
+  }
+  return message;
+}
+
 export class MessageService {
   static async createMessage(
     channelId: string,
@@ -447,6 +464,21 @@ export class MessageService {
   }
 
   /**
+   * Finishes as ERROR a message that stopped before it was routed and cannot be run again. Refused once it
+   * was routed, and for a message that is finished or gone. Its custom metadata stays: in a storage mode
+   * that keeps no content nothing else says which message it was.
+   */
+  static async failUnrouted(channelId: string, messageId: number): Promise<Result<void>> {
+    return tryCatch(() => db.transaction(async (tx) => {
+      await lockUnrouted(tx, channelId, messageId);
+      const connectors = and(eq(connectorMessages.channelId, channelId), eq(connectorMessages.messageId, messageId));
+      await tx.delete(connectorMessages).where(and(connectors, gt(connectorMessages.metaDataId, 0)));
+      await tx.update(connectorMessages).set({ status: 'ERROR' }).where(connectors);
+      await tx.update(messages).set({ processed: true, processedAt: new Date() }).where(and(eq(messages.channelId, channelId), eq(messages.id, messageId)));
+    }));
+  }
+
+  /**
    * Puts a message that stopped before it was routed back as it was when it was received, so
    * running it again cannot leave a second message to deliver. Refused once it was routed, and
    * for a message that is finished or gone. Takes its locks in the order a message's deletion does.
@@ -458,17 +490,7 @@ export class MessageService {
       await tx.delete(messageCustomMetadata).where(ofMessage(messageCustomMetadata));
       const received = and(eq(messageContent.metaDataId, 0), inArray(messageContent.contentType, [CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP]));
       await tx.delete(messageContent).where(and(ofMessage(messageContent), not(received!)));
-      const [source, ...destinations] = await tx.select({ metaDataId: connectorMessages.metaDataId, status: connectorMessages.status })
-        .from(connectorMessages).where(ofMessage(connectorMessages)).orderBy(asc(connectorMessages.metaDataId)).for('update');
-      const [message] = await tx.select({ messageId: messages.id, correlationId: messages.correlationId }).from(messages)
-        .where(and(eq(messages.channelId, channelId), eq(messages.id, messageId), eq(messages.processed, false)));
-      // A source is TRANSFORMED once its destinations are recorded, and they are sent to only after that.
-      const unrouted = source?.metaDataId === 0 && (source.status === 'RECEIVED'
-        ? destinations.every((d) => d.status === 'RECEIVED')
-        : source.status === 'TRANSFORMED' && destinations.length === 0);
-      if (!unrouted || message === undefined) {
-        throw new ServiceError('CONFLICT', `Message ${String(messageId)} cannot be run again: it has been routed, finished or deleted`);
-      }
+      const message = await lockUnrouted(tx, channelId, messageId);
       await tx.delete(connectorMessages).where(and(ofMessage(connectorMessages), gt(connectorMessages.metaDataId, 0)));
       await tx.update(connectorMessages).set({ status: 'RECEIVED' }).where(and(ofMessage(connectorMessages), eq(connectorMessages.metaDataId, 0)));
       return message;

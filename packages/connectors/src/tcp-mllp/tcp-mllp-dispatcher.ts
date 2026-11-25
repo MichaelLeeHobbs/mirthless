@@ -136,7 +136,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     return new Error(text, { cause: error });
   }
 
-  /** A queued destination aborts its send after 30 s, which comes before a long acquire timeout. */
+  /** The engine's limit on a send can come before a long acquire timeout. */
   private abortError(): Error {
     const reason = this.connectFailure;
     return new Error(reason === null ? 'Send aborted' : `Send aborted while ${this.remote} could not be reached: ${reason}`);
