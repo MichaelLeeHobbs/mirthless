@@ -59,6 +59,11 @@ export function assignmentLevel(expired: boolean): StatusLevel {
   return expired ? 'warning' : 'healthy';
 }
 
+/** The end of a record's life is expected. */
+export function expiredRecordLevel(): StatusLevel {
+  return 'neutral';
+}
+
 export function roleFlagLevel(flag: string): StatusLevel {
   switch (flag) {
     case ROLE_FLAG.ADMIN_EQUIVALENT: return 'critical';

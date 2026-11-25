@@ -38,7 +38,7 @@ A **CollectionRecord** is one stored row:
 | `collectionId` | FK to the collection |
 | `fields` | jsonb — the indexed field values supplied at write time |
 | `payload` | the stored value (HL7 text, JSON, whatever) |
-| `expireAt` | timestamptz, nullable — when the pruner removes it |
+| `expireAt` | timestamptz, nullable — from then on scripts do not find it, and the pruner may remove it |
 | `createdAt` | timestamptz — drives newest-wins ordering |
 
 `store()` always inserts, never upserts. "Newest wins" is a query result
@@ -82,6 +82,8 @@ collection_records(
 - **`options.limit` / `options.order`** — optional; default order is
   `created_at desc`.
 
+An expired record does not match (D-377).
+
 No joins, ranges, or partial-key scans in v1. Both known use cases fit.
 
 ## TTL
@@ -117,7 +119,7 @@ const order = getCollection('orders').find(
 
 // Change or remove a record found earlier, by id
 await getCollection('orders').update(order.id, { payload: resulted, expireAt: null });
-                                     // only the keys given change; → record | null if gone
+                                     // only the keys given change; → record | null if gone or expired
 await getCollection('orders').delete(order.id);   // → true, or false if already gone
 ```
 

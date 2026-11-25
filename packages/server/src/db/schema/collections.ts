@@ -26,7 +26,7 @@ export const collectionRecords = pgTable('collection_records', {
   fields: jsonb('fields').notNull().$type<Record<string, string | number | boolean>>(),
   /** Opaque stored value — scripts parse it. */
   payload: text('payload'),
-  /** When the pruner removes this record; null = never. */
+  /** From then on scripts do not find the record, and the pruner may remove it; null = never. */
   expireAt: timestamp('expire_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

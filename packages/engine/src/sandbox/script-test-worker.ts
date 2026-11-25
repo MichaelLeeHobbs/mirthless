@@ -1,9 +1,10 @@
 // Reads are asked of the main thread, which owns the database.
 
+import { getHeapStatistics } from 'node:v8';
 import { parentPort, workerData } from 'node:worker_threads';
 import { thrownText, UNREADABLE_ERROR } from './sandbox-value.js';
 import { runScriptTest, type ScriptTestInput, type ScriptTestReaders } from './script-test-run.js';
-import { MAX_TEST_READS, tooManyReads, type WorkerReply, type WorkerRequest, type WorkerStart } from './script-test-isolated.js';
+import { MAX_TEST_READS, tooManyReads, type WorkerMemory, type WorkerReply, type WorkerRequest, type WorkerStart } from './script-test-isolated.js';
 
 if (!parentPort) throw new Error('script-test-worker must run in a worker thread');
 const port = parentPort;
@@ -55,7 +56,10 @@ const readers: ScriptTestReaders = {
 
 // The main thread starts the script's time limit and measures memory growth from
 // here, once the script is compiled, not from the worker's start-up (#188).
-const onCompiled = (): void => { port.postMessage({ type: 'started' } satisfies WorkerRequest); };
+const onCompiled = (): void => {
+  const memory: WorkerMemory = { residentBytes: process.memoryUsage.rss(), externalBytes: getHeapStatistics().external_memory };
+  port.postMessage({ type: 'started', memory } satisfies WorkerRequest);
+};
 const input: ScriptTestInput = { ...start.input, readers, onCompiled };
 const result = await runScriptTest(input);
 const done: WorkerRequest = result.ok
