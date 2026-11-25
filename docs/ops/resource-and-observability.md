@@ -65,8 +65,15 @@ A channel script's time limit does not stop every script. One it does not stop h
 
 ## Metrics (`/metrics`, Prometheus)
 
-The server exposes Prometheus metrics via `prom-client` at **`/metrics`** (default Node
-process metrics plus HTTP request metrics from the metrics middleware).
+The server exposes Prometheus metrics at **`/metrics`**: Node's process metrics, the HTTP requests (`http_request_duration_seconds`, `http_requests_total`, by method, route and status code), and these, which have no labels:
+
+| Metric | Type | Value |
+|---|---|---|
+| `galvanigraph_deployed_channels` | Gauge | Deployed channels, when read |
+| `galvanigraph_started_channels` | Gauge | Deployed channels that are started, when read |
+| `galvanigraph_messages_processed_total` | Counter | Messages the pipeline finished since the server started, on every channel: delivered, put on a queue, filtered, or recorded with an error, by crash recovery too. A message the store refused on receipt is not counted |
+| `galvanigraph_db_pool_total` | Gauge | Connections the server's database pool holds, idle ones and ones still connecting included, when read. The job queue has a pool of its own, which is not in it |
+| `galvanigraph_db_pool_idle` | Gauge | Idle connections of that pool, when read |
 
 **Access control — auth-gated by default.** `/metrics` requires authentication and the
 `system:info` permission **unless** `METRICS_PUBLIC=true` is set. Only set

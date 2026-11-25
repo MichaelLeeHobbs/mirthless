@@ -14,7 +14,7 @@ export default defineConfig({
     coverage: {
       include: ['src/**/*.{ts,tsx}'],
       // About 1 point under measured coverage; only ever raised, toward the 95% target (D-193).
-      thresholds: { statements: 26, branches: 29, functions: 23, lines: 26 },
+      thresholds: { statements: 50, branches: 49, functions: 45, lines: 51 },
     },
   },
 });
