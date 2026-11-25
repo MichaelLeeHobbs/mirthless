@@ -1,6 +1,7 @@
 // The data sources point at the test database itself. Needs CONTENT_ENCRYPTION_KEY.
 
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
+import { ConnectionPool } from '@galvanigraph/connectors';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 function dbParts(): { host: string; port: number; database: string; user: string; password: string } {
@@ -44,6 +45,13 @@ describeIntegration('DataSourceService (real Postgres)', () => {
     expect((summary as unknown as Record<string, unknown>)['password']).toBeUndefined();
     return name;
   }
+
+  // Database connectors use this pool too. No server lets a connection in within 1 ms.
+  it('gives a connection as long as any other wait of the suite, whatever the pool asks for (#444)', async () => {
+    const pool = new ConnectionPool();
+    expect(await pool.create({ ...dbParts(), maxConnections: 1, idleTimeoutMs: 1_000, connectionTimeoutMs: 1 })).toMatchObject({ ok: true });
+    await pool.destroy();
+  });
 
   it('runs a read-only query end-to-end (encrypted creds round-trip)', async () => {
     const name = await makeSource(true);
