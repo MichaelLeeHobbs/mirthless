@@ -110,9 +110,10 @@ class ChannelRuntime {
 ### Halt Sequence (Forced)
 
 1. Abort the AbortController (cancels all in-flight operations)
-2. Stop source connector immediately
-3. Stop all destination connectors immediately
-4. Set state to `STOPPED`
+2. End the queued sends that can be ended
+3. Stop source connector immediately
+4. Stop all destination connectors immediately
+5. Set state to `STOPPED` once the queued sends have ended
 
 ---
 

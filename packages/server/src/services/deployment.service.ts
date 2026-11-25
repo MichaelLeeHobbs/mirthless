@@ -343,8 +343,6 @@ export class DeploymentService {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
 
-      await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
-
       const result = await deployed.runtime.stop();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', `Cannot stop channel: ${result.error.message}`);
@@ -366,8 +364,6 @@ export class DeploymentService {
   static async halt(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
-
-      await Promise.all(deployed.queueConsumers.map((c) => c.halt()));
 
       const wasStopped = deployed.runtime.getState() === 'STOPPED';
       const result = await deployed.runtime.halt();

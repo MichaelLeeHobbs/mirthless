@@ -16,10 +16,19 @@ export interface RuntimeSourceConnector extends RuntimeConnector {
   setDispatcher(dispatcher: (raw: { content: string; sourceMap: Record<string, unknown>; onStored?: ((stored: { readonly recoverable: boolean }) => void) | undefined }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>): void;
 }
 
+/** Sends to the destinations by itself, from when the caller starts it until the channel is stopped or halted. */
+export interface RuntimeQueue {
+  /** Takes nothing more, and resolves once the send in flight has ended. */
+  stop(): Promise<void>;
+  /** As `stop`, and ends the send in flight where it can be ended. */
+  halt(): Promise<void>;
+}
+
 export interface ChannelRuntimeConfig {
   readonly channelId: string;
   readonly source: RuntimeSourceConnector;
   readonly destinations: ReadonlyMap<number, RuntimeConnector>;
+  readonly queues?: readonly RuntimeQueue[] | undefined;
   readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown>; onStored?: ((stored: { readonly recoverable: boolean }) => void) | undefined }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string; queued?: boolean; destinationFailed?: boolean }>>;
 }
 
@@ -145,6 +154,8 @@ export class ChannelRuntime {
       // Stop source first (no new messages)
       const srcResult = await config.source.onStop();
       if (!srcResult.ok) failures.push(`Source stop failed: ${srcResult.error.message}`);
+      // Not before the source: a queued send may take minutes, and messages would go on coming in.
+      await Promise.all((config.queues ?? []).map((queue) => queue.stop()));
       await this.backgroundEnds(BACKGROUND_ENDS_MS, haltSignal);
 
       for (const [id, dest] of config.destinations) {
@@ -203,21 +214,24 @@ export class ChannelRuntime {
       if (this.state !== 'STARTED' && this.state !== 'PAUSED') {
         throw new Error(`Cannot halt: channel is ${this.state}`);
       }
-      if (!this.config) throw new Error('Channel not deployed');
+      const { config } = this;
+      if (!config) throw new Error('Channel not deployed');
 
       this.abortController?.abort();
       this.abortController = new AbortController();
       this.runController?.abort();
+      const queuesEnd = Promise.all((config.queues ?? []).map((queue) => queue.halt()));
 
       const connectors: ReadonlyArray<readonly [string, RuntimeConnector]> = [
-        ['Source', this.config.source],
-        ...[...this.config.destinations].map(([id, dest]) => [`Destination ${String(id)}`, dest] as const),
+        ['Source', config.source],
+        ...[...config.destinations].map(([id, dest]) => [`Destination ${String(id)}`, dest] as const),
       ];
       const failures: string[] = [];
       for (const [name, connector] of connectors) {
         const result = await haltConnector(connector);
         if (!result.ok) failures.push(`${name} halt failed: ${result.error.message}`);
       }
+      await queuesEnd;
 
       this.state = 'STOPPED';
       if (failures.length > 0) throw new Error(failures.join('; '));

@@ -2,6 +2,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, sql } from 'drizzle-orm';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { whyNotTaking } from '../lib/taking-messages.js';
 import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { messageContent, connectorMessages } from '../db/schema/index.js';
@@ -97,9 +98,9 @@ export class MessageReprocessService {
       if (!deployed) {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is not deployed; deploy and start it to reprocess.`);
       }
-      const state = deployed.runtime.getState();
-      if (state !== 'STARTED') {
-        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to reprocess a message.`);
+      const why = whyNotTaking(deployed.runtime);
+      if (why !== null) {
+        throw new ServiceError('CONFLICT', `Channel is ${why}, must be STARTED to reprocess a message.`);
       }
 
       const injected = await deployed.processMessage(rawContent, { reprocessedFrom: messageId });
@@ -129,9 +130,9 @@ export class MessageReprocessService {
       if (!deployed) {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is not deployed; deploy and start it to reprocess.`);
       }
-      const state = deployed.runtime.getState();
-      if (state !== 'STARTED') {
-        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to reprocess messages.`);
+      const why = whyNotTaking(deployed.runtime);
+      if (why !== null) {
+        throw new ServiceError('CONFLICT', `Channel is ${why}, must be STARTED to reprocess messages.`);
       }
 
       const results: BulkReprocessItemResult[] = [];
