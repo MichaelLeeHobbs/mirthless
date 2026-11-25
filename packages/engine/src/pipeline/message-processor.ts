@@ -447,11 +447,12 @@ export class MessageProcessor {
       const activeDests = this.config.destinations
         .filter((d) => d.enabled && (!activeIds || activeIds.has(d.metaDataId)));
       const prepared = await Promise.all([
+        // First: it throws on a value it cannot read, and writes begun before it would go on behind the failed message.
+        this.storeSourceMetadata(messageId, mapState, input.sourceMap),
         this.config.scripts.sourceTransformer
           ? this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.TRANSFORMED, content, dataType)
           : Promise.resolve({ ok: true as const, value: undefined, error: null }),
         ...activeDests.map((d) => this.store.createConnectorMessage(channelId, messageId, d.metaDataId, d.name, 'RECEIVED')),
-        this.storeSourceMetadata(messageId, mapState, input.sourceMap),
       ]);
       const notPrepared = prepared.find((r) => !r.ok);
       if (notPrepared && !notPrepared.ok) return errorOut('prepareDestinations', notPrepared.error.message);
@@ -631,15 +632,14 @@ export class MessageProcessor {
 
   private async recordSourceError(messageId: number, reason: string): Promise<void> {
     const { channelId, serverId } = this.config;
-    await Promise.all([
-      this.saved(messageId, 0, 'why a message failed', [
-        this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, reason, 'TEXT'),
-      ]),
-      this.saved(messageId, 0, 'the ERROR status of a failed message', [
-        this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
-        this.store.incrementStats(channelId, 0, serverId, 'errored'),
-        this.store.markProcessed(channelId, messageId),
-      ]),
+    // First: a message that is marked processed can be deleted, and what is stored after that outlives it.
+    await this.saved(messageId, 0, 'why a message failed', [
+      this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, reason, 'TEXT'),
+    ]);
+    await this.saved(messageId, 0, 'the ERROR status of a failed message', [
+      this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+      this.store.incrementStats(channelId, 0, serverId, 'errored'),
+      this.store.markProcessed(channelId, messageId),
     ]);
   }
 
@@ -808,14 +808,18 @@ export class MessageProcessor {
 
     // Chains run in parallel; destinations within a chain run in order, so a
     // waitForPrevious destination sees the earlier destination's responseMap entry.
-    const settled = await Promise.all(groupDestinationChains(active).map(async (chain) => {
+    // All of them are waited for when one throws: the message must not read processed while another is being sent.
+    const settled = await Promise.allSettled(groupDestinationChains(active).map(async (chain) => {
       const chainResults: DestinationResult[] = [];
       for (const dest of chain) {
         chainResults.push(await processDestination(dest));
       }
       return chainResults;
     }));
-    return settled.flat();
+    return settled.flatMap((chain) => {
+      if (chain.status === 'rejected') throw chain.reason;
+      return chain.value;
+    });
   }
 
   /** Kept so the message browser can say what went wrong whether the destination ends ERROR or waits in the queue. */

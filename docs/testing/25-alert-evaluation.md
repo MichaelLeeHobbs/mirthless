@@ -29,10 +29,10 @@
 | 13 | First alert always fires | Create alert with reAlertIntervalMs=60000, trigger error | Alert fires (no prior state) | |
 | 14 | Repeated alert within interval suppressed | reAlertIntervalMs=60000, trigger two errors 10s apart | First fires, second suppressed | |
 | 15 | Alert fires again after interval expires | reAlertIntervalMs=1000, trigger error, wait >1s, trigger again | Both alerts fire | |
-| 16 | No throttle when reAlertIntervalMs is null | reAlertIntervalMs=null, trigger multiple errors rapidly | All alerts fire | |
+| 16 | Once a minute when reAlertIntervalMs is null | reAlertIntervalMs=null, trigger multiple errors rapidly | One alert fires, and the next one a minute later (D-217) | |
 | 17 | No throttle when reAlertIntervalMs is 0 | reAlertIntervalMs=0, trigger multiple errors | All alerts fire | |
 | 18 | maxAlerts limit enforced | maxAlerts=3, trigger 5 errors (no throttle interval) | First 3 fire, last 2 suppressed | |
-| 19 | maxAlerts null means unlimited | maxAlerts=null, trigger 100 errors | All 100 fire (assuming no throttle) | |
+| 19 | maxAlerts null means unlimited | maxAlerts=null, reAlertIntervalMs=0, trigger 100 errors | All 100 fire | |
 | 20 | Combined throttle and maxAlerts | reAlertIntervalMs=100, maxAlerts=2, trigger 5 errors over 1s | At most 2 alerts fire, respecting both interval and count | |
 
 ## Alert Actions
@@ -57,3 +57,4 @@
 | 31 | handleEvent with no loaded alerts | No alerts loaded, trigger error | No actions dispatched, no errors | |
 | 32 | clearThrottleState resets counters | Fire alert 3 times (maxAlerts=3), clearThrottleState, fire again | Alert fires again after clearing | |
 | 33 | resetAlert clears single alert state | Fire alertA 3 times (maxAlerts=3), resetAlert(alertA), fire again | alertA fires again; other alerts' throttle state unchanged | |
+| 34 | A change is in force without a redeploy | With a channel deployed, create an alert on it, then disable it, triggering an error after each | The alert fires after the first error and not after the second | |

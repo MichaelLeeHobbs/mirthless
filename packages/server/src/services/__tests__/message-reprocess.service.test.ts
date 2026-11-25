@@ -1,15 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockTxExecute = vi.fn();
-
 vi.mock('../../lib/db.js', () => ({
   db: {
     select: vi.fn(),
     execute: vi.fn(),
     update: vi.fn(),
-    transaction: vi.fn(async (fn: (tx: { execute: typeof mockTxExecute }) => Promise<void>) => {
-      await fn({ execute: mockTxExecute });
-    }),
   },
 }));
 
@@ -18,12 +13,19 @@ vi.mock('../../lib/event-emitter.js', () => ({
 }));
 
 const mockGetRuntime = vi.fn();
+const mockIsAtRest = vi.fn();
 vi.mock('../../engine.js', () => ({
-  getEngine: () => ({ getRuntime: mockGetRuntime }),
+  getEngine: () => ({ getRuntime: mockGetRuntime, isAtRest: mockIsAtRest }),
+}));
+
+const mockDeleteMessagesByIds = vi.fn();
+vi.mock('../message-delete-helper.js', () => ({
+  deleteMessagesByIds: (...args: unknown[]): unknown => mockDeleteMessagesByIds(...args),
 }));
 
 import { MessageReprocessService } from '../message-reprocess.service.js';
 import { db } from '../../lib/db.js';
+import { emitEvent } from '../../lib/event-emitter.js';
 
 const mockSelect = vi.mocked(db.select);
 const mockUpdate = vi.mocked(db.update);
@@ -44,8 +46,8 @@ function deployedWithDests(state: string, destinations: { metaDataId: number; qu
   return { runtime: { getState: () => state, runSignal: new AbortController().signal }, config: { destinations: named }, variablesUsed: mockVariablesUsed };
 }
 
-function mockUpdateCapture(): { set: ReturnType<typeof vi.fn> } {
-  const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+function mockUpdateCapture(matched: readonly unknown[] = [{ messageId: 5 }]): { set: ReturnType<typeof vi.fn> } {
+  const set = vi.fn().mockReturnValue({ where: () => ({ returning: () => Promise.resolve(matched) }) });
   mockUpdate.mockReturnValue({ set } as never);
   return { set };
 }
@@ -64,10 +66,11 @@ beforeEach(() => {
   mockSelect.mockReset();
   mockUpdate.mockReset();
   mockGetRuntime.mockReset();
-  mockTxExecute.mockReset();
+  mockIsAtRest.mockReset();
+  mockDeleteMessagesByIds.mockReset();
+  vi.mocked(emitEvent).mockReset();
   mockVariablesUsed.mockReset().mockReturnValue([]);
   mockIsForItsNumber.mockReset().mockResolvedValue({ ok: true, value: true, error: null });
-  mockTxExecute.mockResolvedValue({ rows: [], rowCount: 0 });
 });
 
 describe('MessageReprocessService.reprocessMessage', () => {
@@ -167,66 +170,73 @@ describe('MessageReprocessService.reprocessMessage', () => {
   });
 });
 
-describe('MessageReprocessService.bulkDelete', () => {
-  it('deletes messages in dependency order', async () => {
-    const mockWhere = vi.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]);
-    const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom } as never);
+describe('MessageReprocessService, deleting', () => {
+  const outcome = (deletedIds: number[], refusedIds: number[], unfinishedIds: number[] = []): void => {
+    mockDeleteMessagesByIds.mockResolvedValue({ deletedIds, refusedIds, unfinishedIds });
+  };
+  const context = { userId: 'user-1', ipAddress: '10.0.0.7' };
 
-    const result = await MessageReprocessService.bulkDelete('ch-001', [1, 2]);
+  it('in bulk deletes what nothing works on, and names the rest', async () => {
+    outcome([1, 2], [3]);
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.deletedCount).toBe(2);
-    }
-    // 5 dependency-order deletes inside transaction
-    expect(mockTxExecute).toHaveBeenCalledTimes(5);
+    expect(await MessageReprocessService.bulkDelete('ch-001', [1, 2, 3], context)).toMatchObject({ ok: true, value: { deletedCount: 2, refusedIds: [3] } });
+    expect(emitEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      name: 'MESSAGES_DELETED', level: 'INFO', userId: 'user-1', ipAddress: '10.0.0.7', attributes: { deletedCount: 2 },
+    }));
   });
 
-  it('returns NOT_FOUND when no messages match', async () => {
-    const mockWhere = vi.fn().mockResolvedValue([]);
-    const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom } as never);
+  it('takes unfinished messages only while nothing works on the channel, and any that only wait on a queue', async () => {
+    outcome([1], []);
+    await MessageReprocessService.bulkDelete('ch-001', [1]);
 
-    const result = await MessageReprocessService.bulkDelete('ch-001', [999]);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
-    }
+    const rules = mockDeleteMessagesByIds.mock.calls[0]![2] as { unfinished: () => boolean; queued: boolean };
+    mockIsAtRest.mockReturnValueOnce(true).mockReturnValueOnce(false);
+    expect([rules.unfinished(), rules.unfinished(), rules.queued]).toEqual([true, false, true]);
+    expect(mockIsAtRest).toHaveBeenCalledWith('ch-001');
   });
 
-  it('returns zero for empty messageIds array', async () => {
-    const result = await MessageReprocessService.bulkDelete('ch-001', []);
+  it.each([
+    ['one', [5], /^Message 5 was not deleted: it is still being processed or sent.*stop the channel first/],
+    ['several', [5, 6], /^2 messages were not deleted: they are still being processed or sent/],
+  ])('refuses %s that something may be working on, and records no deletion', async (_what, ids, message) => {
+    outcome([], ids);
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.deletedCount).toBe(0);
-    }
+    expect(await MessageReprocessService.bulkDelete('ch-001', ids)).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringMatching(message) } });
+    if (ids.length === 1) expect(await MessageReprocessService.deleteMessage('ch-001', ids[0]!)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(emitEvent).not.toHaveBeenCalled();
   });
 
-  it('handles partial match — only deletes existing messages', async () => {
-    const mockWhere = vi.fn().mockResolvedValue([{ id: 1 }]);
-    const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom } as never);
+  it('records which deleted messages were not finished, as a warning', async () => {
+    outcome([1, 2], [], [2]);
+    await MessageReprocessService.bulkDelete('ch-001', [1, 2], context);
+    outcome([2], [], [2]);
+    await MessageReprocessService.deleteMessage('ch-001', 2, context);
 
-    const result = await MessageReprocessService.bulkDelete('ch-001', [1, 999]);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.deletedCount).toBe(1);
-    }
+    expect(vi.mocked(emitEvent).mock.calls.map(([event]) => [event.name, event.level, event.attributes])).toEqual([
+      ['MESSAGES_DELETED', 'WARN', { deletedCount: 2, unfinishedIds: [2] }],
+      ['MESSAGE_DELETED', 'WARN', { messageId: 2, unfinished: true }],
+    ]);
   });
 
-  it('returns error on DB failure during delete', async () => {
-    const mockWhere = vi.fn().mockResolvedValue([{ id: 1 }]);
-    const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom } as never);
-    mockTxExecute.mockRejectedValue(new Error('Connection lost'));
+  it('records the deletion of one message', async () => {
+    outcome([7], []);
 
-    const result = await MessageReprocessService.bulkDelete('ch-001', [1]);
+    expect((await MessageReprocessService.deleteMessage('ch-001', 7, context)).ok).toBe(true);
+    expect(emitEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'MESSAGE_DELETED', channelId: 'ch-001', userId: 'user-1', attributes: { messageId: 7 } }));
+  });
 
-    expect(result.ok).toBe(false);
+  it('finds nothing to delete', async () => {
+    outcome([], []);
+
+    expect(await MessageReprocessService.bulkDelete('ch-001', [999])).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await MessageReprocessService.deleteMessage('ch-001', 999)).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await MessageReprocessService.bulkDelete('ch-001', [])).toMatchObject({ ok: true, value: { deletedCount: 0, refusedIds: [] } });
+  });
+
+  it('fails when the database does', async () => {
+    mockDeleteMessagesByIds.mockRejectedValue(new Error('Connection lost'));
+
+    expect(await MessageReprocessService.bulkDelete('ch-001', [1])).toMatchObject({ ok: false, error: { message: 'Connection lost' } });
   });
 });
 
@@ -362,6 +372,24 @@ describe('MessageReprocessService.resendDestination', () => {
       expect((await MessageReprocessService.resendDestination('ch-001', 5, 1)).ok).toBe(true);
       expect(set).toHaveBeenCalledWith({ status: 'QUEUED', sendAttempts: 0 });
     });
+  });
+
+  it('refuses one that its queue has claimed, which may be sending it', async () => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
+    mockSelectSequence([{ status: 'PENDING', open: false }]);
+    const { set } = mockUpdateCapture();
+
+    expect(await MessageReprocessService.resendDestination('ch-001', 5, 1)).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('being sent to "Lab" from its queue') } });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it('says that it did not resend one that was deleted or whose status changed meanwhile', async () => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
+    mockSelectSequence([{ status: 'ERROR' }], [{ content: 'MSH|sent' }]);
+    mockUpdateCapture([]);
+
+    expect(await MessageReprocessService.resendDestination('ch-001', 5, 1)).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('was not resent') } });
+    expect(emitEvent).not.toHaveBeenCalled();
   });
 
   it('refuses to resend content it cannot decrypt', async () => {

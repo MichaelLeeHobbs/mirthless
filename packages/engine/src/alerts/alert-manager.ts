@@ -21,9 +21,24 @@ export class AlertManager {
     this.deps = deps;
   }
 
+  /**
+   * Also on a channel that is running. An alert that did not change keeps its count and its interval;
+   * one that did starts again.
+   */
   loadAlerts(alerts: readonly LoadedAlert[]): void {
-    this.alerts = alerts;
-    for (const alert of alerts) this.warnOfBadRegex(alert);
+    const before = new Map(this.alerts.map((alert) => [alert.id, alert]));
+    // An unchanged alert stays the same object: a check under way then finds that it is still in force.
+    this.alerts = alerts.map((alert) => {
+      const known = before.get(alert.id);
+      return known && JSON.stringify(known) === JSON.stringify(alert) ? known : alert;
+    });
+    const unchanged = new Set(this.alerts.filter((alert) => before.get(alert.id) === alert).map((alert) => alert.id));
+    for (const id of [...this.throttleState.keys(), ...this.silenceAlertedFor.keys()]) {
+      if (!unchanged.has(id)) this.resetAlert(id);
+    }
+    for (const alert of this.alerts) {
+      if (!unchanged.has(alert.id)) this.warnOfBadRegex(alert);
+    }
   }
 
   /** Saved before the API refused one, or written to the database. */
@@ -41,10 +56,10 @@ export class AlertManager {
   }
 
   async handleEvent(event: ChannelErrorEvent): Promise<void> {
-    const matched = evaluateAlerts(event, this.alerts);
-
-    for (const alert of matched) {
-      if (this.isThrottled(alert, event.timestamp)) continue;
+    for (const { id } of evaluateAlerts(event, this.alerts)) {
+      // As it is now: alerts can be loaded again while one before it is being sent.
+      const [alert] = evaluateAlerts(event, this.alerts.filter((a) => a.id === id));
+      if (!alert || this.isThrottled(alert, event.timestamp)) continue;
       if (this.isMaxedOut(alert)) continue;
 
       // Record before sending: errors arrive in bursts, and the ones that
@@ -61,16 +76,17 @@ export class AlertManager {
       if (!alert.enabled || alert.trigger.type !== 'NO_MESSAGES' || !windowMinutes) continue;
       if (alert.channelIds.length > 0 && !alert.channelIds.includes(channelId)) continue;
       if (now - lastActivityAt < windowMinutes * 60_000) continue;
-      if (!this.shouldRealertSilence(alert, lastActivityAt, now)) continue;
+      // Changed or removed while one before it was being sent: the next check takes it as it is now.
+      if (!this.alerts.includes(alert) || !this.shouldRealertSilence(alert, lastActivityAt, now)) continue;
 
+      this.recordAlert(alert.id, now);
+      this.silenceAlertedFor.set(alert.id, lastActivityAt);
       await dispatchActions(alert, {
         channelId,
         errorType: 'NO_MESSAGES',
         errorMessage: `No messages received in the last ${String(windowMinutes)} minutes`,
         timestamp: now,
       }, this.deps);
-      this.recordAlert(alert.id, now);
-      this.silenceAlertedFor.set(alert.id, lastActivityAt);
     }
   }
 
@@ -83,6 +99,7 @@ export class AlertManager {
 
   resetAlert(alertId: string): void {
     this.throttleState.delete(alertId);
+    this.silenceAlertedFor.delete(alertId);
   }
 
   clearThrottleState(): void {
