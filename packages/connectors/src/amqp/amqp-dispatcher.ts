@@ -61,7 +61,8 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
 
       const ended = AbortSignal.any([signal, AbortSignal.timeout(SEND_TIMEOUT_MS)]);
       const publish = async (): Promise<void> => {
-        const publisher = await this.connection();
+        const opening = this.connection();
+        const publisher = await opening;
         // The send was given up while the connection opened; its message may be on the queue again.
         if (ended.aborted) throw new Error('Send aborted');
         try {
@@ -74,7 +75,7 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
             messageId,
           });
         } finally {
-          if (!publisher.isOpen) await this.dropConnection(HALT_CLOSE_MS);
+          if (!publisher.isOpen) await this.dropConnection(opening, HALT_CLOSE_MS);
         }
       };
       await withTimeoutSignal(publish(), SEND_TIMEOUT_MS, 'AMQP publish', signal);
@@ -95,25 +96,22 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
   }
 
   /** Concurrent sends share one connect. */
-  private async connection(): Promise<AmqpPublisher> {
-    this.publisher ??= this.createPublisher(this.config);
-    try {
-      return await this.publisher;
-    } catch (err) {
-      this.publisher = null;
-      throw err;
-    }
+  private connection(): Promise<AmqpPublisher> {
+    if (this.publisher) return this.publisher;
+    const opening = this.createPublisher(this.config);
+    this.publisher = opening;
+    opening.catch(() => { if (this.publisher === opening) this.publisher = null; });
+    return opening;
   }
 
   /** One still connecting is closed when it is connected. */
-  private async dropConnection(timeoutMs: number): Promise<void> {
-    const pending = this.publisher;
-    this.publisher = null;
-    if (pending) await settleWithin(pending.then((publisher) => publisher.close(timeoutMs)), timeoutMs);
+  private async dropConnection(opening: Promise<AmqpPublisher>, timeoutMs: number): Promise<void> {
+    if (this.publisher === opening) this.publisher = null;
+    await settleWithin(opening.then((publisher) => publisher.close(timeoutMs)), timeoutMs);
   }
 
   private async close(timeoutMs: number): Promise<void> {
     this.started = false;
-    await this.dropConnection(timeoutMs);
+    if (this.publisher) await this.dropConnection(this.publisher, timeoutMs);
   }
 }

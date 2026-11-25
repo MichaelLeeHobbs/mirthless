@@ -495,6 +495,41 @@ describe('stop and halt', () => {
     receiver = null;
   });
 
+  it.each(['onStop', 'onHalt', 'onUndeploy'] as const)('a start that an %s overtakes while it connects takes nothing and closes', async (action) => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let connected = (): void => undefined;
+    queue.connecting = new Promise((resolve) => { connected = resolve; });
+    const p = pipeline();
+    receiver = new AmqpReceiver(config, queue.consume, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+
+    const starting = receiver.onStart();
+    await receiver[action]();
+    connected();
+
+    expect((await starting).ok).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(p.offered).toEqual([]);
+    expect(queue.openConnections).toBe(0);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('a message whose destination the halt failed behind an early answer returns to the queue when the channel does not keep its content', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    const held = await startHeld(queue, false);
+
+    await receiver?.onHalt();
+    held.letGo({ ok: true, value: { messageId: 1, destinationFailed: true }, error: null });
+    await vi.waitFor(() => { expect(queue.openConnections).toBe(0); });
+
+    expect(queue.acked).toEqual([]);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
   it('a halt ends a stop that waits', async () => {
     const queue = new FakeAmqpQueue();
     queue.publish('MSH|1');

@@ -129,6 +129,25 @@ describe('send', () => {
     expect(late.published).toEqual([]);
   });
 
+  it('a send left over from before a halt does not close the connection of the next start', async () => {
+    const { dispatcher, pubs } = await started();
+    const first = { fail: (err: Error): void => { void err; } };
+    await dispatcher.send(message(), signal());
+    const old = pubs.made[0]!;
+    vi.spyOn(old, 'publish').mockReturnValue(new Promise((_resolve, reject) => { first.fail = reject; }));
+    const leftOver = dispatcher.send(message(), signal());
+    await Promise.resolve();
+    await dispatcher.onHalt();
+    await dispatcher.onStart();
+    expect((await dispatcher.send(message(), signal())).ok).toBe(true);
+
+    first.fail(new Error('Channel closed'));
+
+    expect((await leftOver).ok).toBe(false);
+    expect(pubs.made).toHaveLength(2);
+    expect(pubs.made[1]?.closed).toBe(false);
+  });
+
   it('refuses to send before start, after stop and with an aborted signal', async () => {
     expect((await new AmqpDispatcher(config, publishers().factory).send(message(), signal())).ok).toBe(false);
     const { dispatcher, pubs } = await started();

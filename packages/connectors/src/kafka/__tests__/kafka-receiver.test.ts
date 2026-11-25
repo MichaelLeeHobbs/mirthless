@@ -429,6 +429,56 @@ describe('stop and halt', () => {
     receiver = null;
   });
 
+  it.each(['onStop', 'onHalt', 'onUndeploy'] as const)('a start that an %s overtakes while it joins takes nothing and leaves the group', async (action) => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    let connected = (): void => undefined;
+    topic.connecting = new Promise((resolve) => { connected = resolve; });
+    const p = pipeline();
+    receiver = new KafkaReceiver(config, topic.subscribe, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+
+    const starting = receiver.onStart();
+    await vi.waitFor(() => { expect(topic.subscribeCount).toBe(1); });
+    await receiver[action]();
+    connected();
+
+    expect((await starting).ok).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(p.offered).toEqual([]);
+    expect(topic.isSubscribed).toBe(false);
+    receiver = null;
+  });
+
+  it('a start that an undeploy overtakes while it waits for a record joins no group', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const { held } = await startHeld(topic);
+    await receiver?.onHalt();
+
+    const starting = receiver?.onStart();
+    const undeploying = receiver?.onUndeploy();
+    held.letGo(stored(1));
+    await undeploying;
+
+    expect((await starting)?.ok).toBe(false);
+    expect(topic.subscribeCount).toBe(1);
+    receiver = null;
+  });
+
+  it('a record whose destination the halt failed behind an early answer is read again when the channel does not keep its content', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const { held } = await startHeld(topic, false);
+
+    await receiver?.onHalt();
+    held.letGo({ ok: true, value: { messageId: 1, destinationFailed: true }, error: null });
+    await vi.waitFor(() => { expect(topic.isSubscribed).toBe(false); });
+
+    expect(topic.committed).toBe(0);
+    receiver = null;
+  });
+
   it('a halt ends a stop that waits', async () => {
     const topic = new FakeKafkaTopic();
     topic.produce('MSH|1');
@@ -509,7 +559,7 @@ describe('halt then start again', () => {
 describe('a partner that does not answer (#413)', () => {
   it.each([
     ['halt', 'onHalt', 2_000],
-    ['stop', 'onStop', 20_000],
+    ['stop', 'onStop', 12_000],
   ] as const)('a %s ends although the broker never answers the close', async (_what, action, withinMs) => {
     const topic = new FakeKafkaTopic();
     topic.hangCloses = true;

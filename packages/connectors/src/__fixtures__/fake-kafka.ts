@@ -25,6 +25,8 @@ export class FakeKafkaTopic {
   failCommits = 0;
   /** The broker never answers a close. */
   hangCloses = false;
+  /** A subscribe waits for it. */
+  connecting: Promise<void> = Promise.resolve();
   private active: FakeSubscription | null = null;
   private listeners: (() => void)[] = [];
 
@@ -43,6 +45,7 @@ export class FakeKafkaTopic {
       this.failSubscribes -= 1;
       throw new Error('ECONNREFUSED broker down');
     }
+    await this.connecting;
     this.active = new FakeSubscription(this);
     return this.active;
   };

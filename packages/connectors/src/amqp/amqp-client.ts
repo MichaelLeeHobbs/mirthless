@@ -3,6 +3,7 @@
 import { connect, type Channel, type ChannelModel, type ConfirmChannel, type ConsumeMessage, type Options, type SocketOptions } from 'amqplib';
 import { isPlainObject, settleWithin } from '@galvanigraph/core-util';
 import { STOP_CLOSE_MS } from '../client-lifecycle.js';
+import { TimeoutError } from '../timeout.js';
 import type { TlsClientOptions } from '../tls.js';
 
 export interface AmqpConnectionConfig {
@@ -63,7 +64,10 @@ async function close(model: ChannelModel, timeoutMs: number, channel?: Channel):
     await model.close();
   };
   if (await settleWithin(closing(), timeoutMs)) return;
-  (model.connection as { readonly stream?: { destroy(): unknown } }).stream?.destroy();
+  const unanswered = new TimeoutError('AMQP close', timeoutMs);
+  // With an error, or amqplib does not notice until its heartbeat does.
+  (model.connection as { readonly stream?: { destroy(err: Error): unknown } }).stream?.destroy(unanswered);
+  throw unanswered;
 }
 
 interface OpenContainer {
@@ -155,7 +159,7 @@ export interface AmqpConsumeOptions extends AmqpConnectionConfig {
 /** `closed` settles when the connection or channel goes away. */
 export interface AmqpConsumer {
   readonly closed: Promise<Error>;
-  /** Ends in this time: a broker that does not answer loses the connection. */
+  /** Ends in this time: a broker that does not answer loses the connection, and this rejects. */
   close(timeoutMs: number): Promise<void>;
 }
 
@@ -199,7 +203,7 @@ export const consumeAmqp: AmqpConsume = async (options, onDelivery) => {
       onDelivery(toDelivery(channel, msg));
     }, { noAck: false });
   } catch (err) {
-    await close(model, STOP_CLOSE_MS);
+    await close(model, STOP_CLOSE_MS).catch(() => undefined);
     throw err;
   }
   return {
@@ -238,7 +242,7 @@ export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
   try {
     channel = await model.createConfirmChannel();
   } catch (err) {
-    await close(model, STOP_CLOSE_MS);
+    await close(model, STOP_CLOSE_MS).catch(() => undefined);
     throw err;
   }
   channel.on('close', () => { connectionOpen = false; });
@@ -296,6 +300,6 @@ export async function testAmqpConnection(config: AmqpConnectionConfig, target: {
     if (target.exchange) await channel.checkExchange(target.exchange);
     return `Connected to ${where}: exchange ${target.exchange || '(default)'} exists`;
   } finally {
-    await close(model, STOP_CLOSE_MS);
+    await close(model, STOP_CLOSE_MS).catch(() => undefined);
   }
 }

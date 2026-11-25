@@ -43,7 +43,7 @@ class FakeModel extends EventEmitter {
   /** The broker never answers the close. */
   hangs = false;
   socketDestroyed = false;
-  readonly connection = { stream: { destroy: (): void => { this.socketDestroyed = true; } } };
+  readonly connection = { stream: { destroy: (err: Error): void => { this.socketDestroyed = true; this.emit('error', err); } } };
   async createChannel(): Promise<FakeChannel> { return this.channel; }
   async createConfirmChannel(): Promise<FakeChannel> { return this.channel; }
   async close(): Promise<void> {
@@ -215,11 +215,11 @@ describe('a close that the broker never answers (#413)', () => {
     lastModel().hangs = true;
     vi.useFakeTimers();
     try {
-      const closing = opened.close(2_000);
+      const closing = opened.close(2_000).catch((err: unknown) => err);
       await vi.advanceTimersByTimeAsync(1_999);
       expect(lastModel().socketDestroyed).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
-      await closing;
+      expect(await closing).toMatchObject({ name: 'TimeoutError', message: 'AMQP close timed out after 2000ms' });
     } finally {
       vi.useRealTimers();
     }

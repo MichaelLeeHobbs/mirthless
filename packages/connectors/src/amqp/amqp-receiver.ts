@@ -95,8 +95,14 @@ export class AmqpReceiver implements SourceConnectorRuntime {
       if (!this.dispatcher) throw new Error('Dispatcher not set — call setDispatcher before start');
       this.failures.clear();
       const run: Run = { consumer: null, live: true, halted: new AbortController(), queue: Promise.resolve(), inHand: 0, wakers: new Set() };
-      run.consumer = await this.consume(this.config, (d) => { this.enqueue(run, d); });
+      // Before the connect, so that a stop, halt or undeploy in the middle of it ends this one: a
+      // message can come before the consumer does.
       this.run = run;
+      run.consumer = await this.consume(this.config, (d) => { this.enqueue(run, d); });
+      if (!run.live) {
+        await this.closeConsumer(run, HALT_CLOSE_MS);
+        throw new Error('The source was stopped before it had started');
+      }
       void this.watch(run);
     });
   }
@@ -131,6 +137,7 @@ export class AmqpReceiver implements SourceConnectorRuntime {
   async onUndeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.dispatcher = null;
+      if (this.run) this.endRun(this.run);
     });
   }
 
@@ -200,8 +207,8 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     this.failures.delete(delivery.messageId ?? '');
     this.failures.delete('');
     const failure = dispatchFailure(result);
-    if (failure && run.halted.signal.aborted && !rawKept) {
-      this.logger.warn({ ...errorInfo(failure), ...where }, 'A halt ended an AMQP message whose content the channel does not keep; it returns to the queue');
+    if (run.halted.signal.aborted && !rawKept && (failure !== null || result.value.destinationFailed === true)) {
+      this.logger.warn({ ...where, messageId: result.value.messageId }, 'A halt ended an AMQP message whose content the channel does not keep; it returns to the queue');
       this.settle(where, () => { delivery.nack(true); });
       return;
     }

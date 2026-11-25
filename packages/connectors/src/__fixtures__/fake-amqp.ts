@@ -19,6 +19,8 @@ export class FakeAmqpQueue {
   requeueAtTail = false;
   /** The broker never answers a close. */
   hangCloses = false;
+  /** A connect waits for it. */
+  connecting: Promise<void> = Promise.resolve();
   /** Unacknowledged, by the connection each was delivered on. */
   private readonly outstanding = new Map<FakeConsumer, QueuedMessage>();
   /** The one new messages go to. */
@@ -36,9 +38,11 @@ export class FakeAmqpQueue {
       this.failConnects -= 1;
       throw new Error('ECONNREFUSED broker down');
     }
+    await this.connecting;
     this.connection = new FakeConsumer(this, onDelivery);
     this.consumers.push(this.connection);
-    queueMicrotask(() => { this.deliverNext(); });
+    // With the answer to consume, so before the caller has the consumer.
+    this.deliverNext();
     return this.connection;
   };
 

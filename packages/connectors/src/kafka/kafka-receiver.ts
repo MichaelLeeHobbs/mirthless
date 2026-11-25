@@ -85,6 +85,8 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   private readonly retryDelayMs: number;
   private dispatcher: MessageDispatcher | null = null;
   private run: Run | null = null;
+  /** The run before it: a halt may have left a record of it in hand. */
+  private earlier: Run | null = null;
   private onFatal: SourceFatalHandler | null = null;
   private readonly failures = new Map<string, number>();
 
@@ -115,19 +117,25 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   async onStart(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (!this.dispatcher) throw new Error('Dispatcher not set — call setDispatcher before start');
-      await this.earlierEnds();
-      const subscription = await this.subscribe(this.config);
-      this.failures.clear();
-      const run: Run = { subscription, live: true, halted: new AbortController(), inHand: null, loop: Promise.resolve(), wake: null };
+      const run: Run = { subscription: null, live: true, halted: new AbortController(), inHand: null, loop: Promise.resolve(), wake: null };
+      // Before the waits, so that a stop, halt or undeploy in the middle of them ends this one.
+      this.earlier = this.run;
       this.run = run;
+      await this.earlierEnds();
+      if (run.live) run.subscription = await this.subscribe(this.config);
+      if (!run.live) {
+        await this.closeSubscription(run, true, HALT_CLOSE_MS);
+        throw new Error('The source was stopped before it had started');
+      }
+      this.failures.clear();
       run.loop = this.consumeWhileLive(run);
     });
   }
 
   /** The next member of the group would be given its partition, and with it the record, or wait for it. */
   private async earlierEnds(): Promise<void> {
-    const { run } = this;
-    if (!run || run.inHand === null || await settleWithin(run.inHand, EARLIER_ENDS_MS)) return;
+    const run = [this.earlier, this.run].find((candidate) => candidate?.inHand);
+    if (!run?.inHand || await settleWithin(run.inHand, EARLIER_ENDS_MS)) return;
     this.logger.warn({ topic: this.config.topic }, 'A Kafka record that a halt left in hand has not ended; it is not committed and may be read again');
     await this.closeSubscription(run, true, HALT_CLOSE_MS);
   }
@@ -141,7 +149,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
       run.wake?.();
       if (run.inHand !== null && !(await settleUnlessAborted(run.inHand, run.halted.signal))) return;
       await this.closeSubscription(run, false, STOP_CLOSE_MS);
-      await settleWithin(run.loop, STOP_CLOSE_MS, run.halted.signal);
+      await settleWithin(run.loop, HALT_CLOSE_MS, run.halted.signal);
     });
   }
 
@@ -160,6 +168,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   async onUndeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.dispatcher = null;
+      if (this.run) this.run.live = false;
       await this.earlierEnds();
     });
   }
@@ -175,7 +184,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
           this.logger.error({ ...errorInfo(err), topic: this.config.topic }, 'Kafka consumer failed; rejoining from the last committed offset');
         }
       }
-      await this.closeSubscription(run, run.live || run.halted.signal.aborted, KAFKA_OP_TIMEOUT_MS);
+      await this.closeSubscription(run, run.live || run.halted.signal.aborted, STOP_CLOSE_MS);
       if (run.live) await this.pause(run);
     }
   }
@@ -220,8 +229,8 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     }
     this.failures.delete(position);
     const failure = dispatchFailure(result);
-    if (failure && run.halted.signal.aborted && !rawKept) {
-      this.logger.warn({ ...errorInfo(failure), ...where }, 'A halt ended a Kafka record whose content the channel does not keep; it is not committed and will be read again');
+    if (run.halted.signal.aborted && !rawKept && (failure !== null || result.value.destinationFailed === true)) {
+      this.logger.warn({ ...where, messageId: result.value.messageId }, 'A halt ended a Kafka record whose content the channel does not keep; it is not committed and will be read again');
       return false;
     }
     if (failure) {
