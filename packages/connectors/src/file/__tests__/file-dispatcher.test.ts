@@ -405,7 +405,7 @@ describe('FileDispatcher', () => {
       );
 
       const writeContent = mockWriteFile.mock.calls[0]![1];
-      expect(writeContent).toBe('Hello World');
+      expect(writeContent).toEqual(Buffer.from('Hello World'));
     });
 
     it('writes base64 decoded content in binary mode', async () => {
@@ -436,8 +436,7 @@ describe('FileDispatcher', () => {
 
       await dispatcher.send(makeMessage({ content: 'Café' }), AbortSignal.timeout(5_000));
 
-      expect(mockWriteFile.mock.calls[0]![1]).toBe('Café');
-      expect(mockWriteFile.mock.calls[0]![2]).toEqual({ encoding: 'latin1' });
+      expect(mockWriteFile.mock.calls[0]![1]).toEqual(Buffer.from([0x43, 0x61, 0x66, 0xe9]));
     });
 
     it('appends text in the normalized configured charset', async () => {
@@ -449,8 +448,24 @@ describe('FileDispatcher', () => {
 
       await dispatcher.send(makeMessage({ content: 'Café' }), AbortSignal.timeout(5_000));
 
-      expect(mockAppendFile.mock.calls[0]![1]).toBe('Café');
-      expect(mockAppendFile.mock.calls[0]![2]).toEqual({ encoding: 'latin1' });
+      expect(mockAppendFile.mock.calls[0]![1]).toEqual(Buffer.from([0x43, 0x61, 0x66, 0xe9]));
+    });
+
+    it.each([
+      ['a temporary file', {}],
+      ['the file itself', { tempFileEnabled: false }],
+      ['an append', { appendMode: true }],
+    ])('writes nothing when the charset cannot hold the message: %s (#415)', async (_how, overrides) => {
+      dispatcher = new FileDispatcher(makeConfig({ charset: 'ISO-8859-1' as BufferEncoding, ...overrides }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage({ content: 'PID|1||DOE\u2019S' }), AbortSignal.timeout(5_000));
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toBe('The text holds the character U+2019, which the charset latin1 does not have');
+      expect(mockMkdir).not.toHaveBeenCalled();
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockAppendFile).not.toHaveBeenCalled();
     });
 
     it('appends base64 decoded bytes with no encoding in binary mode', async () => {

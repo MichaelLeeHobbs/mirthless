@@ -215,6 +215,35 @@ describe('TcpMllpReceiver', () => {
     for (const r of responses) expect(r).toContain('MSA|AA');
   });
 
+  it('answers every frame of one write that together pass maxFrameBytes (#415)', async () => {
+    const received: string[] = [];
+    receiver = new TcpMllpReceiver(makeConfig({ maxFrameBytes: 1_000 }));
+    receiver.setDispatcher(makeDispatcher((raw) => {
+      received.push(raw.content);
+      return { messageId: received.length };
+    }));
+    await receiver.onDeploy();
+    await receiver.onStart();
+    const texts = ['A', 'B', 'C'].map((c) => `${VALID_HL7}\rNTE|1||${c.repeat(350)}`);
+
+    const acks = await new Promise<readonly string[]>((resolve, reject) => {
+      const parser = new MllpParser();
+      const answers: string[] = [];
+      const client = net.createConnection({ host: '127.0.0.1', port: TEST_PORT }, () => {
+        client.write(Buffer.concat(texts.map((text) => wrapMllp(text))));
+      });
+      client.on('data', (chunk: Buffer) => {
+        answers.push(...parser.parse(chunk));
+        if (answers.length === texts.length) client.end();
+      });
+      client.on('error', reject);
+      client.on('close', () => { resolve(answers); });
+    });
+
+    expect(received).toEqual(texts);
+    expect(acks).toHaveLength(3);
+  });
+
   it('halt destroys connections immediately', async () => {
     receiver = new TcpMllpReceiver(makeConfig());
     receiver.setDispatcher(makeDispatcher());
@@ -340,6 +369,39 @@ describe('TcpMllpReceiver acknowledgements', () => {
 
     expect(closed).toBe(true);
     expect(errors.some((e) => e.msg.includes('frame rejected'))).toBe(true);
+  });
+});
+
+describe('TcpMllpReceiver answer charset (#415)', () => {
+  it('answers with the ACK when the charset cannot hold the response, and logs it without the response', async () => {
+    const { logger, errors } = makeLogger();
+    receiver = new TcpMllpReceiver(makeConfig({ charset: 'latin1', responseMode: MLLP_RESPONSE_MODE.PASSTHROUGH }), logger);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 7, response: 'MSH|^~\\&|DO\u010dEK' })));
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const answer = await connectAndSend(TEST_PORT, VALID_HL7);
+
+    expect(answer).toContain('MSA|AA|MSGID123');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.msg).toContain('sending an ACK or NAK instead');
+    expect(JSON.stringify(errors[0])).not.toContain('EK');
+  });
+});
+
+describe('TcpMllpReceiver ACK of a message whose delimiters are not characters', () => {
+  it('answers, or the sender would send a recorded message again', async () => {
+    const { logger, errors } = makeLogger();
+    receiver = new TcpMllpReceiver(makeConfig(), logger);
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    // The field separator is half of a surrogate pair, which UTF-8 cannot hold.
+    const answer = await connectAndSend(TEST_PORT, 'MSH\ud83d\ude00^~\\&\ud83d\ude00A\ud83d\ude00B');
+
+    expect(answer).toContain('AA');
+    expect(errors).toEqual([]);
   });
 });
 
