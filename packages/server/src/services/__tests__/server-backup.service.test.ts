@@ -208,6 +208,21 @@ describe('ServerBackupService', () => {
       expect(result.value.backup.channels).toHaveLength(1);
     });
 
+    it('carries the language of each code template (#419)', async () => {
+      setupExportMocks();
+      mockListTemplates.mockResolvedValue(okResult([{
+        id: 'ct-1', libraryId: 'l-1', name: 'fmt', description: null, type: 'FUNCTION', language: 'TYPESCRIPT', code: '', contexts: [], revision: 3,
+      }]));
+
+      const result = await ServerBackupService.exportBackup('Monthly backup');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.backup.codeTemplates).toEqual([{
+        id: 'ct-1', libraryId: 'l-1', name: 'fmt', description: null, type: 'FUNCTION', language: 'TYPESCRIPT', code: '', contexts: [],
+      }]);
+    });
+
     it('includes user data without password hash', async () => {
       setupExportMocks();
       const user = {
@@ -837,8 +852,8 @@ describe('ServerBackupService', () => {
       const libraryItem = { id: 'l-1', name: 'Lib', description: 'd', channelIds: ['ch-1'] };
       const templateItem = {
         id: 'ct-1', libraryId: 'l-1', name: 'fmt', description: null,
-        type: 'FUNCTION', code: 'function f() {}', contexts: ['SOURCE_FILTER_TRANSFORMER'],
-      } as ServerBackup['codeTemplates'][number];
+        type: 'FUNCTION', language: 'TYPESCRIPT', code: 'function f() {}', contexts: ['SOURCE_FILTER_TRANSFORMER'],
+      } satisfies ServerBackup['codeTemplates'][number];
 
       const cases = [
         {
@@ -871,7 +886,7 @@ describe('ServerBackupService', () => {
           inserted: templateItem,
           updatedTo: {
             libraryId: 'l-1', name: 'fmt', description: null,
-            type: 'FUNCTION', code: 'function f() {}', contexts: ['SOURCE_FILTER_TRANSFORMER'],
+            type: 'FUNCTION', language: 'TYPESCRIPT', code: 'function f() {}', contexts: ['SOURCE_FILTER_TRANSFORMER'],
           },
         },
       ] as const;
@@ -919,6 +934,24 @@ describe('ServerBackupService', () => {
         mockOverwriteLibrary.mockRejectedValueOnce(new ServiceError('FORBIDDEN', 'needs system:restore'));
         expect(await restoreSection({ codeTemplateLibraries: [libraryItem] }, 'OVERWRITE', 'codeTemplateLibraries'))
           .toEqual({ section: 'codeTemplateLibraries', ...counts(0, 0, 0, ['Code template library "Lib": needs system:restore']) });
+      });
+
+      describe('a code template from a backup made before they carried a language', () => {
+        const { language: _language, ...older } = templateItem;
+
+        it('is made as JavaScript when it is missing', async () => {
+          mockSelectWhere.mockResolvedValue([]);
+          await restoreSection({ codeTemplates: [older] }, 'SKIP', 'codeTemplates');
+          expect(mockInsertValues).toHaveBeenCalledWith({ ...older, language: 'JAVASCRIPT' });
+        });
+
+        it('leaves the language of the one it overwrites', async () => {
+          mockSelectWhere.mockResolvedValue([{ id: older.id }]);
+          await restoreSection({ codeTemplates: [older] }, 'OVERWRITE', 'codeTemplates');
+          expect(mockSet).toHaveBeenCalledWith({
+            libraryId: 'l-1', name: 'fmt', description: null, type: 'FUNCTION', code: 'function f() {}', contexts: ['SOURCE_FILTER_TRANSFORMER'],
+          });
+        });
       });
 
       it('stores a missing library channel list as null', async () => {

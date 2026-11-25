@@ -4,10 +4,12 @@ import { and, eq, count, asc, or, isNull, sql } from 'drizzle-orm';
 import {
   ALL_CHANNELS,
   PERMISSIONS,
+  toScriptLanguage,
   type CreateCodeTemplateLibraryInput,
   type UpdateCodeTemplateLibraryInput,
   type CreateCodeTemplateInput,
   type UpdateCodeTemplateInput,
+  type CodeTemplateLanguage,
   type FoldedGrants,
   type Permission,
 } from '@galvanigraph/core-models';
@@ -39,7 +41,7 @@ export interface TemplateDetail {
   readonly name: string;
   readonly description: string | null;
   readonly type: string;
-  readonly language: string;
+  readonly language: CodeTemplateLanguage;
   readonly code: string;
   readonly contexts: ReadonlyArray<string>;
   readonly revision: number;
@@ -54,7 +56,7 @@ function toTemplateDetail(r: CodeTemplate): TemplateDetail {
     name: r.name,
     description: r.description,
     type: r.type,
-    language: r.language,
+    language: toScriptLanguage(r.language),
     code: r.code,
     contexts: r.contexts,
     revision: r.revision,

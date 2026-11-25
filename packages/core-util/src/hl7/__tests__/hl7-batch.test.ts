@@ -16,7 +16,8 @@ describe('splitHl7Batch', () => {
   });
 
   it('refuses a segment before the first MSH rather than losing it', () => {
-    expect(() => splitHl7Batch(`PID|||ORPHAN\r${MSG1}`)).toThrow('PID segment before its first MSH');
+    // The text before it may be anything, so none of it is quoted: the error is logged.
+    expect(() => splitHl7Batch(`PID|||ORPHAN\r${MSG1}`)).toThrow(/^HL7 batch has a segment before its first MSH$/);
   });
 
   it('keeps a line feed inside free text in its field, as the parser does (#187)', () => {

@@ -2,6 +2,7 @@ import { z } from 'zod/v4';
 import { channelExportEntrySchema } from './channel-export.schema.js';
 import { updateGlobalScriptsSchema } from './global-script.schema.js';
 import { idSchema } from './id.schema.js';
+import { exportedLanguageSchema } from './script-language.schema.js';
 
 const BACKUP_COLLISION_MODE = {
   SKIP: 'SKIP',
@@ -49,6 +50,7 @@ const backupCodeTemplateSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   type: z.string(),
+  language: exportedLanguageSchema,
   code: z.string(),
   contexts: z.array(z.string()),
 });
