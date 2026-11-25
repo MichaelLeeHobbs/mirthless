@@ -164,7 +164,9 @@ is returned to your script), and response bodies are capped at 10 MB. To reach a
 system, either use a destination connector or have the server administrator list the host in
 `SCRIPT_HTTP_ALLOWED_HOSTS` (comma separated host names or IP addresses, matched exactly).
 Listed hosts are reachable although their address is private; redirects are still not
-followed and the size cap still applies.
+followed and the size cap still applies. `body` is the answer's text in the charset its
+Content-Type declares, else UTF-8; what could not be read is U+FFFD, and a warning in the log
+names the host.
 
 | Function | Signature | Description |
 |---|---|---|

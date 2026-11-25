@@ -58,7 +58,7 @@ A message stored before the server kept the numbers also needs the name its dest
 
 The source listens on a TCP port and reads framed messages, by default MLLP (0x0B before the message, 0x1C 0x0D after it). The destination opens pooled connections to a partner and sends each message in the same framing.
 
-The source answers every message. With `responseMode` AUTO_ACK it builds an HL7 ACK from the inbound MSH: AA when the pipeline accepted the message (a filtered message counts as accepted), AE when it failed. It never sends AR. With PASSTHROUGH it returns the response the pipeline produced, and falls back to the same ACK when there is none.
+The source answers every message. With `responseMode` AUTO_ACK it builds an HL7 ACK from the inbound MSH: AA when the pipeline accepted the message (a filtered message counts as accepted), AE when it failed. It never sends AR. With PASSTHROUGH it returns the response the pipeline produced, and falls back to the same ACK when there is none or when its charset cannot hold it (logged as an error).
 
 The destination waits for the partner's acknowledgement and reads MSA-1. AA or CA is SENT. Anything else is an ERROR with the code and MSA-3 text in the error message: a NAK (AE, AR, CE, CR), a missing MSA-1, an acknowledgement it cannot parse, an MSA-2 that names a different message control ID (MSA-2 must equal the whole sent MSH-10 or its first component), or the connection closing before an acknowledgement arrives. An ERROR is retried only if the destination's queue is on.
 
@@ -96,7 +96,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `maxConnections` | No | Size of the connection pool. |
 | `responseTimeout` | No | Milliseconds to wait for the acknowledgement before the send is an ERROR. |
 | `acquireTimeoutMs` | No | Milliseconds a message waits for a connection, a free pooled one or a new one. A queued message waits at most 30 seconds. While the partner refuses connections, each connection in the pool is tried again after a second (or a quarter of this, if that is shorter), and the outage is logged once. A stop waits for the messages that wait; a halt ends their sends at once. |
-| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. |
+| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. A message with a character the charset does not have is an ERROR that names the character, and nothing is sent: a queued destination waits behind it, as behind any failed send, until the charset or the message changes. |
 | `frameStart` | No | Start bytes in hex. API or Mirth import only. |
 | `frameEnd` | No | End bytes in hex. API or Mirth import only. |
 | `tls.cert` | No | Client certificate, PEM, for mutual TLS. Any `tls` object turns TLS on. Needs `tls.key`. |
@@ -129,7 +129,7 @@ The source keeps a body whole or refuses it, and a refused body is never stored 
 
 The source map keeps the request headers as sent, so a `content-encoding` there does not mean the message is still compressed.
 
-The destination sends each message as the request body. A 2xx response is SENT. A 3xx is an ERROR because redirects are not followed, and any other status is an ERROR with the status in the message.
+The destination sends each message as the request body. A 2xx response is SENT. A 3xx is an ERROR because redirects are not followed, and any other status is an ERROR with the status in the message. The response is read in the charset its Content-Type declares (ISO-8859-1 and US-ASCII as Windows-1252, as in browsers), else as UTF-8. One that is not valid in it, or declares a charset the server does not know, changes nothing about the status: it is stored with U+FFFD for what could not be read, and a warning in the log names the message.
 
 ### HTTP security
 
@@ -229,7 +229,7 @@ The connector adds no transport security. A network share must be protected wher
 |---|---|---|
 | `directory` | Yes | Directory to write to, an absolute path under `FILE_CONNECTOR_ROOTS`; created if missing. |
 | `outputPattern` | No | File name, `${messageId}.txt` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. Without `${messageId}` and with append off, each message overwrites the last file of that name (a warning is logged). A name that resolves outside `FILE_CONNECTOR_ROOTS` is not written and the message errors. |
-| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to encode the file. |
+| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to encode the file. A message with a character the charset does not have is an ERROR that names the character, and nothing is written. |
 | `binary` | No | `true` decodes the content from base64 and writes the bytes. |
 | `tempFileEnabled` | No | On by default: write a temporary file (`.galvanigraph-<uuid>.tmp` in the same folder), then rename it. Not used for an append. |
 | `appendMode` | No | `true` appends to the file instead of replacing it. |
@@ -553,7 +553,7 @@ It sends one email per message. The subject, body and attachment fields may use 
 
 FHIR can only send; it cannot receive messages. There is no FHIR source.
 
-It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT. A 3xx is an ERROR naming the redirect target, because redirects are not followed: following one would turn the POST into a GET with no body, and nothing would be created. Any other status is an ERROR.
+It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT. A 3xx is an ERROR naming the redirect target, because redirects are not followed: following one would turn the POST into a GET with no body, and nothing would be created. Any other status is an ERROR. The response is read as [the HTTP destination](#http-what-it-does) reads it.
 
 ### FHIR security
 

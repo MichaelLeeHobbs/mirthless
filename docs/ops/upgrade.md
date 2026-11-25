@@ -509,6 +509,12 @@ node -p "new TextDecoder('windows-1252').decode(Uint8Array.of(0x80)).charCodeAt(
 
 Messages stored that way stay as they are. Their text has characters from U+0080 to U+009F, which real text does not use, and nothing is lost: each is the byte of that number, to be read as Windows-1252. Where partners got such text, correct it with them: sending the messages again can duplicate them there.
 
+## A destination does not send text its charset cannot hold (#415)
+
+A File or TCP/MLLP destination with the charset `latin1` or `ascii` wrote another character in place of one the charset does not have, and the message read SENT. In `latin1` a curly quote became U+0019, and `č` became a carriage return, which cut the HL7 segment in two. Such a message is now an ERROR that names the character (D-358), and an ordered queue waits behind it. `ascii` refuses everything above U+007F, which it used to write as ISO-8859-1. Expect errors on channels that did this unnoticed: set the destination's charset to one the partner reads that has the characters (`utf-8`), or replace the characters in a transformer, and deploy again. An `ascii` destination whose partner reads ISO-8859-1 needs `latin1`.
+
+The HTTP and FHIR destinations and `httpFetch` now read an answer in the charset it declares, where they read every answer as UTF-8. A script that worked around that must stop. A server that declares ISO-8859-1 and sends UTF-8 was read right by accident, and is now read as it declares.
+
 ## A JavaScript source sends every item of an array (#415)
 
 A JavaScript source dropped the items of a returned array that were not text, without a word, and sent a single object as the text `[object Object]`. Items that are numbers, objects or arrays are now messages of their own, and an object is sent as JSON, so a channel whose script returns such items sends messages after the upgrade that it did not send before: look for polling scripts that return rows (`dbQuery`) or parsed messages in an array. Items that hold no message are skipped with a warning in the log, as [JAVASCRIPT: what it does](../user/connector-reference.md#javascript-what-it-does) lists. A single object without data, which was sent as `[object Object]` too, is one of them.
