@@ -131,7 +131,7 @@ describe('the message', () => {
   });
 
   it('needs no store that keeps logs', async () => {
-    expect((await run({ sourceFilter: log('x', 'return true;') }, { store: { storeScriptLog: undefined } as Partial<MessageStore> })).status).toBe('SENT');
+    expect((await run({ sourceFilter: log('x', 'return true;') }, { store: { storeScriptLog: undefined } as unknown as Partial<MessageStore> })).status).toBe('SENT');
   });
 });
 
