@@ -1,8 +1,11 @@
+import * as net from 'node:net';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import {
   ChannelReceiver,
   ChannelDispatcher,
+  MllpParser,
+  wrapMllp,
   clearChannelRegistry,
 } from '../../index.js';
 import type { CodeTemplateData } from '@galvanigraph/engine';
@@ -35,6 +38,7 @@ const REDACT_TEMPLATE: CodeTemplateData = {
 
 const SRC_PORT_1 = await freePort();
 const SRC_PORT_2 = await freePort();
+const SRC_PORT_3 = await freePort();
 
 // Delivery runs compiled scripts and crosses real sockets, which takes seconds on a
 // loaded machine (#213). The wait stays inside the 30 s test budget so a miss names it.
@@ -86,6 +90,47 @@ describe('real message through a single channel (TCP → transform → TCP)', ()
     const sent = channel.store.contentOf(1, 1, CONTENT_TYPE.SENT);
     expect(sent).toContain('ZZZ|processed');
     expect(sent).toContain('REDACTED^^^MRN');
+  });
+});
+
+describe('a channel stopped while a message is on its way', () => {
+  it('delivers it and answers its sender, and leaves the one behind it unanswered and unrecorded (#413)', async () => {
+    let sending = (): void => undefined;
+    const reached = new Promise<void>((resolve) => { sending = resolve; });
+    let letGo = (): void => undefined;
+    const held = new Promise<void>((resolve) => { letGo = resolve; });
+    const sink = new CaptureDestination();
+    const send = sink.send.bind(sink);
+    vi.spyOn(sink, 'send').mockImplementation(async (message, signal) => {
+      sending();
+      await held;
+      return send(message, signal);
+    });
+    const channel = await deployChannel({
+      channelId: '00000000-0000-0000-0000-realmsg00004',
+      dataType: 'HL7V2',
+      source: mllpSource(SRC_PORT_3),
+      destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
+    });
+    deployed.push(channel);
+
+    const answers: string[] = [];
+    const parser = new MllpParser();
+    const client = net.createConnection({ host: '127.0.0.1', port: SRC_PORT_3 });
+    client.on('data', (chunk: Buffer) => { answers.push(...parser.parse(chunk)); });
+    const closed = new Promise<void>((resolve) => { client.once('close', () => { resolve(); }); });
+    client.write(Buffer.concat([wrapMllp(HL7_ADT), wrapMllp(HL7_ADT.replace('|12345|', '|BEHIND|'))]));
+    await reached;
+
+    const stopping = channel.runtime.stop();
+    letGo();
+    expect((await stopping).ok).toBe(true);
+    await closed;
+
+    expect(answers).toHaveLength(1);
+    expect(answers[0]).toContain('MSA|AA|12345');
+    expect(sink.received).toHaveLength(1);
+    expect(channel.store.messageCount()).toBe(1);
   });
 });
 

@@ -5,9 +5,9 @@ import { EngineManager, type DeployedChannel } from '../engine.js';
 
 const CHANNEL_ID = 'id-Target';
 
-function engineWith(state: string, processMessage: ReturnType<typeof vi.fn>): EngineManager {
+function engineWith(state: string, processMessage: ReturnType<typeof vi.fn>, runSignal = new AbortController().signal): EngineManager {
   const engine = new EngineManager();
-  const deployed = { channelId: CHANNEL_ID, config: { name: 'Target' }, runtime: { getState: () => state }, processMessage } as unknown as DeployedChannel;
+  const deployed = { channelId: CHANNEL_ID, config: { name: 'Target' }, runtime: { getState: () => state, runSignal }, processMessage } as unknown as DeployedChannel;
   (engine as unknown as { runtimes: Map<string, DeployedChannel> }).runtimes.set(CHANNEL_ID, deployed);
   return engine;
 }
@@ -43,6 +43,16 @@ describe('EngineManager.sendMessage', () => {
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'CONFLICT');
     expect(result.error.message).toBe(`Channel is ${state}, must be STARTED to receive messages`);
+    expect(processMessage).not.toHaveBeenCalled();
+  });
+
+  it('fails with CONFLICT without processing when a stop or a halt has begun and the channel still reads STARTED (#413)', async () => {
+    const processMessage = vi.fn();
+    const engine = engineWith('STARTED', processMessage, AbortSignal.abort());
+
+    const result = await engine.sendMessage(CHANNEL_ID, 'x');
+
+    expect(result.error).toMatchObject({ code: 'CONFLICT', message: 'Channel is stopping, must be STARTED to receive messages' });
     expect(processMessage).not.toHaveBeenCalled();
   });
 

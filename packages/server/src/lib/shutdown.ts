@@ -91,20 +91,22 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
 }
 
 export interface UndeployableEngine {
-  getAll(): ReadonlyMap<string, unknown>;
+  getAll(): ReadonlyMap<string, { readonly queueConsumers: ReadonlyArray<{ stop(): Promise<void> }> }>;
   undeploy(channelId: string): Promise<void>;
 }
 
 /**
  * One channel failing to undeploy must not leave the others running or skip the
  * steps that follow (the global map flush). Nor must one that waits for a send, so
- * they are undeployed at once.
+ * they are undeployed at once. All queues stop before any source does: the send of one to
+ * a channel that has stopped already would fail.
  */
 export async function undeployAll(
   engine: UndeployableEngine,
   log: { error(obj: object, msg: string): void },
 ): Promise<void> {
-  await Promise.all([...engine.getAll().keys()].map(async (id) => {
+  const queuesEnd = [...engine.getAll().values()].flatMap((channel) => channel.queueConsumers.map((queue) => queue.stop()));
+  const undeployed = [...engine.getAll().keys()].map(async (id) => {
     try {
       await engine.undeploy(id);
     } catch (err) {
@@ -113,5 +115,6 @@ export async function undeployAll(
         'Channel failed to undeploy during shutdown',
       );
     }
-  }));
+  });
+  await Promise.all([...queuesEnd, ...undeployed]);
 }

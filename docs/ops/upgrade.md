@@ -549,7 +549,7 @@ A new import can also hold a channel disabled, or refuse to overwrite an enabled
 
 ## Queued sends take as long as direct ones, and preprocessors run first (#416)
 
-- A send from a queue, or after a restart, ended at 30 seconds whatever the destination's timeout. It now has what a direct send has: the destination's own timeout, at most 5 minutes (D-359). A partner that does not answer holds its queue for that long at each attempt, and an MLLP destination waits for a connection and then for the answer, so look at timeouts that were set high. A stop or a redeploy waits for the queued send in flight, which can be minutes, and the channel stays started and takes messages until then; the bundled nginx answers the request with 504 after one, and the stop goes on. Halt the channel to end the send. Resend is refused for a destination that is being sent to.
+- A send from a queue, or after a restart, ended at 30 seconds whatever the destination's timeout. It now has what a direct send has: the destination's own timeout, at most 5 minutes (D-359). A partner that does not answer holds its queue for that long at each attempt, and an MLLP destination waits for a connection and then for the answer, so look at timeouts that were set high. A stop or a redeploy waits for the queued send in flight, which can be minutes, and the channel shows started until then, with its source stopped, and refuses messages from the API (409) and from `routeMessage`; the bundled nginx answers the request with 504 after one, and the stop goes on. Halt the channel to end the send. Resend is refused for a destination that is being sent to.
 - A message that a server stop interrupted before it was routed, and whose raw content is not stored, stayed RECEIVED for good. Each channel's first start after the upgrade marks its own ERROR, with one alert per channel and an error in the log for each, and the data pruner then deletes them like any finished message. Nothing was stored that could have been run again. To look at them first, with the server stopped: `SELECT m.channel_id, m.id, m.received_at FROM messages m JOIN connector_messages s ON s.channel_id = m.channel_id AND s.message_id = m.id AND s.meta_data_id = 0 WHERE NOT m.processed AND (s.status = 'RECEIVED' OR s.status = 'TRANSFORMED' AND NOT EXISTS (SELECT 1 FROM connector_messages d WHERE d.channel_id = m.channel_id AND d.message_id = m.id AND d.meta_data_id > 0)) AND NOT EXISTS (SELECT 1 FROM message_content c WHERE c.channel_id = m.channel_id AND c.message_id = m.id AND c.meta_data_id = 0 AND c.content_type = 1);`
 - The global and the channel preprocessor now run on a message that its data type cannot read, so they can repair it. It was refused before they ran. One that ends in ERROR as before has now been through them: check what your preprocessors do beside changing the message (a `dbQuery`, a `routeMessage`, a counter), and that they take `msg` as text ([scripting](../user/scripting-api.md#what-a-script-returns)). The sender of a message that is not repaired gets the same error as before.
 - A server that stops undeploys its channels at once instead of one after another, so undeploy scripts of different channels can run at the same time.
@@ -611,6 +611,10 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 **`${patient-id}`, `${a.b}` and `${ name }` are parameters** in a query, where they were sent to the database as written, which refused them. Each is one key, not a path.
 
 **MariaDB**: a connection set `max_execution_time`, which MariaDB does not document, so it should have failed. The connector now sets MariaDB's `max_statement_time` when the server does not know the other. This was written from MariaDB's documentation and has not been tested on a MariaDB server.
+
+## A stop finishes what a source took (#413)
+
+- A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start, which a redeploy or a restart before that loses ([JavaScript](../user/connector-reference.md#javascript), D-371).
 
 ## Standard upgrade (Docker)
 
@@ -735,8 +739,3 @@ a bad upgrade:
 Because rollback means a database restore, **the pre-upgrade `pg_dump` is mandatory** —
 do not skip step 2 of the upgrade. Test upgrades in staging first whenever a release
 includes migrations.
-
-## A stop finishes what a source took (#413)
-
-- A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start ([JavaScript](../user/connector-reference.md#javascript), D-371).
-- An Email source left an email whose message was recorded with an error unread, and dispatched it again at every restart or redeploy. It now sets the keyword `$GalvaniGraphError` on it, and leaves it alone until you remove that ([Email](../user/connector-reference.md#email), D-372). Such emails already in a folder are dispatched once more after the upgrade, as after any restart, and then marked. If you relied on a redeploy to try them again, reprocess their messages instead. A stop, pause or redeploy takes no email after the one in hand, and waits for that however long it takes; a halt ends at once.
