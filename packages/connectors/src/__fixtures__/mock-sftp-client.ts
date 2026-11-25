@@ -35,6 +35,7 @@ export class RemoteState {
   readonly mkdirs: string[] = [];
   connectCount = 0;
   endCount = 0;
+  destroyCount = 0;
 
   addFile(name: string, content: string, modifyTime: number): void {
     this.files.set(name, { size: content.length, modifyTime, content });
@@ -139,7 +140,7 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
       state.endCount++;
     },
     destroy(): void {
-      state.endCount++;
+      state.destroyCount++;
     },
   };
 }

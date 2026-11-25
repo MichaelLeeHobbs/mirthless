@@ -96,6 +96,8 @@ export interface TestSftpServer {
   /** Aged a minute unless told otherwise. */
   put(filePath: string, content: string, mtimeMs?: number): void;
   connections(): number;
+  /** Ends every connection there is. */
+  dropClients(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -107,7 +109,7 @@ interface OpenHandle {
   listed: boolean;
 }
 
-class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'close'> {
+class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'dropClients' | 'close'> {
   readonly files = new Map<string, ServedFile>();
   readonly dirs = new Set<string>(['/']);
   readonly rules: SftpServerRules = {};
@@ -127,44 +129,43 @@ class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'close'
   }
 
   serve(sftp: SftpStream): void {
-    const stream: Pick<SftpStream, 'on'> & SftpStream = Object.create(sftp) as SftpStream;
-    stream.on = (event, handler): void => {
+    const on: SftpStream['on'] = (event, handler) => {
       sftp.on(event, (reqId, ...args) => {
         if (this.rules.unanswered?.(event) !== true) handler(reqId, ...args);
       });
     };
-    stream.on('OPEN', (id, filePath: string, flags: number) => { this.open(stream, id, filePath, flags); });
-    stream.on('OPENDIR', (id, dir: string) => {
-      if (!this.dirs.has(dir)) stream.status(id, NO_SUCH_FILE);
-      else stream.handle(id, this.handleFor({ filePath: dir, isDir: true, append: false, reads: false, listed: false }));
+    on('OPEN', (id, filePath: string, flags: number) => { this.open(sftp, id, filePath, flags); });
+    on('OPENDIR', (id, dir: string) => {
+      if (!this.dirs.has(dir)) sftp.status(id, NO_SUCH_FILE);
+      else sftp.handle(id, this.handleFor({ filePath: dir, isDir: true, append: false, reads: false, listed: false }));
     });
-    stream.on('CLOSE', (id, handle: Buffer) => {
+    on('CLOSE', (id, handle: Buffer) => {
       const { filePath, reads } = this.handles.get(handle.readUInt32BE(0))!;
       if (reads && this.rules.removeOnRead) this.files.delete(filePath);
-      stream.status(id, OK);
+      sftp.status(id, OK);
     });
-    stream.on('READDIR', (id, handle: Buffer) => { this.readDir(stream, id, handle); });
-    stream.on('READ', (id, handle: Buffer, offset: number, length: number) => {
+    on('READDIR', (id, handle: Buffer) => { this.readDir(sftp, id, handle); });
+    on('READ', (id, handle: Buffer, offset: number, length: number) => {
       const file = this.files.get(this.handles.get(handle.readUInt32BE(0))!.filePath);
       const part = file?.data.subarray(offset, offset + length) ?? Buffer.alloc(0);
-      if (part.length === 0) stream.status(id, EOF);
-      else stream.data(id, part);
+      if (part.length === 0) sftp.status(id, EOF);
+      else sftp.data(id, part);
     });
-    stream.on('WRITE', (id, handle: Buffer, offset: number, data: Buffer) => { void this.write(stream, id, handle, offset, data); });
-    stream.on('FSTAT', (id, handle: Buffer) => { this.stat(stream, id, this.handles.get(handle.readUInt32BE(0))!.filePath); });
+    on('WRITE', (id, handle: Buffer, offset: number, data: Buffer) => { void this.write(sftp, id, handle, offset, data); });
+    on('FSTAT', (id, handle: Buffer) => { this.stat(sftp, id, this.handles.get(handle.readUInt32BE(0))!.filePath); });
     for (const event of ['STAT', 'LSTAT']) {
-      stream.on(event, (id, filePath: string) => { this.stat(stream, id, filePath); });
+      on(event, (id, filePath: string) => { this.stat(sftp, id, filePath); });
     }
-    for (const event of ['SETSTAT', 'FSETSTAT']) stream.on(event, (id) => { stream.status(id, OK); });
-    stream.on('REALPATH', (id, filePath: string) => {
-      stream.name(id, [{ filename: path.posix.resolve('/', filePath), longname: '', attrs: this.dirAttrs() }]);
+    for (const event of ['SETSTAT', 'FSETSTAT']) on(event, (id) => { sftp.status(id, OK); });
+    on('REALPATH', (id, filePath: string) => {
+      sftp.name(id, [{ filename: path.posix.resolve('/', filePath), longname: '', attrs: this.dirAttrs() }]);
     });
-    stream.on('MKDIR', (id, dir: string) => { this.dirs.add(dir); stream.status(id, OK); });
-    stream.on('REMOVE', (id, filePath: string) => {
-      if (this.rules.denyDelete) stream.status(id, DENIED);
-      else stream.status(id, this.files.delete(filePath) ? OK : NO_SUCH_FILE);
+    on('MKDIR', (id, dir: string) => { this.dirs.add(dir); sftp.status(id, OK); });
+    on('REMOVE', (id, filePath: string) => {
+      if (this.rules.denyDelete) sftp.status(id, DENIED);
+      else sftp.status(id, this.files.delete(filePath) ? OK : NO_SUCH_FILE);
     });
-    stream.on('RENAME', (id, from: string, to: string) => { void this.rename(stream, id, from, to); });
+    on('RENAME', (id, from: string, to: string) => { void this.rename(sftp, id, from, to); });
   }
 
   private handleFor(handle: OpenHandle): Buffer {
@@ -267,6 +268,7 @@ export async function startSftpServer(...dirs: readonly string[]): Promise<TestS
       hostKey: keys.public.split(' ')[1]!,
     },
     connections: (): number => clients.size,
+    dropClients: async (): Promise<void> => { for (const client of clients) client.end(); },
     close: async (): Promise<void> => {
       for (const client of clients) client.end();
       await new Promise<void>((resolve) => { ssh.close(() => { resolve(); }); });

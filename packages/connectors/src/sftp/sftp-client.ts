@@ -57,9 +57,12 @@ export interface SftpClient {
   mkdir(remoteDirectory: string): Promise<void>;
   /** A link counts as what it points to. */
   pathKind(remotePath: string): Promise<SftpPathKind>;
-  /** Never fails, and ends in time with the connection gone, whatever the server does. */
+  /**
+   * Never fails, and ends in time with the connection gone, whatever the server does. Also gives
+   * up a connect in progress, which may then never settle.
+   */
   end(): Promise<void>;
-  /** Closes the connection without a word to the server; what is under way on it fails. */
+  /** Closes the connection without a word to the server; what is under way on it fails, a connect included. */
   destroy(): void;
 }
 

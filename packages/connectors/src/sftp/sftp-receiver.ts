@@ -62,6 +62,8 @@ export function joinRemote(dir: string, name: string): string {
 /** One start of the source and its connection. A cycle that outlives a halt keeps its own, not a later start's. */
 interface Session {
   client: SftpClient | null;
+  /** Of a connect in the poll cycle that has not ended. */
+  connecting: SftpClient | null;
   /** False once stop or halt is asked for, so a poll cycle in progress takes no more files. */
   live: boolean;
   /** Ends once the file in hand is deleted, moved, quarantined or left. */
@@ -73,6 +75,7 @@ interface Session {
 /** A file that was read keeps the connection, and the cycle closes it. */
 function destroyIdle(session: Session): void {
   if (session.taken) return;
+  session.connecting?.destroy();
   session.client?.destroy();
   session.client = null;
 }
@@ -134,7 +137,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
       if (!this.dispatcher) {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
-      const session: Session = { client: null, live: true, file: Promise.resolve(), taken: false };
+      const session: Session = { client: null, connecting: null, live: true, file: Promise.resolve(), taken: false };
       await this.connect(session);
       this.session = session;
       this.halted = new AbortController();
@@ -155,6 +158,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
       // Not only this session's: after a pause the session is gone, and its file may be in flight.
       if (this.polling?.taken === true) await settleUnlessAborted(this.polling.file, signal);
       if (session === null) return;
+      session.connecting?.destroy();
       if (signal.aborted) destroyIdle(session);
       else await this.disconnect(session);
     });
@@ -229,7 +233,12 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
   private async connect(session: Session): Promise<SftpClient> {
     const client = this.createClient(this.config);
-    session.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
+    session.connecting = client;
+    try {
+      session.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
+    } finally {
+      session.connecting = null;
+    }
     return session.client;
   }
 

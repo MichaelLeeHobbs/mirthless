@@ -176,7 +176,8 @@ describe('an SFTP server that does not answer a request or the close (#413)', ()
     abort.abort(new Error('SFTP send given up by the test'));
 
     expect(await sending).toContain('given up by the test');
-    expect(Date.now() - before).toBeLessThan(3_000);
+    // The temporary file is asked after for 2 seconds only when there is one.
+    expect(Date.now() - before).toBeLessThan(1_500);
     await expectGone(await relay.client);
   });
 
@@ -204,7 +205,29 @@ describe('an SFTP server that does not answer a request or the close (#413)', ()
 
     delete server.rules.unanswered;
     expect((await source.onStart()).ok).toBe(true);
-    await vi.waitFor(() => { expect(seen).toEqual(['A']); }, { timeout: 5_000 });
+    await vi.waitFor(() => { expect(seen).toContain('A'); }, { timeout: 5_000 });
+    await source.onHalt();
+  });
+
+  it.each(['onHalt', 'onStop'] as const)('%s ends a connect of the poll cycle, and the next start polls', async (action) => {
+    server.put('/in/a.hl7', 'A');
+    const seen: string[] = [];
+    const source = makeSource(server.options.port, seen);
+    expect((await source.onStart()).ok).toBe(true);
+    // The connection is lost, and the server signs the next one in and leaves it there.
+    const asked = leaveUnanswered();
+    await server.dropClients();
+    await asked;
+
+    const before = Date.now();
+    expect((await source[action]()).ok).toBe(true);
+    expect(Date.now() - before).toBeLessThan(1_500);
+    await expectNoConnections();
+
+    delete server.rules.onSubsystem;
+    seen.length = 0;
+    expect((await source.onStart()).ok).toBe(true);
+    await vi.waitFor(() => { expect(seen).toContain('A'); }, { timeout: 5_000 });
     await source.onHalt();
   });
 
@@ -247,6 +270,32 @@ describe('a halt of an SFTP source while a stop waits for its file', () => {
     expect((await stopping).ok).toBe(true);
     expect(server.connections()).toBe(1);
     letGo();
+    await expectNoConnections();
+  });
+
+  it('is of that start only: a stop of the next one waits for its file', async () => {
+    const source = makeSource();
+    await source.onStart();
+    await source.onHalt();
+    let reached = (): void => undefined;
+    const taken = new Promise<void>((resolve) => { reached = resolve; });
+    let letGo = (): void => undefined;
+    const held = new Promise<void>((resolve) => { letGo = resolve; });
+    source.setDispatcher(async () => {
+      reached();
+      await held;
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+    await source.onStart();
+    server.put('/in/a.hl7', 'A');
+    await taken;
+
+    let stopped = false;
+    const stopping = source.onStop().then(() => { stopped = true; });
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    expect(stopped).toBe(false);
+    letGo();
+    await stopping;
     await expectNoConnections();
   });
 });
