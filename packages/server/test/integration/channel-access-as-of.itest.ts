@@ -3,13 +3,13 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { ChannelAccessView } from '@galvanigraph/core-models';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole,
   type ServerModules, type TestUser,
 } from './_setup.js';
+import { INTEGRATION_LIMIT_MS } from '../time-budgets.js';
 
 describeIntegration('who could access a channel as of a past time (real Postgres)', () => {
   let mods: ServerModules;
@@ -66,12 +66,11 @@ describeIntegration('who could access a channel as of a past time (real Postgres
     // The rows above went in directly, as the seed's do; a baseline after them is where the replay starts.
     await mods.pool.query(`SELECT public.record_grant_baseline('channel-access-as-of itest')`);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     if (roles.length > 0) await mods.pool.query('DELETE FROM roles WHERE id = ANY($1::uuid[])', [roles]);
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
@@ -173,13 +172,19 @@ describeIntegration('who could access a channel as of a past time (real Postgres
   it('lets a lapsed assignment go at its end time', async () => {
     const temp = await user('channel-viewer', null);
     const roleId = (await mods.pool.query<{ id: string }>(`SELECT id FROM roles WHERE name = 'channel-viewer'`)).rows[0]!.id;
-    const ends = new Date(Date.now() + 1500).toISOString();
+    // Longer than the test may take, so no pause ends it early. Then only this process's clock moves past it.
+    const ends = new Date(Date.now() + 2 * INTEGRATION_LIMIT_MS).toISOString();
     const put = await apiCall(base, admin.token, 'PUT', `/users/${temp.id}/assignments`, { assignments: [{ roleId, groupIds: [lab], expiresAt: ends }] });
     expect(put.status).toBe(200);
     const during = await mark();
-    await expect.poll(async () => Date.now() > Date.parse(ends) + 100, { timeout: 5000 }).toBe(true);
-    expect((await holdersAt(during)).has(temp.id)).toBe(true);
-    expect((await holdersAt(await mark())).has(temp.id)).toBe(false);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse(ends) + 100 });
+    try {
+      expect((await holdersAt(during)).has(temp.id)).toBe(true);
+      expect((await holdersAt(new Date(Date.parse(ends) - 1).toISOString())).has(temp.id)).toBe(true);
+      expect((await holdersAt(ends)).has(temp.id)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refuses a time before the history starts, or in the future', async () => {
