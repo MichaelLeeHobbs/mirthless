@@ -80,7 +80,8 @@ export class SftpDispatcher implements DestinationConnectorRuntime {
         await this.write(client, remotePath, message.content, signal);
         return { status: 'SENT' as const, content: remotePath };
       } finally {
-        await this.safeEnd(client);
+        if (signal.aborted) client.destroy();
+        else await client.end();
       }
     });
   }
@@ -97,14 +98,6 @@ export class SftpDispatcher implements DestinationConnectorRuntime {
     }
     const left = write.oldFileLeft;
     if (left !== null) this.logger.warn({ file: left }, 'SFTP file replaced, but the old one may be left under its temporary name');
-  }
-
-  private async safeEnd(client: SftpClient): Promise<void> {
-    try {
-      await client.end();
-    } catch {
-      // Best-effort teardown; the send result already reflects success/failure.
-    }
   }
 
   async onStop(): Promise<Result<void>> {

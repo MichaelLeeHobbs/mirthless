@@ -571,7 +571,7 @@ describe('robustness', () => {
     expect(state.endCount).toBe(1);
   });
 
-  it.each(['onStop', 'onHalt'] as const)('does not wait for a file still being downloaded, or take it, on %s', async (how) => {
+  it.each([['onStop', 1, 0], ['onHalt', 0, 1]] as const)('does not wait for a file still being downloaded, or take it, on %s', async (how, ends, destroys) => {
     const state = new RemoteState();
     state.addFile('a.hl7', 'A', Date.now() - 10_000);
     const { logger, errors } = makeMockLogger();
@@ -590,7 +590,7 @@ describe('robustness', () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect((await r[how]()).ok).toBe(true);
-    expect(state.endCount).toBe(1);
+    expect([state.endCount, state.destroyCount]).toEqual([ends, destroys]);
     downloaded();
     await vi.advanceTimersByTimeAsync(5_000);
     expect(seen).toEqual([]);
@@ -639,7 +639,7 @@ describe('robustness', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(state.deleted).toEqual(['a.hl7']);
     await r.onHalt();
-    expect(state.endCount).toBe(1);
+    expect([state.endCount, state.destroyCount]).toEqual([0, 1]);
   });
 
   it('says nothing of a file whose download a stop cut off', async () => {
