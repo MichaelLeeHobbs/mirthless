@@ -74,10 +74,10 @@ The settings that may change for each connector type are in `packages/server/src
 
 ## Change a channel
 
-`PUT /api/v1/channels/$CHANNEL_ID` takes the parts of the channel to replace, with the `revision` you read. A list, such as `destinations`, is replaced as a whole, so send back the destinations `GET` returned with your changes. Send `enabled`, `description` and `responseMode` too: left out, they go back to their defaults ([#400](https://github.com/MichaelLeeHobbs/mirthless/issues/400)).
+`PUT /api/v1/channels/$CHANNEL_ID` takes what to change, with the `revision` you read. What you leave out stays as it is: a field of the channel, a setting in `properties`, a script or a language in `scripts`. Null empties a script. A list is replaced as a whole, so send back the one `GET` returned with your changes:
 
-- Each destination needs its `id` and `enabled`. For a new one, send text of 1 to 64 characters that is not a UUID, such as `new-1`. The server gives it an id and a number. A destination you leave out is removed. An id the channel does not have is refused with 400: read the channel again.
-- A filter or transformer names its destination by that `id`, in `connectorId`; null is the source. With no `destinations` in the request, these are the stored ids. A `metaDataId` on a filter or transformer is refused with 400, and so is one for a destination the channel does not have.
+- `destinations`: each needs its `id`, `name`, `enabled`, `connectorType` and `properties`. Any other setting you leave out stays as it is. For a new destination, send as `id` text of 1 to 64 characters that is not a UUID, such as `new-1`. The server gives it an id and a number, and the defaults for what you leave out. A destination that is not in the list is removed. An id the channel does not have is refused with 400: read the channel again.
+- `filters` and `transformers`, with their rules and steps, and `metadataColumns`: give each one whole, as `GET` returns it, null included. Only the `name` of a rule or step may be left out, and the `language` of one without a script. Anything else that is missing is refused with 400. A filter or transformer names its destination by the destination's `id`, in `connectorId`; null is the source. With no `destinations` in the request, these are the stored ids. A `metaDataId` on a filter or transformer is refused with 400, and so is one for a destination the channel does not have.
 
 `POST /api/v1/channels` numbers the destinations from 1 in the order given. A filter or transformer there may name its destination by an `id` you gave it, or by its number in `metaDataId`.
 

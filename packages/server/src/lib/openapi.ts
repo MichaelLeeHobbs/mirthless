@@ -1144,6 +1144,8 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
         UpdateChannel: {
           type: 'object',
+          description: 'What is left out stays as it is. A list is replaced as a whole',
+          required: ['revision'],
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 255 },
             description: { type: 'string' },
@@ -1204,11 +1206,14 @@ export function generateOpenAPISpec(): OpenAPISpec {
         },
         UpsertSetting: {
           type: 'object',
-          required: ['value'],
+          description: 'What is left out of a stored setting stays as it is',
+          required: ['key', 'value'],
           properties: {
             key: { type: 'string' },
-            value: { type: 'string' },
-            category: { type: 'string' },
+            value: { type: ['string', 'null'] },
+            type: { type: 'string', enum: ['string', 'number', 'boolean', 'json', 'password'], description: 'string for a new setting that has none' },
+            description: { type: ['string', 'null'] },
+            category: { type: 'string', description: 'general for a new setting that has none' },
           },
         },
         HealthStatus: {

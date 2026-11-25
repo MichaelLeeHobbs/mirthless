@@ -636,7 +636,7 @@ describe('ChannelService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.destinations).toHaveLength(1);
-      expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ name: 'Dest 1', position: 2, responseTransformer: null }));
+      expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ name: 'Dest 1', position: 2, responseTransformer: undefined }));
       expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ channelId: CHANNEL_ID, metaDataId: 3, position: 1, name: 'Dest 3', enabled: false }));
       expect(mockDeleteWhere).toHaveBeenCalledWith({ type: 'inArray', vals: ['d2'] });
       expect(mockSet).toHaveBeenCalledWith({ nextMetaDataId: 4 });
@@ -774,42 +774,31 @@ describe('ChannelService', () => {
     });
   });
 
-  // #183: a request that leaves a channel script's language out keeps the stored
-  // one instead of writing JavaScript over a TypeScript script.
-  describe('update — channel script languages', () => {
-    function scriptSets(): Array<Record<string, unknown>> {
+  // Drizzle skips an undefined value, so it is not written; update-keeps.itest.ts checks the rows (#183, #400).
+  describe('update — channel scripts and their languages', () => {
+    async function scriptSets(scripts: NonNullable<Parameters<typeof ChannelService.update>[1]['scripts']>): Promise<Array<Record<string, unknown>>> {
+      pushResponse([makeChannel()]);
+      setupGetByIdMocks(makeChannel({ revision: 2 }));
+      const result = await ChannelService.update(CHANNEL_ID, { revision: 1, scripts });
+      expect(result.ok).toBe(true);
       return mockSet.mock.calls
         .map((c) => c[0] as Record<string, unknown>)
         .filter((v) => 'script' in v);
     }
 
     it('keeps the stored language when the request leaves it out', async () => {
-      const channel = makeChannel();
-      pushResponse([channel]);
-      setupGetByIdMocks(makeChannel({ revision: 2 }));
-
-      const result = await ChannelService.update(CHANNEL_ID, {
-        revision: 1,
-        scripts: { deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: {} },
-      });
-
-      expect(result.ok).toBe(true);
-      // Strict: a `language: undefined` key would still write the language.
-      expect(scriptSets()).toStrictEqual([{ script: 'return;' }, { script: '' }, { script: '' }, { script: '' }]);
+      expect(await scriptSets({ deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: {} }))
+        .toEqual([{ script: 'return;' }, { script: '' }, { script: '' }, { script: '' }]);
     });
 
     it('writes the language the request gives', async () => {
-      const channel = makeChannel();
-      pushResponse([channel]);
-      setupGetByIdMocks(makeChannel({ revision: 2 }));
+      expect(await scriptSets({ deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: { deploy: 'TYPESCRIPT' } }))
+        .toEqual([{ script: 'return;', language: 'TYPESCRIPT' }, { script: '' }, { script: '' }, { script: '' }]);
+    });
 
-      const result = await ChannelService.update(CHANNEL_ID, {
-        revision: 1,
-        scripts: { deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: { deploy: 'TYPESCRIPT' } },
-      });
-
-      expect(result.ok).toBe(true);
-      expect(scriptSets()).toEqual([{ script: 'return;', language: 'TYPESCRIPT' }, { script: '' }, { script: '' }, { script: '' }]);
+    it('writes only the scripts and languages that the request has', async () => {
+      expect(await scriptSets({ undeploy: 'return 2;', languages: { preprocessor: 'TYPESCRIPT' } })).toEqual([{ script: 'return 2;' }, { language: 'TYPESCRIPT' }]);
+      expect(await scriptSets({})).toHaveLength(2);
     });
   });
 

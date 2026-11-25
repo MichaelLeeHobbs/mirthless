@@ -472,6 +472,29 @@ The migration builds the index of waiting messages again, which reads the whole 
 - `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
 - An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
 
+## Updates keep what the request leaves out (#400)
+
+`PUT` on a channel, an alert or a setting put each field the request left out back to its default, without a word. What is left out now stays as it is (D-350). The web UI sends every field, so this concerns scripts that call the API. Check what such a script saved:
+
+- A channel: `enabled`, `description` and `responseMode`; with `properties` in the request, all of them, such as `encryptData` (off), `messageStorageMode` (`DEVELOPMENT`) and `pruningEnabled` (off); with `scripts`, the scripts that were left out (emptied); with `destinations`, `filters` or `transformers`, what was left out of each, such as the queue settings and the `enabled` of a rule or step (on). **History** in the channel editor compares one save with another.
+- An alert: without its `actions` it told nobody, without its `channelIds` it watched every channel, and without `enabled` it was switched on. This lists the alerts without an action:
+
+  ```sql
+  SELECT name FROM alerts a WHERE NOT EXISTS (SELECT 1 FROM alert_actions x WHERE x.alert_id = a.id);
+  ```
+
+- A setting: without its `type` it became a `string`, without its `category` it moved to `general`, and without its `description` it lost that. A password whose key is not named like a secret was then shown to whoever may read settings. This lists the settings that were saved with their value alone:
+
+  ```sql
+  SELECT key FROM system_settings WHERE type = 'string' AND category = 'general' AND description IS NULL;
+  ```
+
+A script that counted on the defaults must send them. These now get a 400:
+
+- `PUT /api/v1/channels/:id` with a filter, transformer, rule, step or metadata column that is not whole ([Change a channel](api-automation.md#change-a-channel)).
+- `PUT /api/v1/settings/:key` and `/settings/bulk` without the `value`.
+- `PUT /api/v1/alerts/:id` with a `CHANNEL_ERROR` trigger without its `regex` (null for none).
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
