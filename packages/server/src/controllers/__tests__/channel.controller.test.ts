@@ -220,7 +220,7 @@ describe('ChannelController', () => {
         user: { id: 'u1', permissions: ['channels:read', 'channels:write'] } as unknown as NonNullable<Request['user']>,
         principal: { userId: 'u1', grants: standingFor({ id: 'u1', role: 'channel-developer', ...(groups ? { groups } : {}) }).grants },
         ...(channelScope ? { channelScope } : {}),
-      } as Partial<Request>);
+      } as unknown as Partial<Request>);
       const res = makeRes();
 
       await ChannelController.getById(req, res);
