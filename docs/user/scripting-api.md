@@ -57,6 +57,13 @@ The word `import` in a script shows up as `i\u006dport` where a script reads sou
 
 ### How a changed message is written back
 
+- **Delimited** rows keep their columns in the order they were read, and columns you add come
+  after them. A row you build yourself is written in the order of its keys, and one you give
+  as an array in the order of its values. JavaScript lists keys that are whole numbers (`2`)
+  before all others, smallest first, whenever you add them, so `row[0] = 'x'` puts a value
+  first. A row that has a column named by a whole number, and whose columns are then not in
+  the order of the channel's names, is written in that order, with your other keys after
+  it. To choose another order for such a row, give it as an array.
 - **XML** keeps the original document's element order, comments, CDATA sections and
   whitespace. Elements you add are appended to their parent; elements you remove are
   dropped. Values are always text, never converted to numbers.
@@ -223,7 +230,8 @@ are indexed by, and a default TTL). Then `getCollection(name)` returns a handle:
   adds more field predicates (a scalar is equality, an array is `IN`, multiple fields are AND'd);
   `options.latest` returns only the single newest match; `options.limit`/`options.order` page and
   order by creation time (default newest-first). Returns an array of
-  `{ id, fields, payload, expireAt, createdAt }`. A record whose life is over does not match. With
+  `{ id, fields, payload, expireAt, createdAt }`. A record whose life is over does not match, and the
+  data pruner deletes it when it next runs (it is off until an administrator turns it on). With
   `latest` that means the newest record that lives on, so give the records of one key the same life:
   an older order that never expires is found once a newer one has expired.
 - `await update(id, changes)` — change one record by its `id`. `changes` may hold `fields`

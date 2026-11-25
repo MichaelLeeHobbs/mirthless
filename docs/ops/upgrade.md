@@ -588,13 +588,17 @@ A script that counted on the defaults must send them. These now get a 400:
 
 A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
+## Test Connection checks the settings as a deploy does (#133)
+
+Test Connection refuses whatever a deploy would refuse, with the deploy's text, before it connects ([what it tests](../user/connector-reference.md#test-connection), D-380). A script that calls `POST /connectors/test` with only a host and a port gets 400 and has to send the connector's other settings too. References to the configuration map are filled, for someone who holds `config_map:read` or `channels:write` on the channel; anyone else gets 403 for settings that hold one. The test of a TCP/MLLP, HTTP or DICOM source, which always failed, checks the settings.
+
 ## Changed alerts are in force at once (#417)
 
 An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
 
-## Expired collection records are no longer found (#417)
+## Expired collection records are no longer found, and the data pruner deletes them (#417)
 
-A collection record's expiry was stored and shown, and nothing asked about it: a script's `find` returned an expired record like any other. From this version on it does not match, and a script's `update` of it answers `null` unless it sets `expireAt` (D-377). Nothing is deleted by the upgrade. **Look at your collections before upgrading**, because a channel may rely on records whose life was over without anyone noticing:
+A collection record's expiry was stored and shown, and nothing asked about it: a script's `find` returned an expired record like any other. From this version on it does not match, and a script's `update` of it answers `null` unless it gives the record a new life (D-377). **The data pruner's next run deletes it** (D-390): at the pruner's next scheduled time if it is on, or when someone presses Run Now. The event `DATA_PRUNER_RAN` then has how many were deleted of which collection. With the pruner off, nothing is deleted. A first run over many records stops after 2.5 minutes of them and the next one goes on; Run Now stops after 15 s of them. **Look at your collections before upgrading**, because a channel may rely on records whose life was over without anyone noticing:
 
 - A record keeps the expiry it was stored with. After a longer default TTL, or none, was set on the collection, its older records still expire when they first would have. The records page used to say "Records never expire" for such a collection.
 - A script's `update` does not renew a record's life. A record that a channel updates every day still expires when it was first to.
@@ -662,7 +666,7 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 Before, a message could be deleted while the engine worked on it. What was stored for it after that (what was sent, the partner's answer, errors) stayed in the database, where neither the message browser nor the pruner found it, and a destination that was to be queued was not sent to, without a word. Such a delete is now refused with 409 until the message is done ([which messages](../user/connector-reference.md#every-destination), D-372), and a bulk delete deletes the others and lists the refused ones in `refusedIds`. A script that deletes messages through the API should expect that. Resend is refused for a destination whose queue is sending it.
 
-**Rows left behind before the upgrade are deleted by the data pruner**, in the scheduled run or with **Run now** on the Pruner page. The schedule is off on a new install: if you do not use it, run it by hand after the upgrade. It reads every channel's message tables, also those of channels without pruning and of deleted channels, for at most 5 minutes in a scheduled run and 30 seconds in **Run now**, and the next run goes on from there; a restart of the server begins again. Run it until the event `DATA_PRUNER_RAN` has `leftoverRowsComplete: true`, more than a day after the upgrade: it leaves what is younger than a day for a later run. It deletes a row only if its message is not there, and looks only at messages from before the last day. A row of a message that still waits on a queue stays until the queue has sent it. The event records how many rows went (`leftoverRowsDeleted`), and the server log says which tables of which channels. To count them first:
+**Rows left behind before the upgrade are deleted by the data pruner**, in the scheduled run or with **Run now** on the Pruner page. The schedule is off on a new install: if you do not use it, run it by hand after the upgrade. Each run deletes the expired records of every collection too: [look at those first](#expired-collection-records-are-no-longer-found-and-the-data-pruner-deletes-them-417). It reads every channel's message tables, also those of channels without pruning and of deleted channels, for at most 2.5 minutes in a scheduled run and 15 seconds in **Run now**, and the next run goes on from there; a restart of the server begins again. Run it until the event `DATA_PRUNER_RAN` has `leftoverRowsComplete: true`, more than a day after the upgrade: it leaves what is younger than a day for a later run. It deletes a row only if its message is not there, and looks only at messages from before the last day. A row of a message that still waits on a queue stays until the queue has sent it. The event records how many rows went (`leftoverRowsDeleted`), and the server log says which tables of which channels. To count them first:
 
 ```sql
 SELECT c.channel_id, count(*) FROM message_content c
@@ -672,9 +676,20 @@ GROUP BY c.channel_id;
 
 This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
 
-## Test Connection checks the settings as a deploy does (#133)
+## Delimited columns keep their order (#372)
 
-Test Connection refuses whatever a deploy would refuse, with the deploy's text, before it connects ([what it tests](../user/connector-reference.md#test-connection), D-380). A script that calls `POST /connectors/test` with only a host and a port gets 400 and has to send the connector's other settings too. References to the configuration map are filled, for someone who holds `config_map:read` or `channels:write` on the channel; anyone else gets 403 for settings that hold one. The test of a TCP/MLLP, HTTP or DICOM source, which always failed, checks the settings.
+A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read (D-378). Messages sent before stay as they were, so check them with the partner. Look at the channels with such names before the upgrade: a partner that reads the columns swapped must stop doing that, and a script that swaps them back, or gives such a row another order, must give the row as an array instead or stop. Such a script and the server have to change together: disable the channel before the upgrade, so that it stays down, change the script after it, and enable and deploy the channel.
+
+A column name that a later column without a name has is refused when the channel deploys, for example `column2` as the only name, or `column9` as the second of two: a row wide enough to have that later column lost the earlier one when it was read. The refusal does not depend on how wide the rows are. Before the upgrade rename such a column, change what scripts call it, and redeploy the channel: a restart deploys what was last deployed, not what was saved, and one that is refused is reported as a channel that failed to redeploy.
+
+This lists the saved column names of every Delimited channel:
+
+```sql
+SELECT c.id, c.name, t.inbound_properties->'delimited'->'columnNames' AS column_names
+FROM channels c JOIN channel_transformers t ON t.channel_id = c.id AND t.connector_id IS NULL
+WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
+  AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
+```
 
 ## Standard upgrade (Docker)
 

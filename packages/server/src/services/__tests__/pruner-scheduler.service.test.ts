@@ -130,6 +130,48 @@ describe('PrunerSchedulerService', () => {
     });
   });
 
+  describe('a scheduled run', () => {
+    const pruned = { channelsPruned: 1, totalDeleted: 2, failedChannelIds: [], leftoverRowsDeleted: 0, leftoverRowsComplete: true, expiredRecordsDeleted: 5, expiredRecordsComplete: true, expiredRecordsFailed: false };
+
+    async function run(): Promise<unknown> {
+      mockStored({ 'pruner.enabled': 'true' });
+      await PrunerSchedulerService.start();
+      await (mockWork.mock.lastCall![1] as () => Promise<void>)();
+      const status = await PrunerSchedulerService.getStatus();
+      return status.ok ? status.value.lastRunResult : null;
+    }
+
+    it('keeps how many messages and expired records it deleted', async () => {
+      mockPruneAll.mockResolvedValue(okResult(pruned));
+
+      expect(await run()).toMatchObject({ failed: false, channelsPruned: 1, totalDeleted: 2, expiredRecordsDeleted: 5 });
+    });
+
+    it('keeps what it did not get to and what failed', async () => {
+      mockPruneAll.mockResolvedValue(okResult({ ...pruned, failedChannelIds: ['c1'], expiredRecordsComplete: false, expiredRecordsFailed: true }));
+
+      expect(await run()).toMatchObject({ failed: false, failedChannelIds: ['c1'], expiredRecordsComplete: false, expiredRecordsFailed: true });
+    });
+
+    it('is kept as failed when nothing could be pruned', async () => {
+      mockPruneAll.mockResolvedValue(errResult(new Error('db down')));
+
+      expect(await run()).toMatchObject({ failed: true, totalDeleted: 0, expiredRecordsDeleted: 0 });
+    });
+
+    it.each([
+      ['a channel', { failedChannelIds: ['c1'] }],
+      ['the expired records', { expiredRecordsFailed: true }],
+    ])('is an error in the log when %s could not be pruned', async (_what, failure) => {
+      const logger = (await import('../../lib/logger.js')).default;
+      mockPruneAll.mockResolvedValue(okResult({ ...pruned, ...failure }));
+
+      await run();
+
+      expect(logger.error).toHaveBeenCalledWith({ result: expect.objectContaining(failure) as unknown }, expect.stringContaining('not everything'));
+    });
+  });
+
   describe('stop', () => {
     it('unschedules the job', async () => {
       const result = await PrunerSchedulerService.stop();

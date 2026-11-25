@@ -279,7 +279,7 @@ A file the channel stored with an ERROR status, or whose delete or move failed a
 
 A file that changes between the listing and its turn, while it is read, or while its message is processed is handled [as for FILE](#file-what-it-does). SFTP carries modification times in whole seconds, so a change that keeps the size within the same second is not seen. `MOVE` does not replace a file, as for FILE; on a server whose rename replaces, one that appears in the target folder in the same moment can be.
 
-A source that is stopped waits for a file it has downloaded, and deletes, moves or lists it before the connection closes. One that is still being downloaded is left for the next start. A halt does not wait, and the downloaded file is dealt with when its message ends.
+A source that is stopped waits for a file it has downloaded, and deletes, moves or lists it before the connection closes. One that is still being downloaded is left for the next start. A halt does not wait, and the downloaded file is dealt with when its message ends. A server that does not answer the close is left after 2 seconds, and the connection is closed on this side; while a file is dealt with, each request has 30 seconds.
 
 The destination uploads each message as a file, encoded as UTF-8. Each send opens its own connection, creates `remoteDirectory` if it is missing, writes the file and disconnects. A send that takes over 30 seconds is an ERROR. The response is the remote path written.
 

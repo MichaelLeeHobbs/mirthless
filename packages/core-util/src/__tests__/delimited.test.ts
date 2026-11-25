@@ -95,6 +95,94 @@ describe('serializeDelimited', () => {
     expect(serializeDelimited(row, csv)).toBe('1,DOE,JOHN,NEW\n');
   });
 
+  // JavaScript lists keys that are whole numbers first, and assigning to __proto__ adds no key (#372).
+  it.each([
+    ['whole numbers, against their order', ['2', '1'], '1,2,3'],
+    ['a whole number between other names', ['mrn', '2', 'name'], 'A,B,C,D'],
+    ['a whole number that is another column\'s place', ['10', '2', '0'], 'A,B,C,D,E'],
+    ['zero', ['mrn', '0'], 'A,B'],
+    ['whole numbers of more than one digit', ['20', '10'], 'A,B,C'],
+    ['the greatest number JavaScript lists first', ['mrn', '4294967294'], 'A,B'],
+    ['__proto__', ['__proto__', 'mrn'], 'A,B'],
+    ['__proto__ alone', ['__proto__'], 'A,B'],
+    ['names every object has', ['constructor', 'toString', 'hasOwnProperty'], 'A,B,C'],
+  ])('reads and writes columns named %s in the order of the record', (_what, columnNames, text) => {
+    const o = delimitedOptionsSchema.parse({ columnNames });
+    const rows = parseDelimited(text, o);
+    expect(Object.keys(rows[0]!)).toHaveLength(text.split(',').length);
+    expect(serializeDelimited(rows, o)).toBe(`${text}\n`);
+    // As a script's rows come back.
+    expect(serializeDelimited(JSON.parse(JSON.stringify(rows)), o)).toBe(`${text}\n`);
+  });
+
+  it('keeps the columns\' places when a script edits one, deletes one or adds one', () => {
+    const o = delimitedOptionsSchema.parse({ columnNames: ['2', '1', 'name'] });
+    const read = (): Record<string, string> => parseDelimited('A,B,C,D', o)[0]!;
+    expect(serializeDelimited({ ...read(), 1: 'X' }, o)).toBe('A,X,C,D\n');
+    const { name: _name, ...without } = read();
+    expect(serializeDelimited(without, o)).toBe('A,B,D\n');
+    expect(serializeDelimited({ ...read(), status: 'NEW' }, o)).toBe('A,B,C,D,NEW\n');
+    expect(serializeDelimited({ ...read(), status: 'NEW', column3: 'ADDED' }, o)).toBe('A,B,C,D,NEW,ADDED\n');
+    expect(serializeDelimited({ ...read(), 7: 'X', status: 'NEW' }, o)).toBe('A,B,C,D,NEW,X\n');
+    // A record shorter than the names, and the columns a script gives it.
+    expect(serializeDelimited({ ...parseDelimited('A', o)[0]!, status: 'NEW', name: 'C', 1: 'B' }, o)).toBe('A,B,C,NEW\n');
+  });
+
+  // Listed by JavaScript in the order of the record, so nothing is lost and a script has its way.
+  it.each([
+    [['1', '2', '3'], { 4: 'NEW' }, 'A,B,C,NEW'],
+    [['1', '2', '3'], { 0: 'NEW' }, 'NEW,A,B,C'],
+    [['10', '20', '30'], { 15: 'NEW' }, 'A,NEW,B,C'],
+    [['1', 'name', 'dob'], { 0: 'NEW' }, 'NEW,A,B,C'],
+    [['1', 'name', 'dob'], { status: 'NEW' }, 'A,B,C,NEW'],
+  ])('keeps where a script\'s addition is listed on columns named %j', (columnNames, added, text) => {
+    const o = delimitedOptionsSchema.parse({ columnNames });
+    expect(serializeDelimited(parseDelimited('A,B,C', o).map((row) => ({ ...row, ...added })), o)).toBe(`${text}\n`);
+  });
+
+  it.each([
+    [{ 1: 'A', patient: 'B', dob: 'C' }, 'A,B,C'],
+    [{ 1: 'A', status: 'S', name: 'B', dob: 'C' }, 'A,S,B,C'],
+    [{ name: 'B', dob: 'C' }, 'B,C'],
+    [{ dob: 'C', name: 'B' }, 'C,B'],
+    // The one thing that is lost: a row that has been read cannot be told from one that a script reordered.
+    [{ 1: 'A', dob: 'C', name: 'B' }, 'A,B,C'],
+  ])('writes %j, which a script built on columns named 1, name and dob, as %j', (row, text) => {
+    expect(serializeDelimited(row, delimitedOptionsSchema.parse({ columnNames: ['1', 'name', 'dob'] }))).toBe(`${text}\n`);
+  });
+
+  it('writes a row a script built with a whole-number column by the columns\' places', () => {
+    const o = delimitedOptionsSchema.parse({ columnNames: ['2', '1', 'name', 'mrn'] });
+    expect(serializeDelimited({ mrn: 'D', name: 'C', 1: 'B', 2: 'A' }, o)).toBe('A,B,C,D\n');
+    expect(serializeDelimited({ mrn: 'D', name: 'C' }, o)).toBe('D,C\n');
+  });
+
+  it.each([
+    ['the channel names its columns', ['mrn', 'family', 'given'], { mrn: '1', family: 'DOE', given: 'JOHN' }],
+    ['it does not', [], { column1: '1', column2: 'DOE', column3: 'JOHN' }],
+  ])('leaves a whole-number key that is no column where JavaScript lists it: %s', (_case, columnNames, row) => {
+    const o = delimitedOptionsSchema.parse({ columnNames });
+    expect(serializeDelimited({ ...row, 0: 'H' }, o)).toBe('H,1,DOE,JOHN\n');
+    const [first, ...others] = Object.entries(row).reverse();
+    expect(serializeDelimited({ ...Object.fromEntries([first!, ...others]), 2024: 'X' }, o)).toBe('X,JOHN,DOE,1\n');
+  });
+
+  it.each(['01', '1.5', '-1', '2nd', '1e3', ' 1', '4294967295', '9999999999'])('keeps the order a script gave a row whose column is named %j, which JavaScript does not list first', (name) => {
+    const o = delimitedOptionsSchema.parse({ columnNames: [name, 'mrn'] });
+    expect(serializeDelimited({ mrn: 'B', [name]: 'A' }, o)).toBe('B,A\n');
+    expect(serializeDelimited(parseDelimited('A,B', o), o)).toBe('A,B\n');
+  });
+
+  it('writes a row given as an array in its order, whatever the names', () => {
+    for (const columnNames of [[], ['2', '1'], ['mrn', '1'], ['1', '2', '3', '4']]) {
+      expect(serializeDelimited([['A', 'B', 'C', 'D', 'NEW']], delimitedOptionsSchema.parse({ columnNames }))).toBe('A,B,C,D,NEW\n');
+    }
+  });
+
+  it('writes a row a script built in its key order', () => {
+    expect(serializeDelimited([{ given: 'JOHN', mrn: '1', family: 'DOE' }], csv)).toBe('JOHN,1,DOE\n');
+  });
+
   it('writes null and undefined as empty and other values as text', () => {
     expect(serializeDelimited([{ a: null, b: undefined, c: 5 }], csv)).toBe(',,5\n');
   });

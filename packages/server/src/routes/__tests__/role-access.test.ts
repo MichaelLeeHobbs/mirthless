@@ -20,6 +20,7 @@ import { EventExportController } from '../../controllers/event-export.controller
 import { ServerBackupController } from '../../controllers/server-backup.controller.js';
 import { LogController } from '../../controllers/log.controller.js';
 import { CollectionController } from '../../controllers/collection.controller.js';
+import { DataPrunerController } from '../../controllers/data-pruner.controller.js';
 import { CodeTemplateController } from '../../controllers/code-template.controller.js';
 import { AuditController } from '../../controllers/audit.controller.js';
 import { RoleController } from '../../controllers/role.controller.js';
@@ -60,6 +61,7 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'POST', path: '/api/v1/users/:id/password', permission: 'users:write', handler: UserController.changePassword },
   { method: 'DELETE', path: '/api/v1/users/:id', permission: 'users:delete', handler: UserController.delete },
   { method: 'PUT', path: '/api/v1/settings/bulk', permission: 'settings:write', handler: SettingsController.bulkUpsert },
+  { method: 'POST', path: '/api/v1/admin/prune', permission: 'settings:write', handler: DataPrunerController.pruneAll },
   { method: 'DELETE', path: '/api/v1/events', permission: 'settings:write', handler: EventController.purge },
   { method: 'GET', path: '/api/v1/events/export', permission: 'events:read', handler: EventExportController.exportEvents },
   { method: 'GET', path: '/api/v1/audit', permission: 'audit:read', handler: AuditController.list },
