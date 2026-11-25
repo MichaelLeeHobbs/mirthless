@@ -246,7 +246,7 @@ export class ChannelRuntime {
       if (runSignal.aborted) throw new Error('Cannot resume: the channel is stopping');
 
       const result = await config.source.onStart();
-      if (!result.ok) throw new Error('Source resume failed');
+      if (!result.ok) throw new Error(`Source resume failed: ${result.error.message}`);
       if (runSignal.aborted) {
         // The stop reached the source before it had started.
         await config.source.onStop();

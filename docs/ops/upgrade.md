@@ -472,6 +472,27 @@ The migration builds the index of waiting messages again, which reads the whole 
 - `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
 - An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
 
+## File and SFTP: temporary names, moves and changed files (#412)
+
+**An SFTP destination now writes under a temporary name** (`.galvanigraph-<uuid>.tmp` in the same folder) and renames the file, as a FILE destination does. Every SFTP destination without append is affected, with no change to the channel. Turn **Use Temp File** off on one whose server allows uploads but no renames, allows overwriting but no new files, or refuses names that start with a dot or end in `.tmp`, where each send now ends in an ERROR that points to the setting, and on one whose server takes each upload as a file the moment it closes (a mailbox, a transfer workflow), which would take the temporary name. A file that replaces another is a new one: its owner, permissions and access list are the server's defaults, and a name that is a link is replaced by the file instead of written through. Ask the partner before you upgrade; these are the destinations:
+
+```sql
+SELECT channel_id, name, properties->>'host' AS host, properties->>'remoteDirectory' AS directory FROM channel_connectors
+WHERE connector_type = 'SFTP' AND COALESCE(properties->>'appendMode', 'false') <> 'true';
+```
+
+A FILE destination's temporary file has the same form of name; it was the file's name plus `.<uuid>.tmp`.
+
+**A FILE source's `MOVE` no longer replaces a file of the same name** in the target folder; SFTP already failed on most servers. The file stays in the source folder, is delivered once, and is in the quarantine list with an ERROR in the log. A sender that uses the same name every day, such as `results.hl7`, needs another after-processing action, or something that clears the target folder.
+
+**An SFTP source asks the server for each file's size and time (STAT) before it reads it**, after, and before it deletes or moves it. A server that answers the listing and refuses that gives an ERROR in the log for each file at each poll, and the files stay.
+
+**A source that finds a file changed while its message was processed leaves it and reads it again.** Before, it deleted or moved the changed file unread. A file that grows by appending is delivered again whole, so set its minimum age longer than the sender's pauses.
+
+**A stop of an SFTP source waits for a file it has downloaded** until that is processed and deleted, moved or quarantined, as a FILE source's does.
+
+**An SFTP write that the server stops taking part-way, such as on a full disk, is an ERROR.** Before, the message read SENT and the file was cut short. If a partner's disk or quota ran full, files from that time may be incomplete although their messages read SENT.
+
 ## A DICOM Sender reads SENT only for a stored image (#410)
 
 A DICOM Sender took a refused C-STORE, a rejected presentation context, an aborted association and a closed connection as sent, and a DICOM Listener in front of it deleted its file. Each is now an ERROR that names the status or the reason, and a destination with a queue retries it. Nothing in the database is rewritten: a message that reads SENT from before the upgrade is no proof that the archive has the image, so compare with the archive where that matters. Expect errors on channels whose archive has been refusing images unnoticed.
@@ -498,26 +519,9 @@ The DICOM Listener and Sender read and rewrote every dataset, which dropped priv
 
 An image in a transfer syntax the archive does not take is now an ERROR that names it. A compressed one never went out uncompressed (it was not sent, and read SENT); one in explicit VR big endian or in implicit VR was rewritten in the archive's, with that loss, and no longer is.
 
-## File and SFTP: temporary names, moves and changed files (#412)
+## A DICOM Listener accepts every standard storage class, and its start can fail (#410)
 
-**An SFTP destination now writes under a temporary name** (`.galvanigraph-<uuid>.tmp` in the same folder) and renames the file, as a FILE destination does. Every SFTP destination without append is affected, with no change to the channel. Turn **Use Temp File** off on one whose server allows uploads but no renames, allows overwriting but no new files, or refuses names that start with a dot or end in `.tmp`, where each send now ends in an ERROR that points to the setting, and on one whose server takes each upload as a file the moment it closes (a mailbox, a transfer workflow), which would take the temporary name. A file that replaces another is a new one: its owner, permissions and access list are the server's defaults, and a name that is a link is replaced by the file instead of written through. Ask the partner before you upgrade; these are the destinations:
-
-```sql
-SELECT channel_id, name, properties->>'host' AS host, properties->>'remoteDirectory' AS directory FROM channel_connectors
-WHERE connector_type = 'SFTP' AND COALESCE(properties->>'appendMode', 'false') <> 'true';
-```
-
-A FILE destination's temporary file has the same form of name; it was the file's name plus `.<uuid>.tmp`.
-
-**A FILE source's `MOVE` no longer replaces a file of the same name** in the target folder; SFTP already failed on most servers. The file stays in the source folder, is delivered once, and is in the quarantine list with an ERROR in the log. A sender that uses the same name every day, such as `results.hl7`, needs another after-processing action, or something that clears the target folder.
-
-**An SFTP source asks the server for each file's size and time (STAT) before it reads it**, after, and before it deletes or moves it. A server that answers the listing and refuses that gives an ERROR in the log for each file at each poll, and the files stay.
-
-**A source that finds a file changed while its message was processed leaves it and reads it again.** Before, it deleted or moved the changed file unread. A file that grows by appending is delivered again whole, so set its minimum age longer than the sender's pauses.
-
-**A stop of an SFTP source waits for a file it has downloaded** until that is processed and deleted, moved or quarantined, as a FILE source's does.
-
-**An SFTP write that the server stops taking part-way, such as on a full disk, is an ERROR.** Before, the message read SENT and the file was cut short. If a partner's disk or quota ran full, files from that time may be incomplete although their messages read SENT.
+A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans and doses, segmentations, presentation states, key object selections and ECGs among others were rejected, as were JPEG Extended and JPEG Lossless. It now accepts every standard one ([DICOM](../user/connector-reference.md#dicom), D-355): check the filters of channels that relied on the rejection. A Listener whose port is in use now fails to start, where it read started and received nothing. Look for such channels after the upgrade.
 
 ## Standard upgrade (Docker)
 
