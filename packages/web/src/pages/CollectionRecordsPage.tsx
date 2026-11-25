@@ -1,7 +1,6 @@
 // Sorting, searching and paging run on the server, so they cover every record.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { useParams } from 'react-router';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
@@ -38,6 +37,7 @@ import {
   type CollectionSummary,
   type RecordListParams,
 } from '../hooks/use-collections.js';
+import { useAddressId } from '../hooks/use-address-id.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import { fieldColumn, formatTtl, nextSort, payloadPreview, type RecordColumn } from '../lib/collections.js';
@@ -73,7 +73,7 @@ function useSettled(value: string): string {
 }
 
 export function CollectionRecordsPage(): ReactNode {
-  const { id = '' } = useParams<{ id: string }>();
+  const id = useAddressId() ?? '';
   const { data: collection, error: collectionError, refetch: refetchCollection } = useCollection(id);
 
   if (collectionError) {

@@ -1,5 +1,4 @@
 import { type ReactNode } from 'react';
-import { useParams } from 'react-router';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -7,6 +6,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 import WifiTetheringIcon from '@mui/icons-material/WifiTethering';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import { useAddressId } from '../../hooks/use-address-id.js';
 import { useTestConnection } from '../../hooks/use-connection-test.js';
 
 interface TestConnectionButtonProps {
@@ -19,7 +19,7 @@ export function TestConnectionButton({ connectorType, mode, properties }: TestCo
   const testMutation = useTestConnection();
   // D-310: a group-scoped deployer must name the channel, and certificates are judged on its channels.
   // `channels/new` is its own route, so an id here is always an existing channel's.
-  const { id: channelId } = useParams<{ id: string }>();
+  const channelId = useAddressId();
 
   const handleTest = (): void => {
     testMutation.mutate({ connectorType, mode, properties, ...(channelId === undefined ? {} : { channelId }) });

@@ -1,7 +1,7 @@
 // A clone (?from=<id>) saves with clonedFrom, which the audit log records.
 
 import { useEffect, useRef, useState, type ReactNode, type ChangeEvent } from 'react';
-import { Link as RouterLink, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link as RouterLink, useBlocker, useNavigate } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -15,6 +15,7 @@ import TextField from '@mui/material/TextField';
 import { PERMISSIONS, type Permission } from '@galvanigraph/core-models';
 import { useRoles, useCreateRole, useUpdateRole } from '../hooks/use-roles.js';
 import { usePermissions } from '../hooks/use-permissions.js';
+import { useAddressId, useAddressQueryId } from '../hooks/use-address-id.js';
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { UnsavedChangesBar } from '../components/common/UnsavedChangesBar.js';
@@ -44,10 +45,9 @@ function changeCount(a: Draft, b: Draft): number {
 }
 
 export function RoleEditorPage(): ReactNode {
-  const { id } = useParams<{ id: string }>();
-  const [search] = useSearchParams();
+  const id = useAddressId();
+  const fromId = useAddressQueryId('from');
   const navigate = useNavigate();
-  const fromId = search.get('from');
   const { data: roles, isLoading, error, refetch } = useRoles();
   const { permissions: held } = usePermissions();
   const createRole = useCreateRole();

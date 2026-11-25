@@ -2,6 +2,7 @@
 // Logs closes the stream.
 
 import type { ReactNode } from 'react';
+// eslint-disable-next-line no-restricted-syntax -- A tab's name, not an id.
 import { Navigate, useNavigate, useParams } from 'react-router';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
