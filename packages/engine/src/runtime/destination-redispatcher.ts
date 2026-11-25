@@ -121,12 +121,18 @@ export class DestinationRedispatcher {
   /** It cannot be taken back, so a write that fails is reported and the message is not sent again. */
   private async recordSent(messageId: number, metaDataId: number, response: string): Promise<RedispatchOutcome> {
     const { channelId, serverId, store } = this.config;
-    await this.saved(messageId, metaDataId, 'the SENT status of a delivered destination', [
-      store.updateConnectorMessageStatus(channelId, messageId, metaDataId, 'SENT'),
-      store.incrementStats(channelId, metaDataId, serverId, 'sent'),
-      store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT'),
+    await Promise.all([
+      this.saved(messageId, metaDataId, 'the SENT status of a delivered destination', [
+        store.updateConnectorMessageStatus(channelId, messageId, metaDataId, 'SENT'),
+        store.incrementStats(channelId, metaDataId, serverId, 'sent'),
+      ]),
+      this.saved(messageId, metaDataId, 'the response of a delivered destination', [
+        store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT'),
+      ]),
       // The attempt that the server stop interrupted may have left why it failed.
-      ...(store.removeContent ? [store.removeContent(channelId, messageId, metaDataId, CONTENT_TYPE.ERROR)] : []),
+      ...(store.removeContent ? [this.saved(messageId, metaDataId, 'the removal of why an earlier attempt failed', [
+        store.removeContent(channelId, messageId, metaDataId, CONTENT_TYPE.ERROR),
+      ])] : []),
     ]);
     return 'SENT';
   }
