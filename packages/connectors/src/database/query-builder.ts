@@ -1,5 +1,7 @@
 // Values are never interpolated into SQL; they are always passed as parameters.
 
+import { fillPlaceholders } from '@galvanigraph/core-util';
+
 export interface PreparedQuery {
   readonly sql: string;
   readonly params: readonly unknown[];
@@ -11,34 +13,29 @@ export interface PreparedQuery {
  */
 export type PlaceholderStyle = 'numbered' | 'question';
 
-const PLACEHOLDER_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
+const PLAIN_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
-export function parameterNames(template: string): readonly string[] {
-  return [...new Set(Array.from(template.matchAll(PLACEHOLDER_RE), (m) => m[1] ?? ''))];
-}
-
+/**
+ * Names are D-275's: what stands between the braces, trimmed, and only the context's own keys.
+ * One the context lacks is bound as NULL when it is a plain name; any other is left as written,
+ * so the database refuses the statement.
+ */
 export function prepare(
   template: string,
   context: Readonly<Record<string, unknown>>,
   style: PlaceholderStyle = 'numbered',
 ): PreparedQuery {
   const params: unknown[] = [];
-  const seen = new Map<string, number>();
+  const numbers = new Map<string, number>();
 
-  const sql = template.replace(PLACEHOLDER_RE, (_match, varName: string) => {
-    if (style === 'question') {
-      params.push(context[varName]);
-      return '?';
-    }
-    const existingIndex = seen.get(varName);
-    if (existingIndex !== undefined) {
-      return `$${String(existingIndex)}`;
-    }
-
-    params.push(context[varName]);
-    const paramIndex = params.length;
-    seen.set(varName, paramIndex);
-    return `$${String(paramIndex)}`;
+  const sql = fillPlaceholders(template, (name) => {
+    const known = Object.hasOwn(context, name);
+    if (!known && !PLAIN_NAME.test(name)) return undefined;
+    const number = style === 'numbered' ? numbers.get(name) : undefined;
+    if (number !== undefined) return `$${String(number)}`;
+    params.push(known ? context[name] : undefined);
+    numbers.set(name, params.length);
+    return style === 'numbered' ? `$${String(params.length)}` : '?';
   });
 
   return { sql, params };

@@ -76,7 +76,7 @@ describe('ConnectionPool', () => {
 
       const opts = vi.mocked(pg.Pool).mock.calls[0]![0] as Record<string, unknown>;
       expect(opts['statement_timeout']).toBe(30_000);
-      expect(opts['query_timeout']).toBe(30_000);
+      expect(opts['query_timeout']).toBe(35_000);
     });
 
     it('honors a configured statement_timeout', async () => {
@@ -85,6 +85,7 @@ describe('ConnectionPool', () => {
 
       const opts = vi.mocked(pg.Pool).mock.calls[0]![0] as Record<string, unknown>;
       expect(opts['statement_timeout']).toBe(5_000);
+      expect(opts['query_timeout']).toBe(10_000);
     });
   });
 
@@ -122,6 +123,23 @@ describe('ConnectionPool', () => {
       expect(sqls).toContain('ROLLBACK');
       expect(sqls).not.toContain('COMMIT');
       expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the connection when the rollback fails, reporting the first error', async () => {
+      pool = new ConnectionPool();
+      await pool.create(makePoolConfig());
+      mockRelease.mockClear();
+      mockClientQuery.mockImplementation(async (text: unknown) => {
+        if (text === 'ROLLBACK') throw new Error('Query read timeout');
+        return { rows: [], rowCount: 0 };
+      });
+
+      const result = await pool.transaction(async () => {
+        throw new Error('boom');
+      });
+
+      expect(!result.ok && result.error.message).toContain('boom');
+      expect(mockRelease.mock.calls).toEqual([[true]]);
     });
 
     it('returns an error when the pool is not initialized', async () => {

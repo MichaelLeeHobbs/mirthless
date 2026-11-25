@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
+import { POSTGRES_TYPES } from './postgres-values.js';
 
 export interface PoolConfig {
   readonly host: string;
@@ -17,6 +18,8 @@ export interface PoolConfig {
 }
 
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
+/** How much later the client gives up than the server, so the server's answer is the one that arrives. */
+const CLIENT_MARGIN_MS = 5_000;
 
 export interface ConnectorConnection {
   readonly host: string;
@@ -55,6 +58,8 @@ export interface TxQuery {
 export interface DatabasePool {
   create(config: PoolConfig): Promise<Result<void>>;
   query(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>>;
+  /** One statement in a transaction that cannot write. */
+  queryReadOnly(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>>;
   /** Run `fn` in one transaction: committed when it resolves, rolled back when it throws. */
   transaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>>;
   destroy(): Promise<Result<void>>;
@@ -75,11 +80,12 @@ export class ConnectionPool implements DatabasePool {
         max: config.maxConnections,
         idleTimeoutMillis: config.idleTimeoutMs,
         connectionTimeoutMillis: config.connectionTimeoutMs,
+        ssl: config.tls === true ? { rejectUnauthorized: true } : false,
+        types: POSTGRES_TYPES,
         // Server-side cancel of any statement exceeding the budget, plus a
         // client-side guard in case the socket itself hangs.
-        ssl: config.tls === true ? { rejectUnauthorized: true } : false,
         statement_timeout: timeoutMs,
-        query_timeout: timeoutMs,
+        query_timeout: timeoutMs + CLIENT_MARGIN_MS,
       });
 
       const client = await this.pool.connect();
@@ -109,6 +115,7 @@ export class ConnectionPool implements DatabasePool {
           return { rows: result.rows as Record<string, unknown>[], rowCount: result.rowCount ?? 0 };
         },
       };
+      let broken = false;
       try {
         await client.query(begin);
         const value = await fn(tx);
@@ -118,12 +125,13 @@ export class ConnectionPool implements DatabasePool {
         try {
           await client.query('ROLLBACK');
         } catch {
-          // Rollback failure (e.g. broken connection) is subordinate to the
-          // original error — surface that one.
+          // Subordinate to the original error, which is the one to surface. The connection
+          // may still be in the transaction, so it is closed instead of used again.
+          broken = true;
         }
         throw err;
       } finally {
-        client.release();
+        client.release(broken);
       }
     });
   }

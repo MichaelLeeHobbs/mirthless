@@ -59,7 +59,7 @@ Thirteen connector types ship today: TCP/MLLP, HTTP, File, SFTP, Database, JavaS
 Here's something a vendor sales page won't do: list what's missing.
 
 - No single sign-on, LDAP or MFA. Mirth charges for these; we haven't built them.
-- No SQL Server or Oracle connector. PostgreSQL, MySQL and MariaDB work.
+- No SQL Server or Oracle connector. PostgreSQL and MySQL work; MariaDB uses the MySQL driver and has not been tested.
 - No clustering or failover. Run one node.
 - Mirth scripts that use E4X or Mirth's Java helper APIs need rewriting. The import preview names every construct it finds.
 
