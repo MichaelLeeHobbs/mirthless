@@ -45,7 +45,6 @@ function makeMessage({ body = 'MSH|^~\\&|SENDER|HOSPITAL', ...overrides }: Parti
     to: 'receiver@clinic.org',
     date: '2026-01-15T10:30:00.000Z',
     source: Buffer.from(body),
-    attachmentCount: 0,
     dispatched: false,
     held: false,
     ...overrides,
@@ -255,7 +254,7 @@ describe('EmailReceiver', () => {
         from: 'lab@hospital.org',
         to: 'ehr@clinic.org',
         date: '2026-01-15T10:30:00.000Z',
-        attachmentCount: 3,
+        source: Buffer.from('Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\n\r\ntext\r\n--b\r\nContent-Type: application/pdf\r\n\r\n%PDF\r\n--b--\r\n'),
       });
       const client = makeMockClient([msg]);
 
@@ -273,7 +272,41 @@ describe('EmailReceiver', () => {
       expect(capturedRaw!.sourceMap['from']).toBe('lab@hospital.org');
       expect(capturedRaw!.sourceMap['to']).toBe('ehr@clinic.org');
       expect(capturedRaw!.sourceMap['date']).toBe('2026-01-15T10:30:00.000Z');
-      expect(capturedRaw!.sourceMap['attachmentCount']).toBe(3);
+      expect(capturedRaw!.sourceMap['attachmentCount']).toBe(1);
+    });
+  });
+
+  describe('the bytes of an email (#369)', () => {
+    async function read(source: Buffer): Promise<RawMessage | undefined> {
+      const taken: RawMessage[] = [];
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(makeMockClient([makeMessage({ source })])));
+      receiver.setDispatcher(makeDispatcher((raw) => { taken.push(raw); return { messageId: 1 }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(taken).toHaveLength(1);
+      return taken[0];
+    }
+
+    it.each([
+      ['ASCII', Buffer.from('Subject: ORU\r\n\r\nNa 140\r\n')],
+      ['UTF-8', Buffer.from('Subject: ORU\r\n\r\nM\u00fcller \u65e5\u672c \u{1f600}\r\n')],
+      ['UTF-8 with a byte order mark', Buffer.from('\ufeffSubject: ORU\r\n')],
+    ])('are read as UTF-8 when they are valid: %s', async (_what, source) => {
+      const raw = await read(source);
+      expect(raw?.sourceMap['charset']).toBe('utf-8');
+      expect(Buffer.from(raw!.content, 'utf8').equals(source)).toBe(true);
+    });
+
+    it.each([
+      ['ISO-8859-1', Buffer.from('Content-Type: text/plain; charset=iso-8859-1\r\n\r\nM\xfcller\r\n', 'latin1'), 'M\u00fcller'],
+      ['a UTF-8 part beside one that is not', Buffer.from('M\xc3\xbcller, M\xfcller', 'latin1'), 'M\u00c3\u00bcller, M\u00fcller'],
+      ['every byte there is', Buffer.from(Array.from({ length: 256 }, (_, i) => i)), '\u0080\u0081'],
+      ['cut off within a character', Buffer.from([0x4d, 0xc3]), 'M\u00c3'],
+    ])('are one character each when they are not valid UTF-8, and the message says so: %s', async (_what, source, text) => {
+      const raw = await read(source);
+      expect(raw?.sourceMap['charset']).toBe('latin1');
+      expect(raw?.content).toContain(text);
+      expect(Buffer.from(raw!.content, 'latin1').equals(source)).toBe(true);
     });
   });
 
@@ -1120,10 +1153,10 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
     expect(client.mark).toHaveBeenCalledExactlyOnceWith(6, ERROR_KEYWORD);
   });
 
-  it('marks an email read, and does not delete it, when its message cannot hold all its bytes', async () => {
+  it('marks an email read, and does not delete it, when it is not valid UTF-8', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread)
-      .mockResolvedValueOnce(listing([makeMessage({ uid: 7, source: Buffer.from([0x4d, 0xfc, 0x6c, 0x6c, 0x65, 0x72]) })]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 7, source: Buffer.from('M\xfcller', 'latin1') })]))
       .mockResolvedValue(listing([]));
     const { errors } = await startDeleting(client);
 
