@@ -8,6 +8,7 @@ import { Api } from './support/api.js';
 import { MllpSink, HttpSink, sendMllp } from './support/net.js';
 import { sql } from './support/db.js';
 import { MAIL, mailSubjects, withSftp, SFTP } from './support/scenario.js';
+import { INTEGRATION_WAIT_MS } from '../../packages/server/test/time-budgets.js';
 
 test('HARNESS MLLP sink and sender talk to each other', async () => {
   const sink = new MllpSink(16690);
@@ -35,14 +36,14 @@ test('HARNESS HTTP sink records requests', async () => {
 
 test('HARNESS GreenMail inbox reader sees a mail sent over SMTP', async () => {
   const subject = `HARNESS mail ${String(Date.now())}`;
-  await nodemailer.createTransport({ host: '127.0.0.1', port: MAIL.smtpPort, secure: false })
+  await nodemailer.createTransport({ host: '127.0.0.1', port: MAIL.smtpPort, secure: false, greetingTimeout: INTEGRATION_WAIT_MS })
     .sendMail({ from: 'h@example.com', to: MAIL.address, subject, text: 'x' });
-  await expect.poll(() => mailSubjects(subject), { timeout: 10_000 }).toEqual([subject]);
+  await expect.poll(() => mailSubjects(subject)).toEqual([subject]);
 });
 
 test('HARNESS SFTP, MySQL and partner Postgres are reachable', async () => {
   await withSftp(async (c) => { expect(await c.exists(SFTP.base)).toBeTruthy(); });
-  const conn = await mysql.createConnection({ host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner' });
+  const conn = await mysql.createConnection({ host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner', connectTimeout: INTEGRATION_WAIT_MS });
   await conn.end();
   expect(await sql('SELECT 1 AS one')).toEqual([{ one: 1 }]);
 });
@@ -70,7 +71,7 @@ test('HARNESS a natively built TCP channel delivers through the real server', as
     await api.undeploy(id);
     await api.deployAndStart(id);
     expect(await sendMllp(16693, 'MSH|^~\\&|A|B|C|D|20261110||ADT^A01|H2|P|2.5')).toContain('MSA|AA|H2');
-    await expect.poll(() => sink.received.length, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
   } finally {
     await sink.close();
     await api.dispose();

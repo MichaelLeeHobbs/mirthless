@@ -427,6 +427,10 @@ A server backup left out whether a code template is JavaScript or TypeScript, so
 
 The production compose file now gives the server 45 seconds to stop (`stop_grace_period`). Docker's default of 10 cut off the 30 it uses to let the messages under way end. Add it to a compose file of your own. The container from before the upgrade still has the old limit, so stop it yourself before step 3 of the [upgrade](#standard-upgrade-docker): `docker compose -f docker/docker-compose.prod.yml stop -t 45 server`.
 
+## A disabled account's email is locked (#419)
+
+`PUT /api/v1/users/:id` answers 409 when it would change the email address of a disabled account, unless it also enables the account. A script that frees the address of someone who left must send `enabled: true` and the new address in one request and disable the account again at once: the person can sign in with their old password between the two. Nothing already stored changes, and the API keys that were disabled with the person stay disabled.
+
 ## Alert email signs in over TLS only (#358)
 
 With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
@@ -588,6 +592,37 @@ A script saved on a channel that was imported without that script is now stored.
 
 An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
 
+## Expired collection records are no longer found (#417)
+
+A collection record's expiry was stored and shown, and nothing asked about it: a script's `find` returned an expired record like any other. From this version on it does not match, and a script's `update` of it answers `null` unless it sets `expireAt` (D-377). Nothing is deleted by the upgrade. **Look at your collections before upgrading**, because a channel may rely on records whose life was over without anyone noticing:
+
+- A record keeps the expiry it was stored with. After a longer default TTL, or none, was set on the collection, its older records still expire when they first would have. The records page used to say "Records never expire" for such a collection.
+- A script's `update` does not renew a record's life. A record that a channel updates every day still expires when it was first to.
+- `{ ttlSeconds: 0 }` now means that a record is never found, and a misspelled option (`ttl`, `expiresAt`) takes the collection's default.
+- With `latest`, an older record that lives longer is found where the newer one has expired. This is so in a collection whose records have different lives, for example one whose default was set late: the older records never expire and the newer ones do.
+- A reprocessed message that finds its record today may not find it after the upgrade.
+
+This lists, for each collection that has records, its id, its current default, how many records have no expiry, how many have expired and how many will, with the first and last expiry:
+
+```sql
+SELECT c.id, c.name, c.default_ttl_seconds,
+       count(*) FILTER (WHERE r.expire_at IS NULL) AS never,
+       count(*) FILTER (WHERE r.expire_at <= now()) AS expired,
+       count(*) FILTER (WHERE r.expire_at > now()) AS to_expire,
+       min(r.expire_at) AS first_expiry, max(r.expire_at) AS last_expiry
+FROM collections c JOIN collection_records r ON r.collection_id = c.id
+GROUP BY c.id ORDER BY c.name;
+```
+
+To keep expired records found, give them a new life. No older record of a key may outlive a newer one, or `latest` returns the older one: so give a new life to every record of the collection that expires sooner, not to the expired ones alone, and one that is no longer than the collection's default TTL (make the default longer first). Take a database backup first: a JSON server backup has no collections in it.
+
+```sql
+UPDATE collection_records SET expire_at = now() + interval '30 days'
+WHERE collection_id = '<id>' AND expire_at < now() + interval '30 days';
+```
+
+The same goes for a single record that you give a new life on the records page. Records that scripts stored with a life of their own need a look each. Set an expiry to `NULL` (never) only for all of a collection's records together, after clearing its default TTL; they and the PHI in them are then kept until someone deletes them.
+
 ## Database values, timeouts and marked rows (#411)
 
 **PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
@@ -620,6 +655,8 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 - A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start, which a redeploy or a restart before that loses ([JavaScript](../user/connector-reference.md#javascript), D-371).
 - A Kafka or AMQP source's stop, pause or redeploy waits for the message in hand without a limit, where it gave up after 30 seconds, and the broker delivered the message again. After a halt a message that was recorded is committed or acked when it has ended; it was delivered again ([Kafka](../user/connector-reference.md#kafka), [AMQP](../user/connector-reference.md#amqp), D-384). A message that a halt cut short now stays in ERROR where the channel keeps its content (AMQP also dead-letters it, or drops it where the queue has no dead-letter exchange), so reprocess it; it used to come again at the next start. An AMQP source's stop could also deliver its last message again, because the close of the connection overtook the ack.
+- The Email post-action `DELETE` failed at every poll on every server; the emails stayed in the folder, unread, flagged deleted and marked `$GalvaniGraphDispatched`. It now deletes what it records from the upgrade on. Those from before are left, with one warning that counts them: they were dispatched, but their messages may have been pruned since, so check before you delete them, or have your mail client expunge the folder. On a server without UIDPLUS, `DELETE` still fails, and so does `MOVE` on one that has neither MOVE nor UIDPLUS, where it removed every email in the folder that was flagged deleted ([Email](../user/connector-reference.md#email), D-383).
+- An Email source left an email whose message was recorded with an error unread, and dispatched it again at every restart or redeploy. It now sets the keyword `$GalvaniGraphError` on it, and while it carries that no channel that reads the folder dispatches it ([Email](../user/connector-reference.md#email), D-382). Such emails already in a folder are dispatched once more after the upgrade, as after any restart, and marked if they fail again. If you relied on a redeploy to try them again, reprocess their messages, or remove the keyword. Where a mailbox takes no keywords, as before. A stop, pause or redeploy takes no email after the one in hand, and waits for that however long it takes; a halt ends at once.
 
 ## Deleting a message that is still being processed (#403)
 

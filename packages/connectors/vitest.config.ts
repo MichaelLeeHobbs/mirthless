@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     passWithNoTests: true,
-    // Same budget as engine and server (D-290): the e2e suites compile scripts and move
+    // Same budget as server (D-290): the e2e suites compile scripts and move
     // messages over real sockets, which takes seconds on a loaded machine (#213).
     testTimeout: 30_000,
     coverage: {
