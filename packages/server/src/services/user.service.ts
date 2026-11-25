@@ -290,14 +290,13 @@ export class UserService {
     });
   }
 
-  static async changePassword(id: string, newPassword: string, actorId: string, actorMayManageUsers: boolean): Promise<Result<void>> {
+  /** Resets another user's password. Your own needs the current one (`changeOwnPassword`). */
+  static async changePassword(id: string, newPassword: string, actorId: string): Promise<Result<void>> {
     return tryCatch(async () => {
-      if (!actorMayManageUsers && id !== actorId) {
-        throw new ServiceError('FORBIDDEN', 'Cannot change another user\'s password');
+      if (id === actorId) {
+        throw new ServiceError('SELF_ACTION', 'Cannot reset your own password. Use Change Password, which asks for the current one');
       }
-      if (id !== actorId) {
-        await GrantService.assertCanManage(db, actorId, id);
-      }
+      await GrantService.assertCanManage(db, actorId, id);
 
       const [user] = await db
         .select({ id: users.id })
@@ -312,11 +311,9 @@ export class UserService {
 
       // Revoke the sessions too, so stolen tokens for the account stop working.
       await db.transaction(async (tx) => {
-        if (id !== actorId) {
-          // Hashing takes long enough for either's access to have changed since the first check.
-          await lockAccessFor(tx, actorId, PERMISSIONS.USERS_WRITE);
-          await GrantService.assertCanManageToTheEnd(tx, actorId, id);
-        }
+        // Hashing takes long enough for either's access to have changed since the first check.
+        await lockAccessFor(tx, actorId, PERMISSIONS.USERS_WRITE);
+        await GrantService.assertCanManageToTheEnd(tx, actorId, id);
         await tx
           .update(users)
           .set({ passwordHash, updatedAt: new Date() })
@@ -327,7 +324,7 @@ export class UserService {
       emitEvent({
         level: 'WARN', name: 'PASSWORD_CHANGED', outcome: 'SUCCESS',
         userId: actorId, channelId: null, serverId: null, ipAddress: null,
-        attributes: { targetUserId: id, adminReset: id !== actorId },
+        attributes: { targetUserId: id, adminReset: true },
       });
     });
   }

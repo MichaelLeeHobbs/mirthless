@@ -34,8 +34,9 @@ vi.mock('../../hooks/use-assignments.js', () => ({
 
 let issuedKeys: readonly Record<string, unknown>[] = [];
 let grants: readonly Record<string, unknown>[] = [];
+let myId = 'me';
 vi.mock('../../stores/auth.store.js', () => ({
-  useAuthStore: (pick: (s: { user: { grants: readonly Record<string, unknown>[] } }) => unknown) => pick({ user: { grants } }),
+  useAuthStore: (pick: (s: { user: { id: string; grants: readonly Record<string, unknown>[] } }) => unknown) => pick({ user: { id: myId, grants } }),
 }));
 vi.mock('../../hooks/use-api-keys.js', () => ({
   useApiKeys: (enabled: boolean) => ({ data: enabled ? issuedKeys : undefined }),
@@ -66,6 +67,7 @@ const switchFor = (name: string): HTMLInputElement => screen.getByRole('switch',
 beforeEach(() => {
   issuedKeys = [];
   grants = [];
+  myId = 'me';
   updateMutate.mockReset();
   deleteMutate.mockReset();
   // The server answers an update with the saved user.
@@ -140,6 +142,57 @@ describe('UsersPage edit dialog password change', () => {
     expect(await screen.findByText('Email already in use')).toBeTruthy();
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(passwordAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('UsersPage editing your own account', () => {
+  function openEdit(row: number): void {
+    const edit = screen.getAllByRole('button', { name: 'Edit user' })[row];
+    if (!edit) throw new Error(`no Edit user button in row ${String(row)}`);
+    fireEvent.click(edit);
+  }
+
+  it('offers no password field, and says where to change it', () => {
+    myId = 'u1';
+    renderPage();
+
+    openEdit(0);
+
+    expect(screen.getByLabelText(/Email/)).toBeTruthy();
+    expect(screen.queryByLabelText(/Password/)).toBeNull();
+    expect(screen.getByText(/Change Password in the account menu/)).toBeTruthy();
+  });
+
+  it('still saves the other details, and sends no password', async () => {
+    myId = 'u1';
+    renderPage();
+
+    openEdit(0);
+    fireEvent.change(screen.getByLabelText(/Email/), { target: { value: 'jm@example.test' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull(); });
+    expect(updateAsync).toHaveBeenCalledWith({ id: 'u1', input: { email: 'jm@example.test' } });
+    expect(passwordAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps the password field for another user', () => {
+    myId = 'u1';
+    renderPage();
+
+    openEdit(1);
+
+    expect(screen.getByLabelText(/New Password/)).toBeTruthy();
+    expect(screen.queryByText(/Change Password in the account menu/)).toBeNull();
+  });
+
+  it('keeps the password field for a new user', () => {
+    myId = 'u1';
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create User' }));
+
+    expect(screen.getByLabelText(/^Password/)).toBeTruthy();
   });
 });
 

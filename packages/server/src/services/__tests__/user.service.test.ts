@@ -81,7 +81,6 @@ const { UserService } = await import('../user.service.js');
 const NOW = new Date('2026-02-28T12:00:00Z');
 const ADMIN_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000002';
-const OTHER_ID = '00000000-0000-0000-0000-000000000003';
 
 function makeUser(overrides?: Partial<Record<string, unknown>>): Record<string, unknown> {
   return {
@@ -269,38 +268,34 @@ describe('UserService', () => {
   });
 
   describe('changePassword', () => {
-    it('lets an actor who may manage users change another user\'s password', async () => {
+    it('resets another user\'s password', async () => {
       pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([{ id: USER_ID }]);
       pushAccessLock();
       pushResponse([], { orderable: true }); // the target's assignments
 
-      const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, true);
+      const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID);
 
       expect(result.ok).toBe(true);
       expect(mockUpdate).toHaveBeenCalled();
     });
 
-    it('lets a user change their own password', async () => {
-      pushResponse([{ id: USER_ID }]);
+    it('refuses your own password, which changes only with the current one, and writes nothing', async () => {
+      pushResponse([{ id: ADMIN_ID }]);
 
-      const result = await UserService.changePassword(USER_ID, 'newpass123', USER_ID, false);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('refuses another user\'s password to an actor who may not manage users', async () => {
-      const result = await UserService.changePassword(OTHER_ID, 'newpass123', USER_ID, false);
+      const result = await UserService.changePassword(ADMIN_ID, 'newpass123', ADMIN_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'FORBIDDEN');
+      expect(result.error).toHaveProperty('code', 'SELF_ACTION');
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
     });
 
     it('refuses another user\'s password when that user holds more than the actor (the target rule)', async () => {
       pushTargetRule(['channels:read', 'users:write'], ['users:write']);
 
-      const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, true);
+      const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -311,7 +306,7 @@ describe('UserService', () => {
     it('returns NOT_FOUND for missing user', async () => {
       pushResponse([]);
 
-      const result = await UserService.changePassword('nonexistent', 'newpass123', ADMIN_ID, true);
+      const result = await UserService.changePassword('nonexistent', 'newpass123', ADMIN_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;

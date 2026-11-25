@@ -40,7 +40,8 @@ export const updateUserSchema = z.object({
  */
 export const deleteUserQuerySchema = z.object({
   takeOwnership: z.string().max(4000).optional()
-    .transform((v) => (v === undefined || v === '' ? [] : v.split(',')))
+    // Lower case, since a key's id goes into its new token, which is read in lower case only.
+    .transform((v) => (v === undefined || v === '' ? [] : v.toLowerCase().split(',')))
     .pipe(z.array(z.string().uuid()).max(100)),
 });
 
@@ -63,8 +64,9 @@ export const changeOwnPasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+/** Lowercase, as Postgres returns ids: the checks for the caller's own id compare text. */
 export const userIdParamSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().uuid().transform((id) => id.toLowerCase()),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

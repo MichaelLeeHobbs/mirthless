@@ -68,6 +68,7 @@ export function UsersPage(): ReactNode {
   const canManageKeys = has(PERMISSION.API_KEYS_MANAGE) && canReadKeys;
   const { data: keys } = useApiKeys(canReadKeys);
   const grants = useAuthStore((s) => s.user?.grants);
+  const myId = useAuthStore((s) => s.user?.id);
   // The tokens of keys taken over, shown one at a time, once.
   const [newTokens, setNewTokens] = useState<readonly TakenOverKey[]>([]);
   const [offboardError, setOffboardError] = useState<string | null>(null);
@@ -275,6 +276,7 @@ export function UsersPage(): ReactNode {
       <UserDialog
         open={dialogOpen}
         user={editingUser}
+        isSelf={editingUser !== null && editingUser.id === myId}
         onClose={handleClose}
         onSave={handleSave}
         error={dialogError}
