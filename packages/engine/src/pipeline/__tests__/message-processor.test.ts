@@ -103,6 +103,27 @@ describe('MessageProcessor', () => {
   });
 
   it.each([
+    ['one round-trip', { initializeMessage: vi.fn(), finalizeMessage: vi.fn().mockResolvedValue(ok(undefined)) }],
+    ['individual calls', {}],
+  ])('runs a message that is in the store already as that message, and does not count it as received again: %s', async (_name, extra) => {
+    const store = { ...makeStore(), ...extra };
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(
+      { ...makeInput(), correlationId: 'from the source map', received: { messageId: 7, correlationId: 'kept' } }, AbortSignal.timeout(5_000),
+    );
+
+    expect(result.ok && result.value).toMatchObject({ messageId: 7, correlationId: 'kept', status: 'SENT' });
+    expect(store.createMessage).not.toHaveBeenCalled();
+    if (store.initializeMessage) expect(store.initializeMessage).not.toHaveBeenCalled();
+    expect(vi.mocked(store.createConnectorMessage).mock.calls.map((c) => [c[1], c[2]])).toEqual([[7, 1]]);
+    expect(vi.mocked(store.storeContent).mock.calls.map((c) => c[3])).not.toContain(CONTENT_TYPE.RAW);
+    expect(vi.mocked(store.incrementStats).mock.calls.map((c) => c[3])).not.toContain('received');
+    expect(vi.mocked(sendFn).mock.calls.map((c) => [c[1], c[4]])).toEqual([[7, 'kept']]);
+  });
+
+  it.each([
     ['its own script time limit', { scriptTimeoutMs: 1_234 }, 1_234],
     ['no script time limit', {}, DEFAULT_EXECUTION_OPTIONS.timeout],
   ])('runs a script as its channel, with %s, so the watchdog knows whose it is', async (_name, overrides, timeout) => {

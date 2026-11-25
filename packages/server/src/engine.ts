@@ -15,6 +15,7 @@ import {
   DestinationRedispatcher,
   RecoveryManager,
   type AlertEventHandler,
+  type ReceivedMessage,
   type RecoveryStore,
   type RedispatchDestinationFn,
   type StoreFailure,
@@ -38,7 +39,7 @@ import {
   type DataTypeOptions,
 } from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { settleWithin, splitHl7Batch } from '@galvanigraph/core-util';
+import { isPlainObject, settleWithin, splitHl7Batch } from '@galvanigraph/core-util';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -75,7 +76,7 @@ import type { DeploymentBundle } from './services/deployment-record.service.js';
 interface ChannelRecovery {
   readonly channel: ChannelDetail;
   readonly store: MessageStore;
-  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
+  readonly runAgain: (message: ReceivedMessage, rawContent: string, sourceMap: Record<string, unknown>) => Promise<Result<unknown>>;
   readonly sendFn: SendToDestination;
   readonly destinations: readonly DestinationConfig[];
   readonly variablesUsed: VariablesUsed;
@@ -831,14 +832,14 @@ export class EngineManager {
 
     // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
-    const processOne = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
+    const processOne = async (rawContent: string, sourceMap?: Record<string, unknown>, received?: ReceivedMessage): Promise<Result<SourceDispatchOutcome>> => {
       activity.lastAt = Date.now();
       // Channel-to-channel routing sets it.
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
         : undefined;
       const result = await processor.processMessage(
-        { rawContent, sourceMap: sourceMap ?? {}, correlationId },
+        { rawContent, sourceMap: sourceMap ?? {}, correlationId, received },
         // Aborted by a halt, which cancels the scripts and sends in progress.
         // There is no deadline for the message as a whole: each script is
         // limited by the channel's script timeout and each send by its
@@ -898,7 +899,7 @@ export class EngineManager {
       const run = async (): Promise<void> => {
         if (recovered || !(await this.earlierWorkEnds(channel.id, earlierWork, { runSignal, raiseAlert }))) return;
         recovered = await this.recoverChannel({
-          channel, store, processMessage, sendFn, destinations: destConfigs, variablesUsed, raiseAlert, horizon: recoveryHorizon, runSignal, haltSignal,
+          channel, store, runAgain: (message, raw, sourceMap) => processOne(raw, sourceMap, message), sendFn, destinations: destConfigs, variablesUsed, raiseAlert, horizon: recoveryHorizon, runSignal, haltSignal,
         });
       };
       // An interrupted one may still be ending its sends.
@@ -1076,13 +1077,13 @@ export class EngineManager {
    *
    * - Stale PENDING claims (in-flight dispatches interrupted by a crash) are reset
    *   to QUEUED so the queue consumers redeliver them.
-   * - RECEIVED source messages are reprocessed from their stored raw content.
+   * - A message not routed yet is run again from its stored raw content, as the same message.
    * - RECEIVED destination messages are redispatched from their stored SENT content and variables.
    * QUEUED messages are left for the queue consumers.
    * Resolves false when it is to go on at the next start.
    */
   private async recoverChannel(recovery: ChannelRecovery): Promise<boolean> {
-    const { channel, store, processMessage, horizon, runSignal } = recovery;
+    const { channel, store, runAgain, horizon, runSignal } = recovery;
     // Without the horizon there is no telling a leftover message from one the
     // running channel is working on right now, and recovering the latter would
     // process it twice. Skip, and say so.
@@ -1107,56 +1108,37 @@ export class EngineManager {
       },
     };
 
-    // The original sourceMap (e.g. correlationId from an upstream channel) is
-    // stored with the message; carry it into the reprocess. It may be absent
-    // under storage modes that do not keep it, in which case it starts empty.
-    const loadSourceMap = async (channelId: string, messageId: number): Promise<Record<string, unknown>> => {
+    // Empty under a storage mode that does not keep it. One that cannot be read is not
+    // taken as empty: scripts that read it would route or fill the message differently.
+    const loadSourceMap = async (channelId: string, messageId: number): Promise<Result<Record<string, unknown>>> => {
       const stored = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.SOURCE_MAP);
-      if (!stored.ok || stored.value === null) return {};
+      if (!stored.ok) return fail(stored.error);
       try {
-        const parsed: unknown = JSON.parse(stored.value);
-        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+        const parsed: unknown = stored.value === null ? {} : JSON.parse(stored.value);
+        return { ok: true, value: isPlainObject(parsed) ? parsed : {}, error: null };
       } catch {
-        return {};
+        // Not the parser's own message, which quotes the text: a source map can hold PHI.
+        return { ok: false, value: null, error: new Error('Its stored source map is not valid JSON') } as Result<Record<string, unknown>>;
       }
     };
 
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
+      const leave = (error: Error): Result<void> => {
+        logger.error({ channelId, messageId, errMsg: error.message }, 'Crash recovery could not run a message again and left it as it was');
+        return { ok: false, value: null, error } as Result<void>;
+      };
       const raw = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.RAW);
-      if (!raw.ok || raw.value === null) {
-        return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
-      }
+      if (!raw.ok) return leave(raw.error);
+      if (raw.value === null) return leave(new Error('Its raw content is not stored'));
       const sourceMap = await loadSourceMap(channelId, messageId);
+      if (!sourceMap.ok) return leave(sourceMap.error);
       if (runSignal.aborted) return INTERRUPTED;
-      const processed = await processMessage(raw.value, sourceMap);
-      if (!processed.ok) {
-        // Do NOT mark processed on failure — the original still holds recoverable
-        // raw content and must remain eligible for recovery on the next deploy.
-        // Marking it here would silently lose the message forever.
-        return { ok: false, value: null, error: processed.error } as Result<void>;
-      }
-      // Run again as a new message. Close the original so it is not recovered a
-      // second time and does not sit in the browser looking like a message that
-      // is still being received: mark it ERROR with a note naming the new one.
-      // Both rows stay in the browser and both were counted as received when
-      // they were created. The original adds no error to the statistics: only
-      // the outcome of the new message is counted.
-      const note = `Interrupted by a server stop before it finished. Run again as message ${String(processed.value.messageId)}.`;
-      const rows = await MessageService.getConnectorMessages(channelId, messageId);
-      const connectorIds = rows.ok ? rows.value.map((row) => row.metaDataId) : [0];
-      const closed = await Promise.all([
-        ...connectorIds.flatMap((id) => [
-          store.storeContent(channelId, messageId, id, CONTENT_TYPE.PROCESSING_ERROR, note, 'TEXT'),
-          store.updateConnectorMessageStatus(channelId, messageId, id, 'ERROR'),
-        ]),
-        MessageService.markProcessed(channelId, messageId),
-      ]);
-      const failed = closed.find((r) => !r.ok);
-      if (failed && !failed.ok) {
-        logger.error({ channelId, messageId, errMsg: failed.error.message }, 'Recovered message could not be closed; it may be run again on the next deploy');
-        return { ok: false, value: null, error: failed.error } as Result<void>;
-      }
-      return OK_VOID;
+      const received = await MessageService.resetToReceived(channelId, messageId);
+      if (!received.ok) return leave(received.error);
+      if (runSignal.aborted) return INTERRUPTED;
+      logger.info({ channelId, messageId }, 'Running a message again that a server stop interrupted');
+      const processed = await runAgain(received.value, raw.value, sourceMap.value);
+      return processed.ok ? OK_VOID : { ok: false, value: null, error: processed.error } as Result<void>;
     };
 
     const redispatcher = this.redispatcherFor(recovery);

@@ -282,7 +282,7 @@ describe('RecoveryManager', () => {
 
     expect(reprocess).toHaveBeenCalledWith(CHANNEL_ID, 20);
     expect(result.ok && result.value.recovered).toBe(1);
-    // reprocessSource marks the original itself; the manager must not double-mark it.
+    // The pipeline that runs it again finishes it.
     expect(store.markProcessed).not.toHaveBeenCalled();
   });
 
