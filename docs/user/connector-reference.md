@@ -508,6 +508,12 @@ EMAIL can only receive; it cannot send messages. Use [SMTP](#smtp) to send email
 
 It polls an IMAP mailbox folder for unread messages and sends each one as the mail server holds it: the raw email, headers and MIME parts and attachments included, read as UTF-8. The subject, from, to and date are in the source map. Afterwards it marks the email read, deletes it or moves it.
 
+It keeps track of what it has done with IMAP keywords, which stay on the email through restarts and redeploys: `$GalvaniGraphDispatched` once the pipeline took it, so that only the marking, deleting or moving is tried again, and `$GalvaniGraphError` when its message was recorded with an error. Such an email is left in the folder and not dispatched again, by any channel that reads the folder, and each says once in the log how many there are; reprocess its message from the message browser. Remove the keyword, and mark the email unread, to have it dispatched again. A mailbox that does not accept custom keywords is reported once in the log; there, a restart or a redeploy sends an email that was left in the folder again.
+
+`DELETE` removes an email only after this source has recorded its message since the channel was deployed, one that a filter left out included. A channel that stores no content keeps no copy of it then. An email that carries `$GalvaniGraphDispatched` from before, or from another channel, stays in the folder, and the log says once how many there are. One stays as if recorded with an error when a destination failed although the sender is answered before the destinations (`AUTO_BEFORE`, `AUTO_AFTER_TRANSFORMER`). One that is not valid UTF-8 is marked read instead, because its message does not hold all of it. On Gmail, removing an email from a folder keeps it in All Mail unless the account is set otherwise.
+
+A stop or a pause waits for the email in hand, marks, deletes or moves it, and takes no more. A halt does not wait; the email in hand is dealt with when its message ends. A channel redeployed before that may dispatch that email again, and one that is started again polls only then.
+
 ### EMAIL security
 
 `secure` is on by default and connects with IMAP over TLS (port 993). Turning it off sends the mailbox password and the PHI in plaintext.
@@ -524,7 +530,7 @@ It polls an IMAP mailbox folder for unread messages and sends each one as the ma
 | `protocol` | No | `IMAP`. `POP3` refuses to deploy. |
 | `folder` | No | Folder to read, `INBOX` by default. An empty folder refuses to deploy. |
 | `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 1000 to 2147483647. Defaults to 60000. |
-| `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. |
+| `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. `DELETE` needs a server that offers UIDPLUS, and `MOVE` one that offers MOVE or UIDPLUS, because without them a server can only remove every email in the folder that is flagged deleted, and both need UIDVALIDITY. Without it the email stays, and an error is logged at every poll, for `DELETE` until the channel is redeployed. |
 | `moveToFolder` | No | Folder for `MOVE`. Required when `postAction` is `MOVE`. |
 | `subjectFilter` | No | Only read emails whose subject contains this text, ignoring case. |
 
@@ -614,6 +620,8 @@ The source joins a consumer group on a topic and sends each record as a message.
 
 A record the pipeline fails to store is not committed and is read again. After `maxStoreAttempts` failures in a row on the same record, the source stops the channel, records an ERROR `CHANNEL_STOPPED` event and fires a `SOURCE_CONNECTOR` alert. The record stays uncommitted: fix the cause and start the channel, and it reads that record first.
 
+A stop or a pause waits for the record in hand, however long it takes, commits it and reads no more. A halt does not wait: the record in hand is committed when its message has ended, so one that was recorded is not read again. One that the halt ended with an error is committed only when the channel keeps its content, so that it can be reprocessed. A start, or an undeploy, within that time waits for it for up to 10 seconds; after that the record is not committed and is read again.
+
 Delivery is at least once: a record's offset is committed only after the pipeline has stored it, so a crash between storing and committing delivers that record twice, which you can recognise by the same `topic`, `partition` and `offset` in the source map (D-266 in [DECISIONS.md](../progress/DECISIONS.md)). The destination reports SENT only when every in-sync replica has the record (acks=all). Topics are the broker administrator's; the connector checks they exist and never creates them.
 
 ### KAFKA security
@@ -669,6 +677,8 @@ Set `useTls` to connect over TLS. The broker's certificate is verified against `
 The source consumes an existing queue on an AMQP 0-9-1 broker such as RabbitMQ and sends each delivery as a message. The source map holds `queue`, `exchange`, `routingKey`, `redelivered` and `headers`, `messageId` and `contentType` when the message has them, and `charsetError` when a UTF-8 body had invalid bytes. A header that is a table or an array becomes JSON text, however deeply it is nested. The destination publishes each message to an existing exchange as a persistent message, encoded as UTF-8.
 
 A message the pipeline fails to store goes back to the queue. After `maxStoreAttempts` failures to store the same message, the source stops the channel, records an ERROR `CHANNEL_STOPPED` event and fires a `SOURCE_CONNECTOR` alert. The message is neither acked nor dead-lettered; it stays on the queue for when the channel is started again. Failures are counted per AMQP `messageId`. A message without one is counted as failures in a row, which assumes it comes straight back before the messages behind it: true for a classic queue with prefetch 1, not promised by a quorum queue, so set a `messageId` on messages sent to a quorum queue.
+
+A stop or a pause waits for the message in hand, however long it takes, acknowledges it and takes no more. A halt does not wait: the connection is kept for the message in hand until it has ended, and it is acked then, so one that was recorded is not delivered again. One that the halt ended with an error goes back to the queue unless the channel keeps its content; then it is rejected as any other stored with an ERROR status. A channel started again meanwhile takes the messages behind it.
 
 The broker's `x-delivery-count` is not used, because RabbitMQ 4.x does not raise it for the requeue this source returns a message with. RabbitMQ does raise it when a connection closes with the message unacknowledged, which happens each time this cap stops the channel. A quorum queue drops the message, or dead-letters it if it has a dead-letter exchange, once that count passes its delivery limit (20 by default from RabbitMQ 4.0). On RabbitMQ 3.x a requeue counts too, so keep `maxStoreAttempts` below the queue's delivery limit, or the broker removes the message first.
 

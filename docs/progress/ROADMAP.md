@@ -25,7 +25,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 
 ### Mirth migration suite
 
-> `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 65/65, all 28 scenarios, on 2026-11-15, with S28 (File Reader after-processing action, #178) and S29 (DICOM router, #171) added that day. It scored 55/60 on 2026-11-13; the three gaps that failed then were decided in [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md) and built as S15, S19 and S20 below.
+> `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 65/65, all 28 scenarios, on 2026-11-25, with S06's and S11's conditions made independent of the host's speed (D-374). It scored the same on 2026-11-15, with S28 (File Reader after-processing action, #178) and S29 (DICOM router, #171) added that day. It scored 55/60 on 2026-11-13; the three gaps that failed then were decided in [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md) and built as S15, S19 and S20 below.
 
 - [x] **S15** Database Reader and Writer talk to MySQL as well as PostgreSQL (D-259). SQL Server and Oracle are still open under [1] below.
 - [x] **S19** Delimited data is an array of row objects keyed by column name (D-257). Not yet: fixed-width columns, Process Batch per row. The source transformer edits the settings (2026-11-14).

@@ -23,8 +23,8 @@ async function run(overrides: Partial<ScriptTestInput>): Promise<ScriptTestResul
 
 describe('runScriptTest', () => {
   it('accepts a filter that returns true and filters one that returns false, like the pipeline', async () => {
-    expect((await run({ script: "return msg.get('PV1.2') === 'I';" })).outcome).toBe('accepted');
-    expect((await run({ script: "return msg.get('PV1.2') === 'O';" })).outcome).toBe('filtered');
+    expect(await run({ script: "return msg.get('PV1.2') === 'I';" })).toMatchObject({ error: null, outcome: 'accepted' });
+    expect(await run({ script: "return msg.get('PV1.2') === 'O';" })).toMatchObject({ error: null, outcome: 'filtered' });
   });
 
   it('fails a filter rule that returns something other than true or false, as deploy-time rules do', async () => {
@@ -108,10 +108,12 @@ describe('runScriptTest', () => {
 
   it('caps logger lines and output size, and says what it cut', async () => {
     const chatty = await run({ kind: 'script', script: 'for (let i = 0; i < 1000; i++) logger.info(String(i));' });
+    expect(chatty.error).toBeNull();
     expect(chatty.logs).toHaveLength(MAX_TEST_LOG_LINES + 1);
     expect(chatty.logs.at(-1)?.message).toBe(`${String(1000 - MAX_TEST_LOG_LINES)} more logger lines not shown`);
 
     const big = await run({ kind: 'transformer', script: `return 'x'.repeat(${String(MAX_TEST_OUTPUT_CHARS + 10)});` });
+    expect(big.error).toBeNull();
     expect(big.output).toHaveLength(MAX_TEST_OUTPUT_CHARS);
     expect(big.logs.at(-1)?.message).toBe(`Output cut to the first ${String(MAX_TEST_OUTPUT_CHARS)} characters`);
   });

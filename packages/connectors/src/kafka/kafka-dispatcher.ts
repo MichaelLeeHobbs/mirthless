@@ -3,7 +3,9 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { fillVariables, variableNames } from '../base.js';
+import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { withTimeoutSignal } from '../timeout.js';
+import { closeQuietly, HALT_CLOSE_MS, STOP_CLOSE_MS } from '../client-lifecycle.js';
 import {
   createKafkaProducer,
   parseBrokers,
@@ -24,11 +26,13 @@ export interface KafkaDispatcherConfig extends KafkaConnectionConfig {
 export class KafkaDispatcher implements DestinationConnectorRuntime {
   private readonly config: KafkaDispatcherConfig;
   private readonly createProducer: KafkaProducerFactory;
+  private readonly logger: ConnectorLogger;
   private producer: KafkaProducerClient | null = null;
 
-  constructor(config: KafkaDispatcherConfig, createProducer?: KafkaProducerFactory) {
+  constructor(config: KafkaDispatcherConfig, createProducer?: KafkaProducerFactory, logger?: ConnectorLogger) {
     this.config = config;
     this.createProducer = createProducer ?? createKafkaProducer;
+    this.logger = logger ?? createConnectorLogger('KAFKA');
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -76,20 +80,27 @@ export class KafkaDispatcher implements DestinationConnectorRuntime {
   }
 
   async onStop(): Promise<Result<void>> {
-    return tryCatch(async () => { await this.close(); });
+    return tryCatch(async () => { await this.close(STOP_CLOSE_MS); });
   }
 
   async onHalt(): Promise<Result<void>> {
-    return tryCatch(async () => { await this.close(); });
+    return tryCatch(async () => { await this.close(HALT_CLOSE_MS); });
   }
 
   async onUndeploy(): Promise<Result<void>> {
-    return tryCatch(async () => { await this.close(); });
+    return tryCatch(async () => { await this.close(STOP_CLOSE_MS); });
   }
 
-  private async close(): Promise<void> {
-    const producer = this.producer;
+  private async close(timeoutMs: number): Promise<void> {
+    const { producer } = this;
     this.producer = null;
-    if (producer) await producer.close();
+    if (!producer) return;
+    await closeQuietly({
+      close: () => producer.close(),
+      timeoutMs,
+      label: 'Kafka close',
+      logger: this.logger,
+      message: 'Error closing Kafka producer',
+    });
   }
 }

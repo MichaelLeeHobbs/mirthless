@@ -1,3 +1,4 @@
+import * as net from 'node:net';
 import { it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Admin } from '@platformatic/kafka';
@@ -55,6 +56,63 @@ function storeFailingFirst(failures: number): InMemoryStore {
   };
 }
 
+/** A sink that holds its first message until it is let go. */
+function heldSink(): { readonly sink: CaptureDestination; readonly reached: Promise<void>; readonly letGo: () => void } {
+  let reach = (): void => undefined;
+  let letGo = (): void => undefined;
+  const reached = new Promise<void>((resolve) => { reach = resolve; });
+  const held = new Promise<void>((resolve) => { letGo = resolve; });
+  const sink = new CaptureDestination();
+  const send = sink.send.bind(sink);
+  vi.spyOn(sink, 'send').mockImplementation(async (message, signal) => {
+    const sent = await send(message, signal);
+    reach();
+    await held;
+    return sent;
+  });
+  return { sink, reached, letGo: () => { letGo(); } };
+}
+
+interface Relay {
+  readonly port: number;
+  /** From now on neither side hears from the other, as of a partner whose machine hangs. */
+  freeze(): void;
+  /** That have not closed, or ended their side. */
+  openClients(): number;
+  close(): void;
+}
+
+async function startRelay(target: { readonly host: string; readonly port: number }): Promise<Relay> {
+  const clients = new Set<net.Socket>();
+  const partners = new Set<net.Socket>();
+  let frozen = false;
+  const server = net.createServer({ allowHalfOpen: true }, (client) => {
+    const partner = net.connect(target.port, target.host);
+    clients.add(client);
+    partners.add(partner);
+    client.on('close', () => { clients.delete(client); });
+    client.on('error', () => undefined);
+    partner.on('error', () => undefined);
+    client.on('data', (data) => { if (!frozen) partner.write(data); });
+    partner.on('data', (data) => { if (!frozen) client.write(data); });
+    client.on('end', () => {
+      clients.delete(client);
+      if (!frozen) partner.end();
+    });
+    partner.on('close', () => { if (!frozen) client.destroy(); });
+  });
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+  return {
+    port: (server.address() as net.AddressInfo).port,
+    freeze: () => { frozen = true; },
+    openClients: () => clients.size,
+    close: () => {
+      for (const socket of [...clients, ...partners]) socket.destroy();
+      server.close();
+    },
+  };
+}
+
 const ECHO_SOURCE_MAP = `return JSON.stringify({
   body: String(msg),
   topic: $s('topic'), key: $s('key'), headers: $s('headers'),
@@ -68,9 +126,10 @@ describeKafka('Kafka connectors (real broker)', () => {
   const topics = {
     cascade: `e2e-north-${RUN}`,
     redelivery: `e2e-redelivery-${RUN}`,
+    halted: `e2e-halted-${RUN}`,
     sasl: `e2e-sasl-${RUN}`,
   };
-  const groups = { cascade: `g-cascade-${RUN}`, redelivery: `g-redelivery-${RUN}`, sasl: `g-sasl-${RUN}` };
+  const groups = { cascade: `g-cascade-${RUN}`, redelivery: `g-redelivery-${RUN}`, halted: `g-halted-${RUN}`, sasl: `g-sasl-${RUN}` };
 
   const connection = (): KafkaConnectionConfig => ({
     brokers: requireKafka().brokers, clientId: 'galvanigraph-e2e', saslMechanism: 'NONE', saslUsername: '', saslPassword: '',
@@ -85,7 +144,7 @@ describeKafka('Kafka connectors (real broker)', () => {
     }
     // A new broker creates its offsets topic on the first join, and refuses to coordinate a group
     // until that group's partition of it is loaded. A start gives up after four tries, a second apart.
-    for (const name of ['cascade', 'redelivery', 'sasl'] as const) {
+    for (const name of ['cascade', 'redelivery', 'halted', 'sasl'] as const) {
       await vi.waitFor(async () => {
         const member = await subscribeKafka({ ...connection(), topic: topics[name], groupId: groups[name], startFrom: 'EARLIEST' });
         await member.close(false);
@@ -133,15 +192,44 @@ describeKafka('Kafka connectors (real broker)', () => {
     });
   }, TEST_TIMEOUT);
 
+  const produce = async (topic: string, value: string): Promise<void> => {
+    const p = createKafkaProducer(connection());
+    try {
+      await p.send({ topic, key: undefined, value: Buffer.from(value), headers: {} });
+    } finally {
+      await p.close();
+    }
+  };
+
+  it('does not read a record again that was recorded when the channel was halted (#413)', async () => {
+    const { sink, reached, letGo } = heldSink();
+    const deploy = (channelId: string, connector: CaptureDestination): Promise<DeployedChannel> => deployChannel({
+      channelId,
+      dataType: 'RAW',
+      source: new KafkaReceiver({ ...connection(), topic: topics.halted, groupId: groups.halted, startFrom: 'EARLIEST' }, undefined, undefined, RETRY_MS),
+      destinations: [{ metaDataId: 1, name: 'sink', connector }],
+    });
+    const channel = await deploy('00000000-0000-0000-0000-kafkae2e0010', sink);
+    deployed.push(channel);
+    await produce(topics.halted, 'recorded');
+    await reached;
+
+    expect((await channel.runtime.halt()).ok).toBe(true);
+    letGo();
+    // Which waits for the record the halt left in hand.
+    await channel.teardown();
+    deployed = [];
+    const sink2 = new CaptureDestination();
+    deployed.push(await deploy('00000000-0000-0000-0000-kafkae2e0011', sink2));
+    await produce(topics.halted, 'next');
+    await vi.waitFor(() => { expect(sink2.lastContent()).toBe('next'); }, WAIT);
+
+    expect(sink.received.map((m) => m.content)).toEqual(['recorded']);
+    expect(sink2.received.map((m) => m.content)).toEqual(['next']);
+  }, TEST_TIMEOUT);
+
   it('reads a record again when the pipeline could not store it, and commits it once stored', async () => {
-    const send = async (value: string): Promise<void> => {
-      const p = createKafkaProducer(connection());
-      try {
-        await p.send({ topic: topics.redelivery, key: undefined, value: Buffer.from(value), headers: {} });
-      } finally {
-        await p.close();
-      }
-    };
+    const send = (value: string): Promise<void> => produce(topics.redelivery, value);
     const group = groups.redelivery;
     const sink = new CaptureDestination();
     const store = storeFailingFirst(1);
@@ -214,6 +302,8 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     deadQueue: `e2e-dead-${RUN}`,
     quorum: `e2e-quorum-${RUN}`,
     dropped: `e2e-dropped-${RUN}`,
+    halted: `e2e-halted-${RUN}`,
+    unread: `e2e-unread-${RUN}`,
   };
   let admin: ChannelModel;
 
@@ -236,12 +326,14 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await ch.bindQueue(names.queue, names.exchange, 'adt.#');
     await ch.assertQueue(names.quorum, { durable: true, arguments: { 'x-queue-type': 'quorum' } });
     await ch.assertQueue(names.dropped, { durable: true });
+    await ch.assertQueue(names.halted, { durable: true });
+    await ch.assertQueue(names.unread, { durable: true });
     await ch.close();
   });
 
   afterAll(async () => {
     const ch = await admin.createChannel();
-    for (const q of [names.queue, names.deadQueue, names.quorum, names.dropped]) await ch.deleteQueue(q);
+    for (const q of [names.queue, names.deadQueue, names.quorum, names.dropped, names.halted, names.unread]) await ch.deleteQueue(q);
     for (const e of [names.exchange, names.deadExchange]) await ch.deleteExchange(e);
     await admin.close();
   });
@@ -293,6 +385,70 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
       headers: { patient: 'P42' },
       redelivered: false,
     });
+  }, TEST_TIMEOUT);
+
+  it('does not deliver a message again that was recorded when the channel was halted (#413)', async () => {
+    const { sink, reached, letGo } = heldSink();
+    const deploy = (channelId: string, connector: CaptureDestination): Promise<DeployedChannel> => deployChannel({
+      channelId,
+      dataType: 'RAW',
+      source: new AmqpReceiver({ ...connection(), queue: names.halted }, undefined, undefined, RETRY_MS),
+      destinations: [{ metaDataId: 1, name: 'sink', connector }],
+    });
+    const publish = async (body: string): Promise<void> => {
+      const ch = await admin.createConfirmChannel();
+      ch.sendToQueue(names.halted, Buffer.from(body));
+      await ch.waitForConfirms();
+      await ch.close();
+    };
+    const channel = await deploy('00000000-0000-0000-0000-amqpe2e00020', sink);
+    deployed.push(channel);
+    await publish('recorded');
+    await reached;
+
+    expect((await channel.runtime.halt()).ok).toBe(true);
+    const sink2 = new CaptureDestination();
+    deployed.push(await deploy('00000000-0000-0000-0000-amqpe2e00021', sink2));
+    await publish('next');
+    await vi.waitFor(() => { expect(sink2.lastContent()).toBe('next'); }, WAIT);
+    letGo();
+
+    // The old consumer is gone, and a message it had returned would be ahead of the last one.
+    const ch = await admin.createChannel();
+    try {
+      await vi.waitFor(async () => { expect((await ch.checkQueue(names.halted)).consumerCount).toBe(1); }, WAIT);
+    } finally {
+      await ch.close();
+    }
+    await publish('last');
+    await vi.waitFor(() => { expect(sink2.lastContent()).toBe('last'); }, WAIT);
+    expect(sink.received.map((m) => m.content)).toEqual(['recorded']);
+    expect(sink2.received.map((m) => m.content)).toEqual(['next', 'last']);
+  }, TEST_TIMEOUT);
+
+  it('a halt ends in time and closes the connection when the broker stops answering (#413)', async () => {
+    const relay = await startRelay(connection());
+    try {
+      const dispatcher = new AmqpDispatcher({ ...connection(), host: '127.0.0.1', port: relay.port, exchange: '', routingKey: names.unread, headers: {}, contentType: 'text/plain' });
+      const receiver = new AmqpReceiver({ ...connection(), host: '127.0.0.1', port: relay.port, queue: names.halted }, undefined, undefined, RETRY_MS);
+      receiver.setDispatcher(async () => ({ ok: true as const, value: { messageId: 1 }, error: null }));
+      await dispatcher.onStart();
+      const sent = await dispatcher.send({ channelId: 'c', messageId: 1, metaDataId: 1, content: 'x', dataType: 'RAW' }, AbortSignal.timeout(30_000));
+      expect(sent.ok && sent.value.status).toBe('SENT');
+      expect((await receiver.onStart()).ok).toBe(true);
+      expect(relay.openClients()).toBe(2);
+      relay.freeze();
+
+      const before = Date.now();
+      const halted = await Promise.all([dispatcher.onHalt(), receiver.onHalt()]);
+
+      expect(halted.map((r) => r.ok)).toEqual([true, true]);
+      // 2 seconds, and what a loaded machine adds.
+      expect(Date.now() - before).toBeLessThan(8_000);
+      await vi.waitFor(() => { expect(relay.openClients()).toBe(0); }, WAIT);
+    } finally {
+      relay.close();
+    }
   }, TEST_TIMEOUT);
 
   it('fails a publish no queue would receive instead of dropping it', async () => {

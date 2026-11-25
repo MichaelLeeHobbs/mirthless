@@ -47,7 +47,7 @@ scenario('S09 messages reach a channel picked at run time and an audit channel b
   await sendMllp(PORT, msg('B'));
   await sendMllp(PORT, msg('A'));
 
-  await expect.poll(async () => (await api.messages(ids['S09 Audit']!)).total, { timeout: 15_000 }).toBe(3);
+  await expect.poll(async () => (await api.messages(ids['S09 Audit']!)).total).toBe(3);
   expect((await api.messages(ids['S09 Site A']!)).total).toBe(2);
   expect((await api.messages(ids['S09 Site B']!)).total).toBe(1);
 });

@@ -63,7 +63,7 @@ scenario('S04 channel calls code templates imported with the server backup', asy
     ), ['S04 Report Processor']);
 
     await sendMllp(PORT, ORM);
-    await expect.poll(() => sink.received.length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     expect(sink.received[0]).toContain('MSH|^~\\&|RIS|SITE4-NORTH|HUB|');
   } finally {
     await sink.close();

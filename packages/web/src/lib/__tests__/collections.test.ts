@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  isExpired,
   formatTtl,
   parseFields,
   fieldColumn,
@@ -7,6 +8,19 @@ import {
   filledFields,
   payloadPreview,
 } from '../collections.js';
+
+describe('isExpired', () => {
+  const NOW = Date.parse('2026-11-25T12:00:00Z');
+
+  it.each([
+    ['has no expiry', null, false],
+    ['expires later', '2026-11-25T12:00:00.001Z', false],
+    ['expires at this moment', '2026-11-25T12:00:00.000Z', true],
+    ['expired before', '2026-11-25T11:59:59.999Z', true],
+  ])('says of a record that %s: %s is %s', (_what, expireAt, expected) => {
+    expect(isExpired(expireAt, NOW)).toBe(expected);
+  });
+});
 
 describe('formatTtl', () => {
   it('renders null as Never', () => {

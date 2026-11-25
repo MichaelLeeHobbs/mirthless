@@ -53,7 +53,7 @@ scenario('S20 X12 270 member id is read with msg.get', async (api) => {
     }), ['S20 Eligibility']);
 
     drop(dir, 'request.x12', X12_270);
-    await expect.poll(() => sink.received.length, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     expect(sink.received[0]).toContain('ZEL|MEMBER123');
   } finally {
     await sink.close();

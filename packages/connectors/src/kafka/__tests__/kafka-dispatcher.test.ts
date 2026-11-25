@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import { KafkaDispatcher, type KafkaDispatcherConfig } from '../kafka-dispatcher.js';
 import { FakeKafkaProducer } from '../../__fixtures__/fake-kafka.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 const config: KafkaDispatcherConfig = {
   brokers: 'kafka:9092',
@@ -82,6 +83,24 @@ describe('send', () => {
     const controller = new AbortController();
     controller.abort();
     expect((await dispatcher.send(message(), controller.signal)).ok).toBe(false);
+  });
+
+  it.each([
+    ['halt', 'onHalt', 2_000],
+    ['stop', 'onStop', 10_000],
+  ] as const)('a %s ends although the broker never answers the close (#413)', async (_what, action, withinMs) => {
+    const producer = new FakeKafkaProducer();
+    producer.hangClose = true;
+    const dispatcher = new KafkaDispatcher(config, () => producer, makeMockLogger().logger);
+    await dispatcher.onStart();
+    vi.useFakeTimers();
+    try {
+      const ending = dispatcher[action]();
+      await vi.advanceTimersByTimeAsync(withinMs);
+      expect((await ending).ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('closes the producer on stop', async () => {

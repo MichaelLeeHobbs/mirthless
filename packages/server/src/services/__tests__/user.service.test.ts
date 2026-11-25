@@ -5,6 +5,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import bcrypt from 'bcrypt';
+import type { Result } from 'stderr-lib';
+import type { UpdateUserInput } from '@galvanigraph/core-models';
 
 let selectCallIndex = 0;
 let selectResponses: (() => unknown)[] = [];
@@ -40,7 +42,8 @@ const mockSelectFrom = vi.fn().mockImplementation(() => ({
 }));
 const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
-const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+const mockReturning = vi.fn().mockResolvedValue([]);
+const mockUpdateWhere = vi.fn(() => Object.assign(Promise.resolve(), { returning: mockReturning }));
 const mockSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
 const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 
@@ -49,8 +52,12 @@ const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
 
+const auditRow = vi.fn();
+const mockInsert = vi.fn().mockReturnValue({ values: (row: unknown) => { auditRow(row); return { returning: () => Promise.resolve([{ id: 1 }]) }; } });
+
 const mockDb = {
   select: mockSelect,
+  insert: mockInsert,
   update: mockUpdate,
   delete: mockDelete,
   transaction: mockTransaction,
@@ -218,7 +225,8 @@ describe('UserService', () => {
     it('updates user fields without touching roles', async () => {
       pushAccessLock();
       pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
-      pushResponse([{ id: USER_ID }], { forUpdate: true }); // the target, under lock
+      pushResponse([makeUser()], { forUpdate: true }); // the target, under lock
+      mockReturning.mockResolvedValueOnce([makeUser({ email: 'updated@test.com' })]);
       pushResponse([makeUser({ email: 'updated@test.com' })]); // getUser after update
 
       const result = await UserService.updateUser(USER_ID, { email: 'updated@test.com' }, ADMIN_ID);
@@ -238,6 +246,34 @@ describe('UserService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateUser: the email of a disabled account (#419)', () => {
+    async function update(stored: Record<string, unknown>, input: UpdateUserInput): Promise<Result<unknown>> {
+      pushAccessLock();
+      pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
+      pushResponse([makeUser(stored)], { forUpdate: true });
+      return UserService.updateUser(USER_ID, input, ADMIN_ID);
+    }
+
+    it('refuses to change it, and writes nothing', async () => {
+      const result = await update({ enabled: false }, { email: 'updated@test.com', firstName: 'Jon' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(auditRow).not.toHaveBeenCalled();
+    });
+
+    it('refuses a change of letter case too', async () => {
+      const result = await update({ enabled: false }, { email: 'JSmith@test.com' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
       expect(mockUpdate).not.toHaveBeenCalled();
     });
   });

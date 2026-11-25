@@ -23,6 +23,10 @@ export class FakeKafkaTopic {
   subscribeCount = 0;
   failSubscribes = 0;
   failCommits = 0;
+  /** The broker never answers a close. */
+  hangCloses = false;
+  /** A subscribe waits for it. */
+  connecting: Promise<void> = Promise.resolve();
   private active: FakeSubscription | null = null;
   private listeners: (() => void)[] = [];
 
@@ -41,6 +45,7 @@ export class FakeKafkaTopic {
       this.failSubscribes -= 1;
       throw new Error('ECONNREFUSED broker down');
     }
+    await this.connecting;
     this.active = new FakeSubscription(this);
     return this.active;
   };
@@ -109,6 +114,7 @@ class FakeSubscription implements KafkaSubscription {
   }
 
   async close(force: boolean): Promise<void> {
+    if (this.topic.hangCloses) await new Promise(() => undefined);
     this.closed = true;
     this.closedForcefully = force;
     this.topic.notify();
@@ -124,6 +130,7 @@ export class FakeKafkaProducer implements KafkaProducerClient {
   readonly sent: KafkaOutboundRecord[] = [];
   failSends = 0;
   closed = false;
+  hangClose = false;
 
   async send(record: KafkaOutboundRecord): Promise<{ topic: string; partition: number; offset: string }> {
     if (this.failSends > 0) {
@@ -135,6 +142,7 @@ export class FakeKafkaProducer implements KafkaProducerClient {
   }
 
   async close(): Promise<void> {
+    if (this.hangClose) await new Promise(() => undefined);
     this.closed = true;
   }
 }
