@@ -6,6 +6,11 @@ export function permissionLabel(p: string): string {
   return Object.hasOwn(PERMISSION_CATALOG, p) ? PERMISSION_CATALOG[p as Permission].label : p;
 }
 
+/** A group the reader cannot see, or that is not loaded yet, shows as its id. */
+export function groupNamer(groups: ReadonlyArray<{ readonly id: string; readonly name: string }> | undefined): (id: string) => string {
+  return (id) => groups?.find((g) => g.id === id)?.name ?? id;
+}
+
 export function describePath(path: AccessPath, groupName: (id: string) => string, time: (iso: string) => string): string {
   const scope = path.groupIds === null ? 'All channels' : path.groupIds.map(groupName).join(', ');
   return [path.role, scope, ...(path.expiresAt ? [`until ${time(path.expiresAt)}`] : [])].join(' · ');

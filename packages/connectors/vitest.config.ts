@@ -13,8 +13,8 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html'],
       include: ['src/**/*.ts'],
-      // The integration lane (*.itest.ts and its gates) is test code that this run never loads.
-      exclude: ['src/**/*.test.ts', 'src/**/*.itest.ts', 'src/__tests__/e2e/integration/gates.ts', 'src/index.ts'],
+      // The integration lane (*.itest.ts and its support) is test code that this run never loads.
+      exclude: ['src/**/*.test.ts', 'src/**/*.itest.ts', 'src/__tests__/e2e/integration/**', 'src/index.ts'],
       // About 1 point under measured coverage; only ever raised, toward the 95% target (D-193).
       thresholds: { statements: 93, branches: 90, functions: 91, lines: 95 },
     },

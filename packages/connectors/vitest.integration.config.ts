@@ -14,5 +14,6 @@ export default defineConfig({
     pool: 'forks',
     testTimeout: 20_000,
     hookTimeout: 30_000,
+    expect: { poll: { timeout: 10_000 } },
   },
 });

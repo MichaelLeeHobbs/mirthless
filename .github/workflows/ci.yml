@@ -171,6 +171,7 @@ jobs:
     env:
       CONNECTOR_ITEST_REQUIRED: '1'
       DATABASE_URL: postgresql://galvanigraph:galvanigraph_test@localhost:5432/galvanigraph_test
+      MYSQL_TEST_HOST: localhost
       SFTP_TEST_HOST: localhost
       SMTP_TEST_HOST: localhost
       KAFKA_TEST_BROKERS: localhost:19092
@@ -188,10 +189,10 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      # Kafka and RabbitMQ have healthchecks, so --wait holds until they serve.
+      # MySQL, Kafka and RabbitMQ have healthchecks, so --wait holds until they serve.
       # rabbitmq-test writes its test TLS certificate to docker/test-certs.
       - name: Start connector test services
-        run: docker compose -f docker/docker-compose.yml --profile test up -d --wait sftp-test mail-test kafka-test rabbitmq-test
+        run: docker compose -f docker/docker-compose.yml --profile test up -d --wait mysql-test sftp-test mail-test kafka-test rabbitmq-test
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -211,7 +212,7 @@ jobs:
 
       - name: Test service logs
         if: failure()
-        run: docker compose -f docker/docker-compose.yml --profile test logs --no-color sftp-test mail-test kafka-test rabbitmq-test
+        run: docker compose -f docker/docker-compose.yml --profile test logs --no-color mysql-test sftp-test mail-test kafka-test rabbitmq-test
 
   e2e:
     needs: changes
