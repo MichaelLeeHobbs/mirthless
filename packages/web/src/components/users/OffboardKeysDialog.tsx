@@ -42,7 +42,7 @@ function LeaverKeys({ keys, taken, canTakeOver, onToggle }: LeaverKeysProps): Re
   const groupName = groupNamer(groups);
   return keys.map((k) => (
     <Stack key={k.id} direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-      <Box sx={{ minWidth: 0 }}>
+      <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
         <Typography variant="body2" sx={{ fontWeight: 500 }}>{k.name}</Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{k.permissions.map(permissionLabel).join(', ')}</Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
