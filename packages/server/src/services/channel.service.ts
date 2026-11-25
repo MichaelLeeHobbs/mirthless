@@ -1030,6 +1030,14 @@ export class ChannelService {
     });
   }
 
+  /** Not deleted. */
+  static async isLive(id: string): Promise<Result<boolean>> {
+    return tryCatch(async () => {
+      const rows = await db.select({ id: channels.id }).from(channels).where(and(eq(channels.id, id), isNull(channels.deletedAt)));
+      return rows.length > 0;
+    });
+  }
+
   static async clone(id: string, newName: string, context?: AuditContext, groupId?: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       const sourceResult = await ChannelService.getById(id);
