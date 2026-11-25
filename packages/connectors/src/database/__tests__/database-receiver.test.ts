@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, appendLockClause, type DatabaseReceiverConfig } from '../database-receiver.js';
+import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, type DatabaseReceiverConfig } from '../database-receiver.js';
 import { ConnectionPool } from '../connection-pool.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
@@ -460,18 +460,6 @@ describe('DatabaseReceiver', () => {
   });
 
   describe('atomic claim (no double-processing)', () => {
-    it('appendLockClause appends FOR UPDATE SKIP LOCKED and strips a trailing semicolon', () => {
-      expect(appendLockClause('SELECT * FROM t WHERE p = false')).toBe(
-        'SELECT * FROM t WHERE p = false FOR UPDATE SKIP LOCKED',
-      );
-      expect(appendLockClause('SELECT * FROM t;')).toBe('SELECT * FROM t FOR UPDATE SKIP LOCKED');
-    });
-
-    it('appendLockClause leaves a query that already locks unchanged', () => {
-      const q = 'SELECT * FROM t FOR UPDATE';
-      expect(appendLockClause(q)).toBe(q);
-    });
-
     it('issues the SELECT with a row lock in claim mode', async () => {
       const { pool, queryFn, transactionFn } = makeMockPool();
       queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null });
@@ -722,5 +710,196 @@ describe('DatabaseReceiver row limit', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('DatabaseReceiver when a row cannot be marked', () => {
+  /** A table behind a pool: `fails` says which ids the mark statement refuses, `broken` fails whole transactions at COMMIT. */
+  function makeTable(rows: Array<Record<string, unknown>>): {
+    readonly pool: ConnectionPool; rows: Array<Record<string, unknown>>; readonly fails: Set<unknown>; broken: boolean;
+  } {
+    const table = {
+      rows,
+      fails: new Set<unknown>(),
+      broken: false,
+      pool: {
+        create: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+        destroy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+        query: vi.fn(),
+        transaction: async (fn: (tx: { query: (sql: string, params: readonly unknown[]) => Promise<unknown> }) => Promise<unknown>) => {
+          const marks: unknown[] = [];
+          try {
+            const value = await fn({
+              query: async (sql, params) => {
+                if (sql.startsWith('SELECT')) return { rows: [...table.rows], rowCount: table.rows.length };
+                if (!sql.startsWith('UPDATE')) return { rows: [], rowCount: 0 };
+                if (table.fails.has(params[0])) throw new Error('constraint');
+                marks.push(params[0]);
+                return { rows: [], rowCount: 1 };
+              },
+            });
+            if (table.broken) throw new Error('Connection lost');
+            table.rows = table.rows.filter((row) => !marks.includes(row['id']));
+            return { ok: true, value, error: null };
+          } catch (error) {
+            return { ok: false, value: null, error };
+          }
+        },
+      } as unknown as ConnectionPool,
+    };
+    return table;
+  }
+
+  async function run(pool: ConnectionPool, updateMode: DatabaseReceiverConfig['updateMode'] = UPDATE_MODE.ON_SUCCESS): Promise<Array<Record<string, unknown>>> {
+    const dispatched: Array<Record<string, unknown>> = [];
+    receiver = new DatabaseReceiver(makeConfig({ updateMode, updateQuery: 'UPDATE t SET done = true WHERE id = ${id}' }), pool, makeMockLogger().logger);
+    receiver.setDispatcher(makeDispatcher((raw) => {
+      dispatched.push(JSON.parse(raw.content) as Record<string, unknown>);
+      return { messageId: dispatched.length };
+    }));
+    await receiver.onStart();
+    return dispatched;
+  }
+
+  const poll = async (): Promise<unknown> => vi.advanceTimersByTimeAsync(5_000);
+
+  it.each([UPDATE_MODE.ON_SUCCESS, UPDATE_MODE.ALWAYS])('dispatches it once and marks it once it can (%s)', async (mode) => {
+    const table = makeTable([{ id: 1 }, { id: 2 }]);
+    table.fails.add(1);
+    const dispatched = await run(table.pool, mode);
+
+    await poll();
+    await poll();
+    await poll();
+    expect(dispatched).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(table.rows).toEqual([{ id: 1 }]);
+
+    table.fails.clear();
+    await poll();
+    expect(dispatched).toHaveLength(2);
+    expect(table.rows).toEqual([]);
+  });
+
+  it('dispatches it again when it changed, or when it was gone in between', async () => {
+    const table = makeTable([{ id: 1, v: 'a' }]);
+    table.fails.add(1);
+    const dispatched = await run(table.pool);
+    await poll();
+
+    table.rows = [{ id: 1, v: 'b' }];
+    await poll();
+    table.rows = [];
+    await poll();
+    table.rows = [{ id: 1, v: 'b' }];
+    await poll();
+
+    expect(dispatched).toEqual([{ id: 1, v: 'a' }, { id: 1, v: 'b' }, { id: 1, v: 'b' }]);
+  });
+
+  it('dispatches another row that reads the same', async () => {
+    const table = makeTable([{ id: 1 }]);
+    table.fails.add(1);
+    const dispatched = await run(table.pool);
+    await poll();
+
+    table.rows = [{ id: 1 }, { id: 1 }];
+    await poll();
+    await poll();
+
+    expect(dispatched).toEqual([{ id: 1 }, { id: 1 }]);
+  });
+
+  it('marks and does not dispatch the rows of a poll whose transaction, and the one after it, failed', async () => {
+    const table = makeTable([{ id: 1 }, { id: 2 }]);
+    table.broken = true;
+    const dispatched = await run(table.pool);
+    await poll();
+    await poll();
+    expect(dispatched).toEqual([{ id: 1 }, { id: 2 }]);
+
+    table.broken = false;
+    await poll();
+    expect(dispatched).toHaveLength(2);
+    expect(table.rows).toEqual([]);
+  });
+
+  it('dispatches a row the pipeline did not take at every poll', async () => {
+    const table = makeTable([{ id: 1 }]);
+    table.fails.add(1);
+    let offers = 0;
+    receiver = new DatabaseReceiver(makeConfig({ updateMode: UPDATE_MODE.ALWAYS, updateQuery: 'UPDATE t SET done = true WHERE id = ${id}' }), table.pool, makeMockLogger().logger);
+    receiver.setDispatcher(async (raw) => { offers += 1; return makeFailDispatcher()(raw); });
+    await receiver.onStart();
+    await poll();
+    await poll();
+    expect(offers).toBe(2);
+  });
+});
+
+describe('DatabaseReceiver stopped in mid-poll', () => {
+  function makeBlockedSource(updateMode: DatabaseReceiverConfig['updateMode']): {
+    readonly source: DatabaseReceiver; readonly destroyFn: ReturnType<typeof vi.fn>; readonly marked: () => unknown[]; readonly dispatched: string[]; readonly release: () => void;
+  } {
+    const { pool, queryFn, destroyFn } = makeMockPool();
+    queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }, { id: 2 }], rowCount: 2 }, error: null });
+    const dispatched: string[] = [];
+    let release = (): void => {};
+    const source = new DatabaseReceiver(makeConfig({ updateMode, updateQuery: 'UPDATE t SET done = true WHERE id = ${id}' }), pool, makeMockLogger().logger);
+    source.setDispatcher(async (raw) => {
+      dispatched.push(raw.content);
+      await new Promise<void>((resolve) => { release = resolve; });
+      return { ok: true, value: { messageId: 1 }, error: null };
+    });
+    const marked = (): unknown[] => queryFn.mock.calls.filter((call) => String(call[0]).startsWith('UPDATE')).map((call) => (call[1] as unknown[])[0]);
+    return { source, destroyFn, marked, dispatched, release: () => { release(); } };
+  }
+
+  it.each([UPDATE_MODE.NEVER, UPDATE_MODE.ALWAYS, UPDATE_MODE.ON_SUCCESS])('a stop waits for the row in hand and takes no more (%s)', async (mode) => {
+    const { source, destroyFn, marked, dispatched, release } = makeBlockedSource(mode);
+    await source.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const stopped = source.onStop();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(destroyFn).not.toHaveBeenCalled();
+    release();
+    await stopped;
+
+    expect(dispatched).toEqual(['{"id":1}']);
+    expect(marked()).toEqual(mode === UPDATE_MODE.NEVER ? [] : [1]);
+    expect(destroyFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a halt does not wait, and the cycle marks its row, marks no row it did not dispatch, and closes its pool', async () => {
+    const { source, destroyFn, marked, dispatched, release } = makeBlockedSource(UPDATE_MODE.ALWAYS);
+    await source.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await source.onHalt();
+    await source.onUndeploy();
+    expect(destroyFn).not.toHaveBeenCalled();
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(dispatched).toEqual(['{"id":1}']);
+    expect(marked()).toEqual([1]);
+    expect(destroyFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a start after a halt polls once the cycle in flight has ended', async () => {
+    const { source, dispatched, release } = makeBlockedSource(UPDATE_MODE.ON_SUCCESS);
+    await source.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await source.onHalt();
+    await source.onStart();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(dispatched).toHaveLength(1);
+
+    release();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(dispatched).toHaveLength(2);
+    const stopped = source.onStop();
+    release();
+    await stopped;
   });
 });
