@@ -4,6 +4,8 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { CODE_TEMPLATE_CONTEXTS } from '@galvanigraph/core-models';
+import { isPlainObject } from '@galvanigraph/core-util';
+import { getString, stringList, toRecordList } from './mirth-xml.js';
 import { CodeTemplateService, type TemplateDetail } from './code-template.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 
@@ -31,14 +33,6 @@ export interface CodeTemplateImportCounts {
   readonly skipped: number;
 }
 
-export interface XmlReaders {
-  readonly isRecord: (v: unknown) => v is Record<string, unknown>;
-  readonly getString: (obj: unknown, key: string) => string | null;
-  readonly toRecordList: (node: unknown) => readonly Record<string, unknown>[];
-  /** The `<string>` children of a Mirth string list; [] when there are none. */
-  readonly stringList: (node: unknown) => string[];
-}
-
 const KNOWN_CONTEXTS: ReadonlySet<string> = new Set(CODE_TEMPLATE_CONTEXTS);
 
 /**
@@ -49,20 +43,20 @@ function mapTemplateType(type: string | null): 'FUNCTION' | 'CODE_BLOCK' {
   return type === 'DRAG_AND_DROP_CODE' ? 'CODE_BLOCK' : 'FUNCTION';
 }
 
-function convertTemplate(node: Record<string, unknown>, xml: XmlReaders): MirthCodeTemplate | null {
-  const name = xml.getString(node, 'name');
+function convertTemplate(node: Record<string, unknown>): MirthCodeTemplate | null {
+  const name = getString(node, 'name');
   const props = node['properties'];
-  if (!name || !xml.isRecord(props)) return null;
+  if (!name || !isPlainObject(props)) return null;
   const contextSet = node['contextSet'];
-  const delegate = xml.isRecord(contextSet) ? contextSet['delegate'] : null;
-  const rawContexts = xml.isRecord(delegate) ? delegate['contextType'] : null;
+  const delegate = isPlainObject(contextSet) ? contextSet['delegate'] : null;
+  const rawContexts = isPlainObject(delegate) ? delegate['contextType'] : null;
   const contextList = Array.isArray(rawContexts) ? rawContexts : rawContexts == null ? [] : [rawContexts];
   const contexts = contextList.map(String).filter((c): c is CodeTemplateContext => KNOWN_CONTEXTS.has(c));
   return {
     name,
-    description: xml.getString(props, 'description') ?? xml.getString(node, 'description') ?? '',
-    type: mapTemplateType(xml.getString(props, 'type')),
-    code: xml.getString(props, 'code') ?? '',
+    description: getString(props, 'description') ?? getString(node, 'description') ?? '',
+    type: mapTemplateType(getString(props, 'type')),
+    code: getString(props, 'code') ?? '',
     contexts,
   };
 }
@@ -72,34 +66,33 @@ function convertTemplate(node: Record<string, unknown>, xml: XmlReaders): MirthC
  * channel (an exclusion list is not kept, so the import warns about one);
  * otherwise the channels it was enabled for, in lower case as ids are stored (D-349).
  */
-function libraryScope(lib: Record<string, unknown>, name: string, xml: XmlReaders, warnings: string[]): readonly string[] | null {
-  if (xml.getString(lib, 'includeNewChannels') === 'true') {
-    if (xml.stringList(lib['disabledChannelIds']).length > 0) {
+function libraryScope(lib: Record<string, unknown>, name: string, warnings: string[]): readonly string[] | null {
+  if (getString(lib, 'includeNewChannels') === 'true') {
+    if (stringList(lib['disabledChannelIds']).length > 0) {
       warnings.push(`Code template library "${name}": Mirth disabled it for some channels; here it applies to every channel`);
     }
     return null;
   }
-  return xml.stringList(lib['enabledChannelIds']).map((id) => id.toLowerCase());
+  return stringList(lib['enabledChannelIds']).map((id) => id.toLowerCase());
 }
 
 export function extractCodeTemplateLibraries(
   parsed: Record<string, unknown>,
-  xml: XmlReaders,
   warnings: string[],
 ): readonly MirthCodeTemplateLibrary[] {
   const server = parsed['serverConfiguration'];
-  if (!xml.isRecord(server)) return [];
+  if (!isPlainObject(server)) return [];
   const librariesNode = server['codeTemplateLibraries'];
-  const libraryNodes = xml.isRecord(librariesNode) ? xml.toRecordList(librariesNode['codeTemplateLibrary']) : [];
+  const libraryNodes = isPlainObject(librariesNode) ? toRecordList(librariesNode['codeTemplateLibrary']) : [];
   return libraryNodes.flatMap((lib) => {
-    const name = xml.getString(lib, 'name');
+    const name = getString(lib, 'name');
     if (!name) return [];
     const templatesNode = lib['codeTemplates'];
-    const templates = (xml.isRecord(templatesNode) ? xml.toRecordList(templatesNode['codeTemplate']) : [])
-      .map((t) => convertTemplate(t, xml))
+    const templates = (isPlainObject(templatesNode) ? toRecordList(templatesNode['codeTemplate']) : [])
+      .map((t) => convertTemplate(t))
       .filter((t): t is MirthCodeTemplate => t !== null);
-    const channelIds = libraryScope(lib, name, xml, warnings);
-    return [{ name, description: xml.getString(lib, 'description') ?? '', channelIds, templates }];
+    const channelIds = libraryScope(lib, name, warnings);
+    return [{ name, description: getString(lib, 'description') ?? '', channelIds, templates }];
   });
 }
 

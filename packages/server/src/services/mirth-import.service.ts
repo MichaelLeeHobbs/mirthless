@@ -19,6 +19,7 @@ import {
   extractCodeTemplateLibraries, importCodeTemplateLibraries,
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
+import { getBoolean, getNestedRecord, getNumber, getString, stringList, toRecordList } from './mirth-xml.js';
 import { isPlainObject, unescapeControlChars } from '@galvanigraph/core-util';
 import { DATABASE_VENDOR, unknownPlaceholders } from '@galvanigraph/connectors';
 
@@ -33,8 +34,6 @@ export interface MirthImportResult {
   readonly importResult: ImportResult;
   readonly codeTemplates: CodeTemplateImportCounts;
 }
-
-const XML_READERS = { isRecord: isPlainObject, getString, toRecordList, stringList } as const;
 
 const CONNECTOR_TYPE_MAP: ReadonlyMap<string, string> = new Map([
   ['com.mirth.connect.connectors.tcp.TcpReceiverProperties', 'TCP_MLLP'],
@@ -104,7 +103,7 @@ export class MirthImportService {
         const result = convertChannel(mirthChannel, warnings);
         channels.push(result);
       }
-      const codeTemplateLibraries = extractCodeTemplateLibraries(parsed, XML_READERS, warnings);
+      const codeTemplateLibraries = extractCodeTemplateLibraries(parsed, warnings);
 
       return { channels, codeTemplateLibraries, warnings };
     });
@@ -170,31 +169,6 @@ export class MirthImportService {
       };
     });
   }
-}
-
-function getString(obj: unknown, key: string): string | null {
-  if (!isPlainObject(obj)) return null;
-  const val = obj[key];
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-  return null;
-}
-
-function getBoolean(obj: unknown, key: string, defaultValue: boolean): boolean {
-  const val = getString(obj, key);
-  if (val === null) return defaultValue;
-  return val === 'true';
-}
-
-function getNumber(obj: unknown, key: string, defaultValue: number): number {
-  if (!isPlainObject(obj)) return defaultValue;
-  const val = obj[key];
-  if (typeof val === 'number') return val;
-  if (typeof val === 'string') {
-    const parsed = Number(val);
-    return Number.isFinite(parsed) ? parsed : defaultValue;
-  }
-  return defaultValue;
 }
 
 function extractChannels(parsed: Record<string, unknown>): readonly Record<string, unknown>[] {
@@ -1096,11 +1070,6 @@ function httpListenerWarnings(propsNode: Record<string, unknown>, channelName: s
   return warnings;
 }
 
-function getNestedRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | null {
-  const val = obj[key];
-  return isPlainObject(val) ? val as Record<string, unknown> : null;
-}
-
 function convertDestinations(
   mirthChannel: Record<string, unknown>,
   channelName: string,
@@ -1241,11 +1210,6 @@ function destinationConnectorsById(mirthChannel: Record<string, unknown>): Reado
   if (!isPlainObject(destConnectors)) return [];
   const connectorList = toRecordList(destConnectors['connector']);
   return connectorList.map((conn, idx) => [destinationMetaDataId(conn, idx), conn] as const);
-}
-
-function toRecordList(node: unknown): readonly Record<string, unknown>[] {
-  if (Array.isArray(node)) return node.filter(isPlainObject);
-  return isPlainObject(node) ? [node] : [];
 }
 
 interface ScriptElement {
@@ -1397,15 +1361,6 @@ function mirthRuleScript(field: string, condition: string, values: readonly stri
     test = values.length > 0 ? values.map((v) => `${field} ${eq} ${v}`).join(join) : `${field} ${eq} ""`;
   }
   return `if(${test}) {\n\treturn true;\n}\nreturn false;`;
-}
-
-/** A Mirth string list (`<values><string>a</string></values>`) or a bare array. */
-function stringList(node: unknown): string[] {
-  if (Array.isArray(node)) return node.map(String);
-  if (!isPlainObject(node)) return [];
-  const raw = node['string'];
-  const list: readonly unknown[] = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  return list.map(String);
 }
 
 function convertTransformers(mirthChannel: Record<string, unknown>): ChannelExportEntry['transformers'] {
