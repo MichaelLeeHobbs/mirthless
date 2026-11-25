@@ -39,6 +39,28 @@ export function requireDb(): TestDbConfig {
   return dbConfig;
 }
 
+function readTestMysqlConfig(): PoolConfig | null {
+  const host = process.env.MYSQL_TEST_HOST;
+  if (!host) return null;
+  return {
+    host,
+    port: process.env.MYSQL_TEST_PORT ? Number(process.env.MYSQL_TEST_PORT) : 3307,
+    database: process.env.MYSQL_TEST_DATABASE ?? 'partner',
+    user: process.env.MYSQL_TEST_USER ?? 'mirth',
+    password: process.env.MYSQL_TEST_PASSWORD ?? 'mirthpw',
+    maxConnections: 4,
+    idleTimeoutMs: 10_000,
+    connectionTimeoutMs: 10_000,
+  };
+}
+
+export const mysqlConfig = readTestMysqlConfig();
+export const describeMysql = mysqlConfig ? describe : describe.skip;
+export function requireMysql(): PoolConfig {
+  if (!mysqlConfig) throw new Error('MYSQL_TEST_HOST is not set');
+  return mysqlConfig;
+}
+
 export interface TestSftpConfig {
   readonly host: string;
   readonly port: number;
@@ -179,6 +201,7 @@ export function requireAmqpTls(): TestAmqpTlsConfig {
 
 const missingServices = [
   dbConfig ? null : 'DATABASE_URL (a *_test database)',
+  mysqlConfig ? null : 'MYSQL_TEST_HOST',
   sftpConfig ? null : 'SFTP_TEST_HOST',
   mailConfig ? null : 'SMTP_TEST_HOST',
   kafkaConfig ? null : 'KAFKA_TEST_BROKERS',
