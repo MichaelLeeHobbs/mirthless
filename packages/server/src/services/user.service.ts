@@ -40,7 +40,7 @@ async function lockTarget(tx: DbExecutor, id: string): Promise<UserDetails & { r
   return row;
 }
 
-/** A deleted account is a disabled one, and what the audit log says of its person must stay theirs (D-371). */
+/** A deleted account is a disabled one, and what the audit log says of its person must stay theirs (D-372). */
 function assertKeepsEmail(target: UserDetails & { readonly enabled: boolean }, input: UpdateUserInput): void {
   const staysDisabled = !target.enabled && input.enabled !== true;
   if (staysDisabled && input.email !== undefined && input.email !== target.email) {

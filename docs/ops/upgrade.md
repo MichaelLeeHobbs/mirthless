@@ -427,6 +427,10 @@ A server backup left out whether a code template is JavaScript or TypeScript, so
 
 The production compose file now gives the server 45 seconds to stop (`stop_grace_period`). Docker's default of 10 cut off the 30 it uses to let the messages under way end. Add it to a compose file of your own. The container from before the upgrade still has the old limit, so stop it yourself before step 3 of the [upgrade](#standard-upgrade-docker): `docker compose -f docker/docker-compose.prod.yml stop -t 45 server`.
 
+## A disabled account's email is locked (#419)
+
+`PUT /api/v1/users/:id` answers 409 when it would change the email address of a disabled account, unless it also enables the account. A script that frees the address of someone who left must enable the account, change the address and disable it again. Nothing already stored changes, and the API keys that were disabled with the person stay disabled.
+
 ## Alert email signs in over TLS only (#358)
 
 With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
@@ -612,9 +616,9 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 **MariaDB**: a connection set `max_execution_time`, which MariaDB does not document, so it should have failed. The connector now sets MariaDB's `max_statement_time` when the server does not know the other. This was written from MariaDB's documentation and has not been tested on a MariaDB server.
 
-## A disabled account's email is locked (#419)
+## A stop finishes what a source took (#413)
 
-`PUT /api/v1/users/:id` answers 409 when it would change the email address of a disabled account, unless it also enables the account. A script that frees the address of someone who left must enable the account, change the address and disable it again. Nothing already stored changes, and the API keys that were disabled with the person stay disabled.
+- A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start, which a redeploy or a restart before that loses ([JavaScript](../user/connector-reference.md#javascript), D-371).
 
 ## Standard upgrade (Docker)
 
