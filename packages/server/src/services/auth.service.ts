@@ -5,7 +5,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
 import { loadUserStanding, roleLabel } from '../lib/principal.js';
-import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { signAccessToken, signRefreshToken, tokenExpiresAt, verifyRefreshToken } from '../lib/jwt.js';
 import { emitAuditEvent } from '../lib/event-emitter.js';
 import { AUDIT_ACTION, USER_KIND, serializeGrants, type GrantEntry } from '@galvanigraph/core-models';
@@ -37,6 +37,32 @@ function auditLoginFailure(
   });
 }
 
+function notLockedAt(now: Date): SQL | undefined {
+  return or(isNull(users.lockedUntil), lte(users.lockedUntil, now));
+}
+
+function lockedOutError(): ServiceError {
+  return new ServiceError(
+    'ACCOUNT_LOCKED',
+    'Too many failed attempts. Account has been temporarily locked.',
+    { lockedNow: true }
+  );
+}
+
+/**
+ * False when a concurrent request locked the account after this one read it as
+ * unlocked: a correct guess sent along with wrong ones must not get past the
+ * lock they set, or clear it.
+ */
+async function recordSignIn(userId: string, now: Date): Promise<boolean> {
+  const rows = await db
+    .update(users)
+    .set({ failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: now, updatedAt: now })
+    .where(and(eq(users.id, userId), notLockedAt(now)))
+    .returning({ id: users.id });
+  return rows.length > 0;
+}
+
 type FailedAttemptOutcome = 'counted' | 'locked_now' | 'already_locked';
 
 /**
@@ -55,7 +81,7 @@ async function recordFailedAttempt(userId: string, now: Date): Promise<FailedAtt
       lockedUntil: sql`CASE WHEN ${attempts} >= ${MAX_FAILED_ATTEMPTS} THEN ${lockUntil}::timestamptz WHEN ${lockExpired} THEN NULL ELSE ${users.lockedUntil} END`,
       updatedAt: now,
     })
-    .where(and(eq(users.id, userId), or(isNull(users.lockedUntil), lte(users.lockedUntil, now))))
+    .where(and(eq(users.id, userId), notLockedAt(now)))
     .returning({ failedLoginAttempts: users.failedLoginAttempts });
   if (!row) return 'already_locked';
   return row.failedLoginAttempts >= MAX_FAILED_ATTEMPTS ? 'locked_now' : 'counted';
@@ -150,22 +176,13 @@ export class AuthService {
           throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
         }
         auditLoginFailure(username, user.id, outcome === 'locked_now' ? 'invalid_password_locked' : 'account_locked', metadata);
-        throw new ServiceError(
-          'ACCOUNT_LOCKED',
-          'Too many failed attempts. Account has been temporarily locked.',
-          { lockedNow: true }
-        );
+        throw lockedOutError();
       }
 
-      await db
-        .update(users)
-        .set({
-          failedLoginAttempts: 0,
-          lockedUntil: null,
-          lastLoginAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, user.id));
+      if (!(await recordSignIn(user.id, new Date()))) {
+        auditLoginFailure(username, user.id, 'account_locked', metadata);
+        throw lockedOutError();
+      }
 
       const response = await currentUserResponse(user.id);
       if (!response) {
