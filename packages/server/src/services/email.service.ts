@@ -97,7 +97,7 @@ export class EmailService {
           subject,
           text: body,
         });
-        logger.info({ to, subject }, 'Alert email sent');
+        logger.info({ to }, 'Alert email sent');
       } finally {
         transport.close();
       }

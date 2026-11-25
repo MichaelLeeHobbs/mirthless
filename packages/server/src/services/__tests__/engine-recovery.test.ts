@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MessageDispatcher } from '@galvanigraph/connectors';
 import { bundleOf } from '../../../test/deployment-bundle.js';
+import { messagesProcessedTotal } from '../../lib/metrics.js';
 
 const mockSend = vi.hoisted(() => vi.fn());
 const mockVariablesUsed = vi.hoisted(() => vi.fn());
@@ -99,6 +100,8 @@ vi.mock('../../config/index.js', () => ({
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
 const { createDestinationConnector, createSourceConnector } = await import('@galvanigraph/connectors');
+
+const countedMessages = async (): Promise<number> => (await messagesProcessedTotal.get()).values[0]?.value ?? 0;
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const OK_EMPTY = { ok: true, value: [], error: null };
@@ -678,8 +681,11 @@ describe('EngineManager recovery', () => {
 
       it('ends in ERROR with the reason, the count and an alert', async () => {
         const logger = (await import('../../lib/logger.js')).default;
+        const before = await countedMessages();
 
         const engine = await deployAndRecover();
+
+        expect(await countedMessages()).toBe(before + 1);
 
         expect(ms.failUnrouted).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, 7);
         expect(mockSend).not.toHaveBeenCalled();
@@ -866,6 +872,7 @@ describe('EngineManager recovery', () => {
   });
 
   it('finishes the source of a message whose destination was redelivered', async () => {
+    const before = await countedMessages();
     ms.getUnprocessedMessages.mockResolvedValue(ok([{ id: 8, channelId: CHANNEL_ID }]));
     ms.getConnectorMessages
       .mockResolvedValueOnce(ok([{ messageId: 8, metaDataId: 0, status: 'TRANSFORMED', connectorName: 'Source' }, { messageId: 8, metaDataId: 1, status: 'RECEIVED', connectorName: 'Lab' }]))
@@ -877,6 +884,7 @@ describe('EngineManager recovery', () => {
     expect(ms.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL_ID, 8, 0, 'SENT', undefined);
     expect(ms.incrementStats).toHaveBeenCalledWith(CHANNEL_ID, 0, 'test-server', 'sent');
     expect(ms.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 8);
+    expect(await countedMessages()).toBe(before + 1);
     await engine.dispose();
   });
 

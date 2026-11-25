@@ -19,6 +19,7 @@ import {
   type RecoveryStore,
   type RedispatchDestinationFn,
   type StoreFailure,
+  type StoreReadFailure,
   type VariablesUsed,
   type ChannelRuntimeConfig,
   type PipelineConfig,
@@ -70,6 +71,7 @@ import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
+import { messagesProcessedTotal } from './lib/metrics.js';
 import { emitAuditEvent, emitEvent } from './lib/event-emitter.js';
 import { emitToChannelAudience } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
@@ -814,6 +816,7 @@ export class EngineManager {
       variablesUsed,
       onError: raiseAlert,
       onStoreFailure: logStoreFailure,
+      onReadFailure: logReadFailure,
       onTiming: logger.level === 'debug' || logger.level === 'trace'
         ? (messageId, totalMs, stages) => {
             logger.debug(
@@ -855,6 +858,7 @@ export class EngineManager {
         pollIntervalMs: 1_000,
         onError: raiseAlert,
         onStoreFailure: logStoreFailure,
+        onReadFailure: logReadFailure,
         // A source that keeps its input until every destination delivered (DICOM).
         onMessageDelivered: source.onMessageDelivered
           ? (_messageId, rawContent) => source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
@@ -897,6 +901,7 @@ export class EngineManager {
         runtime.haltSignal,
       );
       if (!result.ok) return result;
+      messagesProcessedTotal.inc();
       // Surface the pipeline's final status so the source connector can build the
       // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AA), as the
       // channel's response mode defines it.
@@ -1205,6 +1210,7 @@ export class EngineManager {
       finishSource: async (channelId, messageId, status) => {
         const updated = await store.updateConnectorMessageStatus(channelId, messageId, 0, status);
         if (!updated.ok) return updated;
+        messagesProcessedTotal.inc();
         return store.incrementStats(channelId, 0, this.serverId, status === 'SENT' ? 'sent' : 'errored');
       },
     };
@@ -1285,6 +1291,7 @@ export class EngineManager {
     const channelId = channel.id;
     const failed = await MessageService.failUnrouted(channelId, messageId);
     if (!failed.ok) return failed;
+    messagesProcessedTotal.inc();
     logger.error({ channelId, messageId, reason: RAW_NOT_STORED }, 'Crash recovery could not run a message again and marked it ERROR');
     const saved = (what: string, write: Promise<Result<unknown>>): Promise<void> =>
       reportUnsaved([write], { channelId, messageId, metaDataId: 0, what }, logStoreFailure);
@@ -1625,6 +1632,10 @@ function logStoreFailure(failure: StoreFailure): void {
     { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
     'Message store write failed: part of a message could not be saved',
   );
+}
+
+function logReadFailure({ channelId, messageId, metaDataId, errorMessage }: StoreReadFailure): void {
+  logger.error({ channelId, messageId, metaDataId, errMsg: errorMessage }, 'A destination queue could not be worked on as it should');
 }
 
 interface FilterRuleRow {

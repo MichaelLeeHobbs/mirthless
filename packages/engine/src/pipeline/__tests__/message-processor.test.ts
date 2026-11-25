@@ -638,15 +638,19 @@ describe('MessageProcessor', () => {
       expect(store.removeCompletedContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1);
     });
 
-    it('counts it queued, and raises an alert, when the store cannot say', async () => {
+    it('counts it queued, and says so in the log and an alert, when the store cannot say', async () => {
+      const onReadFailure = vi.fn();
       const store = { ...makeStore(), isFullyDelivered: vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('db down') }) };
       const onError = vi.fn().mockResolvedValue(undefined);
-      const processor = new MessageProcessor(sandbox, store, makeSendFn(), { ...queuedConfig, onError }, DEFAULT_EXECUTION_OPTIONS);
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), { ...queuedConfig, onError, onReadFailure }, DEFAULT_EXECUTION_OPTIONS);
 
       const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
       expect(result.ok && result.value.queued).toBe(true);
       expect(store.removeCompletedContent).not.toHaveBeenCalled();
+      expect(onReadFailure).toHaveBeenCalledExactlyOnceWith({
+        channelId: '00000000-0000-0000-0000-000000000001', messageId: 1, errorMessage: expect.stringContaining('db down') as string,
+      });
       expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('db down') }));
     });
 
