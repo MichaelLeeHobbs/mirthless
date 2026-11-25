@@ -24,16 +24,13 @@ describe('upsertSettingSchema', () => {
     expect(result.data.type).toBe('string');
   });
 
-  it('applies defaults for optional fields', () => {
-    const result = upsertSettingSchema.safeParse({
-      key: 'some.setting',
-    });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.value).toBeNull();
-    expect(result.data.type).toBe('string');
-    expect(result.data.description).toBeNull();
-    expect(result.data.category).toBe('general');
+  // #400: what it fills in, the server writes over what is stored, so a password would become a string that reads show.
+  it('fills nothing in', () => {
+    expect(upsertSettingSchema.parse({ key: 'some.setting', value: 'x' })).toEqual({ key: 'some.setting', value: 'x' });
+  });
+
+  it('refuses one without its value', () => {
+    expect(upsertSettingSchema.safeParse({ key: 'some.setting' }).error?.issues.map((i) => i.path)).toEqual([['value']]);
   });
 
   it('rejects empty key', () => {

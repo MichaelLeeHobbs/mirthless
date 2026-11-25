@@ -27,20 +27,23 @@ function assertDistinct(ids: ReadonlyArray<string | undefined>): void {
   if (twice !== undefined) throw new ServiceError('INVALID_INPUT', `Two destinations have the id "${twice}"`);
 }
 
-/** In braces or without dashes too. */
-function isUuid(id: string): boolean {
-  return /^[0-9a-f]{32}$/i.test(id.replace(/[{}-]/g, ''));
+/** Without dashes, in braces, or with a carriage return or other text around it too. */
+function holdsUuid(id: string): boolean {
+  return /[0-9a-f]{32}/i.test(id.replaceAll('-', ''));
 }
 
-/** A list the caller read before another save: taken as new, each destination would get a new number and leave its queue behind. */
+/**
+ * From a list the caller read before another save, or copied with something around it: taken as new, the
+ * destination would get a new number, leave its queue behind and be on.
+ */
 function assertStored(ids: readonly string[], stored: readonly DestinationRow[]): void {
-  const gone = ids.find((id) => isUuid(id) && !stored.some((s) => s.id === id));
+  const gone = ids.find((id) => holdsUuid(id) && !stored.some((s) => s.id === id));
   if (gone !== undefined) {
-    throw new ServiceError('INVALID_INPUT', `The channel has no destination with the id "${gone}". Read the channel again. For a new destination, send an id that is not a UUID, such as "new-1"`);
+    throw new ServiceError('INVALID_INPUT', `The channel has no destination with the id ${JSON.stringify(gone)}. Read the channel again. For a new destination, send an id that holds no UUID, such as "new-1"`);
   }
 }
 
-/** `ids`: what the request calls each destination, in lower case. One that is not a UUID is new. */
+/** `ids`: what the request calls each destination, in lower case. One that holds no UUID is new. */
 export function planDestinations(ids: readonly string[], stored: readonly DestinationRow[], next: number): DestinationPlan {
   assertDistinct(ids);
   assertStored(ids, stored);
