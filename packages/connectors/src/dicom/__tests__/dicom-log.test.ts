@@ -6,6 +6,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { format, inspect } from 'node:util';
 import pkg from 'dcmjs-dimse';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import type { ConnectorResponse, DispatchResult, MessageDispatcher, RawMessage } from '../../base.js';
@@ -15,7 +16,7 @@ import { fileHeader } from '../dicom-file.js';
 import { freePort } from '../../__fixtures__/free-port.js';
 import { startFakeScp, type FakeScp, type ScpBehaviour } from '../../__fixtures__/fake-scp.js';
 
-type Failing = 'open' | 'rm' | 'unlink' | 'rename' | 'mkdir' | 'realpath' | 'appendFile' | 'readFile' | 'access';
+type Failing = 'open' | 'rm' | 'unlink' | 'rename' | 'mkdir' | 'realpath' | 'appendFile' | 'readFile' | 'readdir' | 'access';
 
 /** The file operations that fail on a path that holds the text, as Node's fail. */
 const failing = vi.hoisted(() => ({ on: new Map<string, string>() }));
@@ -32,18 +33,18 @@ vi.mock('node:fs/promises', async (importActual) => {
   };
   return {
     ...actual,
-    ...Object.fromEntries((['open', 'rm', 'unlink', 'rename', 'mkdir', 'realpath', 'appendFile', 'readFile', 'access'] as const).map((name) => [name, wrap(name)])),
+    ...Object.fromEntries((['open', 'rm', 'unlink', 'rename', 'mkdir', 'realpath', 'appendFile', 'readFile', 'readdir', 'access'] as const).map((name) => [name, wrap(name)])),
   };
 });
 
 /** What the DICOM libraries print. They take console's methods when they load. */
-const printed = vi.hoisted(() => {
-  const lines: string[] = [];
+const printed = vi.hoisted((): unknown[][] => {
+  const calls: unknown[][] = [];
   for (const method of ['log', 'info', 'warn', 'error', 'debug', 'trace'] as const) {
     // eslint-disable-next-line no-console
-    console[method] = (...args: unknown[]): void => { lines.push(args.map(String).join(' ')); };
+    console[method] = (...args: unknown[]): void => { calls.push(args); };
   }
-  return lines;
+  return calls;
 });
 
 const logged = vi.hoisted((): Record<string, unknown>[] => []);
@@ -55,7 +56,7 @@ vi.mock('../../logger.js', async (importActual) => {
 
 const { Client, Dataset, constants, requests } = pkg;
 const { CStoreRequest } = requests;
-const { Status, StorageClass, TransferSyntax } = constants;
+const { AbortReason, AbortSource, Status, StorageClass, TransferSyntax } = constants;
 type CStoreResponseType = InstanceType<typeof pkg.responses.CStoreResponse>;
 
 /** Every UID of the instance starts with it. */
@@ -88,12 +89,13 @@ afterEach(async () => {
   await listener?.onUndeploy();
   listener = null;
   await fs.rm(dir, { recursive: true, force: true });
+  expect(lines()).not.toContain(ROOT);
 });
 
 const waitFor = <T>(check: () => T | Promise<T>): Promise<T> => vi.waitFor(check, 15_000);
 
 function lines(): string {
-  return JSON.stringify(logged) + printed.join('\n');
+  return [...logged.map((entry) => inspect(entry, { depth: 5 })), ...printed.map((args) => format(...args))].join('\n');
 }
 
 /** A log line with this message, once there is one. */
@@ -139,7 +141,7 @@ function nameInstance(request: CStoreRequestType, uid: string): void {
 }
 
 /** Store one image; the status it was answered with. */
-function store(commandUid?: string, change: (dataset: InstanceType<typeof Dataset>) => void = () => undefined): Promise<number | undefined> {
+function store(commandUid?: string, change: (dataset: InstanceType<typeof Dataset>) => void = () => undefined, abort = false): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
     let status: number | undefined;
     const client = new Client();
@@ -149,11 +151,14 @@ function store(commandUid?: string, change: (dataset: InstanceType<typeof Datase
     const request = new CStoreRequest(dataset);
     change(dataset);
     if (commandUid !== undefined) nameInstance(request, commandUid);
-    request.on('response', (response: CStoreResponseType) => { status = response.getStatus(); });
+    request.on('response', (response: CStoreResponseType) => {
+      status = response.getStatus();
+      if (abort) client.abort(AbortSource.ServiceUser, AbortReason.NotSpecified);
+    });
     client.addRequest(request);
     client.on('networkError', reject);
     client.on('closed', () => { resolve(status); });
-    client.send('127.0.0.1', port, 'SCANNER', 'LISTENER', { connectTimeout: 10_000, associationTimeout: 10_000, pduTimeout: 10_000 });
+    client.send('127.0.0.1', port, 'SCANNER', 'LISTENER', { connectTimeout: 10_000, associationTimeout: 10_000, pduTimeout: 10_000, associationLingerTimeout: abort ? 10_000 : 0 });
   });
 }
 
@@ -165,19 +170,18 @@ async function storedFile(): Promise<string> {
 }
 
 describe('the Listener, while it takes an image', () => {
-  it.each<[string, Failing, Pipeline]>([
-    ['the file cannot be made', 'open', async () => PROCESSED],
-    ['the file of a message that was not stored cannot be removed', 'rm', async () => STORE_DOWN],
-  ])('%s', async (_case, operation, pipeline) => {
+  it.each<[string, Failing, Pipeline, object]>([
+    ['the file cannot be made', 'open', async () => PROCESSED, {}],
+    ['the file of a message that was not stored cannot be removed', 'rm', async () => STORE_DOWN, { file: HASH }],
+  ])('%s', async (_case, operation, pipeline, named) => {
     failing.on.set(operation, NAME);
     await listen(pipeline);
 
     expect(await store()).toBe(Status.ProcessingFailure);
 
     expect(await line(/^DICOM receiver error$/)).toMatchObject({
-      errMsg: `${operation} failed: EBUSY`, directory: dir, associationId: expect.stringMatching(/^assoc-/) as string,
+      errMsg: `${operation} failed: EBUSY`, directory: dir, associationId: expect.stringMatching(/^assoc-/) as string, ...named,
     });
-    expect(lines()).not.toContain(ROOT);
   });
 
   it('its dataset cannot be read', async () => {
@@ -186,15 +190,48 @@ describe('the Listener, while it takes an image', () => {
     expect(await store(undefined, (dataset) => { dataset.getDenaturalizedDataset = (): Buffer => Buffer.from(`${ROOT} is no dataset`); })).toBe(0xc000);
 
     expect(await line(/^DICOM receiver error$/)).toMatchObject({ directory: dir, associationId: expect.stringMatching(/^assoc-/) as string });
-    expect(lines()).not.toContain(ROOT);
   });
 
-  it('the command has a UID longer than DICOM allows', async () => {
+  it.each([`${ROOT}.${'1'.repeat(64)}`, `${ROOT}.${'1'.repeat(64)}\\1.2`])('the command names the instance by what DICOM does not allow', async (uid) => {
     await listen(async () => PROCESSED);
 
-    expect(await store(`${ROOT}.${'1'.repeat(64)}`)).toBe(Status.Success);
+    expect(await store(uid)).toBe(Status.Success);
+  });
 
-    expect(lines()).not.toContain(ROOT);
+  it('its UID is not a DICOM UID', async () => {
+    await listen(async () => PROCESSED);
+
+    expect(await store(undefined, (dataset) => { dataset.setElement('SOPInstanceUID', `${ROOT}.x`); })).toBe(Status.ProcessingFailure);
+
+    expect(await line(/^DICOM receiver error$/)).toMatchObject({ errMsg: expect.stringContaining('is not a DICOM UID') as string, directory: dir });
+  });
+
+  it('its dataset has no SOP Class UID', async () => {
+    await listen(async () => PROCESSED);
+
+    expect(await store(undefined, (dataset) => { dataset.setElement('SOPClassUID', ''); })).toBe(0xc000);
+
+    await line(/^DICOM receiver error$/);
+  });
+
+  it('a hundred copies of it wait', async () => {
+    const names = Array.from({ length: 100 }, (_, i) => (i === 0 ? NAME : `${SOP}_${String(i + 1)}.dcm`));
+    await Promise.all(names.map((name) => fs.writeFile(path.join(dir, name), 'DICM')));
+    await listen(async () => PROCESSED);
+
+    expect(await store()).toBe(Status.ProcessingFailure);
+
+    expect(await line(/^DICOM receiver error$/)).toMatchObject({ errMsg: expect.stringContaining('100 copies') as string });
+  });
+
+  it('another of the roots cannot be resolved, which the line names', async () => {
+    const other = path.join(dir, 'other-root');
+    failing.on.set('realpath', 'other-root');
+    await listen(async () => PROCESSED, { roots: { allowed: [dir, other], denied: [] } });
+
+    expect(await store()).toBe(Status.ProcessingFailure);
+
+    expect(await line(/^DICOM receiver error$/)).toMatchObject({ errMsg: `realpath failed: EBUSY ${other}`, directory: dir });
   });
 
   it('the message fails after it was stored', async () => {
@@ -203,7 +240,6 @@ describe('the Listener, while it takes an image', () => {
     expect(await store()).toBe(Status.Success);
 
     expect(await line(/^DICOM message failed/)).toMatchObject({ directory: dir, associationId: expect.stringMatching(/^assoc-/) as string, file: HASH, messageId: 41 });
-    expect(lines()).not.toContain(ROOT);
   });
 
   it('a destination fails', async () => {
@@ -212,20 +248,18 @@ describe('the Listener, while it takes an image', () => {
     await store();
 
     expect(await line(/had a destination fail/)).toMatchObject({ directory: dir, messageId: 41, file: HASH });
-    expect(lines()).not.toContain(ROOT);
   });
 
-  it.each<[string, Failing]>([
-    ['its line cannot be written to the list of its association', 'appendFile'],
-    ['the list cannot be made', 'mkdir'],
-  ])('%s', async (_case, operation) => {
+  it.each<[string, Failing, () => string]>([
+    ['its line cannot be written to the list of its association', 'appendFile', () => 'appendFile failed: EBUSY'],
+    ['the directory of the lists cannot be made, which the line names', 'mkdir', () => `mkdir failed: EBUSY ${path.join(dir, '.galvanigraph-pending', 'channel-1')}`],
+  ])('%s', async (_case, operation, errMsg) => {
     failing.on.set(operation, '.galvanigraph-pending');
     await listen(async () => PROCESSED, { dispatchMode: 'PER_ASSOCIATION' });
 
     expect(await store()).toBe(Status.ProcessingFailure);
 
-    expect(await line(/^DICOM receiver error$/)).toMatchObject({ directory: dir });
-    expect(lines()).not.toContain(ROOT);
+    expect(await line(/^DICOM receiver error$/)).toMatchObject({ errMsg: errMsg(), directory: dir, file: HASH });
   });
 
   it('the message of an association cannot be stored', async () => {
@@ -234,7 +268,35 @@ describe('the Listener, while it takes an image', () => {
     expect(await store()).toBe(Status.Success);
 
     expect(await line(/could not be stored as a message/)).toMatchObject({ directory: dir, fileCount: 1, errMsg: 'the store is down' });
-    expect(lines()).not.toContain(ROOT);
+  });
+
+  it('its association ends without a release', async () => {
+    await listen(async () => PROCESSED, { dispatchMode: 'PER_ASSOCIATION' });
+
+    await store(undefined, undefined, true);
+
+    expect(await line(/ended without a release/)).toMatchObject({ associationId: expect.stringMatching(/^assoc-/) as string, fileCount: 1 });
+  });
+
+  it('its file is gone when its association is recovered', async () => {
+    let gone = false;
+    await listen(async (raw) => {
+      if (!gone) await fs.rm(path.join(dir, NAME));
+      gone = true;
+      expect(raw.content).toContain(SOP);
+      return STORE_DOWN;
+    }, { dispatchMode: 'PER_ASSOCIATION' });
+
+    await store();
+
+    expect(await line(/is recovered without images/)).toMatchObject({ missing: 1 });
+  });
+
+  it('the associations that wait cannot be listed, whose directory the line names', async () => {
+    failing.on.set('readdir', '.galvanigraph-pending');
+    await listen(async () => PROCESSED);
+
+    expect(await line(/could not be listed/)).toMatchObject({ errMsg: `readdir failed: EBUSY ${path.join(dir, '.galvanigraph-pending', 'channel-1')}`, directory: dir });
   });
 
   it.each<[string, Failing, string]>([
@@ -247,7 +309,6 @@ describe('the Listener, while it takes an image', () => {
     await store();
 
     expect(await line(/could not be read; tried again/)).toMatchObject({ directory: dir, errMsg: `${operation} failed: EBUSY`, associationId: expect.stringMatching(/^assoc-/) as string });
-    expect(lines()).not.toContain(ROOT);
   });
 });
 
@@ -257,16 +318,15 @@ describe('the Listener, when it acts on a file after its message', () => {
   it.each<[string, Failing, string, string, () => Partial<DicomReceiverConfig>]>([
     ['it cannot be deleted', 'unlink', NAME, 'unlink failed: EBUSY', () => ({ postAction: 'DELETE' })],
     ['it cannot be moved', 'rename', NAME, 'rename failed: EBUSY', MOVE],
-    ['it cannot be resolved', 'realpath', NAME, `DICOM file ${HASH} cannot be used: realpath failed: EBUSY`, () => ({ postAction: 'DELETE' })],
-    ['the directory it is moved to cannot be made', 'mkdir', 'moved', 'mkdir failed: EBUSY', MOVE],
+    ['it cannot be resolved', 'realpath', NAME, `DICOM file ${HASH} could not be checked against FILE_CONNECTOR_ROOTS: realpath failed: EBUSY`, () => ({ postAction: 'DELETE' })],
+    ['the directory it is moved to cannot be made, which the line names', 'mkdir', 'moved', 'mkdir failed: EBUSY <moved>', MOVE],
   ])('%s', async (_case, operation, text, errMsg, config) => {
     failing.on.set(operation, text);
     await listen(async () => PROCESSED, config());
 
     expect(await store()).toBe(Status.Success);
 
-    expect(await line(/^DICOM post-action failed/)).toMatchObject({ errMsg, directory: dir, file: HASH, messageId: 41, associationId: expect.stringMatching(/^assoc-/) as string, ...config() });
-    expect(lines()).not.toContain(ROOT);
+    expect(await line(/^DICOM post-action failed/)).toMatchObject({ errMsg: errMsg.replace('<moved>', path.join(dir, 'moved')), directory: dir, file: HASH, messageId: 41, associationId: expect.stringMatching(/^assoc-/) as string, ...config() });
   });
 
   it.each<[string, Failing | null, () => Promise<string>, string]>([
@@ -283,7 +343,6 @@ describe('the Listener, when it acts on a file after its message', () => {
 
     expect(alert).toBe(`DICOM post-action failed for 1 file(s), left in place: ${HASH} (${text})`);
     expect(await line(/^DICOM post-action failed/)).toMatchObject({ errMsg: text, directory: dir, file: HASH, messageId: 41 });
-    expect(lines()).not.toContain(ROOT);
   });
 });
 
@@ -325,24 +384,23 @@ describe('the Sender, whose ERROR text is stored, logged and put in alerts', () 
 
   it.each<[string, () => string, string]>([
     ['outside the roots', () => path.join(os.homedir(), ROOT, NAME), `The path of DICOM file ${HASH} is outside FILE_CONNECTOR_ROOTS`],
-    ['relative', () => `${ROOT}/${NAME}`, `The path of DICOM file ${HASH} must be absolute`],
+    ['relative', () => `${ROOT}/${NAME}`, 'The message content is not the absolute path of a DICOM file'],
+    ['in a list, as a Listener\'s association is', () => JSON.stringify([path.join(dir, NAME)]), 'The message content is not the absolute path of a DICOM file'],
     ['in a denied directory', () => path.join(dir, 'denied', ROOT, NAME), `The path of DICOM file ${HASH} is in one of the server's own directories, which File connectors may not use`],
     ['of a file that is not there', () => path.join(dir, ROOT, NAME), `DICOM file ${HASH} cannot be read: open failed: ENOENT`],
-    ['with a U+0000 in it', () => path.join(dir, `${ROOT}\0`, NAME), `DICOM file ${HASH} cannot be used: file operation failed: ERR_INVALID_ARG_VALUE`],
+    ['with a U+0000 in it', () => path.join(dir, `${ROOT}\0`, NAME), `DICOM file ${HASH} could not be checked against FILE_CONNECTOR_ROOTS: file operation failed: ERR_INVALID_ARG_VALUE`],
   ])('a path %s', async (_case, content, errorMessage) => {
     expect(await send(content())).toEqual({ status: 'ERROR', content: '', errorMessage });
-    expect(lines()).not.toContain(ROOT);
   });
 
   it.each<[Failing, string]>([
-    ['realpath', `DICOM file ${HASH} cannot be used: realpath failed: EBUSY`],
+    ['realpath', `DICOM file ${HASH} could not be checked against FILE_CONNECTOR_ROOTS: realpath failed: EBUSY`],
     ['readFile', `DICOM file ${HASH} cannot be read: readFile failed: EBUSY`],
   ])('a file that cannot be read (%s)', async (operation, errorMessage) => {
     const file = await storedFile();
     failing.on.set(operation, NAME);
 
     expect(await send(file)).toEqual({ status: 'ERROR', content: '', errorMessage });
-    expect(lines()).not.toContain(ROOT);
   });
 
   it.each<ScpBehaviour>(['reject-contexts', 'reject-association', 'abort', 'close', { answer: 0xa700 }])('an archive that does not take the image (%j)', async (behaviour) => {
@@ -350,25 +408,26 @@ describe('the Sender, whose ERROR text is stored, logged and put in alerts', () 
 
     expect(response.status).toBe('ERROR');
     expect(response.errorMessage).not.toContain(ROOT);
-    expect(lines()).not.toContain(ROOT);
   });
 
   it('what the library prints is seen here', async () => {
     await send(await image(SOP), 'reject-contexts');
 
-    expect(printed.join('\n')).toContain('Could not find an accepted presentation context');
+    expect(lines()).toContain('Could not find an accepted presentation context');
   });
 
-  it('an image whose UID is longer than DICOM allows is not sent, as it was with its UID cut short', async () => {
-    const response = await send(await image(`${ROOT}.${'1'.repeat(64)}`));
+  it('a root that cannot be resolved is named', async () => {
+    const other = path.join(dir, 'other-root');
+    failing.on.set('realpath', 'other-root');
 
-    expect(response).toEqual({ status: 'ERROR', content: '', errorMessage: 'The DICOM file has a SOP Class UID or SOP Instance UID longer than 64 characters, which DICOM does not allow' });
-    expect(scp?.stores()).toBe(0);
-    expect(lines()).not.toContain(ROOT);
+    expect((await send(await storedFile(), { answer: 0 }, [other, dir])).errorMessage)
+      .toBe(`DICOM file ${HASH} could not be checked against FILE_CONNECTOR_ROOTS: realpath failed: EBUSY ${other}`);
   });
 
-  it('sends the longest UID DICOM allows', async () => {
-    expect((await send(await image(`${ROOT}.${'1'.repeat(64 - ROOT.length - 1)}`))).status).toBe('SENT');
+  it('an image whose UID is longer than DICOM allows', async () => {
+    await send(await image(`${ROOT}.${'1'.repeat(64)}`));
+
+    expect(scp?.stores()).toBe(1);
   });
 
   it('a real image is sent without a line', async () => {

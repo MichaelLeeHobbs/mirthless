@@ -16,7 +16,7 @@ import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logge
 import { isMissing, resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import { createDimseReceiver, DIMSE_SOURCE } from './dcmjs-dimse-adapter.js';
 import { fileHash, resolveImage, withoutPath } from './image-path.js';
-import { PendingAssociations, type PendingAssociation } from './pending-associations.js';
+import { PendingAssociations, pendingDirectory, type PendingAssociation } from './pending-associations.js';
 
 const DICOM_POST_ACTION = {
   DELETE: 'DELETE',
@@ -71,6 +71,8 @@ export interface DcmtkAssociationData {
 export interface DcmtkErrorData {
   readonly error: Error;
   readonly associationId?: string;
+  /** The file of the image that was refused. */
+  readonly filePath?: string | undefined;
 }
 
 export interface DcmtkReceiver {
@@ -177,8 +179,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
 
       // Subscribe to the receiver's error event. Without a listener a dcmtk
       // emitter error would surface as an uncaughtException and kill the engine.
-      this.receiver.onEvent('error', ({ error, associationId }) => {
-        this.logger.error({ ...this.failed(error), associationId }, 'DICOM receiver error');
+      this.receiver.onEvent('error', ({ error, associationId, filePath }) => {
+        this.logger.error({ ...this.failed(error), associationId, ...(filePath === undefined ? {} : { file: fileHash(filePath) }) }, 'DICOM receiver error');
       });
 
       this.stopping = false;
@@ -202,9 +204,14 @@ export class DicomReceiver implements SourceConnectorRuntime {
     });
   }
 
+  private withoutImage(err: unknown): Error {
+    const { storageDir, moveToDirectory, roots } = this.config;
+    return withoutPath(err, [storageDir, moveToDirectory, pendingDirectory(this.config), ...roots.allowed, ...roots.denied]);
+  }
+
   /** What a log line says of a failure. */
   private failed(err: unknown): Readonly<Record<string, unknown>> {
-    return { ...errorInfo(withoutPath(err)), directory: this.config.storageDir };
+    return { ...errorInfo(this.withoutImage(err)), directory: this.config.storageDir };
   }
 
   private endSweeps(): void {
@@ -456,7 +463,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
         { ...this.failed(err), ...context, file, postAction, moveToDirectory },
         'DICOM post-action failed; file left in place',
       );
-      return `${file} (${withoutPath(err).message})`;
+      return `${file} (${this.withoutImage(err).message})`;
     }
   }
 

@@ -1,0 +1,16 @@
+// The connector reports failures itself. At info dcmjs-dimse prints every association, and at warn
+// the dcmjs it runs on prints values, such as a UID that it cuts short (#321).
+
+import { createRequire } from 'node:module';
+import pkg from 'dcmjs-dimse';
+
+interface LibraryLog {
+  setLevel(level: 'error'): void;
+}
+
+pkg.log.setLevel('warn');
+
+// Its own copy, whatever other version is installed.
+const requireOfDimse = createRequire(createRequire(import.meta.url).resolve('dcmjs-dimse'));
+const dcmjs = requireOfDimse('dcmjs') as { readonly log: LibraryLog };
+dcmjs.log.setLevel('error');

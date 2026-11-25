@@ -83,6 +83,6 @@ describe('resolveWithinRoots', () => {
   });
 
   it('refuses a relative path', async () => {
-    await expect(resolveWithinRoots('inbound', roots())).rejects.toThrow(/absolute/);
+    await expect(resolveWithinRoots('inbound', roots())).rejects.toThrow('File connector path "inbound" must be absolute');
   });
 });

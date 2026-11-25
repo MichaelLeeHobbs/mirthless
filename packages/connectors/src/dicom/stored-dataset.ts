@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import pkg from 'dcmjs-dimse';
-import { explicitToImplicit, MAX_UID_LENGTH, readDicomFile, readableDataset } from './dicom-file.js';
+import { explicitToImplicit, readDicomFile, readableDataset } from './dicom-file.js';
 import { fileHash, withoutPath } from './image-path.js';
 
 const { Dataset, constants } = pkg;
@@ -17,17 +17,13 @@ export class StoredDataset extends Dataset {
 
   static async ofFile(filePath: string): Promise<StoredDataset> {
     const bytes = await fs.readFile(filePath).catch((err: unknown) => {
-      throw new Error(`DICOM file ${fileHash(filePath)} cannot be read: ${withoutPath(err).message}`);
+      throw new Error(`DICOM file ${fileHash(filePath)} cannot be read: ${withoutPath(err, []).message}`);
     });
     const { dataset, transferSyntax } = readDicomFile(bytes);
     const head = new Dataset(readableDataset(dataset, transferSyntax), transferSyntax, { untilTag: '00080018', includeUntilTagValue: true });
     const { SOPClassUID, SOPInstanceUID } = head.getElements();
     if (typeof SOPClassUID !== 'string' || typeof SOPInstanceUID !== 'string' || SOPClassUID === '' || SOPInstanceUID === '') {
       throw new Error('The DICOM file has no SOP Class UID or no SOP Instance UID');
-    }
-    // The library would send it cut short, and log it.
-    if (SOPClassUID.length > MAX_UID_LENGTH || SOPInstanceUID.length > MAX_UID_LENGTH) {
-      throw new Error(`The DICOM file has a SOP Class UID or SOP Instance UID longer than ${String(MAX_UID_LENGTH)} characters, which DICOM does not allow`);
     }
     return new StoredDataset(dataset, transferSyntax, { SOPClassUID, SOPInstanceUID });
   }

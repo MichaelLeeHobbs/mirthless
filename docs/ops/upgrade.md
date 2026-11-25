@@ -674,8 +674,7 @@ This reads the whole table, so run it at a quiet time. Start the server only on 
 
 ## DICOM log lines hold no UID (#321)
 
-- A DICOM connector's log lines give `directory` and `file` (a hash of the file name) where they had `filePath`, and the message or association id ([how to find the file](../user/connector-reference.md#dicom-security), D-379). The ERROR texts of a DICOM Sender name the image the same way: `DICOM file 2b7b59d38673 cannot be read: open failed: ENOENT`, where the text quoted the path. Change log queries and the regex filters of alerts that look for the old texts. **Lines and messages written before the upgrade still hold the paths**, so keep or delete old logs accordingly.
-- A DICOM Sender refuses an image whose SOP Class UID or SOP Instance UID is longer than 64 characters (ERROR). It was sent with its UID cut short, so the archive has it under another UID than the image's own.
+A DICOM connector's log lines about one file give `directory` and `file` (a hash of the file name) where they had `filePath`, and the message or association id ([how to find the file](../user/connector-reference.md#dicom-security), D-386). A failed file operation is logged by its call and code (`errMsg: "rename failed: EBUSY"`), where the text quoted the path and some lines had `code`. The ERROR texts of a DICOM Sender name the image the same way: `DICOM file 2b7b59d38673 cannot be read: open failed: ENOENT`. Content that is no absolute path, such as the list of paths of a Listener in `PER_ASSOCIATION` mode, gets `The message content is not the absolute path of a DICOM file`. Change log queries and the regex filters of alerts that look for the old texts. **Lines and messages written before the upgrade still hold the paths**, so keep or delete old logs accordingly.
 
 ## Standard upgrade (Docker)
 

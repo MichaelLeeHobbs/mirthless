@@ -17,15 +17,13 @@ import { settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import type { DcmtkReceiver, DcmtkErrorData, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
-import { fileHeader, MAX_UID_LENGTH, readableDataset, startsWithFileMeta } from './dicom-file.js';
+import { fileHeader, readableDataset, startsWithFileMeta } from './dicom-file.js';
 import { makeDirectory, syncDirectory } from './durable-file.js';
+import './quiet-libraries.js';
 
-const { Server, Scp, Dataset, Implementation, constants, responses, log } = pkg;
+const { Server, Scp, Dataset, Implementation, constants, responses } = pkg;
 const { AbortReason, AbortSource, SopClass, TransferSyntax, PresentationContextResult, RejectReason, RejectResult, RejectSource, Status } = constants;
 const { CEchoResponse, CStoreResponse } = responses;
-
-// Quiets the library's per-association INFO chatter; the connector logs failures itself.
-log.setLevel('warn');
 
 type AssociationType = InstanceType<typeof pkg.association.Association>;
 type CStoreRequestType = InstanceType<typeof pkg.requests.CStoreRequest>;
@@ -98,6 +96,8 @@ interface OpenAssociation {
   finish(): Promise<void>;
 }
 
+type Association = Pick<DcmtkFileData, 'associationId' | 'callingAE' | 'calledAE'>;
+
 interface ReceiverOptions {
   readonly port: number;
   readonly storageDir: string;
@@ -108,17 +108,12 @@ interface ReceiverOptions {
 
 /** A DICOM UID (PS3.5 9.1): digits and dots, at most 64 characters. Nothing in it can leave a directory. */
 const DICOM_UID = /^[0-9]+(\.[0-9]+)*$/;
+const MAX_UID_LENGTH = 64;
 
 /** The SOP Instance UID names the file, and the sending AE supplies it, so anything but a DICOM UID is refused (#313). */
 function checkedUid(uid: string): string {
   if (uid.length <= MAX_UID_LENGTH && DICOM_UID.test(uid)) return uid;
   throw new Error('The SOP Instance UID is not a DICOM UID (digits and dots, at most 64 characters); the instance was not stored');
-}
-
-/** The answer repeats the UID, and the library, which cuts one this long itself, logs it. */
-function cutLongUid(request: CStoreRequestType): void {
-  const uid: unknown = request.getAffectedSopInstanceUid();
-  if (typeof uid === 'string' && uid.length > MAX_UID_LENGTH) request.setAffectedSopInstanceUid(uid.slice(0, MAX_UID_LENGTH));
 }
 
 /** PS3.4 B.2.3. The library's constants stop at the general statuses. */
@@ -221,35 +216,47 @@ class DimseReceiver implements DcmtkReceiver {
    * against the roots before every write, so one swapped for a link out of them since deploy is
    * refused.
    */
-  private async handleInstance(dataset: ReceivedDataset, callingAe: string, calledAe: string, assocId: string, files: string[]): Promise<void> {
-    const sopInstanceUid = checkedUid(dataset.sopInstance);
-    const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
-    await makeDirectory(dir);
-    const filePath = await claimFileName(dir, sopInstanceUid);
+  private async handleInstance(dataset: ReceivedDataset, association: Association, files: string[]): Promise<void> {
+    let filePath: string | undefined;
+    try {
+      const sopInstanceUid = checkedUid(dataset.sopInstance);
+      const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
+      await makeDirectory(dir);
+      filePath = await claimFileName(dir, sopInstanceUid);
+      await this.write(dataset, filePath);
+      await this.fileListener?.({
+        ...association,
+        filePath,
+        associationDir: this.options.storageDir,
+        source: DIMSE_SOURCE,
+        instance: { dataset: dataset.getElements() },
+      });
+      files.push(filePath);
+    } catch (err) {
+      this.report(err, association.associationId, filePath);
+      throw err;
+    }
+  }
+
+  private async write(dataset: ReceivedDataset, filePath: string): Promise<void> {
     try {
       await writeInstance(dataset, filePath);
-      await syncDirectory(dir);
+      await syncDirectory(path.dirname(filePath));
     } catch (err) {
       await fs.rm(filePath, { force: true });
       throw err;
     }
-    await this.fileListener?.({
-      filePath,
-      associationId: assocId,
-      associationDir: this.options.storageDir,
-      callingAE: callingAe,
-      calledAE: calledAe,
-      source: DIMSE_SOURCE,
-      instance: { dataset: dataset.getElements() },
-    });
-    files.push(filePath);
+  }
+
+  private report(err: unknown, associationId: string, filePath?: string): void {
+    this.errorListener?.({ error: err instanceof Error ? err : new Error(String(err)), associationId, filePath });
   }
 
   async start(): Promise<Result<void>> {
     const storageDir = this.options.storageDir;
     const handleInstance = this.handleInstance.bind(this);
     const emitAssociation = (data: DcmtkAssociationData): void => { this.assocListener?.(data); };
-    const emitError = (err: unknown, associationId: string): void => { this.errorListener?.({ error: err instanceof Error ? err : new Error(String(err)), associationId }); };
+    const report = this.report.bind(this);
     const associations = this.associations;
     const isStopping = (): boolean => this.stopping;
 
@@ -328,7 +335,7 @@ class DimseReceiver implements DcmtkReceiver {
           dataset = new ReceivedDataset(bytesOf(stream), context.getAcceptedTransferSyntaxUid() ?? '');
         } catch (err) {
           // Answered as not understood; thrown, it would end the association.
-          emitError(err, this.assocId);
+          report(err, this.assocId);
         }
         callback(dataset as ReceivedDataset);
       }
@@ -340,7 +347,6 @@ class DimseReceiver implements DcmtkReceiver {
       }
 
       override cStoreRequest(request: CStoreRequestType, callback: (response: CStoreResponseType) => void): void {
-        cutLongUid(request);
         const response = CStoreResponse.fromRequest(request);
         const dataset = request.getDataset();
         // Nothing would make a message of an image sent after the release, or while the listener stops.
@@ -350,12 +356,10 @@ class DimseReceiver implements DcmtkReceiver {
           return;
         }
         // The SCU waits for the response, so it learns whether the file was stored.
-        const stored = handleInstance(dataset, this.callingAe, this.calledAe, this.assocId, this.files).then(
+        const association = { associationId: this.assocId, callingAE: this.callingAe, calledAE: this.calledAe };
+        const stored = handleInstance(dataset, association, this.files).then(
           () => { response.setStatus(Status.Success); },
-          (err: unknown) => {
-            emitError(err, this.assocId);
-            response.setStatus(Status.ProcessingFailure);
-          },
+          () => { response.setStatus(Status.ProcessingFailure); },
         ).finally(() => {
           callback(response);
           this.storing.delete(stored);
