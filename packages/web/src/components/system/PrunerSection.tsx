@@ -152,7 +152,7 @@ export function PrunerSection(): ReactNode {
       <ConfirmDialog
         open={confirming}
         title="Run the data pruner now?"
-        message="It deletes the old messages of every channel that has pruning on, and the records of every collection that have expired. This cannot be undone."
+        message="It deletes the old messages of every channel that has pruning on, deleted ones too, and the records of every collection that have expired. This cannot be undone."
         confirmLabel="Run pruner"
         severity="error"
         onConfirm={handleRunNow}

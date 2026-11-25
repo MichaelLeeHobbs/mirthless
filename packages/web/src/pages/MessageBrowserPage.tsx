@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
@@ -57,7 +58,6 @@ export function MessageBrowserPage(): ReactNode {
   const { notify } = useNotification();
   const { has } = usePermissions();
   // The same permissions the server checks on the reprocess and delete routes.
-  const canReprocess = has(PERMISSION.MESSAGES_REPROCESS);
   const canDelete = has(PERMISSION.MESSAGES_DELETE);
   const reprocessMutation = useReprocessMessage();
   const bulkDeleteMutation = useBulkDeleteMessages();
@@ -122,6 +122,8 @@ export function MessageBrowserPage(): ReactNode {
   };
 
   const { data: searchResult, isLoading, error, refetch } = useMessageSearch(searchParams);
+  const channelDeleted = searchResult?.channelDeleted ?? false;
+  const canReprocess = has(PERMISSION.MESSAGES_REPROCESS) && !channelDeleted;
 
   const handlePageChange = useCallback((newOffset: number) => {
     setOffset(newOffset);
@@ -225,7 +227,7 @@ export function MessageBrowserPage(): ReactNode {
         </Menu>
         {selectedMessageId !== null ? (
           <>
-            <Tooltip title={canReprocess ? '' : 'Requires messages:reprocess permission'}>
+            <Tooltip title={canReprocess || channelDeleted ? '' : 'Requires messages:reprocess permission'}>
               <span>
                 <Button
                   variant="outlined"
@@ -254,6 +256,10 @@ export function MessageBrowserPage(): ReactNode {
         ) : null}
         </>}
       />
+
+      {channelDeleted ? (
+        <Alert severity="info" sx={{ mb: 2 }}>This channel is deleted. Its messages are kept; they cannot be reprocessed or sent again.</Alert>
+      ) : null}
 
       <MessageSearchBar
         receivedFrom={receivedFrom}
@@ -300,12 +306,13 @@ export function MessageBrowserPage(): ReactNode {
       )}
 
       {selectedMessageId !== null && (
-        <MessageDetailPanel channelId={channelId} messageId={selectedMessageId} />
+        <MessageDetailPanel channelId={channelId} messageId={selectedMessageId} channelDeleted={channelDeleted} />
       )}
 
       <BulkMessageActionsToolbar
         channelId={channelId}
         selectedIds={checkedIds}
+        channelDeleted={channelDeleted}
         onClear={clearChecked}
       />
 

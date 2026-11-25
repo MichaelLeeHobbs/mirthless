@@ -112,7 +112,7 @@ describeIntegration('CrossChannelSearchService (real Postgres)', () => {
       expect(new Map(items.map((i) => [i.channelId, [i.channelName, i.channelDeleted]]))).toEqual(new Map([
         [live, [`itest-${live}`, false]],
         [deleted, [`itest-${deleted}`, true]],
-        [noRow, ['Unknown', false]],
+        [noRow, ['Unknown', true]],
       ]));
     } finally {
       for (const id of [live, deleted]) await deleteTestChannel(mods, id);

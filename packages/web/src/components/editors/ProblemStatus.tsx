@@ -4,16 +4,13 @@ import ButtonBase from '@mui/material/ButtonBase';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineOutlined';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
+import { plural } from '../../lib/format.js';
 import type { monaco } from './monaco.js';
 import { type Problem, revealProblem } from './editor-hooks.js';
 
 interface ProblemStatusProps {
   readonly editor: monaco.editor.IStandaloneCodeEditor | null;
   readonly problems: readonly Problem[];
-}
-
-function plural(n: number, word: string): string {
-  return `${String(n)} ${word}${n === 1 ? '' : 's'}`;
 }
 
 /** One missing bracket makes the parser report errors all the way down, so syntax errors after the first are counted as following it. */

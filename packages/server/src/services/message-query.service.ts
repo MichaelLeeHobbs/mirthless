@@ -31,6 +31,8 @@ export interface MessageSummary {
 
 export interface MessageSearchResult {
   readonly items: readonly MessageSummary[];
+  /** Its messages are kept, and nothing can be done with them but read and delete them. */
+  readonly channelDeleted: boolean;
   readonly total: number;
   readonly limit: number;
   readonly offset: number;
@@ -131,10 +133,12 @@ export class MessageQueryService {
 
       const whereClause = and(...conditions);
 
-      const countResult = await db.execute<{ count: string }>(
-        sql`SELECT COUNT(*) as count FROM messages WHERE ${whereClause}`
-      );
+      const countResult = await db.execute<{ count: string; channel_deleted: boolean }>(sql`
+        SELECT COUNT(*) as count, NOT EXISTS (SELECT 1 FROM channels WHERE id = ${channelId} AND deleted_at IS NULL) AS channel_deleted
+        FROM messages WHERE ${whereClause}
+      `);
       const total = Number(countResult.rows[0]?.count ?? 0);
+      const channelDeleted = countResult.rows[0]?.channel_deleted === true;
 
       const sortCol = filters.sort === 'messageId' ? 'id' : 'received_at';
       const sortDirection = filters.sortDir === 'asc' ? sql`ASC` : sql`DESC`;
@@ -155,7 +159,7 @@ export class MessageQueryService {
       `);
 
       if (messageRows.rows.length === 0) {
-        return { items: [], total, limit: filters.limit, offset: filters.offset };
+        return { items: [], channelDeleted, total, limit: filters.limit, offset: filters.offset };
       }
 
       // Raw SQL IN list avoids Drizzle bigint/number coercion issues.
@@ -215,7 +219,7 @@ export class MessageQueryService {
         };
       });
 
-      return { items, total, limit: filters.limit, offset: filters.offset };
+      return { items, channelDeleted, total, limit: filters.limit, offset: filters.offset };
     });
   }
 

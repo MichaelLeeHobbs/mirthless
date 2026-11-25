@@ -10,7 +10,7 @@ import { deleteMessagesByIds, DELETE_BATCH_SIZE, type DeleteRules } from './mess
 import { SWEEP_BUDGET_MS, sweepLeftoverRows } from './leftover-rows.js';
 import { pruneExpiredRecords } from './expired-records.js';
 
-const DEFAULT_MAX_AGE_DAYS = 30;
+export const DEFAULT_MAX_AGE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const ONLY_FINISHED: DeleteRules = { unfinished: () => false, queued: false };
 

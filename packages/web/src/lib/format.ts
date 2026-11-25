@@ -22,6 +22,10 @@ export function formatTimestamp(value: string | null | undefined, options: Times
   return formatTimestampWith(value, render, options.empty);
 }
 
+export function plural(n: number, word: string): string {
+  return `${String(n)} ${word}${n === 1 ? '' : 's'}`;
+}
+
 export function humanize(value: string): string {
   const words = value.trim().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);

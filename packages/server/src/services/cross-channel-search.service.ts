@@ -100,7 +100,7 @@ export class CrossChannelSearchService {
           messageId: messages.id,
           channelId: messages.channelId,
           channelName: sql<string>`coalesce(${channels.name}, 'Unknown')`,
-          channelDeleted: sql<boolean>`${channels.deletedAt} is not null`,
+          channelDeleted: sql<boolean>`${channels.id} is null or ${channels.deletedAt} is not null`,
           receivedAt: messages.receivedAt,
           processed: messages.processed,
           status: pickStatus,

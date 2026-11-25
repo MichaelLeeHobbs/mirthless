@@ -20,6 +20,8 @@ export interface MessageSummary {
 
 export interface MessageSearchResult {
   readonly items: readonly MessageSummary[];
+  /** Its messages are kept, and nothing can be done with them but read and delete them. */
+  readonly channelDeleted: boolean;
   readonly total: number;
   readonly limit: number;
   readonly offset: number;
