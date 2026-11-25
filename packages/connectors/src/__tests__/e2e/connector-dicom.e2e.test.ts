@@ -11,10 +11,11 @@ import {
   DicomDispatcher,
   clearChannelRegistry,
 } from '../../index.js';
-import { createDimseSender } from '../../dicom/dcmjs-dimse-adapter.js';
+import { createDimseSender } from '../../dicom/dimse-sender.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 import { freePort } from '../../__fixtures__/free-port.js';
+import { startFakeScp, type FakeScp, type ScpBehaviour } from '../../__fixtures__/fake-scp.js';
 
 const SCP_PORT = await freePort();
 const TCP_PORT = await freePort();
@@ -183,6 +184,99 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
     await waitFor(async () => (await fs.readdir(listenerDir)).length === 0, 5_000);
     expect(listener.store.connectorMessages.find((m) => m.metaDataId === 1)?.status).toBe('SENT');
   }, 60_000);
+});
+
+describe('DICOM archive that does not store the image (#410)', () => {
+  let archive: FakeScp | null = null;
+
+  afterEach(() => {
+    archive?.close();
+    archive = null;
+  });
+
+  /** A DICOM Listener that deletes its file once delivered, in front of an archive, given one image. */
+  async function storeThrough(behaviour: ScpBehaviour, queueMode: 'NEVER' | 'ON_FAILURE'): Promise<{ channel: DeployedChannel; storageDir: string }> {
+    const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mless-dicom-refused-'));
+    tempDirs.push(storageDir);
+    archive = await startFakeScp(behaviour);
+    const port = await freePort();
+    const channel = await deployChannel({
+      channelId: '00000000-0000-0000-0000-conndicom0rf',
+      dataType: 'RAW',
+      source: new DicomReceiver({
+        port,
+        storageDir,
+        aeTitle: 'LISTENER',
+        connectionTimeoutMs: 15_000,
+        dispatchMode: 'PER_FILE',
+        postAction: 'DELETE',
+        moveToDirectory: '',
+        roots: TMP_ROOTS,
+      }),
+      destinations: [{
+        metaDataId: 1,
+        name: 'Archive',
+        queueMode,
+        retryIntervalMs: 100,
+        connector: new DicomDispatcher({
+          host: '127.0.0.1',
+          port: archive.port,
+          calledAETitle: 'ARCHIVE',
+          callingAETitle: 'LISTENER',
+          maxRetries: 0,
+          retryDelayMs: 0,
+          timeoutMs: 5_000,
+          roots: { allowed: [storageDir], denied: [] },
+        }),
+      }],
+    });
+    deployed.push(channel);
+    const modality = createDimseSender({
+      host: '127.0.0.1',
+      port,
+      calledAETitle: 'LISTENER',
+      callingAETitle: 'MODALITY',
+      maxRetries: 0,
+      retryDelayMs: 0,
+      timeoutMs: 10_000,
+    });
+    if (!modality.ok) throw modality.error;
+    const stored = await modality.value.send([SAMPLE_DCM]);
+    if (!stored.ok) throw stored.error;
+    return { channel, storageDir };
+  }
+
+  function destinationOf(channel: DeployedChannel): { readonly status: string; readonly sendAttempts: number } | undefined {
+    return channel.store.connectorMessages.find((m) => m.metaDataId === 1);
+  }
+
+  it.each<[string, ScpBehaviour]>([
+    ['refuses the C-STORE', { answer: 0xA700 }],
+    ['accepts no presentation context', 'reject-contexts'],
+    ['aborts before it answers', 'abort'],
+    ['hangs up before it answers', 'close'],
+  ])('records ERROR and keeps the Listener\'s file when the archive %s', async (_case, behaviour) => {
+    const { channel, storageDir } = await storeThrough(behaviour, 'NEVER');
+
+    await waitFor(() => channel.store.messages[0]?.processed === true, 10_000);
+
+    expect(destinationOf(channel)?.status).toBe('ERROR');
+    expect(await fs.readdir(storageDir)).toHaveLength(1);
+  }, 30_000);
+
+  it('keeps a refused image queued, and its file, until the archive stores it', async () => {
+    const { channel, storageDir } = await storeThrough({ answer: 0xA700 }, 'ON_FAILURE');
+
+    await waitFor(() => (destinationOf(channel)?.sendAttempts ?? 0) >= 1, 15_000);
+    expect(destinationOf(channel)?.status).not.toBe('SENT');
+    expect(await fs.readdir(storageDir)).toHaveLength(1);
+
+    // A warning: stored, with elements coerced.
+    if (archive) archive.behaviour = { answer: 0xB000 };
+
+    await waitFor(() => destinationOf(channel)?.status === 'SENT', 15_000);
+    await waitFor(async () => (await fs.readdir(storageDir)).length === 0, 5_000);
+  }, 45_000);
 });
 
 /** Poll until `check` holds, or fail after `timeoutMs`. */
