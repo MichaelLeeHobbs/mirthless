@@ -1,10 +1,11 @@
 // Routing key and header values may use `${name}`, filled per message (D-252).
 
-import { settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { fillVariables, variableNames } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';
-import { HALT_CLOSE_MS, STOP_CLOSE_MS } from '../client-lifecycle.js';
+import { closeQuietly, HALT_CLOSE_MS, STOP_CLOSE_MS } from '../client-lifecycle.js';
+import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { createAmqpPublisher, type AmqpConnectionConfig, type AmqpPublisher, type AmqpPublisherFactory } from './amqp-client.js';
 
 const SEND_TIMEOUT_MS = 30_000;
@@ -20,12 +21,14 @@ export interface AmqpDispatcherConfig extends AmqpConnectionConfig {
 export class AmqpDispatcher implements DestinationConnectorRuntime {
   private readonly config: AmqpDispatcherConfig;
   private readonly createPublisher: AmqpPublisherFactory;
+  private readonly logger: ConnectorLogger;
   private started = false;
   private publisher: Promise<AmqpPublisher> | null = null;
 
-  constructor(config: AmqpDispatcherConfig, createPublisher?: AmqpPublisherFactory) {
+  constructor(config: AmqpDispatcherConfig, createPublisher?: AmqpPublisherFactory, logger?: ConnectorLogger) {
     this.config = config;
     this.createPublisher = createPublisher ?? createAmqpPublisher;
+    this.logger = logger ?? createConnectorLogger('AMQP');
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -107,7 +110,13 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
   /** One still connecting is closed when it is connected. */
   private async dropConnection(opening: Promise<AmqpPublisher>, timeoutMs: number): Promise<void> {
     if (this.publisher === opening) this.publisher = null;
-    await settleWithin(opening.then((publisher) => publisher.close(timeoutMs)), timeoutMs);
+    await closeQuietly({
+      close: async () => (await opening).close(timeoutMs),
+      timeoutMs,
+      label: 'AMQP close',
+      logger: this.logger,
+      message: 'Error closing AMQP connection',
+    });
   }
 
   private async close(timeoutMs: number): Promise<void> {

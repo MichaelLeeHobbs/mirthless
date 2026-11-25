@@ -303,6 +303,7 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     quorum: `e2e-quorum-${RUN}`,
     dropped: `e2e-dropped-${RUN}`,
     halted: `e2e-halted-${RUN}`,
+    unread: `e2e-unread-${RUN}`,
   };
   let admin: ChannelModel;
 
@@ -326,12 +327,13 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await ch.assertQueue(names.quorum, { durable: true, arguments: { 'x-queue-type': 'quorum' } });
     await ch.assertQueue(names.dropped, { durable: true });
     await ch.assertQueue(names.halted, { durable: true });
+    await ch.assertQueue(names.unread, { durable: true });
     await ch.close();
   });
 
   afterAll(async () => {
     const ch = await admin.createChannel();
-    for (const q of [names.queue, names.deadQueue, names.quorum, names.dropped, names.halted]) await ch.deleteQueue(q);
+    for (const q of [names.queue, names.deadQueue, names.quorum, names.dropped, names.halted, names.unread]) await ch.deleteQueue(q);
     for (const e of [names.exchange, names.deadExchange]) await ch.deleteExchange(e);
     await admin.close();
   });
@@ -427,7 +429,7 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
   it('a halt ends in time and closes the connection when the broker stops answering (#413)', async () => {
     const relay = await startRelay(connection());
     try {
-      const dispatcher = new AmqpDispatcher({ ...connection(), host: '127.0.0.1', port: relay.port, exchange: '', routingKey: names.halted, headers: {}, contentType: 'text/plain' });
+      const dispatcher = new AmqpDispatcher({ ...connection(), host: '127.0.0.1', port: relay.port, exchange: '', routingKey: names.unread, headers: {}, contentType: 'text/plain' });
       const receiver = new AmqpReceiver({ ...connection(), host: '127.0.0.1', port: relay.port, queue: names.halted }, undefined, undefined, RETRY_MS);
       receiver.setDispatcher(async () => ({ ok: true as const, value: { messageId: 1 }, error: null }));
       await dispatcher.onStart();

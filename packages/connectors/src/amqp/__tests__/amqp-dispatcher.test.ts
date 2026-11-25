@@ -3,6 +3,7 @@ import type { ConnectorMessage } from '../../base.js';
 import { AmqpDispatcher, type AmqpDispatcherConfig } from '../amqp-dispatcher.js';
 import { connectOptions, socketOptions, type AmqpPublisherFactory } from '../amqp-client.js';
 import { FakeAmqpPublisher } from '../../__fixtures__/fake-amqp.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 const config: AmqpDispatcherConfig = {
   host: 'rabbit', port: 5672, vhost: '/', username: 'u', password: 'p',
@@ -106,7 +107,8 @@ describe('send', () => {
     ['stop', 'onStop', 10_000],
   ] as const)('a %s ends although the broker never lets the connection open, which is closed when it does (#413)', async (_what, action, withinMs) => {
     let connected = (publisher: FakeAmqpPublisher): void => { void publisher; };
-    const dispatcher = new AmqpDispatcher(config, () => new Promise((resolve) => { connected = resolve; }));
+    const { logger, warnings } = makeMockLogger();
+    const dispatcher = new AmqpDispatcher(config, () => new Promise((resolve) => { connected = resolve; }), logger);
     await dispatcher.onStart();
     vi.useFakeTimers();
     try {
@@ -127,6 +129,7 @@ describe('send', () => {
     connected(late);
     await vi.waitFor(() => { expect(late.closed).toBe(true); });
     expect(late.published).toEqual([]);
+    expect(warnings.map((w) => w.msg)).toEqual(['Error closing AMQP connection']);
   });
 
   it('a send left over from before a halt does not close the connection of the next start', async () => {
