@@ -5,7 +5,6 @@ export {
   type EmailReceiverConfig,
   type EmailProtocol,
   type EmailPostAction,
-  type EmailMessage,
-  type ImapClient,
   type ImapClientFactory,
 } from './email-receiver.js';
+export type { EmailMessage, ImapClient } from './imap-client.js';

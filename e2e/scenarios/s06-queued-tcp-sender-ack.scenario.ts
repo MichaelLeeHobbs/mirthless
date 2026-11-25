@@ -32,17 +32,19 @@ scenario('S06 queued TCP sender delivers after an outage and errors on a NACK', 
   };
 
   expect(await sendMllp(PORT, oru('S06A'))).toContain('MSA|AA|S06A');
-  await expect.poll(() => destStatus(0), { timeout: 15_000 }).toBe('QUEUED');
+  // The queue has taken it and the sender waits for a connection, which nothing accepts yet.
+  await expect.poll(() => destStatus(0)).toBe('PENDING');
 
   const sink = new MllpSink(SINK);
   await sink.listen();
   try {
-    await expect.poll(() => destStatus(0), { timeout: 20_000 }).toBe('SENT');
+    await expect.poll(() => destStatus(0)).toBe('SENT');
     expect(sink.received.filter((m) => m.includes('|S06A|'))).toHaveLength(1);
 
     sink.ackCode = 'AE';
     expect(await sendMllp(PORT, oru('S06B'))).toContain('MSA|AA|S06B');
-    await expect.poll(() => destStatus(1), { timeout: 15_000 }).toMatch(/ERROR|QUEUED/);
+    await expect.poll(() => sink.received.some((m) => m.includes('|S06B|'))).toBe(true);
+    await expect.poll(() => destStatus(1)).toMatch(/ERROR|QUEUED/);
     expect(await destStatus(1)).not.toBe('SENT');
   } finally {
     await sink.close();

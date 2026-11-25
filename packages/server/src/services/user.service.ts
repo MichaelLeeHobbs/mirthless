@@ -8,11 +8,15 @@ import { uniqueConstraint } from '../lib/pg-error.js';
 import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
-import { GrantService, lockAccessFor } from './grant.service.js';
-import { PERMISSIONS, USER_KIND, type TakenOverKey } from '@galvanigraph/core-models';
+import { GrantService, lockAccessFor, type GrantActor } from './grant.service.js';
+import { AUDIT_ACTION, PERMISSIONS, USER_KIND, type TakenOverKey } from '@galvanigraph/core-models';
 import { ApiKeyService } from './api-key.service.js';
+import { AuditService } from './audit.service.js';
 
 type DbExecutor = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const DETAILS = ['email', 'firstName', 'lastName'] as const;
+type UserDetails = { readonly [K in (typeof DETAILS)[number]]: string | null };
 
 async function revokeSessions(tx: DbExecutor, userId: string): Promise<void> {
   await tx.delete(sessions).where(eq(sessions.userId, userId));
@@ -27,12 +31,34 @@ function isPerson(): SQL {
  * FOR NO KEY UPDATE serialises changes to one user without blocking inserts
  * whose foreign keys point at the row (sessions, events).
  */
-async function lockTarget(tx: DbExecutor, id: string): Promise<{ readonly enabled: boolean }> {
-  const [row] = await tx.select({ enabled: users.enabled }).from(users).where(and(eq(users.id, id), isPerson())).for('no key update');
+async function lockTarget(tx: DbExecutor, id: string): Promise<UserDetails & { readonly enabled: boolean }> {
+  const [row] = await tx.select({ enabled: users.enabled, email: users.email, firstName: users.firstName, lastName: users.lastName })
+    .from(users).where(and(eq(users.id, id), isPerson())).for('no key update');
   if (!row) {
     throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
   }
   return row;
+}
+
+/** A deleted account is a disabled one: no other account may get its email (D-379). */
+function assertKeepsEmail(target: UserDetails & { readonly enabled: boolean }, input: UpdateUserInput): void {
+  const staysDisabled = !target.enabled && input.enabled !== true;
+  if (staysDisabled && input.email !== undefined && input.email !== target.email) {
+    throw new ServiceError('CONFLICT', 'The email of a disabled account cannot be changed. Enable the account first.');
+  }
+}
+
+type StoredUser = UserDetails & { readonly id: string };
+
+/** Takes the row as stored, which is not always what was sent: UTF-8 has no unpaired surrogate. */
+async function recordDetailChanges(tx: DbExecutor, before: UserDetails, stored: StoredUser, actor: GrantActor): Promise<void> {
+  const changed = DETAILS.filter((detail) => stored[detail] !== before[detail]);
+  if (changed.length === 0) return;
+  const valuesOf = (from: UserDetails): Record<string, unknown> => Object.fromEntries(changed.map((detail) => [detail, from[detail]]));
+  await AuditService.recordInTx(tx, {
+    action: AUDIT_ACTION.USER_DETAILS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, ipAddress: actor.ipAddress ?? null,
+    attributes: { targetUserId: stored.id, before: valuesOf(before), after: valuesOf(stored) },
+  });
 }
 
 function usernameTaken(username: string): ServiceError {
@@ -223,9 +249,13 @@ export class UserService {
           });
         }
         const target = await lockTarget(tx, id);
+        assertKeepsEmail(target, input);
         if (input.enabled === true && !target.enabled) await GrantService.assertCanManageToTheEnd(tx, actorId, id);
-        await tx.update(users).set(userUpdates(input)).where(eq(users.id, id))
+        const [stored] = await tx.update(users).set(userUpdates(input)).where(eq(users.id, id))
+          .returning({ id: users.id, email: users.email, firstName: users.firstName, lastName: users.lastName })
           .catch((err: unknown) => { throw asTaken(err, input); });
+        if (!stored) throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
+        await recordDetailChanges(tx, target, stored, actor);
         // Who could act is replayed from the audit log (grant.service channelAccessAsOf).
         if (input.enabled !== undefined && input.enabled !== target.enabled) {
           await GrantService.recordEnabledChange(tx, id, input.enabled, actor);

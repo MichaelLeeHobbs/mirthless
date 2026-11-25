@@ -30,7 +30,7 @@ scenario('S21 HL7 batch file is split into one message per MSH', async (api) => 
     }), ['S21 Lab Batch']);
 
     drop(dir, 'batch.hl7', [msg(1), msg(2), msg(3)].join('\r'));
-    await expect.poll(() => sink.received.length, { timeout: 20_000 }).toBe(3);
+    await expect.poll(() => sink.received.length).toBe(3);
     expect(sink.received.map((m) => /\|S21-(\d)\|/.exec(m)?.[1])).toEqual(['1', '2', '3']);
     expect((await api.messages(ids['S21 Lab Batch']!)).total).toBe(3);
   } finally {

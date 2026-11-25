@@ -508,6 +508,12 @@ EMAIL can only receive; it cannot send messages. Use [SMTP](#smtp) to send email
 
 It polls an IMAP mailbox folder for unread messages and sends each one as the mail server holds it: the raw email, headers and MIME parts and attachments included, read as UTF-8. The subject, from, to and date are in the source map. Afterwards it marks the email read, deletes it or moves it.
 
+It keeps track of what it has done with IMAP keywords, which stay on the email through restarts and redeploys: `$GalvaniGraphDispatched` once the pipeline took it, so that only the marking, deleting or moving is tried again, and `$GalvaniGraphError` when its message was recorded with an error. Such an email is left in the folder and not dispatched again, by any channel that reads the folder, and each says once in the log how many there are; reprocess its message from the message browser. Remove the keyword, and mark the email unread, to have it dispatched again. A mailbox that does not accept custom keywords is reported once in the log; there, a restart or a redeploy sends an email that was left in the folder again.
+
+`DELETE` removes an email only after this source has recorded its message since the channel was deployed, one that a filter left out included. A channel that stores no content keeps no copy of it then. An email that carries `$GalvaniGraphDispatched` from before, or from another channel, stays in the folder, and the log says once how many there are. One stays as if recorded with an error when a destination failed although the sender is answered before the destinations (`AUTO_BEFORE`, `AUTO_AFTER_TRANSFORMER`). One that is not valid UTF-8 is marked read instead, because its message does not hold all of it. On Gmail, removing an email from a folder keeps it in All Mail unless the account is set otherwise.
+
+A stop or a pause waits for the email in hand, marks, deletes or moves it, and takes no more. A halt does not wait; the email in hand is dealt with when its message ends. A channel redeployed before that may dispatch that email again, and one that is started again polls only then.
+
 ### EMAIL security
 
 `secure` is on by default and connects with IMAP over TLS (port 993). Turning it off sends the mailbox password and the PHI in plaintext.
@@ -524,7 +530,7 @@ It polls an IMAP mailbox folder for unread messages and sends each one as the ma
 | `protocol` | No | `IMAP`. `POP3` refuses to deploy. |
 | `folder` | No | Folder to read, `INBOX` by default. An empty folder refuses to deploy. |
 | `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 1000 to 2147483647. Defaults to 60000. |
-| `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. |
+| `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. `DELETE` needs a server that offers UIDPLUS, and `MOVE` one that offers MOVE or UIDPLUS, because without them a server can only remove every email in the folder that is flagged deleted, and both need UIDVALIDITY. Without it the email stays, and an error is logged at every poll, for `DELETE` until the channel is redeployed. |
 | `moveToFolder` | No | Folder for `MOVE`. Required when `postAction` is `MOVE`. |
 | `subjectFilter` | No | Only read emails whose subject contains this text, ignoring case. |
 

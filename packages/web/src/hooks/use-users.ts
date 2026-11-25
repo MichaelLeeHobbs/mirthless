@@ -65,7 +65,8 @@ export function useUpdateUser(): ReturnType<typeof useMutation<UserDetail, Error
       }
       return result.data;
     },
-    onSuccess: async (_data, variables) => {
+    // After a refusal too: another admin may have changed the user since the list was read.
+    onSettled: async (_data, _error, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() }),
         queryClient.invalidateQueries({ queryKey: USER_KEYS.detail(variables.id) }),
