@@ -468,10 +468,10 @@ describe('code template libraries in a channel export', () => {
   });
 
   it('are read for E4X that is no JavaScript at all', () => {
-    for (const code of ['var x = <a/>;', 'return <PID/>;', 'var y = m..PID;']) {
+    for (const code of ['var x = <a/>;', 'return <PID/>;', 'var y = m..PID;', 'y + <a/>;', 'z = {a: <b/>};', 'z = [<b/>];', 'z = c ? <a/> : d;', 'z = m.@id;', 'z = m.(n == 1);']) {
       expect(warningsWith(convert({ exportData: exported(library('Old', code)) }), 'Code template "f"', 'E4X literal')).toHaveLength(1);
     }
-    expect(convert({ exportData: exported(library('New', "if (a < b) { x = '../y'; f(...z); n = a <b; }")) }).warnings).toEqual([]);
+    expect(convert({ exportData: exported(library('New', "if (a < b) { x = '../y'; f(...z); n = a <b; g?.(h); }")) }).warnings).toEqual([]);
   });
 
   it('that fail part way are reported with what was written', async () => {
@@ -815,6 +815,8 @@ describe('the retry count', () => {
     expect(warningsWith(unqueued, '"Out"', 'ignores the answer', 'ERROR')).toHaveLength(1);
     const timeout = convert({ destinations: [{ ...tcpSender, props: `${tcpSender.props}<queueOnResponseTimeout>false</queueOnResponseTimeout>` }] });
     expect(warningsWith(timeout, '"Out"', 'no answer', 'does not queue')).toHaveLength(1);
+    const timeoutUnqueued = { ...tcpSender, queue: '<queueEnabled>false</queueEnabled>', props: `${tcpSender.props}<queueOnResponseTimeout>false</queueOnResponseTimeout>` };
+    expect(convert({ destinations: [timeoutUnqueued] }).warnings).toEqual([]);
     const http = { ...tcpSender, transport: 'HTTP Sender', className: 'http.HttpDispatcherProperties', props: '<host>http://api</host>' };
     expect(convert({ destinations: [http] }).warnings).toEqual([]);
   });

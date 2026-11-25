@@ -7,8 +7,8 @@ const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(?:msg|tmp)\s*\[\s*['"]/, "E4X field access (msg['PID']...): use msg.get('PID.5.1') / msg.set, where [n] counts from 1, so Mirth's msg['OBX'][1]['OBX.5'] is msg.get('OBX[2].5')"],
   [/\bfor\s+each\s*\(/, "Rhino 'for each': use for...of"],
   [/\bnew\s+XML\s*\(/, 'E4X new XML(...): build HL7 with parseHL7 and msg.set'],
-  // Neither is JavaScript: no operand starts with `<`, and `..` is not an operator.
-  [/(?:[=(,]|\breturn)\s*<[A-Za-z>]|[\w)\]]\.\.[A-Za-z@*]/, 'E4X literal or descendant (<a/>, msg..PID), which does not compile: build and read HL7 with parseHL7, msg.get and msg.set'],
+  // None is JavaScript outside a string: no operand starts with `<`, and `..`, `.@` and `.(` are no operators.
+  [/(?:[=(,+?:[]|\breturn)\s*<[A-Za-z>]|[\w)\]]\.(?:\.[A-Za-z@*]|@|\()/, 'E4X literal or query (<a/>, msg..PID, node.@id), which does not compile outside a string: build and read HL7 with parseHL7, msg.get and msg.set'],
   [/\b(?:Packages|java|javax|org\.apache|com\.mirth)\./, 'Java classes: use JavaScript built-ins'],
   [/\b(?:channelMap|connectorMap|responseMap|globalMap|globalChannelMap|sourceMap|configurationMap)\.(?:put|get|containsKey|remove)\s*\(/, 'Java map methods (channelMap.put): use $c(key, value) or channelMap[key]'],
   [/\bconnectorMessage\.get\w+\s*\(/, 'connectorMessage.getRawData(): use rawData'],

@@ -1255,13 +1255,14 @@ function convertDestination(dest: Record<string, unknown>, idx: number, context:
   const type = remote?.type ?? mirthType;
   const label = `${transportName ?? mirthType} "${name}"`;
   const properties = withRawDataRenamed(remote?.properties ?? extractConnectorProperties(propsNode, mirthType, 'destination'), dest);
-  warnings.push(...destinationSettingWarnings({ type: mirthType, propsNode, properties, name }, channelName));
-  warnings.push(...referenceWarnings({ type, direction: 'destination', label, properties }, channelName));
   const queue = convertQueueSettings(dest, propsNode);
+  const queued = queue.queueMode !== 'NEVER';
+  warnings.push(...destinationSettingWarnings({ type: mirthType, propsNode, properties, name, queued }, channelName));
+  warnings.push(...referenceWarnings({ type, direction: 'destination', label, properties }, channelName));
   warnings.push(...queueWarnings(type, queue).map((w) => `Channel "${channelName}": destination "${name}" ${w}`));
   const response = responseTransformer(dest);
   warnings.push(...responseTransformerWarnings(response, {
-    channelName, destination: name, queued: queue.queueMode !== 'NEVER', dataType: context.inboundDataType,
+    channelName, destination: name, queued, dataType: context.inboundDataType,
   }));
   return {
     metaDataId: destinationMetaDataId(dest, idx),
@@ -1271,7 +1272,7 @@ function convertDestination(dest: Record<string, unknown>, idx: number, context:
     properties,
     ...queue,
     // Mirth's queue gives up on no message it could not send, and 0 is that here (D-230).
-    retryCount: queue.queueMode === 'NEVER' ? queue.retryCount : 0,
+    retryCount: queued ? 0 : queue.retryCount,
     waitForPrevious: getBoolean(dest, 'waitForPrevious', false),
     ...(response.script === null ? {} : { responseTransformer: response.script }),
   };
@@ -1284,11 +1285,11 @@ function withRawDataRenamed(properties: Record<string, unknown>, dest: Record<st
     : { ...properties, template: renameReferences(template, { 'message.rawData': 'message.encodedData' }) };
 }
 
-function tcpAnswerWarnings(propsNode: Record<string, unknown>, prefix: string): string[] {
+function tcpAnswerWarnings(propsNode: Record<string, unknown>, queued: boolean, prefix: string): string[] {
   if (getBoolean(propsNode, 'ignoreResponse', false)) {
     return [`${prefix} ignores the answer in Mirth; GalvaniGraph waits for an acknowledgement, and a message that gets none is an ERROR or is sent again by its queue`];
   }
-  return getBoolean(propsNode, 'queueOnResponseTimeout', true) ? []
+  return !queued || getBoolean(propsNode, 'queueOnResponseTimeout', true) ? []
     : [`${prefix} does not queue a message again in Mirth when it gets no answer in time; GalvaniGraph's queue sends it again`];
 }
 
@@ -1297,16 +1298,17 @@ interface ConvertedDestination {
   readonly propsNode: Record<string, unknown>;
   readonly properties: Record<string, unknown>;
   readonly name: string;
+  readonly queued: boolean;
 }
 
-function destinationSettingWarnings({ type, propsNode, properties, name }: ConvertedDestination, channelName: string): string[] {
+function destinationSettingWarnings({ type, propsNode, properties, name, queued }: ConvertedDestination, channelName: string): string[] {
   switch (type) {
     case 'DATABASE': return databaseWarnings(propsNode, properties['vendor'], `Database Writer "${name}"`, channelName);
     case 'FILE': return fileConnectorWarnings(propsNode, properties, `File Writer "${name}"`, channelName);
     case 'DICOM': return dicomWarnings(propsNode, 'destination', `DICOM Sender "${name}"`, channelName);
     case 'TCP_MLLP': return [
       ...tcpEncodingWarnings(propsNode, properties, `TCP Sender "${name}"`, channelName),
-      ...tcpAnswerWarnings(propsNode, `Channel "${channelName}": the TCP Sender "${name}"`),
+      ...tcpAnswerWarnings(propsNode, queued, `Channel "${channelName}": the TCP Sender "${name}"`),
     ];
     case 'SMTP': return smtpWarnings(propsNode, name, channelName);
     case 'HTTP': return [httpDigestWarning(propsNode, `HTTP Sender "${name}"`, channelName) ?? []].flat();
