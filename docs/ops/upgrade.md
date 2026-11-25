@@ -735,3 +735,7 @@ a bad upgrade:
 Because rollback means a database restore, **the pre-upgrade `pg_dump` is mandatory** —
 do not skip step 2 of the upgrade. Test upgrades in staging first whenever a release
 includes migrations.
+
+## A stop finishes what a source took (#413)
+
+- A JavaScript source's stop, pause or redeploy waits for the script under way and for every message it returned, where the rest of an array was sent after the stop had ended and failed at the stopped destinations. It can take as long as those messages take; a halt ends it and keeps the rest for the next start ([JavaScript](../user/connector-reference.md#javascript), D-371).

@@ -423,7 +423,7 @@ describe('JavaScriptReceiver stop and halt (#413)', () => {
     expect(warnings.map((w) => w.obj)).toContainEqual({ kept: 2 });
 
     await receiver.onStart();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(0);
     expect(received).toEqual(['a', 'b', 'c']);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(received).toEqual(['a', 'b', 'c', 'd']);
@@ -452,6 +452,68 @@ describe('JavaScriptReceiver stop and halt (#413)', () => {
     await receiver.onStart();
     await vi.advanceTimersByTimeAsync(1_000);
     expect(received).toEqual(['a']);
+  });
+
+  it('sends what a halt kept at once when it starts again, however far off the next poll is', async () => {
+    const { dispatch, received, letGo } = heldDispatcher();
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 3_600_000 }), makeMockLogger().logger);
+    receiver.setDispatcher(dispatch);
+    receiver.setScriptRunner(makeScriptRunner(['a', 'b', 'c']));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    await receiver.onHalt();
+    letGo();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await receiver.onStart();
+    expect((await receiver.onStop()).ok).toBe(true);
+
+    expect(received).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a start after a halt waits with the rest for the message in hand, and a stop of it finishes both', async () => {
+    const { dispatch, received, letGo } = heldDispatcher();
+    const { logger, warnings } = makeMockLogger();
+    let runs = 0;
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }), logger);
+    receiver.setDispatcher(dispatch);
+    receiver.setScriptRunner(async () => { runs += 1; return { ok: true as const, value: ['a', 'b', 'c'], error: null }; });
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await receiver.onHalt();
+
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(received).toEqual(['a']);
+    expect(runs).toBe(1);
+
+    let atEnd: string[] | null = null;
+    const stopping = receiver.onStop().then(() => { atEnd = [...received]; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(atEnd).toBeNull();
+    letGo();
+    await stopping;
+    expect(atEnd).toEqual(['a', 'b', 'c']);
+    expect(runs).toBe(1);
+    expect(warnings).toEqual([]);
+  });
+
+  it('a message whose dispatch throws does not keep the rest of the array from being sent', async () => {
+    const received: string[] = [];
+    const { logger, errors, warnings } = makeMockLogger();
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }), logger);
+    receiver.setDispatcher(async (raw) => {
+      if (raw.content === 'b') throw new Error('dispatcher blew up');
+      received.push(raw.content);
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+    receiver.setScriptRunner(makeScriptRunner(['a', 'b', 'c']));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(received).toEqual(['a', 'c']);
+    expect(errors).toHaveLength(1);
+    expect(warnings).toEqual([]);
   });
 
   it('a halt ends a stop that waits', async () => {

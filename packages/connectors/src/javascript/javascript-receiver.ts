@@ -24,7 +24,7 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
   private cycle: Promise<void> | null = null;
   /** Of the current start: its cycle sends no more once a halt aborts it. */
   private halted = new AbortController();
-  /** What the script returned and is not sent yet. Nothing else holds it, so a halt keeps it for the next start. */
+  /** What the script returned and is not sent yet, last first. Nothing else holds it, so a halt keeps it for the next start. */
   private waiting: string[] = [];
 
   constructor(config: JavaScriptReceiverConfig, logger?: ConnectorLogger) {
@@ -62,6 +62,7 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
       this.pollTimer = setInterval(() => {
         this.poll(signal);
       }, this.config.pollingIntervalMs);
+      if (this.waiting.length > 0) this.poll(signal);
     });
   }
 
@@ -69,7 +70,9 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.clearPollTimer();
-      if (this.cycle !== null) await settleUnlessAborted(this.cycle, this.halted.signal);
+      const { signal } = this.halted;
+      // More than once when the first is of a start that was halted, whose rest the next one sends.
+      while (this.cycle !== null && await settleUnlessAborted(this.cycle, signal));
     });
   }
 
@@ -92,13 +95,14 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     if (this.cycle !== null) return;
     this.cycle = this.pollCycle(halted).finally(() => {
       this.cycle = null;
-      this.reportWaiting();
+      if (this.waiting.length > 0 && this.dispatcher && !this.halted.signal.aborted) this.poll(this.halted.signal);
+      else this.reportWaiting();
     });
   }
 
   private async pollCycle(halted: AbortSignal): Promise<void> {
     try {
-      if (this.waiting.length === 0) this.waiting = [...await this.executeScript()];
+      if (this.waiting.length === 0) this.waiting = [...await this.executeScript()].reverse();
       await this.sendWaiting(halted);
     } catch (err) {
       // Log it: otherwise a broken script leaves the channel STARTED yet silently producing nothing.
@@ -110,18 +114,15 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     const { dispatcher } = this;
     if (!dispatcher) return;
     while (!halted.aborted) {
-      const content = this.waiting.shift();
+      const content = this.waiting.pop();
       if (content === undefined) return;
       const raw: RawMessage = {
         content,
         sourceMap: { connectorType: 'JAVASCRIPT', executedAt: Date.now() },
       };
-      const failure = dispatchFailure(await dispatcher(raw));
-      if (failure !== null) {
-        // The script already produced the message, so there is nothing to keep
-        // for a retry here; make sure the failure is at least visible.
-        this.logger.error(errorInfo(failure), 'JavaScript source message dispatch failed');
-      }
+      const dispatched = await tryCatch(() => dispatcher(raw));
+      const failure = dispatched.ok ? dispatchFailure(dispatched.value) : dispatched.error;
+      if (failure !== null) this.logger.error(errorInfo(failure), 'JavaScript source message dispatch failed; it is not sent again');
     }
   }
 
