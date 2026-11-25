@@ -824,10 +824,12 @@ export class EngineManager {
       const sent = variables && Object.keys(variables).length > 0 ? variables : undefined;
       // Connectors apply their own configured timeouts; this is the backstop
       // that keeps a send from hanging forever if one does not.
-      return connector.send(
+      const called = await tryCatch(() => connector.send(
         { ...messageFor(metaDataId, messageId, content), correlationId, variables: sent },
         AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]),
-      );
+      ));
+      // One that throws fails this send, not the whole message with its other destinations.
+      return called.ok ? called.value : called;
     };
 
     const queueConsumers: QueueConsumer[] = [];
@@ -1127,7 +1129,8 @@ export class EngineManager {
       const stopResult = await deployed.runtime.stop();
       if (!stopResult.ok) {
         // Fall back to a force-halt so teardown can still proceed.
-        await deployed.runtime.halt();
+        const halted = await deployed.runtime.halt();
+        if (!halted.ok) logger.error({ channelId, errMsg: halted.error.message }, 'A connector did not halt while its channel was being undeployed');
       }
     }
 

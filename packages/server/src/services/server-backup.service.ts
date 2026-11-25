@@ -156,6 +156,7 @@ export class ServerBackupService {
           name: t.name,
           description: t.description,
           type: t.type,
+          language: t.language,
           code: t.code,
           contexts: [...t.contexts],
         })),
@@ -473,13 +474,13 @@ async function restoreCodeTemplates(
     find: () => db.select({ id: codeTemplates.id }).from(codeTemplates).where(eq(codeTemplates.id, item.id)),
     insert: () => db.insert(codeTemplates).values({
       id: item.id, libraryId: item.libraryId, name: item.name,
-      description: item.description, type: item.type, code: item.code, contexts: item.contexts,
+      description: item.description, type: item.type, language: item.language ?? DEFAULT_STORED_SCRIPT_LANGUAGE, code: item.code, contexts: item.contexts,
     }),
     overwrite: {
       mode,
       update: () => db.update(codeTemplates).set({
         libraryId: item.libraryId, name: item.name, description: item.description,
-        type: item.type, code: item.code, contexts: item.contexts,
+        type: item.type, ...(item.language !== undefined ? { language: item.language } : {}), code: item.code, contexts: item.contexts,
       }).where(eq(codeTemplates.id, item.id)),
     },
   }));

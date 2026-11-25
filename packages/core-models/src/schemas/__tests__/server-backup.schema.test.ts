@@ -16,6 +16,27 @@ describe('serverRestoreInputSchema', () => {
     expect(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues)).toBe(true);
     expect(parsed.success && 'exportInfo' in parsed.data.backup).toBe(false);
   });
+
+  const template = {
+    id: '00000000-0000-4000-8000-000000000001', libraryId: '00000000-0000-4000-8000-000000000002',
+    name: 'fmt', description: null, type: 'FUNCTION', code: '', contexts: [],
+  };
+  const parseTemplate = (item: object): ReturnType<typeof serverRestoreInputSchema.safeParse> =>
+    serverRestoreInputSchema.safeParse({ backup: { ...EMPTY_BACKUP, codeTemplates: [item] }, collisionMode: 'SKIP' });
+
+  it('keeps the language of a code template (#419)', () => {
+    const parsed = parseTemplate({ ...template, language: 'TYPESCRIPT' });
+    expect(parsed.data?.backup.codeTemplates).toEqual([{ ...template, language: 'TYPESCRIPT' }]);
+  });
+
+  it('takes a code template from a backup made before they carried a language', () => {
+    expect(parseTemplate(template).data?.backup.codeTemplates).toEqual([template]);
+  });
+
+  it('reads a language it does not know as JavaScript, so the rest of the backup restores', () => {
+    const parsed = parseTemplate({ ...template, language: 'WASM' });
+    expect(parsed.data?.backup.codeTemplates).toEqual([{ ...template, language: 'JAVASCRIPT' }]);
+  });
 });
 
 describe('backupExportQuerySchema', () => {

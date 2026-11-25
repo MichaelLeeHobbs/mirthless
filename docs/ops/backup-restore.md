@@ -166,7 +166,7 @@ The response is `{ "success": true, "data": { ... } }`. The `data` object
 (`version: 1`) starts with `exportInfo`, naming the server, who downloaded it, when, the audit record and the reason; restore ignores it. The rest contains:
 
 - `channels`, `channelDependencies`, `channelGroups`, `groupMemberships`
-- `codeTemplateLibraries`, `codeTemplates`, `globalScripts`
+- `codeTemplateLibraries`, `codeTemplates`, `globalScripts`. A backup made before code templates carried their language restores a missing one as JavaScript, and leaves the language of one it overwrites
 - `alerts`
 - `users` — **without password hashes** (see below), `settings`, `resources` (with content)
 - `tags`, `tagAssignments`, `configMap`, `globalMap`

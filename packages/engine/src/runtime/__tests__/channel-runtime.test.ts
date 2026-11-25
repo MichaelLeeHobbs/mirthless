@@ -231,6 +231,40 @@ describe('ChannelRuntime', () => {
       expect(dest.onHalt).toHaveBeenCalledOnce();
     });
 
+    const failed = (message: string): Result<void> => ({ ok: false, value: null, error: new Error(message) }) as unknown as Result<void>;
+
+    it.each([
+      ['answers that it failed', (message: string) => Promise.resolve(failed(message))],
+      ['rejects', (message: string) => Promise.reject(new Error(message))],
+      ['throws', (message: string): Promise<Result<void>> => { throw new Error(message); }],
+    ])('halts every connector when one %s, ends stopped, and says which failed (#419)', async (_how, fail) => {
+      const source = makeSource();
+      const [first, second] = [makeConnector(), makeConnector()];
+      (source.onHalt as Mock).mockImplementation(() => fail('port still open'));
+      (first.onHalt as Mock).mockImplementation(() => fail('socket stuck'));
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, first], [2, second]]) }));
+      await runtime.start();
+
+      const result = await runtime.halt();
+
+      expect(first.onHalt).toHaveBeenCalledOnce();
+      expect(second.onHalt).toHaveBeenCalledOnce();
+      expect(runtime.getState()).toBe('STOPPED');
+      expect(result.error?.message).toBe('Source halt failed: port still open; Destination 1 halt failed: socket stuck');
+    });
+
+    it('can be started again and undeployed after a halt in which a connector failed', async () => {
+      const source = makeSource();
+      (source.onHalt as Mock).mockResolvedValueOnce(failed('port still open'));
+      await runtime.deploy(makeConfig({ source }));
+      await runtime.start();
+      await runtime.halt();
+
+      expect((await runtime.start()).ok).toBe(true);
+      expect((await runtime.stop()).ok).toBe(true);
+      expect((await runtime.undeploy()).ok).toBe(true);
+    });
+
     it('aborts the signal work in progress was given, and issues a fresh one', async () => {
       await runtime.deploy(makeConfig());
       await runtime.start();
