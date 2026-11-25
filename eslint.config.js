@@ -41,6 +41,7 @@ const SHARED_HELPERS = [
   { names: 'createSlots|withSlot|withHashSlot', home: '@galvanigraph/core-util (slots.ts)' },
   { names: 'decodeWindows1252|windows1252Decoder', home: '@galvanigraph/core-util (windows-1252.ts, D-351)' },
   { names: 'settleWithin', home: '@galvanigraph/core-util (settle-within.ts)' },
+  { names: 'closeServer|waitForBlocked', home: 'packages/server/test/integration/_setup.ts' },
 ];
 // A run of the same test in another checkout holds a fixed port at the same time (#376).
 const FIXED_PORT = 'Listen on port 0 and read the port back, or take one from freePort (packages/connectors/src/__fixtures__/free-port.ts).';

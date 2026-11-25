@@ -2,11 +2,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { IssuedApiKey } from '@galvanigraph/core-models';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole, WAIT,
   type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -84,12 +83,11 @@ describeIntegration('access given by someone who holds it for a time (real Postg
     await insertTestChannel(mods, CHANNEL);
     await insertTestChannel(mods, OTHER_CHANNEL);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     // Keys first: their issuer is one of these users.
     await mods.pool.query('DELETE FROM users WHERE id IN (SELECT user_id FROM api_keys WHERE issued_by = ANY($1::uuid[]))', [users]);
     await mods.pool.query('DELETE FROM roles WHERE key_role AND NOT EXISTS (SELECT 1 FROM assignments a WHERE a.role_id = roles.id)');
@@ -370,7 +368,7 @@ describeIntegration('access given by someone who holds it for a time (real Postg
       await vi.waitFor(async () => {
         const { rows: [waiting] } = await mods.pool.query<{ n: string }>('SELECT count(*) AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [me!.pid]);
         expect(Number(waiting!.n)).toBeGreaterThan(0);
-      }, { timeout: 5_000, interval: 20 });
+      }, WAIT);
       await client.query('COMMIT');
       await expect(restoring).rejects.toMatchObject({ code: 'FORBIDDEN' });
     } finally {

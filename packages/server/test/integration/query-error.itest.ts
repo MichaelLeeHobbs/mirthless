@@ -3,12 +3,14 @@
 // what becomes of a message whose answer cannot be stored (#404).
 
 import { randomUUID } from 'node:crypto';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
 import { Writable } from 'node:stream';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { CONTENT_TYPE, createChannelSchema } from '@galvanigraph/core-models';
-import { adminActor, apiCall, describeIntegration, loadServerModules, unwrap, userWithRole, type ServerModules, type TestActor } from './_setup.js';
+import {
+  adminActor, apiCall, closeServer, describeIntegration, listen, loadServerModules, unwrap, userWithRole, WAIT,
+  type ServerModules, type TestActor,
+} from './_setup.js';
 
 const NUL = String.fromCharCode(0);
 
@@ -19,14 +21,12 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
   let server: Server;
   let partner: Server;
   let base: string;
+  let partnerUrl: string;
   let logged = '';
   let engineMod: typeof import('../../src/engine.js');
   let deployment: typeof import('../../src/services/deployment.service.js');
   const channels: string[] = [];
   const users: string[] = [];
-
-  const port = (s: Server): number => (s.address() as AddressInfo).port;
-  const listen = (s: Server): Promise<void> => new Promise((resolve) => { s.listen(0, '127.0.0.1', () => { resolve(); }); });
 
   beforeAll(async () => {
     process.env['API_RATE_LIMIT_MAX'] = '1000000';
@@ -42,22 +42,19 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     engineMod = await import('../../src/engine.js');
     deployment = await import('../../src/services/deployment.service.js');
     const app = (await import('../../src/app.js')).default;
-    server = createServer(app);
-    partner = createServer((req, res) => { res.statusCode = req.url === '/refuse' ? 500 : 200; res.end(`MRN-8675309${NUL}`); });
-    await listen(server);
-    await listen(partner);
-    base = `http://127.0.0.1:${String(port(server))}`;
-  }, 60_000);
+    ({ server, base } = await listen(app));
+    ({ server: partner, base: partnerUrl } = await listen((req, res) => { res.statusCode = req.url === '/refuse' ? 500 : 200; res.end(`MRN-8675309${NUL}`); }));
+  });
 
   beforeEach(() => { logged = ''; });
 
   afterAll(async () => {
-    for (const s of [server, partner]) await new Promise<void>((resolve) => { if (s) s.close(() => { resolve(); }); else resolve(); });
+    for (const s of [server, partner]) await closeServer(s);
     await engineMod?.getEngine().dispose();
     if (channels.length > 0) await mods.pool.query('DELETE FROM channels WHERE id = ANY($1::uuid[])', [channels]);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     await mods?.pool.end();
-  }, 60_000);
+  });
 
   const create = (password: string, selectQuery: string): ReturnType<typeof apiCall> => apiCall(base, token, 'POST', '/channels', {
     name: `itest-query-error-${randomUUID()}`, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'NONE', sourceConnectorType: 'DATABASE',
@@ -92,18 +89,18 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     const channel = unwrap(await mods.ChannelService.create(createChannelSchema.parse({
       name: `itest-query-error-${randomUUID()}`, enabled: true, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'AUTO_AFTER_DESTINATIONS',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 },
-      destinations: [{ name: 'H', connectorType: 'HTTP', queueMode, properties: { url: `http://127.0.0.1:${String(port(partner))}${path}` } }],
+      destinations: [{ name: 'H', connectorType: 'HTTP', queueMode, properties: { url: `${partnerUrl}${path}` } }],
     }), actor));
     channels.push(channel.id);
     unwrap(await deployment.DeploymentService.deploy(channel.id, actor));
     if (engineMod.getEngine().getRuntime(channel.id)!.runtime.getState() !== 'STARTED') unwrap(await deployment.DeploymentService.start(channel.id, actor));
     try {
-      await apiCall(base, token, 'POST', `/channels/${channel.id}/send-message`, { content: 'hello' });
-      await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, 10_000);
+      expect((await apiCall(base, token, 'POST', `/channels/${channel.id}/send-message`, { content: 'hello' })).status).toBeLessThan(300);
+      await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, WAIT);
       expect(logged).toContain('Message store write failed');
       const destination = async (): Promise<unknown> => (await mods.pool.query(
         'SELECT status FROM connector_messages WHERE channel_id = $1 AND meta_data_id = 1', [channel.id])).rows;
-      await vi.waitFor(async () => { expect(await destination()).toEqual([{ status }]); }, 10_000);
+      await vi.waitFor(async () => { expect(await destination()).toEqual([{ status }]); }, WAIT);
       const stored = await mods.pool.query('SELECT content_type FROM message_content WHERE channel_id = $1 AND meta_data_id = 1', [channel.id]);
       expect(stored.rows).not.toContainEqual({ content_type: CONTENT_TYPE.RESPONSE });
       expect(logged).toContain('Failed query (22021): insert into');
@@ -112,5 +109,5 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
       await deployment.DeploymentService.stop(channel.id, actor);
       await deployment.DeploymentService.undeploy(channel.id, actor);
     }
-  }, 60_000);
+  });
 });

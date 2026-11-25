@@ -4,10 +4,9 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole,
   type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -43,12 +42,11 @@ describeIntegration('every grant write is recorded once (real Postgres)', () => 
     admin = await userWithRole(mods.pool, 'admin', null);
     users.push(admin.id);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     if (roleIds.length > 0) await mods.pool.query('DELETE FROM roles WHERE id = ANY($1::uuid[])', [roleIds]);
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);

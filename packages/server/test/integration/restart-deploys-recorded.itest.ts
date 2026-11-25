@@ -178,7 +178,7 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     expect(isDeployed(id)).toBe(true);
   });
 
-  it('a channel whose script got stuck is held at the restart and reported, until it is deployed again', { timeout: 90_000 }, async () => {
+  it('a channel whose script got stuck is held at the restart and reported, until it is deployed again', async () => {
     const { id, name } = await createChannel("msg = 'h:' + String(msg);");
     const other = await createChannel("msg = 'o:' + String(msg);");
     unwrap(await deployment.DeploymentService.deploy(id, actor));
@@ -197,7 +197,7 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     expect(await transformedBy(id, 'y')).toBe('h:y');
   });
 
-  it('a stuck script of a channel with no deployment holds nothing, and says so', { timeout: 90_000 }, async () => {
+  it('a stuck script of a channel with no deployment holds nothing, and says so', async () => {
     const end = await runStuckScript({ channelId: randomUUID(), connectionString: databaseUrl() });
 
     expect(end).toMatchObject({ timedOut: false, exitedCleanly: false });
@@ -205,7 +205,7 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     expect(end.output).toContain('no deployment to hold');
   });
 
-  it('a hold that has to wait for a lock gives up, and the process still ends', { timeout: 90_000 }, async () => {
+  it('a hold that has to wait for a lock gives up, and the process still ends', async () => {
     const { id } = await createChannel("msg = 'l:' + String(msg);");
     unwrap(await deployment.DeploymentService.deploy(id, actor));
     const locker = await mods.pool.connect();
@@ -224,7 +224,7 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
     }
   });
 
-  it('a script that ends by itself while its channel is being held costs no restart, and the next stuck one does', { timeout: 120_000 }, async () => {
+  it('a script that ends by itself while its channel is being held costs no restart, and the next stuck one does', async () => {
     const { id } = await createChannel("msg = 's:' + String(msg);");
     unwrap(await deployment.DeploymentService.deploy(id, actor));
     const stopFile = join(mkdtempSync(join(tmpdir(), 'gg-stuck-')), 'stop');
@@ -236,9 +236,9 @@ describeIntegration('A restart deploys the recorded deployment, not the saved he
       "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE 'update \"channel_deployments\"%'",
     )).rows.length;
 
-    await expect.poll(waiting, { timeout: 45_000, interval: 50 }).toBe(1);
+    await expect.poll(waiting).toBe(1);
     writeFileSync(stopFile, '');
-    await expect.poll(() => existsSync(`${stopFile}.ended`), { timeout: 10_000, interval: 10 }).toBe(true);
+    await expect.poll(() => existsSync(`${stopFile}.ended`), { interval: 10 }).toBe(true);
     const endedAt = Date.now();
     await locker.query('ROLLBACK');
     locker.release();

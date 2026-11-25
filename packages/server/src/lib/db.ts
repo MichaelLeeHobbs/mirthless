@@ -23,7 +23,7 @@ export function buildPoolConfig(): pg.PoolConfig {
     connectionString: config.DATABASE_URL,
     max: 20,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    connectionTimeoutMillis: config.DATABASE_CONNECT_TIMEOUT_MS,
     ssl: buildDbSslConfig(),
     ...(config.DATABASE_STATEMENT_TIMEOUT_MS > 0 ? { statement_timeout: config.DATABASE_STATEMENT_TIMEOUT_MS } : {}),
   };

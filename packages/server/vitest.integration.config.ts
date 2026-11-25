@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { INTEGRATION_LIMIT_MS, INTEGRATION_WAIT_MS } from './test/time-budgets.js';
 
 // Apart from vitest.config.ts: its `*.test.ts` glob keeps these `.itest.ts`
 // suites out of `pnpm test`, and its test/setup.ts would point DATABASE_URL at
@@ -12,7 +13,10 @@ export default defineConfig({
     passWithNoTests: true,
     // Suites share one database; sequential files avoid connection storms.
     fileParallelism: false,
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    testTimeout: INTEGRATION_LIMIT_MS,
+    hookTimeout: INTEGRATION_LIMIT_MS,
+    expect: { poll: { timeout: INTEGRATION_WAIT_MS } },
+    // The child processes the suites start take it too.
+    env: { DATABASE_CONNECT_TIMEOUT_MS: String(INTEGRATION_WAIT_MS), AUDIT_WRITE_TIMEOUT_MS: String(INTEGRATION_WAIT_MS) },
   },
 });

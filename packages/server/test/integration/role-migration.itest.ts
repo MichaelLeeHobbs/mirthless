@@ -6,7 +6,7 @@ import type pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { describeIntegration } from './_setup.js';
-import { MIGRATION_DB_TIMEOUT_MS, migratedFrom, type MigrationDb } from './_migration-db.js';
+import { migratedFrom, type MigrationDb } from './_migration-db.js';
 
 const LAST_BEFORE_ROLES = 17;
 
@@ -50,11 +50,11 @@ describeIntegration('role migration (real Postgres)', () => {
       }
     });
     client = migrated.client;
-  }, MIGRATION_DB_TIMEOUT_MS);
+  });
 
   afterAll(async () => {
     await migrated?.drop();
-  }, MIGRATION_DB_TIMEOUT_MS);
+  });
 
   it('leaves every user holding exactly the permissions their role gave them', async () => {
     const { queryUserStanding } = await import('../../src/lib/principal.js');

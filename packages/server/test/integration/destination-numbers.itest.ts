@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { channelExportSchema, createChannelSchema, updateChannelSchema, type ChannelExportEntry } from '@galvanigraph/core-models';
 import type { ChannelDetail } from '../../src/services/channel.service.js';
 import { adminActor, deleteTestChannel, describeIntegration, insertTestChannel, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
-import { MIGRATION_DB_TIMEOUT_MS, migratedFrom, type MigrationDb } from './_migration-db.js';
+import { migratedFrom, type MigrationDb } from './_migration-db.js';
 
 describeIntegration('Destination numbers across saves (real Postgres)', () => {
   let mods: ServerModules;
@@ -366,11 +366,11 @@ describeIntegration('Migration 0028 (real Postgres)', () => {
         if (counted !== undefined) await client.query(`INSERT INTO message_statistics (channel_id, meta_data_id, server_id) VALUES ($1, $2, 's')`, [id, counted]);
       }
     });
-  }, MIGRATION_DB_TIMEOUT_MS);
+  });
 
   afterAll(async () => {
     await migrated?.drop();
-  }, MIGRATION_DB_TIMEOUT_MS);
+  });
 
   it.each(Object.entries(CASES))('a channel %s: its next number, and which messages are whose', async (name, { next, old }) => {
     const { rows } = await migrated.client.query('SELECT next_meta_data_id AS next, old_numbers AS old FROM channels WHERE id = $1', [ids.get(name)]);
