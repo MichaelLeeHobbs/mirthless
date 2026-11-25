@@ -59,7 +59,7 @@ Deploy two channels; in a transformer/script:
 - [ ] Storing with a field NOT in `indexedFields` throws (fail-loud)
 - [ ] Storing a payload > 1 MiB throws
 - [ ] `getCollection('orders').find({ accessionNumber, institutionName }, { filter: { orderControl: ['XO','NW','SC'] }, latest: true })` returns the newest matching record
-- [ ] `getCollection('orders').update(order.id, { payload, expireAt: null })` changes only those keys; returns `null` for a deleted or pruned record, and for an expired one unless it changes `expireAt`
+- [ ] `getCollection('orders').update(order.id, { payload, expireAt: null })` changes only those keys; returns `null` for a deleted or pruned record, and for an expired one unless it gives it a new life (`expireAt` null or later than now)
 - [ ] `getCollection('orders').delete(order.id)` returns `true`, then `false` on a second call
 - [ ] `update`/`delete` with a non-UUID id, or on an unknown collection, throws in the script
 - [ ] `find` with multiple filter fields (scalar + array) AND-combines correctly
@@ -67,7 +67,8 @@ Deploy two channels; in a transformer/script:
 - [ ] IntelliSense: the channel script editor autocompletes `getCollection(...)` with `store`/`find`
 
 ## TTL / Pruning
+
 - [ ] A record past its `expireAt` is not found by a script, and is marked Expired on the records page *(automated: collection.itest.ts, CollectionRecordsPage.test.tsx)*
 - [ ] A record past its `expireAt` is removed on the next pruner run
-- [ ] A collection with `defaultTtlSeconds = null` never expires its records
+- [ ] A record stored without a life of its own, while the collection's `defaultTtlSeconds` is null, never expires
 - [ ] Editing the collection's default TTL affects only records written afterward

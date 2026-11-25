@@ -230,7 +230,7 @@ are indexed by, and a default TTL). Then `getCollection(name)` returns a handle:
   (replaces the whole field set), `payload` and `expireAt` (ISO, or `null` to never expire);
   keys you leave out stay as they are, the expiry too: an update does not renew a record's life.
   Returns the updated record, or `null` if it no longer exists (deleted or pruned) or has expired
-  and `expireAt` is not among the changes.
+  and the changes do not give it an `expireAt` that is still to come, or `null`.
 - `await delete(id)` — remove one record by its `id`. Returns `true`, or `false` if it was
   already gone.
 

@@ -1,6 +1,6 @@
 // What mock-DB unit tests cannot verify: the real jsonb queries, ordering, TTL and pruning.
 
-import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('CollectionService (real Postgres)', () => {
@@ -91,7 +91,7 @@ describeIntegration('CollectionService (real Postgres)', () => {
     const query = (match: Record<string, string>, latest = false): { match: Record<string, string>; latest: boolean; order: 'desc' } =>
       ({ match, latest, order: 'desc' });
 
-    it('does not match, by its key or by a filter, and one that lives on does', async () => {
+    it('does not match, and one that lives on does', async () => {
       const { CollectionService } = mods;
       const { name } = await makeCollection(['k', 'kind']);
       const past = new Date(Date.now() - 1_000).toISOString();
@@ -122,20 +122,26 @@ describeIntegration('CollectionService (real Postgres)', () => {
       expect(unwrap(await CollectionService.find(name, { ...query({ k: 'a' }), limit: 2 })).map((r) => r.payload)).toEqual(['lives on']);
     });
 
-    it('is one whose life is over at this moment, as one stored with no life at all is', async () => {
+    it.each([['over at this very moment', 0, 0], ['not over for a millisecond', -1, 1]])('is one whose life is %s: %i ms ago', async (_what, agoMs, found) => {
       const { CollectionService } = mods;
       const { name } = await makeCollection(['k']);
-      unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p', ttlSeconds: 0 }));
+      const now = Date.parse('2026-11-25T12:00:00.000Z');
+      unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p', expireAt: new Date(now - agoMs).toISOString() }));
 
-      expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toEqual([]);
+      vi.useFakeTimers({ toFake: ['Date'], now });
+      try {
+        expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toHaveLength(found);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('keeps the life it was stored with when the collection default changes', async () => {
       const { CollectionService } = mods;
       const { id, name } = await makeCollection(['k'], 1);
       const record = unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p' }));
-      unwrap(await CollectionService.update(id, { defaultTtlSeconds: null }));
       await mods.db.update(mods.schema.collectionRecords).set({ expireAt: new Date(record.expireAt!.getTime() - 60_000) }).where(mods.eq(mods.schema.collectionRecords.id, record.id));
+      unwrap(await CollectionService.update(id, { defaultTtlSeconds: null }));
 
       expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toEqual([]);
     });
@@ -149,8 +155,32 @@ describeIntegration('CollectionService (real Postgres)', () => {
       expect(unwrap(await CollectionService.updateByName(name, record.id, { payload: 'second' }))).toBeNull();
       expect(unwrap(await CollectionService.listRecords(id, { page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' })).items[0]?.payload).toBe('first');
 
+      // A script that writes back all it read.
+      expect(unwrap(await CollectionService.updateByName(name, record.id, { payload: 'second', expireAt }))).toBeNull();
+
       const later = new Date(Date.now() + 60_000).toISOString();
       expect(unwrap(await CollectionService.updateByName(name, record.id, { payload: 'second', expireAt: later }))).toMatchObject({ payload: 'second' });
+    });
+
+    it.each([['lives on', 60_000], ['never expires', null]])('is not one that %s: a script changes that one, and its life stays as it is', async (_what, livesMs) => {
+      const { CollectionService } = mods;
+      const { name } = await makeCollection(['k']);
+      const life = livesMs === null ? {} : { expireAt: new Date(Date.now() + livesMs).toISOString() };
+      const record = unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'first', ...life }));
+
+      const updated = unwrap(await CollectionService.updateByName(name, record.id, { payload: 'second' }));
+
+      expect(updated).toMatchObject({ payload: 'second', expireAt: record.expireAt });
+    });
+
+    it('is what a script makes of a record whose life it ends', async () => {
+      const { CollectionService } = mods;
+      const { name } = await makeCollection(['k']);
+      const record = unwrap(await CollectionService.store(name, { fields: { k: 'a' }, payload: 'p' }));
+
+      expect(unwrap(await CollectionService.updateByName(name, record.id, { expireAt: new Date(Date.now() - 1).toISOString() }))).not.toBeNull();
+
+      expect(unwrap(await CollectionService.find(name, query({ k: 'a' })))).toEqual([]);
     });
 
     it('is still there for a person, who can correct it, and for a script to delete', async () => {

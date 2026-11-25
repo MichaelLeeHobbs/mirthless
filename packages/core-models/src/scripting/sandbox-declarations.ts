@@ -180,7 +180,7 @@ interface CollectionHandle {
    * Change one record by id. Only the keys given change: "fields" replaces the
    * whole field set, "expireAt" null means never expire. An update does not renew
    * a record's life: only "expireAt" does.
-   * @returns The updated record, or null if it no longer exists, or has expired and "expireAt" is not given.
+   * @returns The updated record, or null if it no longer exists, or has expired and "expireAt" is not null or later than now.
    */
   update(
     id: string,

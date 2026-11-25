@@ -38,7 +38,7 @@ A **CollectionRecord** is one stored row:
 | `collectionId` | FK to the collection |
 | `fields` | jsonb — the indexed field values supplied at write time |
 | `payload` | the stored value (HL7 text, JSON, whatever) |
-| `expireAt` | timestamptz, nullable — when the pruner removes it |
+| `expireAt` | timestamptz, nullable — from then on scripts do not find it, and the pruner may remove it |
 | `createdAt` | timestamptz — drives newest-wins ordering |
 
 `store()` always inserts, never upserts. "Newest wins" is a query result

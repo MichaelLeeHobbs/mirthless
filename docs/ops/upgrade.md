@@ -598,10 +598,10 @@ A collection record's expiry was stored and shown, and nothing asked about it: a
 - With `latest`, an older record that lives longer is found where the newer one has expired. This is so in a collection whose records have different lives, for example one whose default was set late: the older records never expire and the newer ones do.
 - A reprocessed message that finds its record today may not find it after the upgrade.
 
-This lists, for each collection, its current default, how many records have no expiry, how many have expired and how many will, with the first and last expiry:
+This lists, for each collection that has records, its id, its current default, how many records have no expiry, how many have expired and how many will, with the first and last expiry:
 
 ```sql
-SELECT c.name, c.default_ttl_seconds,
+SELECT c.id, c.name, c.default_ttl_seconds,
        count(*) FILTER (WHERE r.expire_at IS NULL) AS never,
        count(*) FILTER (WHERE r.expire_at <= now()) AS expired,
        count(*) FILTER (WHERE r.expire_at > now()) AS to_expire,
@@ -610,7 +610,14 @@ FROM collections c JOIN collection_records r ON r.collection_id = c.id
 GROUP BY c.id ORDER BY c.name;
 ```
 
-To keep a collection's records found, give them another expiry or none: one at a time on the records page, or all of them in the database, `UPDATE collection_records SET expire_at = NULL WHERE collection_id = '<id>';`. Take a database backup first: a JSON server backup has no collections in it.
+To keep expired records found, give them a new life: one at a time on the records page, or in the database, for example 30 days for all of a collection's. Take a database backup first: a JSON server backup has no collections in it.
+
+```sql
+UPDATE collection_records SET expire_at = now() + interval '30 days'
+WHERE collection_id = '<id>' AND expire_at <= now();
+```
+
+Do not set it to `NULL` (never) where newer records of the same key expire: the old record would be the newest match once they have. Clear the collection's default TTL first then, and the expiry of all its records, and remember that they and the PHI in them are kept until someone deletes them.
 
 ## Database values, timeouts and marked rows (#411)
 

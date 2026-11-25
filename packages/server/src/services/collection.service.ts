@@ -246,7 +246,7 @@ export class CollectionService {
    * can decide: what it wrote to an expired one would never be found, and then be pruned.
    */
   static async updateByName(name: string, recordId: string, input: UpdateRecordInput): Promise<Result<CollectionRecordResult | null>> {
-    return tryCatch(async () => patchRecord(await requireByName(name), recordId, input, input.expireAt === undefined ? livesOn() : undefined));
+    return tryCatch(async () => patchRecord(await requireByName(name), recordId, input, givesLife(input) ? undefined : livesOn()));
   }
 
   /** False when it was already gone. */
@@ -298,6 +298,10 @@ async function insertRecord(
 /** By the clock that a TTL is counted from, which is not the database's. */
 function livesOn(): SQL | undefined {
   return or(isNull(collectionRecords.expireAt), gt(collectionRecords.expireAt, new Date()));
+}
+
+function givesLife({ expireAt }: UpdateRecordInput): boolean {
+  return expireAt === null || (expireAt !== undefined && Date.parse(expireAt) > Date.now());
 }
 
 async function patchRecord(

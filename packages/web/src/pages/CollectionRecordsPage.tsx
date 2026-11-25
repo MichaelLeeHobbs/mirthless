@@ -60,7 +60,7 @@ const MONO_CELL = { fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' } as const
 type DialogTarget = { readonly record: CollectionRecord | null } | null;
 
 function collectionSubtitle(collection: CollectionSummary): string {
-  const ttl = collection.defaultTtlSeconds === null ? 'New records never expire' : `New records expire after ${formatTtl(collection.defaultTtlSeconds)}`;
+  const ttl = collection.defaultTtlSeconds === null ? 'By default, new records never expire' : `By default, new records expire after ${formatTtl(collection.defaultTtlSeconds)}`;
   return collection.description ? `${collection.description}. ${ttl}.` : `${ttl}.`;
 }
 
