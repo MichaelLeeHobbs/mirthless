@@ -509,6 +509,10 @@ node -p "new TextDecoder('windows-1252').decode(Uint8Array.of(0x80)).charCodeAt(
 
 Messages stored that way stay as they are. Their text has characters from U+0080 to U+009F, which real text does not use, and nothing is lost: each is the byte of that number, to be read as Windows-1252. Where partners got such text, correct it with them: sending the messages again can duplicate them there.
 
+## A JavaScript source sends every item of an array (#415)
+
+A JavaScript source dropped the items of a returned array that were not text, without a word, and sent a single object as the text `[object Object]`. Items that are numbers, objects or arrays are now messages of their own, and an object is sent as JSON, so a channel whose script returns such items sends messages after the upgrade that it did not send before: look for polling scripts that return rows (`dbQuery`) or parsed messages in an array. Items that hold no message are skipped with a warning in the log, as [JAVASCRIPT: what it does](../user/connector-reference.md#javascript-what-it-does) lists. A single object without data, which was sent as `[object Object]` too, is one of them.
+
 ## A DICOM Listener answers once the message is safe (#410)
 
 A DICOM Listener answered success before the message was stored. In `PER_FILE` mode it now answers when the message is in the database, and a sender gets a C-STORE failure while the database is down. In `PER_ASSOCIATION` mode it keeps a list of answered files under `.galvanigraph-pending` in the storage directory until the message is stored ([DICOM](../user/connector-reference.md#dicom), D-353): include that folder in the backup of the storage directory, and let nothing clean it up. An association that was aborted now gives a message of the images it answered, where it gave none; one that stored nothing (a C-ECHO) gives none, where it gave a message with an empty list. `associationId` in the source map is now unique (`assoc-<uuid>`), where it started again at `assoc-1` with each start. Files that were left in a storage directory without a message before the upgrade are not picked up.
