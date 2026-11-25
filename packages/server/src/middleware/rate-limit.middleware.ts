@@ -1,22 +1,60 @@
+import type { Socket } from 'node:net';
+import type { NextFunction, Request, Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { FailureLimit, type Refusal } from '../lib/failure-limit.js';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Strict limit for failed login attempts. Successful logins do not count:
 // behind a NAT or reverse proxy every user shares one bucket, and counting
 // them locked a whole site out after five ordinary sign-ins.
-
-const isProduction = process.env.NODE_ENV === 'production';
-
-export const authRateLimiter = rateLimit({
+const loginFailures = new FailureLimit({
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 5 : 1000, // E2E runs ~60 logins
-  skipSuccessfulRequests: true,
-  message: {
-    success: false,
-    error: { code: 'RATE_LIMITED', message: 'Too many login attempts. Please try again in 15 minutes.' },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
+  maxWaiting: 50,
+  maxWaitMs: 15_000,
+  maxUnderWayMs: 30_000,
 });
+
+const onClose = new WeakMap<Socket, Set<() => void>>();
+
+/** One listener per connection, however many requests it carries at once. Returns how to take `left` out again. */
+function whenClosed(socket: Socket, left: () => void): () => void {
+  const all = onClose.get(socket) ?? new Set();
+  if (!onClose.has(socket)) {
+    onClose.set(socket, all);
+    socket.once('close', () => { for (const each of all) each(); });
+  }
+  all.add(left);
+  return () => { all.delete(left); };
+}
+
+/** Aborted when the client's connection closes. Until Node 26, a response waiting its turn on a pipelined connection does not say so. */
+function goneSignal(req: Request, res: Response): AbortSignal {
+  const gone = new AbortController();
+  if (req.socket.destroyed) gone.abort();
+  else res.once('finish', whenClosed(req.socket, () => { gone.abort(); }));
+  return gone.signal;
+}
+
+function refuseLogin(res: Response, refusal: Refusal): void {
+  if (refusal.why === 'GONE') return;
+  const [seconds, message] = refusal.why === 'FAILURES'
+    ? [Math.max(1, Math.ceil(refusal.retryAfterMs / 1000)), 'Too many login attempts. Please try again in 15 minutes.']
+    : [5, 'Too many logins at once. Please try again in a few seconds.'];
+  res.set('Retry-After', String(seconds));
+  res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message } });
+}
+
+export async function authRateLimiter(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const admission = await loginFailures.admit(ipKeyGenerator(req.ip ?? ''), goneSignal(req, res));
+  if (!admission.admitted) {
+    refuseLogin(res, admission);
+    return;
+  }
+  res.once('finish', () => { admission.settle(res.statusCode < 400); });
+  next();
+}
 
 // Every open tab refreshes at least once per access-token lifetime, so the
 // login limit (5 per 15 min per IP) logged users out once a handful shared an

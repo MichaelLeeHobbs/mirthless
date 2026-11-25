@@ -40,15 +40,15 @@ describeIntegration('Mirth code template import (real Postgres)', () => {
 
   it('creates the library and template, skips them on a second import, and replaces them on OVERWRITE', async () => {
     expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 1; }'), false, actor)))
-      .toEqual({ created: 1, updated: 0, skipped: 0 });
+      .toEqual({ counts: { created: 1, updated: 0, skipped: 0 }, errors: [] });
     expect(await stored()).toMatchObject({ code: 'function stampSite() { return 1; }', contexts: ['SOURCE_FILTER_TRANSFORMER'] });
 
     expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 2; }'), false, actor)))
-      .toEqual({ created: 0, updated: 0, skipped: 1 });
+      .toEqual({ counts: { created: 0, updated: 0, skipped: 1 }, errors: [] });
     expect((await stored())?.code).toBe('function stampSite() { return 1; }');
 
     expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 3; }'), true, actor)))
-      .toEqual({ created: 0, updated: 1, skipped: 0 });
+      .toEqual({ counts: { created: 0, updated: 1, skipped: 0 }, errors: [] });
     expect((await stored())?.code).toBe('function stampSite() { return 3; }');
   });
 });

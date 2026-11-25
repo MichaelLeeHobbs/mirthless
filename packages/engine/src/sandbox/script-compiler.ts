@@ -270,8 +270,8 @@ export function compileTransformerStepsToScript(
     if (!step.enabled) continue;
     const script = step.script ?? '';
     if (script.trim() === '') {
-      if (step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER') continue;
-      return unsupported(`Transformer step ${String(i + 1)} has type ${step.type}, which this engine cannot run`);
+      if (step.type === 'JAVASCRIPT') continue;
+      return unsupported(`Transformer step ${String(i + 1)} has type ${step.type}, which this engine cannot run without a script`);
     }
     lines.push(script);
   }

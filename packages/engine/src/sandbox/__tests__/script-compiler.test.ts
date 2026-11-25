@@ -469,22 +469,20 @@ describe('compileTransformerStepsToScript', () => {
   });
 
   it('skips an enabled script step with nothing in it', () => {
-    const steps = [
-      { enabled: true, type: 'JAVASCRIPT', script: '   ' },
-      { enabled: true, type: 'MESSAGE_BUILDER', script: null },
-    ];
-    expect(script(compileTransformerStepsToScript(steps))).toBeNull();
+    expect(script(compileTransformerStepsToScript([{ enabled: true, type: 'JAVASCRIPT', script: '   ' }]))).toBeNull();
   });
 
-  it('fails for an enabled Mapper step, which has no script to run', () => {
+  // A Message Builder step imported from Mirth before #418 has no script: skipping it sends on
+  // the message without what the step set (D-207).
+  it.each(['MAPPER', 'MESSAGE_BUILDER'])('fails for an enabled %s step with no script to run', (type) => {
     const steps = [
       { enabled: true, type: 'JAVASCRIPT', script: 'tmp.a = 1;' },
-      { enabled: true, type: 'MAPPER', script: null },
+      { enabled: true, type, script: null },
     ];
     const result = compileTransformerStepsToScript(steps);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.message).toBe('Transformer step 2 has type MAPPER, which this engine cannot run');
+    expect(result.error.message).toBe(`Transformer step 2 has type ${type}, which this engine cannot run without a script`);
   });
 
   it('runs a step of another type when it carries a script', () => {

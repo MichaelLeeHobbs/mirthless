@@ -351,7 +351,7 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
         await writer.query('BEGIN');
         for (const statement of statements) await writer.query(statement, [channelId]);
         const importing = importFile(entry);
-        await waitForBlocked(mods.pool, 'select "id" from "channels"');
+        await waitForBlocked(mods.pool, 'select "id", "enabled" from "channels"');
         await writer.query('COMMIT');
         return await importing;
       } finally {

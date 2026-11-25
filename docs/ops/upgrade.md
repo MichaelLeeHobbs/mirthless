@@ -539,6 +539,14 @@ An image in a transfer syntax the archive does not take is now an ERROR that nam
 
 A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans and doses, segmentations, presentation states, key object selections and ECGs among others were rejected, as were JPEG Extended and JPEG Lossless. It now accepts every standard one ([DICOM](../user/connector-reference.md#dicom), D-355): check the filters of channels that relied on the rejection. A Listener whose port is in use now fails to start, where it read started and received nothing. Look for such channels after the upgrade.
 
+## Channels imported from Mirth: Message Builder steps and retry counts (#418)
+
+An import before this version dropped the content of a Mirth Message Builder step, and the engine skipped the empty step, so messages went on without what the step set. An enabled Message Builder step with no script now fails the deploy (`Transformer step 2 has type MESSAGE_BUILDER, which this engine cannot run without a script`), at a restart too, which reports the channel as one that failed to redeploy. Before upgrading, open the transformers of channels imported from Mirth, and of any other with a Message Builder step, write the step's script, or disable the step if the message is right without it, and redeploy the channel: a restart deploys what was last deployed, not what was saved.
+
+Such an import also kept Mirth's retry count, which in Mirth is the attempts before a message is queued. Here it ends the queue: a message that fails that many retries goes to ERROR (D-230). Set the retry count of a queued destination to 0, and redeploy, where the message must be retried until it is delivered, as Mirth does with one it could not send. With 0 the queue also sends a message again that the partner refuses (a negative acknowledgement), which ends it in Mirth, and the messages behind it wait unless "Skip Past a Failed Message" is on. A new import does this and says so.
+
+A new import can also hold a channel disabled, or refuse to overwrite an enabled one, where it only warned or said nothing before: see the migration table in [capabilities.md](../user/capabilities.md).
+
 ## Queued sends take as long as direct ones, and preprocessors run first (#416)
 
 - A send from a queue, or after a restart, ended at 30 seconds whatever the destination's timeout. It now has what a direct send has: the destination's own timeout, at most 5 minutes (D-359). A partner that does not answer holds its queue for that long at each attempt, and an MLLP destination waits for a connection and then for the answer, so look at timeouts that were set high. A stop or a redeploy waits for the queued send in flight, which can be minutes, and the channel stays started and takes messages until then; the bundled nginx answers the request with 504 after one, and the stop goes on. Halt the channel to end the send. Resend is refused for a destination that is being sent to.

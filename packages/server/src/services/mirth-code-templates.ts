@@ -1,9 +1,13 @@
-// A Mirth server backup carries its code template libraries beside the channels, and
-// channel scripts call those templates, so a channel imported without them fails on its
-// first message.
+// A Mirth server backup carries its code template libraries beside the channels, and a channel
+// export inside the channel. Channel scripts call those templates, so a channel imported without
+// them fails on its first message.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { CODE_TEMPLATE_CONTEXTS } from '@galvanigraph/core-models';
+import { isPlainObject } from '@galvanigraph/core-util';
+import logger from '../lib/logger.js';
+import { mirthOnlyTemplateWarning } from './mirth-only-constructs.js';
+import { getString, stringList, toRecordList } from './mirth-xml.js';
 import { CodeTemplateService, type TemplateDetail } from './code-template.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 
@@ -31,14 +35,6 @@ export interface CodeTemplateImportCounts {
   readonly skipped: number;
 }
 
-export interface XmlReaders {
-  readonly isRecord: (v: unknown) => v is Record<string, unknown>;
-  readonly getString: (obj: unknown, key: string) => string | null;
-  readonly toRecordList: (node: unknown) => readonly Record<string, unknown>[];
-  /** The `<string>` children of a Mirth string list; [] when there are none. */
-  readonly stringList: (node: unknown) => string[];
-}
-
 const KNOWN_CONTEXTS: ReadonlySet<string> = new Set(CODE_TEMPLATE_CONTEXTS);
 
 /**
@@ -49,20 +45,20 @@ function mapTemplateType(type: string | null): 'FUNCTION' | 'CODE_BLOCK' {
   return type === 'DRAG_AND_DROP_CODE' ? 'CODE_BLOCK' : 'FUNCTION';
 }
 
-function convertTemplate(node: Record<string, unknown>, xml: XmlReaders): MirthCodeTemplate | null {
-  const name = xml.getString(node, 'name');
+function convertTemplate(node: Record<string, unknown>): MirthCodeTemplate | null {
+  const name = getString(node, 'name');
   const props = node['properties'];
-  if (!name || !xml.isRecord(props)) return null;
+  if (!name || !isPlainObject(props)) return null;
   const contextSet = node['contextSet'];
-  const delegate = xml.isRecord(contextSet) ? contextSet['delegate'] : null;
-  const rawContexts = xml.isRecord(delegate) ? delegate['contextType'] : null;
+  const delegate = isPlainObject(contextSet) ? contextSet['delegate'] : null;
+  const rawContexts = isPlainObject(delegate) ? delegate['contextType'] : null;
   const contextList = Array.isArray(rawContexts) ? rawContexts : rawContexts == null ? [] : [rawContexts];
   const contexts = contextList.map(String).filter((c): c is CodeTemplateContext => KNOWN_CONTEXTS.has(c));
   return {
     name,
-    description: xml.getString(props, 'description') ?? xml.getString(node, 'description') ?? '',
-    type: mapTemplateType(xml.getString(props, 'type')),
-    code: xml.getString(props, 'code') ?? '',
+    description: getString(props, 'description') ?? getString(node, 'description') ?? '',
+    type: mapTemplateType(getString(props, 'type')),
+    code: getString(props, 'code') ?? '',
     contexts,
   };
 }
@@ -72,45 +68,62 @@ function convertTemplate(node: Record<string, unknown>, xml: XmlReaders): MirthC
  * channel (an exclusion list is not kept, so the import warns about one);
  * otherwise the channels it was enabled for, in lower case as ids are stored (D-349).
  */
-function libraryScope(lib: Record<string, unknown>, name: string, xml: XmlReaders, warnings: string[]): readonly string[] | null {
-  if (xml.getString(lib, 'includeNewChannels') === 'true') {
-    if (xml.stringList(lib['disabledChannelIds']).length > 0) {
+function libraryScope(lib: Record<string, unknown>, name: string, warnings: string[]): readonly string[] | null {
+  if (getString(lib, 'includeNewChannels') === 'true') {
+    if (stringList(lib['disabledChannelIds']).length > 0) {
       warnings.push(`Code template library "${name}": Mirth disabled it for some channels; here it applies to every channel`);
     }
     return null;
   }
-  return xml.stringList(lib['enabledChannelIds']).map((id) => id.toLowerCase());
+  return stringList(lib['enabledChannelIds']).map((id) => id.toLowerCase());
 }
 
+function libraryNodes(container: unknown): readonly Record<string, unknown>[] {
+  const node = isPlainObject(container) ? container['codeTemplateLibraries'] : null;
+  return isPlainObject(node) ? toRecordList(node['codeTemplateLibrary']) : [];
+}
+
+/** Every channel of a file that uses a library carries it whole, so the first of a name is taken. */
 export function extractCodeTemplateLibraries(
   parsed: Record<string, unknown>,
-  xml: XmlReaders,
+  mirthChannels: readonly Record<string, unknown>[],
   warnings: string[],
 ): readonly MirthCodeTemplateLibrary[] {
-  const server = parsed['serverConfiguration'];
-  if (!xml.isRecord(server)) return [];
-  const librariesNode = server['codeTemplateLibraries'];
-  const libraryNodes = xml.isRecord(librariesNode) ? xml.toRecordList(librariesNode['codeTemplateLibrary']) : [];
-  return libraryNodes.flatMap((lib) => {
-    const name = xml.getString(lib, 'name');
-    if (!name) return [];
+  const nodes = [...libraryNodes(parsed['serverConfiguration']), ...mirthChannels.flatMap((c) => libraryNodes(c['exportData']))];
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const node of nodes) {
+    const name = getString(node, 'name');
+    if (name && !byName.has(name)) byName.set(name, node);
+  }
+  return [...byName].map(([name, lib]) => {
     const templatesNode = lib['codeTemplates'];
-    const templates = (xml.isRecord(templatesNode) ? xml.toRecordList(templatesNode['codeTemplate']) : [])
-      .map((t) => convertTemplate(t, xml))
+    const templates = (isPlainObject(templatesNode) ? toRecordList(templatesNode['codeTemplate']) : [])
+      .map(convertTemplate)
       .filter((t): t is MirthCodeTemplate => t !== null);
-    const channelIds = libraryScope(lib, name, xml, warnings);
-    return [{ name, description: xml.getString(lib, 'description') ?? '', channelIds, templates }];
+    for (const template of templates) {
+      const warning = mirthOnlyTemplateWarning(`Code template "${template.name}" in library "${name}" uses`, template.code);
+      if (warning) warnings.push(warning);
+    }
+    return { name, description: getString(lib, 'description') ?? '', channelIds: libraryScope(lib, name, warnings), templates };
   });
 }
 
+export interface CodeTemplateImport {
+  readonly counts: CodeTemplateImportCounts;
+  /** A library or template that could not be written, which stops no other. */
+  readonly errors: readonly string[];
+}
+
+/** An error means that nothing was written. */
 export async function importCodeTemplateLibraries(
   libraries: readonly MirthCodeTemplateLibrary[],
   overwrite: boolean,
   context?: AuditContext,
-): Promise<Result<CodeTemplateImportCounts>> {
+): Promise<Result<CodeTemplateImport>> {
   return tryCatch(async () => {
     const counts = { created: 0, updated: 0, skipped: 0 };
-    if (libraries.length === 0) return counts;
+    const errors: string[] = [];
+    if (libraries.length === 0) return { counts, errors };
     const existingLibraries = await CodeTemplateService.listLibraries();
     if (!existingLibraries.ok) throw existingLibraries.error;
     // Every library this import would write, checked before the first write, so
@@ -124,16 +137,62 @@ export async function importCodeTemplateLibraries(
     if (!allowed.ok) throw allowed.error;
     for (const lib of libraries) {
       const found = existingLibraries.value.find((l) => l.name === lib.name);
-      if (found && overwrite) await rescopeLibrary(found.id, found.revision, lib.channelIds, context);
-      const libraryId = found?.id ?? await createLibrary(lib, context);
-      const existing = await CodeTemplateService.listTemplates(libraryId);
-      if (!existing.ok) throw existing.error;
-      for (const template of lib.templates) {
-        const outcome = await importTemplate(libraryId, template, existing.value, overwrite, context);
-        counts[outcome]++;
-      }
+      const written = await importLibrary(lib, found, overwrite, context);
+      for (const outcome of written.outcomes) counts[outcome]++;
+      errors.push(...written.errors);
     }
-    return counts;
+    return { counts, errors };
+  });
+}
+
+type TemplateOutcome = keyof CodeTemplateImportCounts;
+
+interface ImportedLibrary {
+  readonly outcomes: readonly TemplateOutcome[];
+  readonly errors: readonly string[];
+}
+
+function notImported(what: string, error: Error): string {
+  logger.error({ errMsg: error.message, stack: error.stack, what }, 'Part of a Mirth import was not imported');
+  return `${what} was not imported: ${error.message}`;
+}
+
+async function importLibrary(
+  lib: MirthCodeTemplateLibrary,
+  found: { readonly id: string; readonly revision: number } | undefined,
+  overwrite: boolean,
+  context?: AuditContext,
+): Promise<ImportedLibrary> {
+  const opened = await tryCatch(async () => {
+    if (found && overwrite) await rescopeLibrary(found.id, found.revision, lib.channelIds, context);
+    const id = found?.id ?? await createLibrary(lib, context);
+    const existing = await CodeTemplateService.listTemplates(id);
+    if (!existing.ok) throw existing.error;
+    return { id, existing: existing.value };
+  });
+  if (!opened.ok) return { outcomes: [], errors: [notImported(`Code template library "${lib.name}"`, opened.error)] };
+  const outcomes: TemplateOutcome[] = [];
+  const errors: string[] = [];
+  for (const template of lib.templates) {
+    const outcome = await tryCatch(() => importTemplate(opened.value.id, template, opened.value.existing, overwrite, context));
+    if (outcome.ok) outcomes.push(outcome.value);
+    else errors.push(notImported(`Code template "${template.name}" in library "${lib.name}"`, outcome.error));
+  }
+  return { outcomes, errors };
+}
+
+/** What an import that leaves the libraries here as they are does not do for the file's channels. */
+export function keptLibraryNotes(
+  libraries: readonly MirthCodeTemplateLibrary[],
+  existing: ReadonlyArray<{ readonly name: string; readonly channelIds: readonly string[] | null }>,
+  channels: ReadonlyArray<{ readonly id: string; readonly name: string }>,
+): string[] {
+  return libraries.flatMap((lib) => {
+    const scope = existing.find((l) => l.name === lib.name)?.channelIds;
+    if (!scope) return [];
+    const missed = channels.filter((c) => (lib.channelIds?.includes(c.id) ?? true) && !scope.includes(c.id));
+    return missed.length === 0 ? []
+      : [`Code template library "${lib.name}" is here already and does not reach ${missed.map((c) => `"${c.name}"`).join(', ')}; add them to its channels`];
   });
 }
 
@@ -156,7 +215,7 @@ async function importTemplate(
   existing: readonly TemplateDetail[],
   overwrite: boolean,
   context?: AuditContext,
-): Promise<'created' | 'updated' | 'skipped'> {
+): Promise<TemplateOutcome> {
   const fields = { type: template.type, code: template.code, contexts: [...template.contexts], description: template.description };
   const match = existing.find((t) => t.name === template.name);
   if (match) {

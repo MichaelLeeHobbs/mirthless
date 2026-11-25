@@ -54,6 +54,7 @@ export interface SftpClient {
   mkdir(remoteDirectory: string): Promise<void>;
   /** A link counts as what it points to. */
   pathKind(remotePath: string): Promise<SftpPathKind>;
+  /** Also gives up a connect in progress, which may then never settle. */
   end(): Promise<void>;
 }
 
@@ -111,6 +112,8 @@ export interface Ssh2ClientInstance {
   exists(remotePath: string): Promise<false | string>;
   stat(remotePath: string): Promise<{ readonly isDirectory: boolean; readonly size: number; readonly modifyTime: number }>;
   end(): Promise<boolean>;
+  /** The ssh2 client, which holds the connection. */
+  readonly client: { destroy(): unknown };
 }
 
 /** ssh2-sftp-client's exists() answers 'd', '-', 'l' or false; it uses lstat, so a link is 'l'. */
@@ -236,6 +239,9 @@ export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnecti
     pathKind,
     async end(): Promise<void> {
       await client.end();
+      // While no SFTP session is up the library's end() closes nothing. ssh2's own end()
+      // would leave the socket open until the server closes its side, which a hung one may never do.
+      client.client.destroy();
     },
   };
 }
