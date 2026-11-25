@@ -95,6 +95,10 @@ describeIntegration('Test Connection and the configuration map (real Postgres)',
     expectFilled(await test(deployer, REFERENCES, LAB_CHANNEL));
   });
 
+  it('fills them for one who reads the map and writes no channel', async () => {
+    expectFilled(await test(await user(['channels:deploy', 'config_map:read'], null), REFERENCES));
+  });
+
   it('fills them for one who writes the scripts of the channel, which read the map', async () => {
     expectFilled(await test(await user(['channels:read', 'channels:write', 'channels:deploy'], [lab]), REFERENCES, LAB_CHANNEL));
     expectFilled(await test(await user(['channels:write', 'channels:deploy'], null), REFERENCES));

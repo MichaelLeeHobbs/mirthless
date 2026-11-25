@@ -368,6 +368,15 @@ describe('ConnectionTestService', () => {
       expect(result.value.success).toBe(true);
     });
 
+    it.each([
+      ['SOURCE', 4],
+      ['DESTINATION', 6],
+    ] as const)('asks of a %s directory what the connector does there', async (mode, access) => {
+      await ConnectionTestService.testConnection('FILE', mode, { directory: '/data/in' });
+
+      expect(mockAccess.mock.calls[0]?.[1]).toBe(access);
+    });
+
     it('returns failure when directory is not accessible', async () => {
       mockAccess.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
 
