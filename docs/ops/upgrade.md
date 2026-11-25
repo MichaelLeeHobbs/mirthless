@@ -612,6 +612,10 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 **MariaDB**: a connection set `max_execution_time`, which MariaDB does not document, so it should have failed. The connector now sets MariaDB's `max_statement_time` when the server does not know the other. This was written from MariaDB's documentation and has not been tested on a MariaDB server.
 
+## A disabled account's email is locked (#419)
+
+`PUT /api/v1/users/:id` answers 409 when it would change the email address of a disabled account, unless it also enables the account. A script that frees the address of someone who left must enable the account, change the address and disable it again. Nothing already stored changes, and the API keys that were disabled with the person stay disabled.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

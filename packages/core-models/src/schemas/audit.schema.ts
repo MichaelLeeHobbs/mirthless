@@ -57,6 +57,8 @@ export const AUDIT_ACTION = {
   API_KEY_REVOKED: 'API_KEY_REVOKED',
   /** A user was enabled or disabled (deleting one disables it); written in the change's transaction. */
   USER_ENABLED_CHANGED: 'USER_ENABLED_CHANGED',
+  /** A user's email or name changed, with what it was and is now (D-371); written in the change's transaction. */
+  USER_DETAILS_CHANGED: 'USER_DETAILS_CHANGED',
   /** Every role, assignment, membership and disabled user, from record_grant_baseline() (migration 0022, the seed): where the access replay starts. */
   GRANT_BASELINE: 'GRANT_BASELINE',
 } as const;

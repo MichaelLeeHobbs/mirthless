@@ -40,6 +40,8 @@ const PAGES = {
   // The first row is u1: someone else's account, then your own, which has no password field.
   'user-edit-role': { url: '/users', click: 'Edit user', user: { id: 'u9' } },
   'user-edit-self': { url: '/users', click: 'Edit user' },
+  // The last row is a disabled account, whose email is locked.
+  'user-edit-disabled': { url: '/users', click: { last: 'Edit user' } },
   // A scoped user whose temporary access ends in half an hour: the banner, and My access.
   'my-access': {
     url: '/',
@@ -164,9 +166,11 @@ async function shoot(browser, name, target, variantName) {
   await page.waitForTimeout(800);
   if (keys) await page.keyboard.press(keys);
   if (type) await page.keyboard.type(type);
-  for (const label of [click ?? []].flat()) {
+  for (const step of [click ?? []].flat()) {
+    const label = step.last ?? step;
     const byText = page.getByText(label, { exact: true });
-    await ((await byText.count()) > 0 ? byText : page.getByLabel(label, { exact: true })).first().click();
+    const found = (await byText.count()) > 0 ? byText : page.getByLabel(label, { exact: true });
+    await (step.last ? found.last() : found.first()).click();
     await page.waitForTimeout(200);
   }
   for (const [label, value] of Object.entries(fill ?? {})) await page.getByLabel(label, { exact: true }).fill(value);
