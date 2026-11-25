@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createShutdownHandler, type ShutdownDeps } from '../shutdown.js';
+import { createShutdownHandler, endQueues, type ShutdownDeps } from '../shutdown.js';
 
 const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
@@ -274,6 +274,43 @@ describe('in a process of its own', () => {
 
     expect({ exitCode, stdout }, stderr).toEqual({ exitCode: 7, stdout: 'stuck\nstill here\n' });
   }, CHILD_LIMIT_MS + 5_000);
+});
+
+describe('endQueues', () => {
+  interface Consumer { readonly stop: ReturnType<typeof vi.fn>; readonly halt: ReturnType<typeof vi.fn> }
+  const consumer = (stopped: Promise<void>): Consumer => ({ stop: vi.fn().mockReturnValue(stopped), halt: vi.fn().mockReturnValue(stopped) });
+  const engineOf = (...channels: readonly (readonly Consumer[])[]): Parameters<typeof endQueues>[0] =>
+    ({ getAll: () => new Map(channels.map((queueConsumers, i) => [String(i), { queueConsumers }])) });
+  const never = new Promise<void>(() => undefined);
+  const warn = vi.fn();
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('stops every channel\'s queues at once, and halts none when their sends end', async () => {
+    const all = [consumer(Promise.resolve()), consumer(Promise.resolve()), consumer(Promise.resolve())];
+
+    await endQueues(engineOf([all[0]!, all[1]!], [], [all[2]!]), { warn });
+
+    for (const c of all) {
+      expect(c.stop).toHaveBeenCalledOnce();
+      expect(c.halt).not.toHaveBeenCalled();
+    }
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('halts them after 20 seconds and goes on, also when a send cannot be cancelled', async () => {
+    vi.useFakeTimers();
+    const stuck = consumer(never);
+
+    const ended = endQueues(engineOf([stuck], [consumer(Promise.resolve())]), { warn });
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(stuck.halt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await ended;
+
+    expect(stuck.halt).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledOnce();
+  });
 });
 
 describe('undeployAll', () => {

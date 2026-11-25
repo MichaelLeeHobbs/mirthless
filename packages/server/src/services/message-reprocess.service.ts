@@ -51,6 +51,12 @@ async function hasStoredVariables(channelId: string, messageId: number, metaData
   return rows.length > 0;
 }
 
+async function isProcessed(channelId: string, messageId: number): Promise<boolean> {
+  const [row] = await db.select({ processed: messages.processed }).from(messages)
+    .where(and(eq(messages.channelId, channelId), eq(messages.id, messageId)));
+  return row?.processed === true;
+}
+
 export class MessageReprocessService {
   /** Re-injects the stored raw source as a new message. */
   static async reprocessMessage(
@@ -72,7 +78,7 @@ export class MessageReprocessService {
         );
 
       if (!row?.content) {
-        throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}. Reprocess requires stored raw content (DEVELOPMENT/RAW storage mode).`);
+        throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}. Reprocess requires stored raw content (DEVELOPMENT, PRODUCTION or RAW storage mode).`);
       }
 
       const decrypted = decryptIfEncrypted(row.content);
@@ -146,7 +152,8 @@ export class MessageReprocessService {
   /**
    * Re-queues one destination; no other is touched. A NEVER-queue destination has no
    * consumer, so re-queuing would strand the message: refused. So is one that uses variables
-   * of a message routed when it did not queue, because they were not kept (#390).
+   * of a message routed when it did not queue, because they were not kept (#390), and one whose
+   * first send may be under way, which the queue would send beside it (#416).
    */
   static async resendDestination(
     channelId: string,
@@ -186,6 +193,9 @@ export class MessageReprocessService {
         ));
       if (!cm) {
         throw new ServiceError('NOT_FOUND', `No connector message for message ${String(messageId)} destination ${String(metaDataId)}.`);
+      }
+      if (cm.status === 'RECEIVED' && !(await isProcessed(channelId, messageId))) {
+        throw new ServiceError('CONFLICT', `Message ${String(messageId)} is still being sent to "${dest.name}", or crash recovery is about to. Wait until it has ended.`);
       }
       const its = await MessageService.isForItsNumber(channelId, messageId, metaDataId);
       if (!its.ok) throw its.error;

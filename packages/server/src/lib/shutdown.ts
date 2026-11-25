@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+import { settleWithin } from '@galvanigraph/core-util';
 
 export interface ShutdownDeps {
   readonly logger: Logger;
@@ -12,6 +13,9 @@ export interface ShutdownDeps {
 }
 
 const DRAIN_TIMEOUT_MS = 30_000;
+
+/** Part of the drain timeout: the rest is for undeploying the channels. */
+const QUEUES_END_MS = 20_000;
 
 /**
  * Socket.IO goes before the HTTP close: open websockets keep server.close() from
@@ -75,6 +79,22 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
       }
     })();
   };
+}
+
+export interface QueueingEngine {
+  getAll(): ReadonlyMap<string, { readonly queueConsumers: ReadonlyArray<{ stop(): Promise<void>; halt(): Promise<void> }> }>;
+}
+
+/**
+ * An undeploy waits for the queued send in flight, which may take minutes, and the channels are undeployed
+ * one after another. A send that a halt ends is back on its queue.
+ */
+export async function endQueues(engine: QueueingEngine, log: { warn(obj: object, msg: string): void }): Promise<void> {
+  const consumers = [...engine.getAll().values()].flatMap((c) => c.queueConsumers);
+  if (await settleWithin(Promise.all(consumers.map((c) => c.stop())), QUEUES_END_MS)) return;
+  log.warn({ phase: 'shutdown', waitedMs: QUEUES_END_MS }, 'A queued send has not ended; halting the queues, which puts it back');
+  // Not waited for: a connector that cannot cancel its send would hold up every channel's undeploy.
+  for (const c of consumers) void c.halt();
 }
 
 export interface UndeployableEngine {

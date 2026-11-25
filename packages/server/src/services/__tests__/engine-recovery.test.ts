@@ -42,6 +42,7 @@ const ms = vi.hoisted(() => ({
   isForItsNumber: vi.fn(),
   initializeMessage: vi.fn(),
   resetToReceived: vi.fn(),
+  failUnrouted: vi.fn(),
   finalizeMessage: vi.fn(),
   createConnectorMessage: vi.fn(),
   enqueue: vi.fn(),
@@ -651,7 +652,6 @@ describe('EngineManager recovery', () => {
 
     it.each<[string, (contentType: number) => unknown, string]>([
       ['its raw content cannot be read', (t) => (t === RAW ? FAILED : ok(null)), 'cannot decrypt'],
-      ['its raw content is not stored', () => ok(null), 'not stored'],
       ['its source map cannot be read', (t) => (t === SOURCE_MAP ? FAILED : ok('payload')), 'cannot decrypt'],
       ['its source map is damaged', (t) => ok(t === SOURCE_MAP ? 'DOE^JANE' : 'payload'), 'not valid JSON'],
     ])('is left as it was, and that is logged, when %s', async (_why, load, errMsg) => {
@@ -666,6 +666,85 @@ describe('EngineManager recovery', () => {
       expect(logger.error).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, errMsg: expect.stringContaining(errMsg) }, expect.stringContaining('could not run a message again'));
       expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('DOE');
       await engine.dispose();
+    });
+
+    describe('and whose raw content is not stored', () => {
+      const REASON = expect.stringMatching(/raw content is not stored, so it cannot be run again\. No destination was sent to, but its scripts may have run/) as string;
+
+      beforeEach(() => {
+        unrouted(1);
+        ms.loadContent.mockResolvedValue(ok(null));
+      });
+
+      it('ends in ERROR with the reason, the count and an alert', async () => {
+        const logger = (await import('../../lib/logger.js')).default;
+
+        const engine = await deployAndRecover();
+
+        expect(ms.failUnrouted).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, 7);
+        expect(mockSend).not.toHaveBeenCalled();
+        expect(ms.resetToReceived).not.toHaveBeenCalled();
+        expect(storedFor(0)).toEqual([[PROCESSING_ERROR, REASON]]);
+        expect(ms.incrementStats.mock.calls).toEqual([[CHANNEL_ID, 0, 'test-server', 'errored']]);
+        expect(alerts).toHaveBeenCalledExactlyOnceWith('SOURCE_CONNECTOR', expect.stringMatching(/marked 1 message\(s\) ERROR \(7\)\. .*raw content is not stored/));
+        expect(logger.error).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, reason: REASON }, expect.stringContaining('marked it ERROR'));
+        await engine.dispose();
+      });
+
+      it('is one of many: there is one alert for all of them', async () => {
+        ms.getUnprocessedMessages.mockResolvedValue(ok(Array.from({ length: 25 }, (_, i) => ({ id: i + 1, channelId: CHANNEL_ID }))));
+
+        const engine = await deployAndRecover();
+
+        expect(ms.failUnrouted).toHaveBeenCalledTimes(25);
+        expect(alerts).toHaveBeenCalledExactlyOnceWith('SOURCE_CONNECTOR', expect.stringMatching(/marked 25 message\(s\) ERROR \(1, 2, .*, 20 and more, which the log names\)/));
+        await engine.dispose();
+      });
+
+      it('is left for the next start, and that is logged, when its end cannot be saved', async () => {
+        const logger = (await import('../../lib/logger.js')).default;
+        ms.failUnrouted.mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
+
+        const engine = await deployAndRecover();
+
+        expect(storedFor(0)).toEqual([]);
+        expect(ms.incrementStats).not.toHaveBeenCalled();
+        expect(alerts).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, errMsg: 'db down' }, expect.stringContaining('left it as it was'));
+        await engine.dispose();
+      });
+
+      it('is left for the next start when the channel stops first', async () => {
+        let engine: InstanceType<typeof EngineManager> | undefined;
+        ms.loadContent.mockImplementation(async () => {
+          void engine?.getRuntime(CHANNEL_ID)?.runtime.halt();
+          return ok(null);
+        });
+        engine = new EngineManager('test-server');
+        await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] })));
+        const deployed = engine.getRuntime(CHANNEL_ID)!;
+        await deployed.runtime.start();
+
+        await deployed.recoverOnce();
+
+        expect(ms.failUnrouted).not.toHaveBeenCalled();
+        await engine.dispose();
+      });
+
+      it.each([
+        ['its reason', 'storeContent', 'why a message failed'],
+        ['its count', 'incrementStats', 'the count of a failed message'],
+      ] as const)('ends in ERROR all the same, and the log says so, when %s cannot be saved', async (_what, write, what) => {
+        const logger = (await import('../../lib/logger.js')).default;
+        ms[write].mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
+
+        const engine = await deployAndRecover();
+
+        expect(ms.failUnrouted).toHaveBeenCalledOnce();
+        expect(alerts).toHaveBeenCalledOnce();
+        expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ messageId: 7, what, errMsg: 'db down' }), expect.stringContaining('could not be saved'));
+        await engine.dispose();
+      });
     });
 
     it('is run with the source map stored for it', async () => {
@@ -835,12 +914,12 @@ describe('EngineManager recovery', () => {
       await engine.dispose();
     });
 
-    it('a send has 30 seconds', async () => {
+    it('a send has the five minutes a direct send has', async () => {
       const expiry = new AbortController();
       const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(expiry.signal);
       try {
         const { engine, done } = await recovering();
-        expect(timeout).toHaveBeenCalledWith(30_000);
+        expect(timeout).toHaveBeenCalledExactlyOnceWith(300_000);
         expiry.abort();
         await done;
         expect(ms.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL_ID, 7, 1, 'ERROR', undefined);

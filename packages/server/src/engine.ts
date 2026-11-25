@@ -36,6 +36,7 @@ import {
   type LoadedAlert,
   type ResponseSource,
   parseForSandbox,
+  reportUnsaved,
   type DataTypeOptions,
 } from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -307,9 +308,9 @@ export function shouldStoreContent(mode: MessageStorageMode, contentType: number
 
 /**
  * A storage mode stores enough content to deliver a queued message and recover it
- * after a crash (needs RAW + SENT). METADATA/DISABLED store neither, so a queued
- * destination on such a channel would lose 100% of messages. Used to reject the
- * combination at deploy time.
+ * after a crash (needs RAW + SENT). RAW does not store SENT and METADATA/DISABLED
+ * store neither, so a queued destination on such a channel would lose 100% of
+ * messages. Used to reject the combination at deploy time.
  */
 export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
   return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
@@ -486,6 +487,10 @@ function whyQueueHeld(dest: ChannelDetail['destinations'][number] | undefined): 
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
+const RAW_NOT_STORED = 'Not finished after a server stop: its raw content is not stored, so it cannot be run again. '
+  + 'No destination was sent to, but its scripts may have run. Check whether the channel has received it again before you send it again.';
+/** How many messages one alert names. */
+const MAX_NAMED_MESSAGES = 20;
 /** How long an undeploy waits for crash recovery to end the messages it was working on. */
 const RECOVERY_ENDS_MS = 10_000;
 
@@ -607,15 +612,15 @@ export class EngineManager {
     }
 
     // Fail loud, never silent: a queued destination needs stored RAW+SENT content
-    // to deliver and to recover after a crash. On METADATA/DISABLED storage that
-    // content is never written, so every queued message would error on delivery.
+    // to deliver and to recover after a crash. Any other storage mode never writes
+    // SENT, so every queued message would error on delivery.
     const storageMode = channel.messageStorageMode as MessageStorageMode;
     const hasQueuedDestination = channel.destinations.some((d) => d.queueMode !== 'NEVER');
     if (hasQueuedDestination && !storageModeSupportsQueue(storageMode)) {
       throw new Error(
         `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
         'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
-        'Use DEVELOPMENT, PRODUCTION, or RAW storage, or set every destination queue mode to NEVER.',
+        `Use ${Object.values(MESSAGE_STORAGE_MODE).filter(storageModeSupportsQueue).join(' or ')} storage, or set every destination queue mode to NEVER.`,
       );
     }
 
@@ -1122,7 +1127,8 @@ export class EngineManager {
    *
    * - Stale PENDING claims (in-flight dispatches interrupted by a crash) are reset
    *   to QUEUED so the queue consumers redeliver them.
-   * - A message not routed yet is run again from its stored raw content, as the same message.
+   * - A message not routed yet is run again from its stored raw content, as the same message. Without
+   *   that it ends in ERROR.
    * - RECEIVED destination messages are redispatched from their stored SENT content and variables.
    * QUEUED messages are left for the queue consumers.
    * Resolves false when it is to go on at the next start.
@@ -1167,6 +1173,7 @@ export class EngineManager {
       }
     };
 
+    const notRunAgain: number[] = [];
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
       const leave = (error: Error): Result<void> => {
         logger.error({ channelId, messageId, errMsg: error.message }, 'Crash recovery could not run a message again and left it as it was');
@@ -1174,7 +1181,13 @@ export class EngineManager {
       };
       const raw = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.RAW);
       if (!raw.ok) return leave(raw.error);
-      if (raw.value === null) return leave(new Error('Its raw content is not stored'));
+      if (raw.value === null) {
+        if (runSignal.aborted) return INTERRUPTED;
+        const given = await this.giveUpUnstored(recovery, messageId);
+        if (!given.ok) return leave(given.error);
+        notRunAgain.push(messageId);
+        return { ok: false, value: null, error: new Error(RAW_NOT_STORED) } as Result<void>;
+      }
       const sourceMap = await loadSourceMap(channelId, messageId);
       if (!sourceMap.ok) return leave(sourceMap.error);
       if (runSignal.aborted) return INTERRUPTED;
@@ -1198,6 +1211,15 @@ export class EngineManager {
 
     const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
     const recovered = await manager.recover(channel.id, runSignal);
+    // One alert: an alert is sent at most once a minute.
+    if (notRunAgain.length > 0) {
+      const first = notRunAgain.slice(0, MAX_NAMED_MESSAGES).join(', ');
+      const which = notRunAgain.length > MAX_NAMED_MESSAGES ? `${first} and more, which the log names` : first;
+      await recovery.raiseAlert({
+        channelId: channel.id, errorType: 'SOURCE_CONNECTOR', timestamp: Date.now(),
+        errorMessage: `Crash recovery marked ${String(notRunAgain.length)} message(s) ERROR (${which}). ${RAW_NOT_STORED}`,
+      });
+    }
     if (!recovered.ok) {
       logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed; it goes on at the next start');
       return false;
@@ -1209,6 +1231,20 @@ export class EngineManager {
       logger.info({ channelId: channel.id, ...summary }, 'Channel recovery complete');
     }
     return !interrupted;
+  }
+
+  private async giveUpUnstored({ channel, store }: ChannelRecovery, messageId: number): Promise<Result<void>> {
+    const channelId = channel.id;
+    const failed = await MessageService.failUnrouted(channelId, messageId);
+    if (!failed.ok) return failed;
+    logger.error({ channelId, messageId, reason: RAW_NOT_STORED }, 'Crash recovery could not run a message again and marked it ERROR');
+    const saved = (what: string, write: Promise<Result<unknown>>): Promise<void> =>
+      reportUnsaved([write], { channelId, messageId, metaDataId: 0, what }, logStoreFailure);
+    await Promise.all([
+      saved('why a message failed', store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, RAW_NOT_STORED, 'TEXT')),
+      saved('the count of a failed message', store.incrementStats(channelId, 0, this.serverId, 'errored')),
+    ]);
+    return OK_VOID;
   }
 
   private redispatcherFor(recovery: ChannelRecovery): DestinationRedispatcher {
