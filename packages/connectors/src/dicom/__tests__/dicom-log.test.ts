@@ -18,13 +18,14 @@ import { startFakeScp, type FakeScp, type ScpBehaviour } from '../../__fixtures_
 
 type Failing = 'open' | 'rm' | 'unlink' | 'rename' | 'mkdir' | 'realpath' | 'appendFile' | 'readFile' | 'readdir' | 'access';
 
-/** The file operations that fail on a path that holds the text, as Node's fail. */
-const failing = vi.hoisted(() => ({ on: new Map<string, string>() }));
+/** The file operations that fail, as Node's fail, on a path that holds the text (or ends with it, after a `$`). `flag` limits it to files opened so. */
+const failing = vi.hoisted((): { readonly on: Map<string, string>; flag: string | undefined } => ({ on: new Map(), flag: undefined }));
 vi.mock('node:fs/promises', async (importActual) => {
   const actual = await importActual<typeof import('node:fs/promises')>();
   const wrap = (syscall: Failing) => (target: string, ...rest: unknown[]): Promise<unknown> => {
     const text = failing.on.get(syscall);
-    if (text !== undefined && target.includes(text)) {
+    const meant = text !== undefined && (text.endsWith('$') ? target.endsWith(text.slice(0, -1)) : target.includes(text));
+    if (meant && (failing.flag === undefined || rest[0] === failing.flag)) {
       const dest = syscall === 'rename' ? String(rest[0]) : undefined;
       const message = `EBUSY: resource busy or locked, ${syscall} '${target}'${dest === undefined ? '' : ` -> '${dest}'`}`;
       return Promise.reject(Object.assign(new Error(message), { errno: -16, code: 'EBUSY', syscall, path: target, ...(dest === undefined ? {} : { dest }) }));
@@ -77,6 +78,7 @@ let listener: DicomReceiver | null = null;
 
 beforeEach(async () => {
   failing.on.clear();
+  failing.flag = undefined;
   logged.length = 0;
   printed.length = 0;
   dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dicom-log-')));
@@ -85,6 +87,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   failing.on.clear();
+  failing.flag = undefined;
   await listener?.onStop();
   await listener?.onUndeploy();
   listener = null;
@@ -141,15 +144,22 @@ function nameInstance(request: CStoreRequestType, uid: string): void {
 }
 
 /** Store one image; the status it was answered with. */
-function store(commandUid?: string, change: (dataset: InstanceType<typeof Dataset>) => void = () => undefined, abort = false): Promise<number | undefined> {
+interface Stored {
+  readonly commandUid?: string;
+  readonly change?: (dataset: InstanceType<typeof Dataset>) => void;
+  readonly abort?: boolean;
+  readonly transferSyntax?: string;
+}
+
+function store({ commandUid, change, abort = false, transferSyntax = TransferSyntax.ImplicitVRLittleEndian }: Stored = {}): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
     let status: number | undefined;
     const client = new Client();
     const dataset = new Dataset({
       SOPClassUID: CT, SOPInstanceUID: SOP, StudyInstanceUID: `${ROOT}.2`, SeriesInstanceUID: `${ROOT}.3`, PatientName: 'TEST^PATIENT',
-    }, TransferSyntax.ImplicitVRLittleEndian);
+    }, transferSyntax);
     const request = new CStoreRequest(dataset);
-    change(dataset);
+    change?.(dataset);
     if (commandUid !== undefined) nameInstance(request, commandUid);
     request.on('response', (response: CStoreResponseType) => {
       status = response.getStatus();
@@ -179,15 +189,48 @@ describe('the Listener, while it takes an image', () => {
 
     expect(await store()).toBe(Status.ProcessingFailure);
 
+    expect(logged.filter((entry) => entry['msg'] === 'DICOM receiver error')).toHaveLength(1);
     expect(await line(/^DICOM receiver error$/)).toMatchObject({
       errMsg: `${operation} failed: EBUSY`, directory: dir, associationId: expect.stringMatching(/^assoc-/) as string, ...named,
     });
   });
 
+  it('its dataset has an element of a wrong length', async () => {
+    await listen(async () => PROCESSED);
+    // The UID is longer than its element says, so its next bytes are taken for a tag, a VR and a length.
+    const explicit = Buffer.concat([Buffer.from([0x08, 0x00, 0x18, 0x00]), Buffer.from('UI'), Buffer.from([0x04, 0x00]), Buffer.from(SOP)]);
+
+    await store({ change: (dataset) => { dataset.getDenaturalizedDataset = (): Buffer => explicit; }, transferSyntax: TransferSyntax.JpegBaseline });
+
+    await line(/^DICOM receiver error$/);
+    expect(printed).toEqual([]);
+  });
+
+  it('its file cannot be written, which is not kept', async () => {
+    failing.on.set('open', NAME);
+    failing.flag = 'w';
+    await listen(async () => PROCESSED);
+
+    expect(await store()).toBe(Status.ProcessingFailure);
+
+    expect(await line(/^DICOM receiver error$/)).toMatchObject({ errMsg: 'open failed: EBUSY', file: HASH });
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  it('the storage directory cannot be made, which the line names', async () => {
+    const storageDir = path.join(dir, 'images');
+    failing.on.set('mkdir', 'images');
+    await listen(async () => PROCESSED, { storageDir });
+
+    expect(await store()).toBe(Status.ProcessingFailure);
+
+    expect(await line(/^DICOM receiver error$/)).toMatchObject({ errMsg: `mkdir failed: EBUSY ${storageDir}`, directory: storageDir });
+  });
+
   it('its dataset cannot be read', async () => {
     await listen(async () => PROCESSED);
 
-    expect(await store(undefined, (dataset) => { dataset.getDenaturalizedDataset = (): Buffer => Buffer.from(`${ROOT} is no dataset`); })).toBe(0xc000);
+    expect(await store({ change: (dataset) => { dataset.getDenaturalizedDataset = (): Buffer => Buffer.from(`${ROOT} is no dataset`); } })).toBe(0xc000);
 
     expect(await line(/^DICOM receiver error$/)).toMatchObject({ directory: dir, associationId: expect.stringMatching(/^assoc-/) as string });
   });
@@ -195,13 +238,13 @@ describe('the Listener, while it takes an image', () => {
   it.each([`${ROOT}.${'1'.repeat(64)}`, `${ROOT}.${'1'.repeat(64)}\\1.2`])('the command names the instance by what DICOM does not allow', async (uid) => {
     await listen(async () => PROCESSED);
 
-    expect(await store(uid)).toBe(Status.Success);
+    expect(await store({ commandUid: uid })).toBe(Status.Success);
   });
 
   it('its UID is not a DICOM UID', async () => {
     await listen(async () => PROCESSED);
 
-    expect(await store(undefined, (dataset) => { dataset.setElement('SOPInstanceUID', `${ROOT}.x`); })).toBe(Status.ProcessingFailure);
+    expect(await store({ change: (dataset) => { dataset.setElement('SOPInstanceUID', `${ROOT}.x`); } })).toBe(Status.ProcessingFailure);
 
     expect(await line(/^DICOM receiver error$/)).toMatchObject({ errMsg: expect.stringContaining('is not a DICOM UID') as string, directory: dir });
   });
@@ -209,7 +252,7 @@ describe('the Listener, while it takes an image', () => {
   it('its dataset has no SOP Class UID', async () => {
     await listen(async () => PROCESSED);
 
-    expect(await store(undefined, (dataset) => { dataset.setElement('SOPClassUID', ''); })).toBe(0xc000);
+    expect(await store({ change: (dataset) => { dataset.setElement('SOPClassUID', ''); } })).toBe(0xc000);
 
     await line(/^DICOM receiver error$/);
   });
@@ -273,7 +316,7 @@ describe('the Listener, while it takes an image', () => {
   it('its association ends without a release', async () => {
     await listen(async () => PROCESSED, { dispatchMode: 'PER_ASSOCIATION' });
 
-    await store(undefined, undefined, true);
+    await store({ abort: true });
 
     expect(await line(/ended without a release/)).toMatchObject({ associationId: expect.stringMatching(/^assoc-/) as string, fileCount: 1 });
   });
@@ -327,6 +370,14 @@ describe('the Listener, when it acts on a file after its message', () => {
     expect(await store()).toBe(Status.Success);
 
     expect(await line(/^DICOM post-action failed/)).toMatchObject({ errMsg: errMsg.replace('<moved>', path.join(dir, 'moved')), directory: dir, file: HASH, messageId: 41, associationId: expect.stringMatching(/^assoc-/) as string, ...config() });
+  });
+
+  it('its directory cannot be made, after its queues have delivered: the alert names it', async () => {
+    const filePath = await storedFile();
+    failing.on.set('mkdir', 'moved');
+    const receiver = await listen(async () => PROCESSED, MOVE());
+
+    await expect(receiver.onMessageDelivered(filePath, 41)).rejects.toThrow(`${HASH} (mkdir failed: EBUSY ${path.join(dir, 'moved')})`);
   });
 
   it.each<[string, Failing | null, () => Promise<string>, string]>([
@@ -414,6 +465,20 @@ describe('the Sender, whose ERROR text is stored, logged and put in alerts', () 
     await send(await image(SOP), 'reject-contexts');
 
     expect(lines()).toContain('Could not find an accepted presentation context');
+  });
+
+  it('a denied directory that cannot be resolved is named', async () => {
+    failing.on.set('realpath', 'denied');
+
+    expect((await send(await storedFile())).errorMessage).toContain(`realpath failed: EBUSY ${path.join(dir, 'denied')}`);
+  });
+
+  it('what a root is in is named, when that cannot be resolved', async () => {
+    failing.on.set('realpath', 'drive$');
+
+    const { errorMessage } = await send(await storedFile(), { answer: 0 }, [path.join(dir, 'drive', 'root'), dir]);
+
+    expect(errorMessage).toContain(`realpath failed: EBUSY ${path.join(dir, 'drive')}`);
   });
 
   it('a root that cannot be resolved is named', async () => {

@@ -205,8 +205,9 @@ export class DicomReceiver implements SourceConnectorRuntime {
   }
 
   private withoutImage(err: unknown): Error {
-    const { storageDir, moveToDirectory, roots } = this.config;
-    return withoutPath(err, [storageDir, moveToDirectory, pendingDirectory(this.config), ...roots.allowed, ...roots.denied]);
+    const { moveToDirectory, roots } = this.config;
+    // The storage directory is above the pending one.
+    return withoutPath(err, [pendingDirectory(this.config), moveToDirectory, ...roots.allowed, ...roots.denied]);
   }
 
   /** What a log line says of a failure. */

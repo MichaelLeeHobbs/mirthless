@@ -5,7 +5,8 @@ import { createRequire } from 'node:module';
 import pkg from 'dcmjs-dimse';
 
 interface LibraryLog {
-  setLevel(level: 'error'): void;
+  setLevel(level: 'error' | 'silent'): void;
+  getLogger(name: string): LibraryLog;
 }
 
 pkg.log.setLevel('warn');
@@ -14,3 +15,5 @@ pkg.log.setLevel('warn');
 const requireOfDimse = createRequire(createRequire(import.meta.url).resolve('dcmjs-dimse'));
 const dcmjs = requireOfDimse('dcmjs') as { readonly log: LibraryLog };
 dcmjs.log.setLevel('error');
+// Prints bytes of a dataset it cannot read as a value representation and a length.
+dcmjs.log.getLogger('validation.dcmjs').setLevel('silent');
