@@ -28,6 +28,7 @@ import { db } from '../lib/db.js';
 import { apiKeys, assignmentGroups, assignments, auditLog, channelGroupMembers, channelGroups, channels, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 import { GRANT_REPLAY_ACTIONS, replayGrants } from '../lib/grant-replay.js';
+import { PG_ERROR, pgCode } from '../lib/pg-error.js';
 
 export interface GrantActor {
   readonly userId: string | null;
@@ -188,20 +189,11 @@ async function roleByName(tx: AuditTransaction, name: string): Promise<{ readonl
   return lockRole(tx, row.id, 'share');
 }
 
-const PG_UNIQUE_VIOLATION = '23505';
-const PG_FOREIGN_KEY_VIOLATION = '23503';
-const PG_LOCK_NOT_AVAILABLE = '55P03';
-
-/** Drizzle wraps the Postgres error in `cause`. */
-function pgCode(err: unknown): unknown {
-  return (err as { code?: unknown }).code ?? (err as { cause?: { code?: unknown } }).cause?.code;
-}
-
 /** A constraint a concurrent change hit, as the answer the checks would have given. */
 function asConflict(err: unknown): unknown {
   const code = pgCode(err);
-  if (code === PG_UNIQUE_VIOLATION) return new ServiceError('ALREADY_EXISTS', 'A role with that name was just created');
-  if (code === PG_FOREIGN_KEY_VIOLATION) return new ServiceError('CONFLICT', 'The role was just assigned; remove that assignment first');
+  if (code === PG_ERROR.UNIQUE_VIOLATION) return new ServiceError('ALREADY_EXISTS', 'A role with that name was just created');
+  if (code === PG_ERROR.FOREIGN_KEY_VIOLATION) return new ServiceError('CONFLICT', 'The role was just assigned; remove that assignment first');
   return err;
 }
 
@@ -573,7 +565,7 @@ export class GrantService {
       await db.execute(sql`SELECT public.record_grant_baseline('monthly')`);
       return 'written';
     } catch (err: unknown) {
-      if (pgCode(err) === PG_LOCK_NOT_AVAILABLE) return 'deferred';
+      if (pgCode(err) === PG_ERROR.LOCK_NOT_AVAILABLE) return 'deferred';
       throw err;
     }
   }
