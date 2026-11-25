@@ -107,9 +107,9 @@ export class RecoveryManager {
   }
 
   /**
-   * A message the crash hit before routing is run again from its raw content, and
-   * reprocessSource closes the original. Otherwise each destination still RECEIVED is
-   * redispatched, and the message is closed once every destination has an outcome.
+   * A message the crash hit before routing is run again from its raw content, and the
+   * pipeline finishes it. Otherwise each destination still RECEIVED is redispatched, and
+   * the message is closed once every destination has an outcome.
    */
   private async recoverMessage(channelId: string, messageId: number, stop: AbortSignal): Promise<MessageOutcome> {
     const connResult = await this.store.getConnectorMessages(channelId, messageId);

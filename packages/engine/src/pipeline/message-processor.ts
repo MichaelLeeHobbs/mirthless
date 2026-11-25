@@ -143,6 +143,13 @@ export interface PipelineInput {
   readonly sourceMap: Readonly<Record<string, unknown>>;
   /** Reuses an existing cross-channel correlation chain. */
   readonly correlationId?: string | undefined;
+  /** A message in the store to run again, left as it was when it was received, instead of creating one. */
+  readonly received?: ReceivedMessage | undefined;
+}
+
+export interface ReceivedMessage {
+  readonly messageId: number;
+  readonly correlationId: string;
 }
 
 export interface ProcessedMessage {
@@ -328,31 +335,7 @@ export class MessageProcessor {
         connectorMap: {},
       };
 
-      let messageId: number;
-      let correlationId: string;
-      if (this.store.initializeMessage) {
-        const initResult = await this.store.initializeMessage(channelId, serverId, 'Source', [
-          { metaDataId: 0, contentType: CONTENT_TYPE.RAW, content: input.rawContent, dataType },
-          { metaDataId: 0, contentType: CONTENT_TYPE.SOURCE_MAP, content: JSON.stringify(input.sourceMap), dataType: 'JSON' },
-        ], input.correlationId);
-        if (!initResult.ok) throw new Error('Failed to initialize message');
-        messageId = initResult.value.messageId;
-        correlationId = initResult.value.correlationId;
-      } else {
-        const createResult = await this.store.createMessage(channelId, serverId, input.correlationId);
-        if (!createResult.ok) throw new Error('Failed to create message');
-        messageId = createResult.value.messageId;
-        correlationId = createResult.value.correlationId;
-        const initial = await Promise.all([
-          this.store.createConnectorMessage(channelId, messageId, 0, 'Source', 'RECEIVED'),
-          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.RAW, input.rawContent, dataType),
-          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.SOURCE_MAP, JSON.stringify(input.sourceMap), 'JSON'),
-          this.store.incrementStats(channelId, 0, serverId, 'received'),
-        ]);
-        // A message whose raw content was not stored cannot be recovered or
-        // reprocessed, so refuse it: the sender gets an error and resends.
-        if (initial.some((r) => !r.ok)) throw new Error('Failed to initialize message');
-      }
+      const { messageId, correlationId } = input.received ?? await this.createMessage(input);
       mark('initialize');
 
       // From here the message exists in the store. Whatever goes wrong below must
@@ -583,6 +566,31 @@ export class MessageProcessor {
         return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       }
     });
+  }
+
+  private async createMessage(input: PipelineInput): Promise<ReceivedMessage> {
+    const { channelId, serverId, dataType } = this.config;
+    if (this.store.initializeMessage) {
+      const initResult = await this.store.initializeMessage(channelId, serverId, 'Source', [
+        { metaDataId: 0, contentType: CONTENT_TYPE.RAW, content: input.rawContent, dataType },
+        { metaDataId: 0, contentType: CONTENT_TYPE.SOURCE_MAP, content: JSON.stringify(input.sourceMap), dataType: 'JSON' },
+      ], input.correlationId);
+      if (!initResult.ok) throw new Error('Failed to initialize message');
+      return initResult.value;
+    }
+    const createResult = await this.store.createMessage(channelId, serverId, input.correlationId);
+    if (!createResult.ok) throw new Error('Failed to create message');
+    const { messageId } = createResult.value;
+    const initial = await Promise.all([
+      this.store.createConnectorMessage(channelId, messageId, 0, 'Source', 'RECEIVED'),
+      this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.RAW, input.rawContent, dataType),
+      this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.SOURCE_MAP, JSON.stringify(input.sourceMap), 'JSON'),
+      this.store.incrementStats(channelId, 0, serverId, 'received'),
+    ]);
+    // A message whose raw content was not stored cannot be recovered or
+    // reprocessed, so refuse it: the sender gets an error and resends.
+    if (initial.some((r) => !r.ok)) throw new Error('Failed to initialize message');
+    return createResult.value;
   }
 
   /**

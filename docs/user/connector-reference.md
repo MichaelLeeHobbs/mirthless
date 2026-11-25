@@ -42,6 +42,8 @@ A connector's properties are checked when the channel deploys. Every type reject
 
 When the server stops while a destination is sending, the next start sends the message to it again, so the partner can get it twice. A send that then fails goes to the destination's queue if it has one, as any failed send does. The message's variables (what scripts put in the connector, channel and response maps) are kept only for a destination whose queue is on. A destination whose queue is off is not sent the message again when its settings use variables, because it would get other data; it ends in ERROR with the reason, and an alert. That is a `${name}` in a URL, parameter, header, topic, key, routing key, email field or target channel, a `${name}` in a database query that the message's own JSON does not hold, or a JavaScript script that names `channelMap`, `$`, `$c`, `connectorMessage` or `globalThis`, itself or in a code template linked to the channel. A `${name}` in `template` does not count: the filled text is stored. To have such a message sent again, turn the destination's queue on. Resending one message to one destination is refused for the same reason when no variables are stored for it.
 
+A message the server stopped on before it was routed to its destinations is run again from what was received, as the same message: the source's scripts run again, and what they do outside the message (a database write, a message routed to another channel) happens again too.
+
 A message is not sent again either, and ends in ERROR, when the destination it was prepared for is gone, is switched off or has another name since the channel was deployed again, or when the channel has two destinations with that name.
 
 ## TCP_MLLP
