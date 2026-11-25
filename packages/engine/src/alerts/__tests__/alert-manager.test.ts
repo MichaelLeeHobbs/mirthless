@@ -73,6 +73,60 @@ describe('AlertManager.loadAlerts', () => {
   });
 });
 
+describe('AlertManager.loadAlerts on a channel that is running', () => {
+  const limited = makeAlert({ maxAlerts: 1, reAlertIntervalMs: 0 });
+
+  it('keeps counting an alert that did not change', async () => {
+    manager.loadAlerts([limited]);
+    await manager.handleEvent(makeEvent());
+
+    manager.loadAlerts([makeAlert({ maxAlerts: 1, reAlertIntervalMs: 0 }), makeAlert({ id: 'alert-002', channelIds: ['ch-002'] })]);
+    await manager.handleEvent(makeEvent());
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts an alert that changed from the start', async () => {
+    manager.loadAlerts([limited]);
+    await manager.handleEvent(makeEvent());
+
+    manager.loadAlerts([{ ...limited, actions: [{ id: 'a2', actionType: 'EMAIL', recipients: ['second@test.com'], properties: null }] }]);
+    await manager.handleEvent(makeEvent());
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts an alert that was away from the start', async () => {
+    manager.loadAlerts([limited]);
+    await manager.handleEvent(makeEvent());
+
+    manager.loadAlerts([]);
+    manager.loadAlerts([limited]);
+    await manager.handleEvent(makeEvent());
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not alert again on a silence when another alert changed', async () => {
+    const silent = makeAlert({ trigger: { type: 'NO_MESSAGES', errorTypes: [], regex: null, windowMinutes: 1 } });
+    manager.loadAlerts([silent]);
+    await manager.checkSilence('ch-001', 0, 120_000);
+
+    manager.loadAlerts([silent, makeAlert({ id: 'alert-002' })]);
+    await manager.checkSilence('ch-001', 0, 240_000);
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not warn again of a regex that does not compile', () => {
+    const bad = makeAlert({ trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: '(' } });
+    manager.loadAlerts([bad]);
+    manager.loadAlerts([bad]);
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('AlertManager.handleEvent', () => {
   it('dispatches matching alert actions', async () => {
     manager.loadAlerts([makeAlert()]);

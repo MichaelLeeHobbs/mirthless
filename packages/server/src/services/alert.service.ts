@@ -1,9 +1,9 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, count, asc, inArray } from 'drizzle-orm';
+import { eq, count, asc, inArray, type SQL } from 'drizzle-orm';
 import type { AlertTriggerInput, CreateAlertInput, UpdateAlertInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { db } from '../lib/db.js';
+import { db, type DbReader } from '../lib/db.js';
 import { alerts, alertChannels, alertActions } from '../db/schema/index.js';
 
 export interface AlertActionDetail {
@@ -127,20 +127,19 @@ async function fetchAlertDetail(alertId: string): Promise<AlertDetail> {
   };
 }
 
-async function fetchAlertDetailsBatch(ids: readonly string[]): Promise<AlertDetail[]> {
-  const rows = await db
+/** Ordered, so that an alert that did not change reads the same each time. */
+async function fetchAlertDetailsBatch(reader: DbReader, where: SQL): Promise<AlertDetail[]> {
+  const rows = await reader
     .select()
     .from(alerts)
-    .where(inArray(alerts.id, ids as string[]));
+    .where(where)
+    .orderBy(asc(alerts.name));
 
   if (rows.length === 0) return [];
 
-  const alertIds = rows.map((r) => r.id);
-
-  const [channelRows, actionRows] = await Promise.all([
-    db.select().from(alertChannels).where(inArray(alertChannels.alertId, alertIds)),
-    db.select().from(alertActions).where(inArray(alertActions.alertId, alertIds)),
-  ]);
+  const ids = reader.select({ id: alerts.id }).from(alerts).where(where);
+  const channelRows = await reader.select().from(alertChannels).where(inArray(alertChannels.alertId, ids)).orderBy(asc(alertChannels.channelId));
+  const actionRows = await reader.select().from(alertActions).where(inArray(alertActions.alertId, ids)).orderBy(asc(alertActions.id));
 
   const channelsByAlert = new Map<string, string[]>();
   for (const c of channelRows) {
@@ -194,7 +193,26 @@ async function fetchAlertDetailsBatch(ids: readonly string[]): Promise<AlertDeta
   });
 }
 
+let changeListener: (() => void) | null = null;
+
+function notify(): void {
+  if (changeListener) changeListener();
+}
+
 export class AlertService {
+  /** Called after each change to an alert is saved. */
+  static onChange(listener: () => void): void {
+    changeListener = listener;
+  }
+
+  /** In one snapshot: an alert read without its channels would be about every channel. */
+  static async listEnabled(): Promise<Result<AlertDetail[]>> {
+    return tryCatch(() => db.transaction(
+      (tx) => fetchAlertDetailsBatch(tx, eq(alerts.enabled, true)),
+      { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    ));
+  }
+
   static async list(query: {
     readonly page: number;
     readonly pageSize: number;
@@ -259,7 +277,7 @@ export class AlertService {
   static async getByIds(ids: readonly string[]): Promise<Result<AlertDetail[]>> {
     return tryCatch(async () => {
       if (ids.length === 0) return [];
-      return fetchAlertDetailsBatch(ids);
+      return fetchAlertDetailsBatch(db, inArray(alerts.id, [...ids]));
     });
   }
 
@@ -317,6 +335,7 @@ export class AlertService {
 
         return inserted;
       });
+      notify();
 
       const detail = await fetchAlertDetail(row!.id);
 
@@ -411,6 +430,7 @@ export class AlertService {
           }
         }
       });
+      notify();
 
       const detail = await fetchAlertDetail(id);
 
@@ -437,6 +457,7 @@ export class AlertService {
       }
 
       await db.delete(alerts).where(eq(alerts.id, id));
+      notify();
 
       emitEvent({
         level: 'INFO', name: 'ALERT_UPDATED', outcome: 'SUCCESS',
@@ -466,6 +487,7 @@ export class AlertService {
         .update(alerts)
         .set({ enabled, updatedAt: new Date() })
         .where(eq(alerts.id, id));
+      notify();
 
       return fetchAlertDetail(id);
     });

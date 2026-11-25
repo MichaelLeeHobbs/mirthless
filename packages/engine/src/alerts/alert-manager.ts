@@ -21,9 +21,20 @@ export class AlertManager {
     this.deps = deps;
   }
 
+  /**
+   * Also on a channel that is running. An alert that did not change keeps its count and its interval;
+   * one that did starts again.
+   */
   loadAlerts(alerts: readonly LoadedAlert[]): void {
+    const before = new Map(this.alerts.map((alert) => [alert.id, JSON.stringify(alert)]));
+    const unchanged = new Set(alerts.filter((alert) => before.get(alert.id) === JSON.stringify(alert)).map((alert) => alert.id));
+    for (const id of [...this.throttleState.keys(), ...this.silenceAlertedFor.keys()]) {
+      if (!unchanged.has(id)) this.resetAlert(id);
+    }
     this.alerts = alerts;
-    for (const alert of alerts) this.warnOfBadRegex(alert);
+    for (const alert of alerts) {
+      if (!unchanged.has(alert.id)) this.warnOfBadRegex(alert);
+    }
   }
 
   /** Saved before the API refused one, or written to the database. */
@@ -83,6 +94,7 @@ export class AlertManager {
 
   resetAlert(alertId: string): void {
     this.throttleState.delete(alertId);
+    this.silenceAlertedFor.delete(alertId);
   }
 
   clearThrottleState(): void {

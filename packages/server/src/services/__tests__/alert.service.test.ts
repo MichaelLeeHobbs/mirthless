@@ -19,7 +19,13 @@ function consumeResponse(): unknown {
   return [];
 }
 
-const mockSelectWhere = vi.fn().mockImplementation(() => consumeResponse());
+/** Reads its response when awaited, so a subquery takes none. */
+const query = () => ({
+  then(resolve: (v: unknown) => void, reject?: (e: unknown) => void): Promise<unknown> {
+    return Promise.resolve(consumeResponse()).then(resolve, reject);
+  },
+});
+const mockSelectWhere = vi.fn().mockImplementation(() => ({ ...query(), orderBy: query }));
 
 const mockSelectFrom = vi.fn().mockImplementation(() => {
   return {
@@ -442,6 +448,52 @@ describe('AlertService', () => {
 
       expect(result.ok).toBe(true);
       expect(mockTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('onChange', () => {
+    const base = {
+      name: 'New alert', description: '', enabled: true, trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null },
+      channelIds: [], actions: [], subjectTemplate: null, bodyTemplate: null, reAlertIntervalMs: null, maxAlerts: null,
+    } as const;
+    const detailRead = (): void => { pushResponse([makeAlertRow()]); pushResponse([]); pushResponse([]); };
+    const changes: ReadonlyArray<readonly [string, () => void, () => Promise<unknown>]> = [
+      ['created', () => { pushResponse([]); detailRead(); mockReturning.mockResolvedValue([{ id: ALERT_ID }]); },
+        () => AlertService.create({ ...base, trigger: { ...base.trigger, errorTypes: ['ANY'] }, channelIds: [], actions: [] })],
+      ['changed', () => { pushResponse([makeAlertRow()]); detailRead(); }, () => AlertService.update(ALERT_ID, { description: 'x', revision: 1 })],
+      ['deleted', () => { pushResponse([{ id: ALERT_ID }]); }, () => AlertService.delete(ALERT_ID)],
+      ['enabled or disabled', () => { pushResponse([{ id: ALERT_ID }]); detailRead(); }, () => AlertService.setEnabled(ALERT_ID, false)],
+    ];
+
+    it.each(changes)('is told once when an alert was %s', async (_what, prepare, change) => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      prepare();
+
+      expect(await change()).toMatchObject({ ok: true });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not told of a change that was refused', async () => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      pushResponse([]);
+
+      await AlertService.delete(ALERT_ID);
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('is told of a change that was saved, although the alert could not be read back', async () => {
+      const listener = vi.fn();
+      AlertService.onChange(listener);
+      pushResponse([{ id: ALERT_ID }]);
+      pushResponse([]);
+
+      expect(await AlertService.setEnabled(ALERT_ID, false)).toMatchObject({ ok: false });
+
+      expect(listener).toHaveBeenCalledTimes(1);
     });
   });
 
