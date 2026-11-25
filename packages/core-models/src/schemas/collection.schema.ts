@@ -1,6 +1,7 @@
 // See docs/design/10-collections.md.
 
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const collectionFieldName = z
   .string()
@@ -94,16 +95,17 @@ export const updateRecordSchema = z.object({
 export type UpdateRecordInput = z.infer<typeof updateRecordSchema>;
 
 export const collectionUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
 
 export const collectionNameParamSchema = z.object({
   name: z.string().min(1).max(255),
 });
 
-export const collectionRecordIdSchema = z.string().uuid('record id must be a UUID');
+// eslint-disable-next-line no-restricted-syntax -- idSchema with the text a script sees.
+export const collectionRecordIdSchema = z.uuid('record id must be a UUID').toLowerCase();
 
 export const collectionRecordParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   recordId: collectionRecordIdSchema,
 });

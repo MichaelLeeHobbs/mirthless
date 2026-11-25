@@ -5,6 +5,7 @@ import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { z } from 'zod/v4';
+import { idSchema } from '@galvanigraph/core-models';
 import { validate } from '../validate.middleware.js';
 
 let server: Server;
@@ -21,7 +22,7 @@ beforeAll(async () => {
     validate({ query: z.object({ page: z.coerce.number().int().min(1).default(1) }) }),
     echo,
   );
-  app.get('/items/:id', validate({ params: z.object({ id: z.uuid() }) }), echo);
+  app.get('/items/:id', validate({ params: z.object({ id: idSchema }) }), echo);
   app.post('/items', validate({ body: z.object({ name: z.string().min(1) }) }), echo);
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => { server.once('listening', () => { resolve(); }); });

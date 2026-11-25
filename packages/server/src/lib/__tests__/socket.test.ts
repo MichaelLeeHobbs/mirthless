@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { createServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 
 const { mockConfig } = vi.hoisted(() => ({
@@ -48,7 +50,7 @@ const { mockIsSessionLive } = vi.hoisted(() => ({ mockIsSessionLive: vi.fn() }))
 vi.mock('../session-live.js', () => ({ isSessionLive: mockIsSessionLive }));
 
 import {
-  authMiddleware, revalidateSocket, emitToRoom, emitToRoomCoalesced, emitToChannelAudience, shutdownSocketIO,
+  authMiddleware, initializeSocketIO, revalidateSocket, emitToRoom, emitToRoomCoalesced, emitToChannelAudience, shutdownSocketIO,
   LIVE_EVENT_COALESCE_MS, _resetIO, audienceRooms, ALL_CHANNELS_ROOM,
 } from '../socket.js';
 import { builtInRolePermissions } from '../../db/seeds/roles.js';
@@ -287,16 +289,8 @@ describe('Socket.IO Auth & Room Management', () => {
     });
   });
 
-  describe('room join/leave via connection handler', () => {
-    // We test room behavior indirectly through emitToRoom by setting up a mock io.
-    // The connection handlers are registered inside initializeSocketIO, which is
-    // tightly coupled to creating a real SocketIOServer. Instead, we test the
-    // event handlers by verifying emitToRoom and emitToAll work with a mock io.
-
-    it('join:channel and leave:channel are validated (channelId must be string)', () => {
-      // authMiddleware validates input types for channel room join
-      // The socket handler ignores non-string channelIds silently
-      // This is tested via the integration below with mock io
+  describe('a token that is not text', () => {
+    it('is refused', () => {
       const socket = createMockSocket();
       const next = vi.fn();
 
@@ -305,6 +299,53 @@ describe('Socket.IO Auth & Room Management', () => {
 
       const err = next.mock.calls[0]![0] as Error;
       expect(err.message).toBe('Authentication required');
+    });
+  });
+
+  describe('joining a channel', () => {
+    const CHANNEL = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const CAPS = CHANNEL.toUpperCase();
+
+    afterEach(async () => { await shutdownSocketIO(); });
+
+    function connect(): { readonly send: (event: string, arg: unknown) => void; readonly join: Mock; readonly leave: Mock; readonly emit: Mock } {
+      const handlers = new EventEmitter();
+      const join = vi.fn();
+      const leave = vi.fn();
+      const emit = vi.fn();
+      const socket = {
+        id: 'sock-1', rooms: new Set(['sock-1']), join, leave, emit, disconnect: vi.fn(),
+        data: { user: { userId: 'user-1', sessionId: 'sess-1', type: 'access', permissions: [], grants: new Map() } },
+        on: (event: string, handler: (arg: unknown) => void) => handlers.on(event, handler),
+      };
+      const [connection] = initializeSocketIO(createServer()).of('/').listeners('connection');
+      (connection as (s: unknown) => void)(socket);
+      return { send: (event, arg) => { handlers.emit(event, arg); }, join, leave, emit };
+    }
+
+    it.each([CHANNEL, CAPS])('joins and leaves the room the channel\'s events go to, for id %s', async (id) => {
+      userRow = { id: 'user-1', enabled: true, role: 'viewer' };
+      const client = connect();
+
+      client.send('join:channel', id);
+      await vi.waitFor(() => { expect(client.join).toHaveBeenCalledWith(`channel:${CHANNEL}`); });
+      client.send('leave:channel', id);
+
+      expect(client.leave).toHaveBeenCalledWith(`channel:${CHANNEL}`);
+      expect(client.join).not.toHaveBeenCalledWith(`channel:${CAPS}`);
+    });
+
+    it.each([7, '', 'abc', undefined])('ignores %s, which is not a channel id', async (id) => {
+      const client = connect();
+      client.join.mockClear();
+
+      client.send('join:channel', id);
+      client.send('leave:channel', id);
+      await new Promise((resolve) => { setImmediate(resolve); });
+
+      expect(mockIsSessionLive).not.toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.leave).not.toHaveBeenCalled();
     });
   });
 

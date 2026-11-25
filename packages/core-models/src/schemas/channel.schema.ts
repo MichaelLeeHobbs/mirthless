@@ -3,6 +3,7 @@ import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } 
 import { connectorRefFields, destinationRefSchema, filterInputSchema, filterRuleInputSchema } from './filter.schema.js';
 import { transformerInputSchema, transformerStepInputSchema } from './transformer.schema.js';
 import { scriptLanguageSchema } from './script-language.schema.js';
+import { idSchema } from './id.schema.js';
 import { withoutDefaults } from './without-defaults.js';
 
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
@@ -100,7 +101,7 @@ export const createChannelSchema = z.object({
   filters: z.array(filterInputSchema).optional(),
   transformers: z.array(transformerInputSchema).optional(),
   /** The group the new channel joins; see GrantService.placeNewChannel (D-310). */
-  groupId: z.string().uuid().optional(),
+  groupId: idSchema.optional(),
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
@@ -136,7 +137,7 @@ const updateDestinationInputSchema = withoutDefaults(destinationInputSchema)
 export type UpdateDestinationInput = z.infer<typeof updateDestinationInputSchema>;
 
 // Filters, transformers and metadata columns are replaced, and nothing says which stored rule or step one
-// is, so what the request leaves out of them cannot be kept. They are given whole (D-349).
+// is, so what the request leaves out of them cannot be kept. They are given whole (D-350).
 const updateFilterInputSchema = withoutDefaults(filterInputSchema).extend({
   metaDataId: connectorRefFields.metaDataId,
   rules: z.array(withoutDefaults(filterRuleInputSchema)),
@@ -160,7 +161,7 @@ const updateChannelBaseSchema = withoutDefaults(createChannelSchema.omit({ group
 
 /**
  * Update replaces rules and steps by position, so it cannot keep what the request leaves out of one;
- * a default language would turn TypeScript into JavaScript and switch off its deploy type check (D-294, D-349).
+ * a default language would turn TypeScript into JavaScript and switch off its deploy type check (D-294, D-350).
  */
 export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
   for (const s of updateScripts(input)) {

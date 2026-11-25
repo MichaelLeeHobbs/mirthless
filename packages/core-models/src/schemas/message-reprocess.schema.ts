@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { idSchema } from './id.schema.js';
 
 export const reprocessParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   msgId: z.coerce.number().int().positive(),
 });
 
@@ -14,7 +15,7 @@ export const bulkDeleteInputSchema = z.object({
 export type BulkDeleteInput = z.infer<typeof bulkDeleteInputSchema>;
 
 export const bulkDeleteParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
 
 export const bulkReprocessInputSchema = z.object({
@@ -24,7 +25,7 @@ export const bulkReprocessInputSchema = z.object({
 export type BulkReprocessInput = z.infer<typeof bulkReprocessInputSchema>;
 
 export const resendParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   msgId: z.coerce.number().int().positive(),
   metaDataId: z.coerce.number().int().nonnegative(),
 });

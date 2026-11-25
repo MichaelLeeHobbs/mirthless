@@ -1,11 +1,12 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
+import { idSchema } from '@galvanigraph/core-models';
 import { StatisticsController } from '../controllers/statistics.controller.js';
 import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const uuidParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
 
 const router: IRouter = Router();

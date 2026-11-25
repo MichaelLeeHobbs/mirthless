@@ -7,6 +7,7 @@ import {
   patchChannelEnabledSchema,
   setChannelGroupsSchema,
   channelAccessQuerySchema,
+  idSchema,
 } from '@galvanigraph/core-models';
 import { ChannelController } from '../controllers/channel.controller.js';
 import { ChannelGroupController } from '../controllers/channel-group.controller.js';
@@ -14,7 +15,7 @@ import { requirePermission, scopeToChannel } from '../middleware/permission.midd
 import { validate } from '../middleware/validate.middleware.js';
 
 const uuidParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
 
 const router: IRouter = Router();
@@ -85,7 +86,7 @@ router.post(
   requirePermission('channels:write'),
   validate({
     params: uuidParamsSchema,
-    body: z.object({ name: z.string().min(1).max(255), groupId: z.string().uuid().optional() }),
+    body: z.object({ name: z.string().min(1).max(255), groupId: idSchema.optional() }),
   }),
   ChannelController.clone
 );

@@ -3,6 +3,7 @@
 import { z } from 'zod/v4';
 import { PERMISSIONS, type Permission } from '../constants.js';
 import { PERMISSION_CATALOG } from '../authz/catalog.js';
+import { idSchema } from './id.schema.js';
 
 export const KEY_PERMISSIONS: readonly Permission[] = Object.values(PERMISSIONS).filter((p) => PERMISSION_CATALOG[p].keyAllowed);
 
@@ -19,7 +20,7 @@ export const createApiKeySchema = z.strictObject({
   permissions: z.array(keyPermissionSchema).min(1, 'Give the key at least one permission.').max(KEY_PERMISSIONS.length)
     .refine((list) => new Set(list).size === list.length, 'A permission is listed twice.'),
   /** null: every channel. */
-  groupIds: z.array(z.string().uuid()).min(1).max(100)
+  groupIds: z.array(idSchema).min(1).max(100)
     .refine((list) => new Set(list).size === list.length, 'A group is listed twice.')
     .nullable(),
   /** Required: every key ends. */

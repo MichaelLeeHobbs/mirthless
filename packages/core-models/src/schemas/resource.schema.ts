@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const createResourceSchema = z.object({
   name: z.string().min(1).max(255),
@@ -19,5 +20,5 @@ export const updateResourceSchema = z.object({
 export type UpdateResourceInput = z.infer<typeof updateResourceSchema>;
 
 export const resourceUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { USER_ROLE } from '../constants.js';
+import { idSchema } from './id.schema.js';
 
 /** Use at every boundary that sets a password. */
 export const passwordSchema = z
@@ -40,9 +41,8 @@ export const updateUserSchema = z.object({
  */
 export const deleteUserQuerySchema = z.object({
   takeOwnership: z.string().max(4000).optional()
-    // Lower case, since a key's id goes into its new token, which is read in lower case only.
-    .transform((v) => (v === undefined || v === '' ? [] : v.toLowerCase().split(',')))
-    .pipe(z.array(z.string().uuid()).max(100)),
+    .transform((v) => (v === undefined || v === '' ? [] : v.split(',')))
+    .pipe(z.array(idSchema).max(100)),
 });
 
 export type DeleteUserQuery = z.infer<typeof deleteUserQuerySchema>;
@@ -64,9 +64,8 @@ export const changeOwnPasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
-/** Lowercase, as Postgres returns ids: the checks for the caller's own id compare text. */
 export const userIdParamSchema = z.object({
-  id: z.string().uuid().transform((id) => id.toLowerCase()),
+  id: idSchema,
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

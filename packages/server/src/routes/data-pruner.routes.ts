@@ -1,11 +1,12 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
+import { idSchema } from '@galvanigraph/core-models';
 import { DataPrunerController } from '../controllers/data-pruner.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const channelIdParamsSchema = z.object({
-  channelId: z.string().uuid(),
+  channelId: idSchema,
 });
 
 const pruneChannelBodySchema = z.object({

@@ -1,6 +1,7 @@
 // See docs/design/11-datasources.md.
 
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const DB_DRIVER = {
   POSTGRES: 'postgres',
@@ -70,5 +71,5 @@ export const testDataSourceSchema = z.object({
 export type TestDataSourceInput = z.infer<typeof testDataSourceSchema>;
 
 export const dataSourceUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
