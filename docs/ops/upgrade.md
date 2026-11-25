@@ -472,6 +472,18 @@ The migration builds the index of waiting messages again, which reads the whole 
 - `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
 - An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
 
+## Windows-1252 text is read the same on every Node (#391)
+
+Some Node versions, 24.13.0 among them, decode Windows-1252 as Latin-1 without an error. On those, the bytes 0x80 to 0x9F (curly quotes, dashes, the euro sign) were stored as the control characters U+0080 to U+009F. That concerns Kafka and AMQP sources with `charset` `windows-1252`, HTTP sources with `bodyCharset` `windows-1252`, and HTTP bodies that declare Windows-1252, ISO-8859-1 or US-ASCII. The server now decodes Windows-1252 itself, so nothing needs to be changed (D-350).
+
+To see whether the Node you run the server with was affected, run this with it. `false` means that it was:
+
+```bash
+node -p "new TextDecoder('windows-1252').decode(Uint8Array.of(0x80)).charCodeAt(0) === 0x20ac"
+```
+
+Messages stored that way stay as they are: ask the sender to send those that matter again.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

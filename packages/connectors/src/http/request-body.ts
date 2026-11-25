@@ -4,6 +4,7 @@
 import type { IncomingMessage } from 'node:http';
 import { TextDecoder } from 'node:util';
 import type { QueueCharset } from '@galvanigraph/core-models';
+import { decodeWindows1252 } from '@galvanigraph/core-util';
 import { decodePayload } from '../encoding.js';
 import { contentCoding, type Decompressor } from './decompression.js';
 import { RefusedBodyError, stoppingStillArriving, tooLarge, tooLargeStillArriving } from './refused-body.js';
@@ -114,6 +115,7 @@ function bodyDecoder(contentType: string | undefined, bodyCharset: QueueCharset)
   }
   const decoder = strictDecoder(declared);
   if (decoder === null) throw new RefusedBodyError(415, `Unsupported character set in Content-Type: ${contentType ?? ''}`);
+  if (decoder.encoding === 'windows-1252') return decodeWindows1252;
   return (bytes) => {
     try {
       return decoder.decode(bytes);
