@@ -111,10 +111,9 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
       state.files.delete(name);
       state.deleted.push(name);
     },
-    async stat(remotePath: string): Promise<FileVersion> {
+    async stat(remotePath: string): Promise<FileVersion | null> {
       const f = state.files.get(basename(remotePath));
-      if (!f) throw new Error(`no such file: ${remotePath}`);
-      return { modifyTime: f.modifyTime, size: f.size };
+      return f === undefined ? null : { modifyTime: f.modifyTime, size: f.size };
     },
     async rename(from: string, to: string): Promise<void> {
       if (failures.rename) throw new Error('SFTP rename failed');

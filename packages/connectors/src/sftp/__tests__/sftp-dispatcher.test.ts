@@ -231,21 +231,43 @@ describe('a send that cannot tell how its last step ended', () => {
     expect(state.files.get('42.dat')?.content).toBe('NEW');
   });
 
-  it('keeps the temporary file when it is given up while the existing file is being deleted', async () => {
+  it('renames nothing when the temporary file is written after the send was given up', async () => {
+    const state = new RemoteState();
+    const client = makeMockSftpClient(state);
+    let written: (() => void) | null = null;
+    let renames = 0;
+    const d = new SftpDispatcher(makeConfig(), () => ({
+      ...client,
+      put: (_data, _remotePath, onOpen) => { onOpen?.(); return new Promise<void>((resolve) => { written = resolve; }); },
+      replace: async () => { renames++; return true; },
+    }));
+    await d.onStart();
+    const abort = new AbortController();
+    const sent = d.send(makeMessage(), abort.signal);
+    await vi.waitFor(() => { expect(written).not.toBeNull(); });
+    abort.abort();
+    expect((await sent).ok).toBe(false);
+    written!();
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(renames).toBe(0);
+  });
+
+  it('touches no file when it is given up during the rename of the existing one', async () => {
     vi.useFakeTimers();
     const state = new RemoteState();
     state.addFile('42.dat', 'OLD', 0);
     const d = new SftpDispatcher(makeConfig(), () => ({
       ...makeMockSftpClient(state),
       replace: async () => false,
-      rename: () => Promise.reject(Object.assign(new Error('Failure'), { code: 4 })),
-      delete: () => new Promise<void>(() => { /* never answered */ }),
+      rename: (from) => (from.endsWith('42.dat')
+        ? new Promise<void>(() => { /* never answered */ })
+        : Promise.reject(Object.assign(new Error('Failure'), { code: 4 }))),
     }));
     await d.onStart();
     const sent = d.send(makeMessage({ content: 'NEW' }), makeSignal());
     await vi.advanceTimersByTimeAsync(34_000);
     const result = await sent;
-    expect(result.error?.message).toContain('/outbound/42.dat may have been removed to be replaced');
+    expect(result.error?.message).toMatch(/\/outbound\/42\.dat may have been renamed to \/outbound\/\.galvanigraph-.*\.tmp, and \/outbound\/\.galvanigraph-.*\.tmp may hold this message$/);
     expect([...state.files.values()].map((f) => f.content)).toEqual(['OLD', 'NEW']);
   });
 });

@@ -16,7 +16,7 @@ import {
 } from '../quarantine-ledger.js';
 import { isTempFileName } from '../temp-file.js';
 import { moveWithoutReplacing } from './file-move.js';
-import { resolveWithinRoots, type FileRoots } from './file-roots.js';
+import { isMissing, resolveWithinRoots, type FileRoots } from './file-roots.js';
 
 const FILE_SORT_BY = {
   NAME: 'NAME',
@@ -111,9 +111,14 @@ interface FileEntry extends FileVersion {
   readonly fullPath: string;
 }
 
-async function versionOf(fullPath: string): Promise<FileVersion> {
-  const stat = await fs.stat(fullPath);
-  return { modifyTime: stat.mtimeMs, size: stat.size };
+async function versionOf(fullPath: string): Promise<FileVersion | null> {
+  try {
+    const stat = await fs.stat(fullPath);
+    return { modifyTime: stat.mtimeMs, size: stat.size };
+  } catch (err) {
+    if (isMissing(err)) return null;
+    throw err;
+  }
 }
 
 export class FileReceiver implements SourceConnectorRuntime {

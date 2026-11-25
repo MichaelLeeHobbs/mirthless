@@ -99,6 +99,9 @@ async function exists(file: string): Promise<boolean> {
   return fs.access(file).then(() => true, () => false);
 }
 
+/** A wait long enough for a loaded machine; it ends as soon as the condition holds. */
+const soon = (check: () => void | Promise<void>): Promise<void> => vi.waitFor(check, { timeout: 10_000 });
+
 describe('a file that changes under a File source (#412)', () => {
   it('reads a file rewritten while an earlier file was processed only once it is whole', async () => {
     await drop('a.hl7', 'A');
@@ -108,14 +111,14 @@ describe('a file that changes under a File source (#412)', () => {
       if (raw.content === 'A') await fs.writeFile(b, 'B first half,');
     });
 
-    await vi.waitFor(() => { expect(seen).toEqual(['A']); });
+    await soon(() => { expect(seen).toEqual(['A']); });
     await pollsPass(2);
     expect(seen).toEqual(['A']);
     await fs.appendFile(b, ' second half');
     await age(b, 40_000);
 
-    await vi.waitFor(() => { expect(seen).toEqual(['A', 'B first half, second half']); }, { timeout: 5_000 });
-    await vi.waitFor(async () => { expect(await exists(b)).toBe(false); });
+    await soon(() => { expect(seen).toEqual(['A', 'B first half, second half']); });
+    await soon(async () => { expect(await exists(b)).toBe(false); });
   });
 
   it('does not delete a file that changed while its message was processed, and reads the new content', async () => {
@@ -127,8 +130,8 @@ describe('a file that changes under a File source (#412)', () => {
       await age(a, 40_000);
     });
 
-    await vi.waitFor(() => { expect(seen).toEqual(['first', 'second version']); }, { timeout: 5_000 });
-    await vi.waitFor(async () => { expect(await exists(a)).toBe(false); });
+    await soon(() => { expect(seen).toEqual(['first', 'second version']); });
+    await soon(async () => { expect(await exists(a)).toBe(false); });
     expect(log.warnings.some((w) => w.obj['file'] === a && w.msg.includes('changed'))).toBe(true);
     expect(await exists(path.join(inbound, LEDGER))).toBe(false);
   });
@@ -140,7 +143,7 @@ describe('a file that changes under a File source (#412)', () => {
       await fs.writeFile(a, 'second version');
     });
 
-    await vi.waitFor(() => { expect(seen).toEqual(['first']); });
+    await soon(() => { expect(seen).toEqual(['first']); });
     await pollsPass(2);
     expect(await fs.readFile(a, 'utf8')).toBe('second version');
     expect(await exists(path.join(archive, 'a.hl7'))).toBe(false);
@@ -152,7 +155,7 @@ describe('a file that changes under a File source (#412)', () => {
     const aside = path.join(root, 'aside');
     const { seen } = await start({}, async () => { await fs.rename(a, aside); });
 
-    await vi.waitFor(() => { expect(seen).toEqual(['A']); });
+    await soon(() => { expect(seen).toEqual(['A']); });
     await pollsPass(1);
     await fs.rename(aside, a);
     await pollsPass(3);
@@ -167,7 +170,7 @@ describe('a temporary file of a destination (#412)', () => {
     await drop(path.basename(temp), 'half');
     await drop('a.hl7', 'A');
     const { seen } = await start({ ignoreDot: false });
-    await vi.waitFor(async () => { expect(await exists(path.join(inbound, 'a.hl7'))).toBe(false); });
+    await soon(async () => { expect(await exists(path.join(inbound, 'a.hl7'))).toBe(false); });
     await pollsPass(1);
     expect(seen).toEqual(['A']);
     expect(await exists(temp)).toBe(true);
@@ -179,7 +182,7 @@ describe('a File source that moves what it read (#412)', () => {
     await drop('a.hl7', 'MSH|^~\\&|A');
     const { seen } = await start({ postAction: FILE_POST_ACTION.MOVE });
 
-    await vi.waitFor(async () => { expect(await exists(path.join(inbound, 'a.hl7'))).toBe(false); });
+    await soon(async () => { expect(await exists(path.join(inbound, 'a.hl7'))).toBe(false); });
     expect(await fs.readFile(path.join(archive, 'a.hl7'), 'utf8')).toBe('MSH|^~\\&|A');
     expect(await fs.readdir(archive)).toEqual(['a.hl7']);
     expect(seen).toEqual(['MSH|^~\\&|A']);
@@ -196,7 +199,7 @@ describe('a File source that moves what it read (#412)', () => {
     await drop('a.hl7', 'today');
     const first = await start({ postAction: FILE_POST_ACTION.MOVE });
 
-    await vi.waitFor(() => { expect(first.log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
+    await soon(() => { expect(first.log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
     const error = first.log.errors.find((e) => e.msg.includes('quarantining'))!;
     expect(String(error.obj['errMsg'])).toContain(path.join(archive, 'a.hl7'));
     await expectKeptBoth();
@@ -217,7 +220,7 @@ describe('a File source that moves what it read (#412)', () => {
     await drop('b.hl7', 'B');
     const { log } = await start({ postAction: FILE_POST_ACTION.MOVE });
 
-    await vi.waitFor(async () => { expect(await exists(path.join(archive, 'b.hl7'))).toBe(true); });
+    await soon(async () => { expect(await exists(path.join(archive, 'b.hl7'))).toBe(true); });
     expect(await exists(path.join(inbound, 'b.hl7'))).toBe(false);
     await expectKeptBoth();
     expect(log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true);
@@ -230,7 +233,7 @@ describe('a File source that moves what it read (#412)', () => {
     });
     await drop('a.hl7', 'A');
     const { log } = await start({ postAction: FILE_POST_ACTION.MOVE });
-    await vi.waitFor(async () => { expect(await exists(path.join(inbound, 'a.hl7'))).toBe(false); });
+    await soon(async () => { expect(await exists(path.join(inbound, 'a.hl7'))).toBe(false); });
     await pollsPass(1);
     expect(await fs.readFile(path.join(archive, 'a.hl7'), 'utf8')).toBe('A');
     expect(log.errors).toEqual([]);
@@ -243,8 +246,29 @@ describe('a File source that moves what it read (#412)', () => {
     });
     await drop('a.hl7', 'A');
     const { log } = await start({ postAction: FILE_POST_ACTION.MOVE });
-    await vi.waitFor(() => { expect(log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
+    await soon(() => { expect(log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
     expect(await fs.readFile(path.join(archive, 'a.hl7'), 'utf8')).toBe('A');
+  });
+
+  it('finishes a move that was cut off after the file had its new name', async () => {
+    await fs.mkdir(archive);
+    await drop('a.hl7', 'A');
+    await fs.link(path.join(inbound, 'a.hl7'), path.join(archive, 'a.hl7'));
+    const { log } = await start({ postAction: FILE_POST_ACTION.MOVE });
+    await soon(async () => { expect(await exists(path.join(inbound, 'a.hl7'))).toBe(false); });
+    await pollsPass(1);
+    expect(await fs.readFile(path.join(archive, 'a.hl7'), 'utf8')).toBe('A');
+    expect(log.errors).toEqual([]);
+  });
+
+  it('keeps a file whose target folder is the one it is in', async () => {
+    await drop('a.hl7', 'A');
+    await fs.link(path.join(inbound, 'a.hl7'), path.join(root, 'another name'));
+    const { seen, log } = await start({ postAction: FILE_POST_ACTION.MOVE, moveToDirectory: inbound });
+    await soon(() => { expect(log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
+    await pollsPass(2);
+    expect(await fs.readFile(path.join(inbound, 'a.hl7'), 'utf8')).toBe('A');
+    expect(seen).toEqual(['A']);
   });
 
   it('leaves no copy in the target folder when the file cannot leave the source folder', async () => {
@@ -255,7 +279,7 @@ describe('a File source that moves what it read (#412)', () => {
     await drop('a.hl7', 'A');
     const { seen, log } = await start({ postAction: FILE_POST_ACTION.MOVE });
 
-    await vi.waitFor(() => { expect(log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
+    await soon(() => { expect(log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
     expect(await fs.readFile(path.join(inbound, 'a.hl7'), 'utf8')).toBe('A');
     expect(await fs.readdir(archive)).toEqual([]);
     await pollsPass(2);

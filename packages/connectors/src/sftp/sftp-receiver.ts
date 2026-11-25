@@ -141,9 +141,9 @@ export class SftpReceiver implements SourceConnectorRuntime {
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       const session = this.endSession();
-      if (session === null) return;
-      if (session.dispatched) await session.file;
-      await this.disconnect(session);
+      // Not only this session's: after a pause the session is gone, and its file may be in flight.
+      if (this.polling?.dispatched === true) await this.polling.file;
+      if (session !== null) await this.disconnect(session);
     });
   }
 

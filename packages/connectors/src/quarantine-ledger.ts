@@ -115,8 +115,8 @@ export interface QuarantinedFile {
   readonly file: string;
   /** How old a file must be to be read; `null` when its age is not checked. */
   readonly minAgeMs: number | null;
-  /** The file as it is now. Rejects when it is gone. */
-  readonly version: () => Promise<FileVersion>;
+  /** The file as it is now; `null` when it is gone. */
+  readonly version: () => Promise<FileVersion | null>;
   /** `null` skips the file this poll. */
   readonly read: (version: FileVersion) => Promise<RawMessage | null>;
   readonly dispatcher: MessageDispatcher;
@@ -160,6 +160,7 @@ interface ReadFile {
 async function readWhole(job: QuarantinedFile): Promise<ReadFile | null> {
   if (skipsQuarantined(job, job.listed)) return null;
   const version = await job.version();
+  if (version === null) throw new Error('The file is gone');
   if (!sameVersion(version, job.listed)) {
     if (isTooNew(version, job.minAgeMs)) {
       job.logger.info({ file: job.file }, 'File changed since it was listed and is too new to read; left for a later poll');
@@ -169,7 +170,11 @@ async function readWhole(job: QuarantinedFile): Promise<ReadFile | null> {
   }
   const raw = await job.read(version);
   if (raw === null) return null;
-  if (!sameVersion(await job.version(), version)) {
+  const after = await job.version();
+  if (after === null) {
+    // A pick-up folder's server takes a file away once it was downloaded: what was read is all there is.
+    job.logger.warn({ file: job.file }, 'File was gone once it was read; processing what was read');
+  } else if (!sameVersion(after, version)) {
     job.logger.warn({ file: job.file }, 'File changed while it was read; left for a later poll');
     return null;
   }
@@ -179,7 +184,9 @@ async function readWhole(job: QuarantinedFile): Promise<ReadFile | null> {
 async function settle(job: QuarantinedFile, postProcess: () => Promise<void>, version: FileVersion): Promise<void> {
   const { ledger, logger, name, file } = job;
   try {
-    if (!sameVersion(await job.version(), version)) {
+    const now = await job.version();
+    if (now === null) throw new Error('The file is gone');
+    if (!sameVersion(now, version)) {
       logger.warn({ file }, 'File changed while its message was processed; left in place, so a later poll reads it as it is now');
       return;
     }

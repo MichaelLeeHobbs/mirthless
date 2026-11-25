@@ -12,7 +12,7 @@ const ssh2 = createRequire(createRequire(import.meta.url).resolve('ssh2-sftp-cli
 interface Ssh2Module {
   readonly Server: new (config: { hostKeys: string[] }, onClient: (client: ServerClient) => void) => SshServer;
   readonly utils: {
-    generateKeyPairSync(type: 'ed25519'): { private: string; public: string };
+    generateKeyPairSync(type: 'ecdsa', options: { readonly bits: 256 }): { private: string; public: string };
     readonly sftp: { readonly STATUS_CODE: Readonly<Record<string, number>>; readonly OPEN_MODE: Readonly<Record<string, number>> };
   };
 }
@@ -72,6 +72,12 @@ export interface SftpServerRules {
   failWritesAfter?: { readonly matches: (filePath: string) => boolean; readonly bytes: number };
   /** Called with each write answered; the answer waits for it. */
   onWrite?: (filePath: string, size: number) => Promise<void> | void;
+  /** Every rename is answered FAILURE, as by a server that allows none and does not say why. */
+  failRename?: boolean;
+  /** Takes a file away once it is closed after reading, as a pick-up folder does. */
+  removeOnRead?: boolean;
+  /** Opening a name that starts with a dot for writing is refused. */
+  denyDotfiles?: boolean;
   /** Called before a rename is carried out. */
   onRename?: (from: string, to: string) => Promise<void> | void;
 }
@@ -93,6 +99,7 @@ interface OpenHandle {
   readonly filePath: string;
   readonly isDir: boolean;
   readonly append: boolean;
+  readonly reads: boolean;
   listed: boolean;
 }
 
@@ -119,9 +126,13 @@ class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'close'
     stream.on('OPEN', (id, filePath: string, flags: number) => { this.open(stream, id, filePath, flags); });
     stream.on('OPENDIR', (id, dir: string) => {
       if (!this.dirs.has(dir)) stream.status(id, NO_SUCH_FILE);
-      else stream.handle(id, this.handleFor({ filePath: dir, isDir: true, append: false, listed: false }));
+      else stream.handle(id, this.handleFor({ filePath: dir, isDir: true, append: false, reads: false, listed: false }));
     });
-    stream.on('CLOSE', (id) => { stream.status(id, OK); });
+    stream.on('CLOSE', (id, handle: Buffer) => {
+      const { filePath, reads } = this.handles.get(handle.readUInt32BE(0))!;
+      if (reads && this.rules.removeOnRead) this.files.delete(filePath);
+      stream.status(id, OK);
+    });
     stream.on('READDIR', (id, handle: Buffer) => { this.readDir(stream, id, handle); });
     stream.on('READ', (id, handle: Buffer, offset: number, length: number) => {
       const file = this.files.get(this.handles.get(handle.readUInt32BE(0))!.filePath);
@@ -157,9 +168,10 @@ class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'close'
     const exists = this.files.has(filePath);
     const truncates = (flags & OPEN_MODE['TRUNC']!) !== 0;
     const creates = (flags & OPEN_MODE['CREAT']!) !== 0;
+    if (creates && this.rules.denyDotfiles && path.posix.basename(filePath).startsWith('.')) { stream.status(id, DENIED); return; }
     if (!exists && !creates) { stream.status(id, NO_SUCH_FILE); return; }
     if (!exists || truncates) this.put(filePath, '', Date.now());
-    stream.handle(id, this.handleFor({ filePath, isDir: false, append: (flags & OPEN_MODE['APPEND']!) !== 0, listed: false }));
+    stream.handle(id, this.handleFor({ filePath, isDir: false, append: (flags & OPEN_MODE['APPEND']!) !== 0, reads: !creates, listed: false }));
   }
 
   private async write(stream: SftpStream, id: number, handle: Buffer, offset: number, data: Buffer): Promise<void> {
@@ -182,7 +194,7 @@ class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'close'
     const file = this.files.get(from);
     if (this.rules.denyRename) stream.status(id, DENIED);
     else if (!file) stream.status(id, NO_SUCH_FILE);
-    else if (this.files.has(to) && !this.rules.renameReplaces) stream.status(id, FAILURE);
+    else if (this.rules.failRename || (this.files.has(to) && !this.rules.renameReplaces)) stream.status(id, FAILURE);
     else {
       this.files.delete(from);
       this.files.set(to, file);
@@ -217,7 +229,8 @@ class Server implements Omit<TestSftpServer, 'options' | 'connections' | 'close'
 }
 
 export async function startSftpServer(...dirs: readonly string[]): Promise<TestSftpServer> {
-  const keys = ssh2.utils.generateKeyPairSync('ed25519');
+  // Not ed25519: ssh2 cannot read some of the keys of that type it makes.
+  const keys = ssh2.utils.generateKeyPairSync('ecdsa', { bits: 256 });
   const server = new Server();
   for (const dir of dirs) server.dirs.add(dir);
   const clients = new Set<ServerClient>();

@@ -2,6 +2,7 @@
 
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { withTimeoutSignal } from '../timeout.js';
 import { SftpFileWrite } from './sftp-file-write.js';
 import { resolveOutputFilename, unknownPlaceholders, unknownPlaceholderMessage } from '../file/file-dispatcher.js';
@@ -28,10 +29,12 @@ export interface SftpDispatcherConfig extends SftpConnectionOptions {
 export class SftpDispatcher implements DestinationConnectorRuntime {
   private readonly config: SftpDispatcherConfig;
   private readonly createClient: SftpClientFactory;
+  private readonly logger: ConnectorLogger;
   private started = false;
 
-  constructor(config: SftpDispatcherConfig, createClient?: SftpClientFactory) {
+  constructor(config: SftpDispatcherConfig, createClient?: SftpClientFactory, logger?: ConnectorLogger) {
     this.config = config;
+    this.logger = logger ?? createConnectorLogger('SFTP');
     this.createClient = createClient ?? createSsh2SftpClient;
   }
 
@@ -87,7 +90,8 @@ export class SftpDispatcher implements DestinationConnectorRuntime {
     const write = new SftpFileWrite(client, { directory: remoteDirectory, path: remotePath, appendMode, tempFileEnabled });
     const done = write.run(Buffer.from(content, 'utf8'));
     try {
-      await withTimeoutSignal(done, SEND_TIMEOUT_MS, 'SFTP send', signal);
+      const left = await withTimeoutSignal(done, SEND_TIMEOUT_MS, 'SFTP send', signal);
+      if (left !== null) this.logger.warn({ file: left }, 'SFTP file replaced, but the old one could not be removed from under its temporary name');
     } catch (err) {
       const failure = await write.giveUp(done, err);
       if (failure !== null) throw failure;

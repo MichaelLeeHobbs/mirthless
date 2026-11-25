@@ -130,7 +130,7 @@ const KEY = 'a.hl7:1';
 const LISTED: FileVersion = { modifyTime: 1, size: 5 };
 
 /** Answers each version in turn, and the last one from then on. */
-function versions(...answers: readonly FileVersion[]): () => Promise<FileVersion> {
+function versions(...answers: ReadonlyArray<FileVersion | null>): () => Promise<FileVersion | null> {
   let i = 0;
   return async () => answers[Math.min(i++, answers.length - 1)]!;
 }
@@ -236,8 +236,8 @@ describe('dispatchQuarantined', () => {
   });
 
   it('does not read a file that is gone', async () => {
-    const { job, calls } = makeJob({ version: async () => { throw new Error('ENOENT'); } });
-    await expect(dispatchQuarantined(job)).rejects.toThrow('ENOENT');
+    const { job, calls } = makeJob({ version: versions(null) });
+    await expect(dispatchQuarantined(job)).rejects.toThrow('The file is gone');
     expect(calls).toEqual([]);
   });
 
@@ -286,6 +286,26 @@ describe('dispatchQuarantined', () => {
     expect(calls).toEqual(['read', 'dispatch']);
     expect(storage.files.size).toBe(0);
     expect(log.warnings).toHaveLength(1);
+  });
+
+  it('dispatches a file that was gone once it was read, and quarantines it', async () => {
+    const { job, calls, log, storage } = makeJob({ version: versions(LISTED, null) });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read', 'dispatch']);
+    expect(log.warnings[0]!.msg).toBe('File was gone once it was read; processing what was read');
+    expect(storage.files.get(LEDGER)).toBe('["a.hl7:1"]');
+  });
+
+  it('does not dispatch a file it cannot look at again once it was read', async () => {
+    let looks = 0;
+    const { job, calls } = makeJob({
+      version: async () => {
+        if (++looks === 2) throw new Error('No SFTP connection available');
+        return LISTED;
+      },
+    });
+    await expect(dispatchQuarantined(job)).rejects.toThrow('No SFTP connection available');
+    expect(calls).toEqual(['read']);
   });
 
   it('takes two versions with no time as the same', async () => {

@@ -598,6 +598,18 @@ describe('robustness', () => {
     expect(errors).toEqual([]);
   });
 
+  it('a halt with no file in the pipeline closes the connection at once, also after one was processed', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'A', Date.now() - 10_000);
+    const r = new SftpReceiver(makeConfig(), factoryFor(state));
+    r.setDispatcher(makeDispatcher());
+    await r.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(state.deleted).toEqual(['a.hl7']);
+    await r.onHalt();
+    expect(state.endCount).toBe(1);
+  });
+
   it('says nothing of a file whose download a stop cut off', async () => {
     const state = new RemoteState();
     state.addFile('a.hl7', 'A', Date.now() - 10_000);

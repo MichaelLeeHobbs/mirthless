@@ -474,7 +474,7 @@ The migration builds the index of waiting messages again, which reads the whole 
 
 ## File and SFTP: temporary names, moves and changed files (#412)
 
-**An SFTP destination now writes under a temporary name** (`.galvanigraph-<uuid>.tmp` in the same folder) and renames the file, as a FILE destination does. Every SFTP destination without append is affected, with no change to the channel. Turn **Use Temp File** off on one whose server allows uploads but no renames, where each send now ends in an ERROR that says so, and on one whose server takes each upload as a file the moment it closes (a mailbox, a transfer workflow), which would take the temporary name. A name on the server that is a link is replaced by the file instead of written through. Ask the partner before you upgrade; these are the destinations:
+**An SFTP destination now writes under a temporary name** (`.galvanigraph-<uuid>.tmp` in the same folder) and renames the file, as a FILE destination does. Every SFTP destination without append is affected, with no change to the channel. Turn **Use Temp File** off on one whose server allows uploads but no renames, allows overwriting but no new files, or refuses names that start with a dot or end in `.tmp`, where each send now ends in an ERROR that points to the setting, and on one whose server takes each upload as a file the moment it closes (a mailbox, a transfer workflow), which would take the temporary name. A file that replaces another is a new one: its owner, permissions and access list are the server's defaults, and a name that is a link is replaced by the file instead of written through. Ask the partner before you upgrade; these are the destinations:
 
 ```sql
 SELECT channel_id, name, properties->>'host' AS host, properties->>'remoteDirectory' AS directory FROM channel_connectors
@@ -484,6 +484,8 @@ WHERE connector_type = 'SFTP' AND COALESCE(properties->>'appendMode', 'false') <
 A FILE destination's temporary file has the same form of name; it was the file's name plus `.<uuid>.tmp`.
 
 **A FILE source's `MOVE` no longer replaces a file of the same name** in the target folder; SFTP already failed on most servers. The file stays in the source folder, is delivered once, and is in the quarantine list with an ERROR in the log. A sender that uses the same name every day, such as `results.hl7`, needs another after-processing action, or something that clears the target folder.
+
+**An SFTP source asks the server for each file's size and time (STAT) before it reads it**, after, and before it deletes or moves it. A server that answers the listing and refuses that gives an ERROR in the log for each file at each poll, and the files stay.
 
 **A source that finds a file changed while its message was processed leaves it and reads it again.** Before, it deleted or moved the changed file unread. A file that grows by appending is delivered again whole, so set its minimum age longer than the sender's pauses.
 

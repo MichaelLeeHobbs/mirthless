@@ -23,36 +23,46 @@ function statusOf(err: unknown): number | undefined {
   return err instanceof Error && 'code' in err && typeof err.code === 'number' ? err.code : undefined;
 }
 
+interface SetAside {
+  readonly temp: string;
+  readonly aside: string;
+}
+
 /** One message written as one remote file, and what the server may hold of it when that fails. */
 export class SftpFileWrite {
   private givenUp = false;
-  /** The file put() or append() has open: it may hold part of the message. */
+  /** Opened, or perhaps opened, under its final name: it may hold part of the message. */
   private partial: string | null = null;
   private temp: string | null = null;
   private renaming = false;
-  private renameRefused = false;
-  /** The old file is gone and the new one not in place yet. */
-  private tempIsOnlyCopy = false;
+  /** The server answered that it takes no temporary file, or does not rename it. */
+  private tempRefused = false;
+  /** The old file may be under another name, and the new one not in place yet. */
+  private setAside: SetAside | null = null;
+  /** The old file, when it could not be removed after the new one took its place. */
+  private oldFileLeft: string | null = null;
 
   constructor(private readonly client: SftpClient, private readonly target: SftpFileTarget) {}
 
-  async run(data: Buffer): Promise<void> {
+  /** Once it ends well, the old file under its temporary name if it could not be removed. */
+  async run(data: Buffer): Promise<string | null> {
     const { client, target } = this;
     await client.connect();
     this.stopIfGivenUp();
     await client.mkdir(target.directory);
     this.stopIfGivenUp();
     if (target.appendMode) {
-      await client.append(data, target.path, () => { this.partial = target.path; });
+      await this.writeInPlace((onOpen) => client.append(data, target.path, onOpen));
     } else if (target.tempFileEnabled) {
       await this.writeThroughTemp(data);
     } else {
-      await client.put(data, target.path, () => { this.partial = target.path; });
+      await this.writeInPlace((onOpen) => client.put(data, target.path, onOpen));
     }
+    return this.oldFileLeft;
   }
 
   /** The error to report, or null when a rename under way put the file in place after all. */
-  async giveUp(done: Promise<void>, cause: unknown): Promise<Error | null> {
+  async giveUp(done: Promise<unknown>, cause: unknown): Promise<Error | null> {
     this.givenUp = true;
     if (this.renaming && await this.endsWell(done)) return null;
     const left = [...this.filesLeft(), ...await this.removeTemp()];
@@ -66,19 +76,47 @@ export class SftpFileWrite {
     throw new Error('SFTP send given up');
   }
 
+  private async writeInPlace(write: (onOpen: () => void) => Promise<void>): Promise<void> {
+    this.partial = this.target.path;
+    const refused = await this.refusedToOpen(write);
+    if (refused === null) return;
+    this.partial = null;
+    throw refused;
+  }
+
   private async writeThroughTemp(data: Buffer): Promise<void> {
-    const temp = path.posix.join(path.posix.dirname(this.target.path), tempFileName());
+    const temp = this.tempPath();
     this.temp = temp;
-    await this.client.put(data, temp);
+    const refused = await this.refusedToOpen((onOpen) => this.client.put(data, temp, onOpen));
+    if (refused !== null) {
+      this.tempRefused = true;
+      throw refused;
+    }
     this.stopIfGivenUp();
     this.renaming = true;
     try {
       await this.putInPlace(temp);
       this.temp = null;
     } catch (err) {
-      this.renameRefused = statusOf(err) !== undefined;
+      this.tempRefused = statusOf(err) !== undefined;
       throw err;
     }
+  }
+
+  /** The error when the server answered that it does not open the file, so nothing is in it. Rejects with any other. */
+  private async refusedToOpen(write: (onOpen: () => void) => Promise<void>): Promise<unknown> {
+    let open = false;
+    try {
+      await write(() => { open = true; });
+      return null;
+    } catch (err) {
+      if (open || statusOf(err) === undefined) throw err;
+      return err;
+    }
+  }
+
+  private tempPath(): string {
+    return path.posix.join(path.posix.dirname(this.target.path), tempFileName());
   }
 
   private async putInPlace(temp: string): Promise<void> {
@@ -91,27 +129,56 @@ export class SftpFileWrite {
       if (!NAME_TAKEN.includes(statusOf(err)) || !await this.bothThere(temp)) throw err;
     }
     this.stopIfGivenUp();
-    // No rename that replaces on this server, so for a moment there is no file of this name.
-    this.tempIsOnlyCopy = true;
-    await this.deleteOld();
-    await client.rename(temp, target.path);
-    this.tempIsOnlyCopy = false;
-  }
-
-  private async deleteOld(): Promise<void> {
-    try {
-      await this.client.delete(this.target.path);
-    } catch (err) {
-      this.tempIsOnlyCopy = statusOf(err) === undefined;
-      throw err;
-    }
+    await this.swap(temp);
   }
 
   private async bothThere(temp: string): Promise<boolean> {
     return await this.client.pathKind(this.target.path) === 'file' && await this.client.pathKind(temp) === 'file';
   }
 
-  private async endsWell(done: Promise<void>): Promise<boolean> {
+  /**
+   * For a server with no rename that replaces: for a moment there is no file of this name.
+   * The old file is kept until the new one is in place, since a server that answers every
+   * rename with the same status allows none.
+   */
+  private async swap(temp: string): Promise<void> {
+    const { client, target } = this;
+    const aside = this.tempPath();
+    this.setAside = { temp, aside };
+    await this.moveAside(aside);
+    try {
+      await client.rename(temp, target.path);
+    } catch (err) {
+      await this.moveBack(aside);
+      throw err;
+    }
+    this.setAside = null;
+    try {
+      await client.delete(aside);
+    } catch {
+      this.oldFileLeft = aside;
+    }
+  }
+
+  private async moveAside(aside: string): Promise<void> {
+    try {
+      await this.client.rename(this.target.path, aside);
+    } catch (err) {
+      if (statusOf(err) !== undefined) this.setAside = null;
+      throw err;
+    }
+  }
+
+  private async moveBack(aside: string): Promise<void> {
+    try {
+      await this.client.rename(aside, this.target.path);
+      this.setAside = null;
+    } catch {
+      // Still set aside: the send's error names where.
+    }
+  }
+
+  private async endsWell(done: Promise<unknown>): Promise<boolean> {
     try {
       await withTimeout(done, WIND_UP_MS, 'SFTP rename');
       return true;
@@ -121,17 +188,17 @@ export class SftpFileWrite {
   }
 
   private filesLeft(): readonly string[] {
-    const { target, temp } = this;
+    const { target, setAside } = this;
     if (this.partial !== null) return [`${this.partial} may hold part of this message`];
-    if (this.tempIsOnlyCopy) return [`${target.path} may have been removed to be replaced, and ${temp ?? ''} holds this message`];
-    if (this.renameRefused) return ['the server refused to put the temporary file in place: turn tempFileEnabled off if it allows no renames or deletes'];
+    if (setAside !== null) return [`${target.path} may have been renamed to ${setAside.aside}, and ${setAside.temp} may hold this message`];
+    if (this.tempRefused) return ['the server refused the temporary file or its rename: turn tempFileEnabled off if it allows none'];
     if (this.renaming) return [`${target.path} may hold this message`];
     return [];
   }
 
   private async removeTemp(): Promise<readonly string[]> {
     const { temp } = this;
-    if (temp === null || this.tempIsOnlyCopy) return [];
+    if (temp === null || this.setAside !== null) return [];
     try {
       await withTimeout(this.client.delete(temp), WIND_UP_MS, 'SFTP delete');
       return [];

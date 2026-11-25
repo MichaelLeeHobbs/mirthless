@@ -65,6 +65,9 @@ const pollsPass = (count: number): Promise<void> => new Promise((resolve) => { s
 
 const aged = (): number => Date.now() - 45_000;
 
+/** A wait long enough for a loaded machine; it ends as soon as the condition holds. */
+const soon = (check: () => void | Promise<void>): Promise<void> => vi.waitFor(check, { timeout: 10_000 });
+
 describe('a file that changes under an SFTP source', () => {
   it('reads a file rewritten while an earlier file was processed only once it is whole', async () => {
     server.put('/in/a.hl7', 'A');
@@ -73,13 +76,13 @@ describe('a file that changes under an SFTP source', () => {
       if (raw.content === 'A') server.put('/in/b.hl7', 'B first half,', Date.now());
     });
 
-    await vi.waitFor(() => { expect(server.text('/in/a.hl7')).toBeUndefined(); });
+    await soon(() => { expect(server.text('/in/a.hl7')).toBeUndefined(); });
     await pollsPass(2);
     expect(seen).toEqual(['A']);
     server.put('/in/b.hl7', 'B first half, second half', aged());
 
-    await vi.waitFor(() => { expect(seen).toEqual(['A', 'B first half, second half']); }, { timeout: 5_000 });
-    await vi.waitFor(() => { expect(server.text('/in/b.hl7')).toBeUndefined(); });
+    await soon(() => { expect(seen).toEqual(['A', 'B first half, second half']); });
+    await soon(() => { expect(server.text('/in/b.hl7')).toBeUndefined(); });
   });
 
   it('does not delete a file that changed while its message was processed, and reads the new content', async () => {
@@ -88,10 +91,22 @@ describe('a file that changes under an SFTP source', () => {
       if (raw.content === 'first') server.put('/in/a.hl7', 'second version', aged());
     });
 
-    await vi.waitFor(() => { expect(seen).toEqual(['first', 'second version']); }, { timeout: 5_000 });
-    await vi.waitFor(() => { expect(server.text('/in/a.hl7')).toBeUndefined(); });
+    await soon(() => { expect(seen).toEqual(['first', 'second version']); });
+    await soon(() => { expect(server.text('/in/a.hl7')).toBeUndefined(); });
     expect(log.warnings.some((w) => w.obj['file'] === 'a.hl7' && w.msg.includes('changed'))).toBe(true);
     expect(server.text(LEDGER)).toBeUndefined();
+  });
+});
+
+describe('a pick-up folder whose server takes a file away once it was downloaded', () => {
+  it('still delivers the file, once', async () => {
+    server.rules.removeOnRead = true;
+    server.put('/in/a.hl7', 'A');
+    const { seen, log } = await start({});
+    await soon(() => { expect(seen).toEqual(['A']); });
+    await pollsPass(2);
+    expect(seen).toEqual(['A']);
+    expect(log.warnings.some((w) => w.obj['file'] === 'a.hl7' && w.msg.includes('gone once it was read'))).toBe(true);
   });
 });
 
@@ -99,7 +114,7 @@ describe('an SFTP source that moves what it read', () => {
   it('puts the file in the target folder with its content', async () => {
     server.put('/in/a.hl7', 'MSH|^~\\&|A');
     await start({ afterProcessing: SFTP_POST_ACTION.MOVE });
-    await vi.waitFor(() => { expect(server.text('/archive/a.hl7')).toBe('MSH|^~\\&|A'); });
+    await soon(() => { expect(server.text('/archive/a.hl7')).toBe('MSH|^~\\&|A'); });
     expect(server.text('/in/a.hl7')).toBeUndefined();
   });
 
@@ -108,7 +123,7 @@ describe('an SFTP source that moves what it read', () => {
     server.put('/archive/a.hl7', 'yesterday');
     server.put('/in/a.hl7', 'today');
     const first = await start({ afterProcessing: SFTP_POST_ACTION.MOVE });
-    await vi.waitFor(() => { expect(first.log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
+    await soon(() => { expect(first.log.errors.some((e) => e.msg.includes('quarantining'))).toBe(true); });
     const error = first.log.errors.find((e) => e.msg.includes('quarantining'))!;
     expect(String(error.obj['errMsg'])).toContain('/archive/a.hl7');
     await first.receiver.onStop();
@@ -130,7 +145,7 @@ describe('an SFTP source stopped while a message is processed', () => {
     let release = (): void => undefined;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const started = await start(overrides ?? {}, async () => { await gate; return result; });
-    await vi.waitFor(() => { expect(started.seen).toEqual(['A']); });
+    await soon(() => { expect(started.seen).toEqual(['A']); });
     return { started, stopped: started.receiver[how](), release };
   }
 
@@ -162,37 +177,50 @@ describe('an SFTP source stopped while a message is processed', () => {
     await stopped;
 
     const again = await start({});
-    await vi.waitFor(() => { expect(again.seen).toEqual(['B']); });
+    await soon(() => { expect(again.seen).toEqual(['B']); });
     await pollsPass(2);
     expect(again.seen).toEqual(['B']);
     expect(server.text('/in/a.hl7')).toBe('A');
   });
 
   it.each([
-    ['deletes', { messageId: 1 } as DispatchResult],
-    ['quarantines', { messageId: 1, status: 'ERROR' } as DispatchResult],
-  ])('a halt does not wait, and the file in flight is settled after it (%s)', async (_label, result) => {
+    ['deleted', { messageId: 1 } as DispatchResult, undefined],
+    ['quarantined', { messageId: 1, status: 'ERROR' } as DispatchResult, 'A'],
+  ])('a halt does not wait, and the file in flight is %s after it', async (_label, result, left) => {
     const { started, stopped, release } = await stopDuring('onHalt', result);
     await stopped;
     release();
-    await vi.waitFor(() => { expect(server.text('/in/a.hl7') === undefined || server.text(LEDGER) !== undefined).toBe(true); });
+    await soon(() => { expect(server.text('/in/a.hl7') === undefined || server.text(LEDGER) !== undefined).toBe(true); });
     await pollsPass(2);
     expect(started.seen).toEqual(['A']);
-    await vi.waitFor(() => { expect(server.connections()).toBe(0); });
+    expect(server.text('/in/a.hl7')).toBe(left);
+    expect(server.text(LEDGER) === undefined).toBe(left === undefined);
+    await soon(() => { expect(server.connections()).toBe(0); });
+  });
+
+  it('a stop after a pause waits for the file too', async () => {
+    const { started, stopped: paused, release } = await stopDuring('onStop', { messageId: 1 });
+    let ended = false;
+    const stopped = started.receiver.onStop().then(() => { ended = true; });
+    await pollsPass(1);
+    expect(ended).toBe(false);
+    release();
+    await Promise.all([paused, stopped]);
+    expect(server.text('/in/a.hl7')).toBeUndefined();
   });
 
   it('a start after a halt takes the next file on a connection of its own, once the one in flight is settled', async () => {
     const { started, stopped, release } = await stopDuring('onHalt', { messageId: 1 });
     await stopped;
     expect((await started.receiver.onStart()).ok).toBe(true);
-    await vi.waitFor(() => { expect(server.connections()).toBe(2); });
+    await soon(() => { expect(server.connections()).toBe(2); });
     await pollsPass(2);
     expect(started.seen).toEqual(['A']);
 
     release();
-    await vi.waitFor(() => { expect(started.seen).toEqual(['A', 'B']); });
-    await vi.waitFor(() => { expect(server.list('/in')).toEqual([]); });
-    await vi.waitFor(() => { expect(server.connections()).toBe(1); });
+    await soon(() => { expect(started.seen).toEqual(['A', 'B']); });
+    await soon(() => { expect(server.list('/in')).toEqual([]); });
+    await soon(() => { expect(server.connections()).toBe(1); });
   });
 });
 
@@ -313,22 +341,66 @@ describe('an SFTP destination writes under a temporary name', () => {
     expect(server.list('/out')).toEqual(['latest.hl7']);
   });
 
-  it('keeps the existing file when the server lets it neither be replaced nor deleted', async () => {
+  it('is sent, with a warning, when the file it replaced cannot be deleted', async () => {
     server.put('/out/latest.hl7', 'old');
     server.rules.denyDelete = true;
-    expect((await send('new')).ok).toBe(false);
+    const log = makeMockLogger();
+    const d = new SftpDispatcher(destinationConfig(), undefined, log.logger);
+    await d.onStart();
+    expect((await d.send(makeMessage('new'), new AbortController().signal)).ok).toBe(true);
+    expect(server.text('/out/latest.hl7')).toBe('new');
+    const left = String(log.warnings[0]!.obj['file']);
+    expect(server.text(left)).toBe('old');
+    expect(left).toMatch(/^\/out\/\.galvanigraph-.*\.tmp$/);
+  });
+
+  it('puts the existing file back when the new one cannot take its place', async () => {
+    server.put('/out/latest.hl7', 'old');
+    let renames = 0;
+    server.rules.onRename = () => { server.rules.failRename = ++renames === 3; };
+    const { ok, error } = await send('new');
+    expect(ok).toBe(false);
+    expect(renames).toBe(4);
+    expect(error).toContain('tempFileEnabled');
+    expect(server.list('/out')).toEqual(['latest.hl7']);
     expect(server.text('/out/latest.hl7')).toBe('old');
   });
 
-  it('names the temporary file as the only copy when the rename fails after the existing file was deleted', async () => {
+  it('keeps the existing file on a server that fails every rename without saying why', async () => {
     server.put('/out/latest.hl7', 'old');
-    let renames = 0;
-    server.rules.onRename = () => { if (++renames === 2) server.rules.denyRename = true; };
+    server.rules.failRename = true;
     const { ok, error } = await send('new');
     expect(ok).toBe(false);
-    const [left] = server.list('/out');
-    expect(server.text(`/out/${left!}`)).toBe('new');
-    expect(error).toContain(`/out/${left!} holds this message`);
+    expect(error).toContain('tempFileEnabled');
+    expect(server.list('/out')).toEqual(['latest.hl7']);
+    expect(server.text('/out/latest.hl7')).toBe('old');
+  });
+
+  it('points to the setting when the server refuses the temporary name', async () => {
+    server.rules.denyDotfiles = true;
+    const { ok, error } = await send('M');
+    expect(ok).toBe(false);
+    expect(error).toContain('tempFileEnabled');
+    expect((await send('M', { tempFileEnabled: false })).ok).toBe(true);
+  });
+
+  it('names no file when the server refuses to open it', async () => {
+    server.rules.denyDotfiles = true;
+    const { ok, error } = await send('M', { tempFileEnabled: false, fileNameTemplate: '.a' });
+    expect(ok).toBe(false);
+    expect(error).not.toContain('may hold');
+  });
+
+  it('names both files when neither has its place in the end', async () => {
+    server.put('/out/latest.hl7', 'old');
+    let renames = 0;
+    server.rules.onRename = () => { if (++renames === 3) server.rules.denyRename = true; };
+    const { ok, error } = await send('new');
+    expect(ok).toBe(false);
+    const left = server.list('/out').map((name) => `/out/${name}`);
+    const old = left.find((file) => server.text(file) === 'old')!;
+    const fresh = left.find((file) => server.text(file) === 'new')!;
+    expect(error).toContain(`/out/latest.hl7 may have been renamed to ${old}, and ${fresh} may hold this message`);
   });
 
   it('writes under the final name at once when temporary files are off', async () => {
@@ -350,7 +422,7 @@ describe('an SFTP destination writes under a temporary name', () => {
     const { seen } = await start(inbound);
     server.rules.onWrite = () => pollsPass(2);
     expect((await send('whole')).ok).toBe(true);
-    await vi.waitFor(() => { expect(seen).toContain('whole'); });
+    await soon(() => { expect(seen).toContain('whole'); });
     expect(new Set(seen)).toEqual(new Set(['whole']));
   });
 });

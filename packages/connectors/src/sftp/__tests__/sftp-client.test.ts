@@ -112,6 +112,25 @@ describe('wrapSsh2Client mkdir', () => {
   });
 });
 
+describe('wrapSsh2Client stat', () => {
+  function statWith(stat: () => Promise<unknown>): ReturnType<ReturnType<typeof wrapSsh2Client>['stat']> {
+    return wrapSsh2Client({ stat } as unknown as Ssh2ClientInstance, makeOptions()).stat('/in/a');
+  }
+
+  it('is the size and time of the file', async () => {
+    expect(await statWith(async () => ({ size: 5, modifyTime: 1_000, isDirectory: false }))).toEqual({ size: 5, modifyTime: 1_000 });
+  });
+
+  it('is null when the file is not there', async () => {
+    expect(await statWith(() => Promise.reject(Object.assign(new Error('No such file'), { code: 'ENOENT' })))).toBeNull();
+  });
+
+  it('rejects when the server refuses or the connection is gone', async () => {
+    await expect(statWith(() => Promise.reject(Object.assign(new Error('Permission denied'), { code: 3 })))).rejects.toThrow('Permission denied');
+    await expect(statWith(() => Promise.reject(new Error('No SFTP connection available')))).rejects.toThrow('No SFTP connection');
+  });
+});
+
 describe('wrapSsh2Client replace', () => {
   function replaceWith(posixRename: () => Promise<string>): Promise<boolean> {
     return wrapSsh2Client({ posixRename } as unknown as Ssh2ClientInstance, makeOptions()).replace('/out/a', '/out/b');
