@@ -415,7 +415,7 @@ No network is involved, so there is nothing to encrypt. The message stays inside
 
 The source is a DICOM storage SCP. It accepts C-STORE associations, writes each instance to `storageDir` as `<SOPInstanceUID>.dcm` (a copy that arrives while an earlier one is still there is written as `<SOPInstanceUID>_2.dcm`, `_3` and so on, never over it), and sends a message whose content is the file path, with the dataset's attributes and the AE titles in the source map. In `PER_ASSOCIATION` mode it sends one message per association whose content is a JSON list of file paths.
 
-The destination is a storage SCU. The message content must be the absolute path of a DICOM file under `FILE_CONNECTOR_ROOTS`, which it sends with C-STORE.
+The destination is a storage SCU. The message content must be the absolute path of a DICOM file under `FILE_CONNECTOR_ROOTS`, which it sends with C-STORE. The message reads SENT only when the remote AE answers that it stored the image: success (0x0000), or a warning (0xB000 to 0xBFFF, such as elements coerced or left out), which the response shows as `warning=0xB000`. Any other status, a rejected association or presentation context, an abort, and a connection closed or timed out before the answer are an ERROR that says which, and are retried as `maxRetries` and the destination's queue say (D-350). 0x0111 (duplicate SOP instance) is an ERROR too: the archive did not take this copy, and may have the image from an earlier attempt whose answer was lost, so check there before you remove the message from its queue.
 
 ### DICOM security
 
@@ -443,7 +443,7 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 | `port` | Yes | Remote SCP port. |
 | `calledAETitle` | No | The remote AE title, at most 16 characters, `PACS` by default. |
 | `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIGRAPH` by default. |
-| `maxRetries` | No | Retries of a failed send. |
+| `maxRetries` | No | Retries of a failed send, 3 by default. A refusal is retried like a lost connection. |
 | `retryDelayMs` | No | Milliseconds between retries. |
 | `timeoutMs` | No | Milliseconds before the send fails. |
 
