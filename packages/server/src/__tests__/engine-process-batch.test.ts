@@ -42,7 +42,7 @@ describe('processBatch', () => {
     const result = await processBatch('abc', run({ processOne }));
 
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toBe('Message 3 of 3 in the batch was not recorded: store down');
+    expect(result.error?.message).toBe('Not recorded of the 3 messages in the batch: 3. store down');
   });
 
   it('runs no message after one that was not recorded, so that they keep their order when the batch is offered again', async () => {
@@ -50,16 +50,16 @@ describe('processBatch', () => {
 
     const result = await processBatch('abc', run({ processOne }));
 
-    expect(result.error?.message).toBe('Message 2 of 3 in the batch was not recorded: store down');
+    expect(result.error?.message).toBe('Not recorded of the 3 messages in the batch: 2. store down');
     expect(seen).toEqual(['a', 'b']);
   });
 
-  it('runs every message for a source that never offers its input again, and names the first that was not recorded', async () => {
-    const { processOne, seen } = playing(notRecorded, ok(2, 'ERROR'), ok(3));
+  it('runs every message for a source that never offers its input again, and names each that was not recorded', async () => {
+    const { processOne, seen } = playing(notRecorded, ok(2, 'ERROR'), notRecorded);
 
     const result = await processBatch('abc', run({ offeredOnce: true, processOne }));
 
-    expect(result.error?.message).toBe('Message 1 of 3 in the batch was not recorded: store down');
+    expect(result.error?.message).toBe('Not recorded of the 3 messages in the batch: 1, 3. store down');
     expect(seen).toEqual(PARTS);
   });
 

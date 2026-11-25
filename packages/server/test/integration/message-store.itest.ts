@@ -2,6 +2,7 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import {
   deleteTestChannel, describeIntegration, insertTestChannel, loadServerModules, unwrap, type ServerModules,
 } from './_setup.js';
@@ -37,6 +38,18 @@ describeIntegration('Message store statements (real Postgres)', () => {
     expect(missing.ok).toBe(false);
     const kept = await MessageReprocessService.bulkDelete(channelId, [ids[3]!]);
     expect(kept.ok && kept.value.deletedCount).toBe(1);
+  });
+
+  it('refuses raw content with U+0000 in plain text, and takes it in a source map, where JSON escapes it', async () => {
+    const { MessageService } = mods;
+    const row = (contentType: number, content: string): Parameters<typeof MessageService.initializeMessage>[3] => [{ metaDataId: 0, contentType, content, dataType: 'HL7V2' }];
+
+    // A batch is refused up front on this (D-359).
+    const raw = await MessageService.initializeMessage(channelId, 'itest-server', 'Source', row(CONTENT_TYPE.RAW, 'MSH|\u0000'));
+    const sourceMap = await MessageService.initializeMessage(channelId, 'itest-server', 'Source', row(CONTENT_TYPE.SOURCE_MAP, JSON.stringify({ name: '\u0000' })));
+
+    expect(raw.ok).toBe(false);
+    expect(sourceMap.ok).toBe(true);
   });
 
   it('storing the same content type again keeps the newest content', async () => {

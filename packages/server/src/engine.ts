@@ -265,18 +265,18 @@ export async function processBatch(content: string, run: BatchRun): Promise<Resu
   if (!parts.ok) return { ok: false, value: null, error: parts.error } as Result<SourceDispatchOutcome>;
   let outcome: Result<SourceDispatchOutcome> | undefined;
   let failure: Result<SourceDispatchOutcome> | undefined;
-  let unrecorded: Result<SourceDispatchOutcome> | undefined;
+  const unrecorded: { readonly number: number; readonly reason: string }[] = [];
   for (const [index, part] of parts.value.entries()) {
-    if (unrecorded && !run.offeredOnce) break;
+    if (unrecorded.length > 0 && !run.offeredOnce) break;
     outcome = await run.processOne(part);
-    if (!outcome.ok) {
-      const error = new Error(`Message ${String(index + 1)} of ${String(parts.value.length)} in the batch was not recorded: ${outcome.error.message}`, { cause: outcome.error });
-      unrecorded ??= { ok: false, value: null, error } as Result<SourceDispatchOutcome>;
-    } else if (outcome.value.status === DISPATCH_STATUS.ERROR) {
-      failure ??= outcome;
-    }
+    if (!outcome.ok) unrecorded.push({ number: index + 1, reason: outcome.error.message });
+    else if (outcome.value.status === DISPATCH_STATUS.ERROR) failure ??= outcome;
   }
-  return unrecorded ?? failure ?? outcome!;
+  const [first] = unrecorded;
+  if (first === undefined) return failure ?? outcome!;
+  const numbers = unrecorded.map((message) => String(message.number)).join(', ');
+  const error = new Error(`Not recorded of the ${String(parts.value.length)} messages in the batch: ${numbers}. ${first.reason}`);
+  return { ok: false, value: null, error } as Result<SourceDispatchOutcome>;
 }
 
 export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
@@ -893,7 +893,9 @@ export class EngineManager {
 
     const processHl7Batch = async (raw: { readonly content: string; readonly sourceMap: Record<string, unknown> }): Promise<Result<SourceDispatchOutcome>> => {
       const result = await processBatch(raw.content, { ...batchRulesFor(channel), split: splitHl7Batch, processOne: (part) => processMessage(part, raw.sourceMap) });
-      if (!result.ok) logger.error({ channelId: channel.id, errMsg: result.error.message }, 'HL7 batch not taken; its source is told so');
+      if (result.ok) return result;
+      logger.error({ channelId: channel.id, errMsg: result.error.message }, 'HL7 batch not recorded whole');
+      await raiseAlert({ channelId: channel.id, errorType: 'SOURCE_CONNECTOR', errorMessage: `HL7 batch not recorded whole: ${result.error.message}`, timestamp: Date.now() });
       return result;
     };
 

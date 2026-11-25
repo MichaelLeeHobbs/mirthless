@@ -35,9 +35,9 @@ vi.mock('../global-map.service.js', () => ({
   GlobalMapService: { list: vi.fn().mockResolvedValue(EMPTY), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() },
 }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn().mockResolvedValue(EMPTY) } }));
-vi.mock('../alert.service.js', () => ({
-  AlertService: { list: vi.fn().mockResolvedValue({ ok: true, value: { data: [], pagination: { page: 1, pageSize: 1000, total: 0, totalPages: 0 } }, error: null }) },
-}));
+const alerts = vi.hoisted(() => ({ list: vi.fn(), getByIds: vi.fn(), sendMail: vi.fn() }));
+vi.mock('../alert.service.js', () => ({ AlertService: { list: alerts.list, getByIds: alerts.getByIds } }));
+vi.mock('../email.service.js', () => ({ EmailService: { sendMail: alerts.sendMail } }));
 
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
 vi.mock('../../lib/logger.js', () => ({ default: log }));
@@ -81,6 +81,15 @@ beforeEach(() => {
   ms.getLatestMessageId.mockResolvedValue(ok(0));
   ms.getUnprocessedMessages.mockResolvedValue(EMPTY);
   ms.waitingByDestination.mockResolvedValue(EMPTY);
+  const alert = {
+    id: 'a1', name: 'Errors', enabled: true, channelIds: [CHANNEL_ID],
+    trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null },
+    actions: [{ id: 'act1', actionType: 'EMAIL', recipients: ['oncall@example.org'], properties: null }],
+    subjectTemplate: null, bodyTemplate: 'ALERT ${errorMessage}', reAlertIntervalMs: null, maxAlerts: null,
+  };
+  alerts.list.mockResolvedValue(ok({ data: [alert], pagination: { page: 1, pageSize: 1000, total: 1, totalPages: 1 } }));
+  alerts.getByIds.mockResolvedValue(ok([alert]));
+  alerts.sendMail.mockResolvedValue(ok(undefined));
 });
 
 afterEach(async () => {
@@ -96,12 +105,12 @@ describe('a batch dispatched to a channel (#415)', () => {
     const result = await dispatch({ content: batch, sourceMap: {} });
 
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toContain('Message 3 of 4 in the batch was not recorded');
+    expect(result.error?.message).toContain('Not recorded of the 4 messages in the batch: 3.');
     expect(recorded).toEqual(['1', '2']);
     expect(ms.updateConnectorMessageStatus.mock.calls.map((call) => call.slice(1, 4))).toContainEqual([2, 0, 'ERROR']);
     const lines = log.error.mock.calls.filter(([, text]) => String(text).includes('batch'));
     expect(lines).toHaveLength(1);
-    expect(lines[0]![0]).toMatchObject({ channelId: CHANNEL_ID, errMsg: expect.stringContaining('Message 3 of 4') as string });
+    expect(lines[0]![0]).toMatchObject({ channelId: CHANNEL_ID, errMsg: expect.stringContaining('batch: 3.') as string });
   });
 
   it('runs the rest for a JavaScript source, which never offers a batch again', async () => {
@@ -114,15 +123,14 @@ describe('a batch dispatched to a channel (#415)', () => {
     expect(recorded).toEqual(['1', '3']);
   });
 
-  it('records nothing of a batch with U+0000 in plain text, however often it is offered', async () => {
+  it('records nothing of a batch with U+0000 in plain text, and raises an alert', async () => {
     const dispatch = await deploy();
     failingAt(-1);
 
-    for (let offer = 0; offer < 3; offer++) {
-      const result = await dispatch({ content: [part(1), part(2, 'x\u0000y')].join('\r'), sourceMap: {} });
-      expect(result.error?.message).toContain('U+0000');
-    }
+    const result = await dispatch({ content: [part(1), part(2, 'x\u0000y')].join('\r'), sourceMap: {} });
 
+    expect(result.error?.message).toContain('U+0000');
     expect(recorded).toEqual([]);
+    await vi.waitFor(() => { expect(JSON.stringify(alerts.sendMail.mock.calls)).toContain('HL7 batch not recorded whole'); }, { timeout: 10_000 });
   });
 });
