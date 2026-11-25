@@ -3,11 +3,6 @@ import {
   registry,
   httpRequestDuration,
   httpRequestTotal,
-  deployedChannelsGauge,
-  startedChannelsGauge,
-  messagesProcessedTotal,
-  dbPoolTotal,
-  dbPoolIdle,
 } from '../metrics.js';
 
 describe('Prometheus Metrics Registry', () => {
@@ -68,38 +63,6 @@ describe('Prometheus Metrics Registry', () => {
     const output = await registry.metrics();
     expect(output).toContain('http_requests_total');
     expect(output).toContain('method="DELETE"');
-  });
-
-  it('deployedChannelsGauge is registered', async () => {
-    deployedChannelsGauge.set(3);
-    const output = await registry.metrics();
-    expect(output).toContain('galvanigraph_deployed_channels');
-    expect(output).toContain('3');
-  });
-
-  it('startedChannelsGauge is registered', async () => {
-    startedChannelsGauge.set(2);
-    const output = await registry.metrics();
-    expect(output).toContain('galvanigraph_started_channels');
-    expect(output).toContain('2');
-  });
-
-  it('messagesProcessedTotal is registered', async () => {
-    messagesProcessedTotal.inc();
-    const output = await registry.metrics();
-    expect(output).toContain('galvanigraph_messages_processed_total');
-  });
-
-  it('dbPoolTotal is registered', async () => {
-    dbPoolTotal.set(10);
-    const output = await registry.metrics();
-    expect(output).toContain('galvanigraph_db_pool_total');
-  });
-
-  it('dbPoolIdle is registered', async () => {
-    dbPoolIdle.set(5);
-    const output = await registry.metrics();
-    expect(output).toContain('galvanigraph_db_pool_idle');
   });
 
   it('all custom metrics appear in registry output', async () => {

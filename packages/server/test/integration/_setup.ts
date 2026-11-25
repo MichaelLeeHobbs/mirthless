@@ -31,11 +31,19 @@ if (!shouldRunIntegration) {
   );
 }
 
+/** A database connector and a data source give a connection 10 s, which is no setting, and a busy host can take longer (#444). */
+async function allowSlowConnections(): Promise<void> {
+  const { prototype } = (await import('@galvanigraph/connectors')).ConnectionPool;
+  const create = prototype.create;
+  prototype.create = function createWithTime(config) { return create.call(this, { ...config, connectionTimeoutMs: INTEGRATION_WAIT_MS }); };
+}
+
 /**
  * Deferred so that skipped suites never run config validation, which can
  * process.exit on a missing DATABASE_URL.
  */
 export async function loadServerModules() {
+  await allowSlowConnections();
   const [dbMod, schemaMod, drizzleMod, messageMod, queueMod, channelMod, partitionMod, prunerMod, collectionMod, dataSourceMod, poolMgrMod] =
     await Promise.all([
       import('../../src/lib/db.js'),

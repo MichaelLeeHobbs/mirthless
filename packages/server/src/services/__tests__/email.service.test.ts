@@ -235,6 +235,16 @@ describe('EmailService', () => {
       expect(mockClose).toHaveBeenCalledTimes(1);
     });
 
+    // A subject template can hold ${errorMessage}, which can hold PHI (#417).
+    it('logs who an email went to, not its subject or its text', async () => {
+      const logger = (await import('../../lib/logger.js')).default;
+      mockSmtpSettings();
+
+      await EmailService.sendMail(['admin@example.com'], 'MRN-8675309 was refused', 'PID|1||MRN-8675309');
+
+      expect(vi.mocked(logger.info).mock.calls).toEqual([[{ to: ['admin@example.com'] }, 'Alert email sent']]);
+    });
+
     it('closes transport on failure', async () => {
       mockSmtpSettings();
       mockSendMail.mockRejectedValueOnce(new Error('SMTP error'));
