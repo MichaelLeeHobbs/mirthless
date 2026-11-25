@@ -64,6 +64,7 @@ function OverviewTab({ query }: { readonly query: ReturnType<typeof useSystemInf
 }
 
 export function SystemInfoPage(): ReactNode {
+  // eslint-disable-next-line no-restricted-syntax -- A tab's name, not an id.
   const { tab = '' } = useParams<{ tab: string }>();
   const navigate = useNavigate();
   const active = SYSTEM_TABS.find((t) => t.slug === tab);

@@ -118,6 +118,10 @@ export default tseslint.config(
           message: 'No hard-coded colours. Use a theme palette path or add a token in styles/tokens.ts.',
         },
         {
+          selector: 'CallExpression[callee.name="useParams"]',
+          message: 'Read an id in the address with useAddressId (hooks/use-address-id.ts), which lowercases it (D-368).',
+        },
+        {
           selector: 'Property[key.name="fontFamily"] > Literal',
           message: 'No inline font stacks. Use FONT_FAMILY_MONO from styles/tokens.ts, or the theme typography.',
         },

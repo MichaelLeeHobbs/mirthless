@@ -16,8 +16,9 @@ export interface CrumbEntity {
 
 const HOME: Crumb = { label: 'Dashboard', href: '/' };
 
+/** In lower case: the router matches an address in any case, and ids are cached that way (D-368). */
 function segmentsOf(pathname: string): readonly string[] {
-  return pathname.split('/').filter((s) => s.length > 0);
+  return pathname.toLowerCase().split('/').filter((s) => s.length > 0);
 }
 
 export function crumbEntity(pathname: string): CrumbEntity | null {
