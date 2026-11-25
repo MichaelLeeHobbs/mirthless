@@ -36,7 +36,7 @@ test('HARNESS HTTP sink records requests', async () => {
 
 test('HARNESS GreenMail inbox reader sees a mail sent over SMTP', async () => {
   const subject = `HARNESS mail ${String(Date.now())}`;
-  await nodemailer.createTransport({ host: '127.0.0.1', port: MAIL.smtpPort, secure: false })
+  await nodemailer.createTransport({ host: '127.0.0.1', port: MAIL.smtpPort, secure: false, greetingTimeout: INTEGRATION_WAIT_MS })
     .sendMail({ from: 'h@example.com', to: MAIL.address, subject, text: 'x' });
   await expect.poll(() => mailSubjects(subject)).toEqual([subject]);
 });

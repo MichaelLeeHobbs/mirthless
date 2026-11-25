@@ -11,7 +11,7 @@ if (!/_test$/i.test(new URL(databaseUrl || 'postgresql://x/none').pathname)) {
 }
 
 export const SCENARIO_API_PORT = 3100;
-/** Shorter than a wait, so that a wait still sees what the server refused. */
+/** Shorter than a wait, so that a wait that starts with a refusal sees it. */
 const SERVER_LIMIT_MS = INTEGRATION_WAIT_MS / 2;
 
 export default defineConfig({

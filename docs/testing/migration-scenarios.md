@@ -18,7 +18,7 @@ SCENARIO_DATABASE_URL=postgresql://<user>:<password>@localhost:5432/galvanigraph
 
 The suite runs the server from source, but the packages the server uses (engine, connectors and the core ones) as `pnpm build` left them, so build first.
 
-The server's log at level `warn` is part of the run's output, on lines that start with `[WebServer]`. When a request of a scenario is refused or fails, look there for the cause, such as `Audit record failed; refusing the request` or `Failed to deploy channel`. Some answers log nothing at that level: a 401 because the database could not be reached, and some 500s (#473). Lines that every run has: the default admin password, `pgboss error` on a busy host, `Invalid vr type`, and an `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL` when the server is ended. The lines hold the host's name and paths; take those out before you paste them in an issue.
+The server's log at level `warn` is part of the run's output, on lines that start with `[WebServer]`. When a request of a scenario is refused or fails, look there for the cause, such as `Audit record failed; refusing the request` or `Failed to deploy channel`. Some answers log nothing at that level: a 401 because the database could not be reached, and some 500s (#473). Lines that every run has: the default admin password, `Failed to deploy channel` for the disabled channel of S24, `Failed to send alert email`, `MLLP destination cannot be reached` in S06, `pgboss error` on a busy host, `Invalid vr type`, and an `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL` when the server is ended. The lines hold the host's name and paths; take those out before you paste them in an issue.
 
 ## How it is built
 
