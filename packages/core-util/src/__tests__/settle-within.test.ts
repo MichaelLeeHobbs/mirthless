@@ -22,4 +22,27 @@ describe('settleWithin', () => {
     await waiting;
     expect(ended).toEqual([false]);
   });
+
+  it('ends when the signal comes, says that the work had not ended, and keeps no timer and no listener', async () => {
+    const controller = new AbortController();
+    const removed = vi.spyOn(controller.signal, 'removeEventListener');
+    const waiting = settleWithin(new Promise(() => { /* never settles */ }), 1_000, controller.signal);
+    controller.abort();
+    expect(await waiting).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(removed).toHaveBeenCalledOnce();
+  });
+
+  it('does not wait once the signal has come', async () => {
+    expect(await settleWithin(new Promise(() => { /* never settles */ }), 1_000, AbortSignal.abort())).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('leaves no listener when the work ends first', async () => {
+    const controller = new AbortController();
+    const added = vi.spyOn(controller.signal, 'addEventListener');
+    const removed = vi.spyOn(controller.signal, 'removeEventListener');
+    expect(await settleWithin(Promise.resolve(), 1_000, controller.signal)).toBe(true);
+    expect(removed.mock.calls).toEqual(added.mock.calls);
+  });
 });

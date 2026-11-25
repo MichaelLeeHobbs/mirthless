@@ -1,4 +1,4 @@
-import { fillPlaceholders, recordLookup, type Result } from '@galvanigraph/core-util';
+import { fillPlaceholders, placeholderNames, recordLookup, type Result } from '@galvanigraph/core-util';
 
 export interface ConnectorLifecycle {
   onDeploy(): Promise<Result<void>>;
@@ -102,6 +102,11 @@ export function fillVariables(text: string, message: Pick<ConnectorMessage, 'var
   return message.variables ? fillPlaceholders(text, recordLookup(message.variables)) : text;
 }
 
+/** The names {@link fillVariables} looks up in these texts. */
+export function variableNames(texts: readonly string[]): readonly string[] {
+  return [...new Set(texts.flatMap(placeholderNames))].filter((name) => name !== '');
+}
+
 export interface ConnectorResponse {
   readonly status: 'SENT' | 'ERROR';
   readonly content: string;
@@ -110,4 +115,9 @@ export interface ConnectorResponse {
 
 export interface DestinationConnectorRuntime extends ConnectorLifecycle {
   send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>>;
+  /**
+   * The names in `message.variables` that sending this message looks up. Crash recovery
+   * does not send a message whose variables were not kept to a destination that names any.
+   */
+  variablesUsed(message: ConnectorMessage): readonly string[];
 }

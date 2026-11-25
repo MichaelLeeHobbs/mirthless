@@ -3,7 +3,7 @@
 
 import * as https from 'node:https';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
+import { fillVariables, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { redirectMessage } from '../redirect.js';
 import type { TlsClientOptions } from '../tls.js';
 
@@ -62,6 +62,10 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
     return tryCatch(async () => {
       this.started = true;
     });
+  }
+
+  variablesUsed(): readonly string[] {
+    return variableNames([this.config.url, ...Object.values(this.config.parameters ?? {}), ...Object.values(this.config.headers)]);
   }
 
   /** Holds the credentials: never log it. */

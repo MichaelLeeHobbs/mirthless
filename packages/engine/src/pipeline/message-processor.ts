@@ -8,6 +8,8 @@ import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed, type DataTypeOptions } from './data-type-handler.js';
 import { mergeVariables, renderDestinationTemplate } from './destination-template.js';
+import { reportUnsaved } from './report-unsaved.js';
+import { sendFailureReason } from './send-failure.js';
 
 export interface ChannelScripts {
   readonly preprocessor?: CompiledScript;
@@ -68,6 +70,9 @@ export type SendToDestination = (
   correlationId?: string,
   variables?: Readonly<Record<string, unknown>>,
 ) => Promise<Result<DestinationResponse>>;
+
+/** The message variables that sending this content to the destination looks up. */
+export type VariablesUsed = (metaDataId: number, messageId: number, content: string) => readonly string[];
 
 export interface DestinationResponse {
   readonly status: 'SENT' | 'ERROR';
@@ -199,6 +204,8 @@ export interface PipelineConfig {
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
   /** Absent: the first destination that returned a response. */
   readonly responseSource?: ResponseSource | undefined;
+  /** Absent: no destination uses any. */
+  readonly variablesUsed?: VariablesUsed | undefined;
   /** Filled after the source transformer. */
   readonly metadataColumns?: readonly MetadataColumnConfig[] | undefined;
 }
@@ -676,7 +683,7 @@ export class MessageProcessor {
           variables, input.sourceMap, this.config.globalChannelMap?.toRecord() ?? {}, this.config.globalMapProxy?.toRecord() ?? {}, this.config.configMap ?? {},
         ]);
       }
-      const variablesStored = await this.storeVariables(messageId, dest, variables);
+      const variablesStored = await this.storeVariables(messageId, dest, variables, destContent);
       if (!variablesStored.ok) {
         return this.destErrorOut(messageId, dest, 'storeVariables', variablesStored.error.message);
       }
@@ -701,7 +708,7 @@ export class MessageProcessor {
       );
 
       if (!sendResult.ok) {
-        await this.recordSendFailure(messageId, dest.metaDataId, sendResult.error.message);
+        await this.recordSendFailure(messageId, dest.metaDataId, sendResult);
         if (dest.queueMode === 'ON_FAILURE') {
           return this.enqueueDestination(messageId, dest);
         }
@@ -766,7 +773,7 @@ export class MessageProcessor {
         };
       }
 
-      await this.recordSendFailure(messageId, dest.metaDataId, response.errorMessage ?? response.content, response.content);
+      await this.recordSendFailure(messageId, dest.metaDataId, sendResult);
       if (dest.queueMode === 'ON_FAILURE') {
         return this.enqueueDestination(messageId, dest);
       }
@@ -790,11 +797,11 @@ export class MessageProcessor {
   }
 
   /** Kept so the message browser can say what went wrong whether the destination ends ERROR or waits in the queue. */
-  private async recordSendFailure(messageId: number, metaDataId: number, reason: string, response?: string): Promise<void> {
+  private async recordSendFailure(messageId: number, metaDataId: number, result: Result<DestinationResponse>): Promise<void> {
     const { channelId } = this.config;
-    const text = reason.trim() === '' ? 'The destination reported a failure without a reason' : reason;
+    const response = result.ok ? result.value.content : '';
     await this.saved(messageId, metaDataId, 'why a destination failed', [
-      this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.ERROR, text, 'TEXT'),
+      this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.ERROR, sendFailureReason(result), 'TEXT'),
       ...(response ? [this.store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT')] : []),
     ]);
   }
@@ -837,34 +844,25 @@ export class MessageProcessor {
     }
   }
 
-  /**
-   * Wait for store writes made after the message can no longer be failed
-   * cleanly, and report any that did not succeed.
-   */
-  private async saved(
+  private saved(
     messageId: number,
     metaDataId: number,
     what: string,
     writes: ReadonlyArray<Promise<Result<unknown>>>,
   ): Promise<void> {
-    const results = await Promise.all(writes);
-    const failed = results.find((r) => !r.ok);
-    if (failed && !failed.ok && this.config.onStoreFailure) {
-      this.config.onStoreFailure({
-        channelId: this.config.channelId, messageId, metaDataId, what, errorMessage: failed.error.message,
-      });
-    }
+    return reportUnsaved(writes, { channelId: this.config.channelId, messageId, metaDataId, what }, this.config.onStoreFailure);
   }
 
   /**
    * Keep the variables a queued destination will send with: the queue sends
    * later, from the store, when the message's maps are gone. A destination that
-   * never queues gets them from memory, and an empty set needs no row.
+   * never queues gets them from memory. An empty set is kept only for one that
+   * uses variables, whose later send must tell none from none kept.
    */
-  private storeVariables(messageId: number, dest: DestinationConfig, variables: Readonly<Record<string, unknown>>): Promise<Result<void>> {
-    if (dest.queueMode === 'NEVER' || Object.keys(variables).length === 0) {
-      return Promise.resolve({ ok: true, value: undefined, error: null } as Result<void>);
-    }
+  private storeVariables(messageId: number, dest: DestinationConfig, variables: Readonly<Record<string, unknown>>, content: string): Promise<Result<void>> {
+    const kept = dest.queueMode !== 'NEVER'
+      && (Object.keys(variables).length > 0 || (this.config.variablesUsed?.(dest.metaDataId, messageId, content) ?? []).length > 0);
+    if (!kept) return Promise.resolve({ ok: true, value: undefined, error: null } as Result<void>);
     return this.store.storeContent(this.config.channelId, messageId, dest.metaDataId, CONTENT_TYPE.CHANNEL_MAP, JSON.stringify(variables), 'JSON');
   }
 

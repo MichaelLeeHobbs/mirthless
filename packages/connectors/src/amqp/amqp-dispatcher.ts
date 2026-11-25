@@ -2,7 +2,7 @@
 
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import { fillVariables } from '../base.js';
+import { fillVariables, variableNames } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';
 import { createAmqpPublisher, type AmqpConnectionConfig, type AmqpPublisher, type AmqpPublisherFactory } from './amqp-client.js';
 
@@ -39,6 +39,10 @@ export class AmqpDispatcher implements DestinationConnectorRuntime {
 
   async onStart(): Promise<Result<void>> {
     return tryCatch(async () => { this.started = true; });
+  }
+
+  variablesUsed(): readonly string[] {
+    return variableNames([this.config.routingKey, ...Object.values(this.config.headers)]);
   }
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {

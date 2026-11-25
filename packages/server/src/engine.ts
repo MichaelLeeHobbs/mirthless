@@ -7,12 +7,18 @@ import {
   GlobalMapProxy,
   QueueConsumer,
   compileScript,
+  globalsNamed,
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
   prependTemplates,
   AlertManager,
+  DestinationRedispatcher,
   RecoveryManager,
+  type AlertEventHandler,
   type RecoveryStore,
+  type RedispatchDestinationFn,
+  type StoreFailure,
+  type VariablesUsed,
   type ChannelRuntimeConfig,
   type PipelineConfig,
   type ChannelScripts,
@@ -32,7 +38,7 @@ import {
   type DataTypeOptions,
 } from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { splitHl7Batch } from '@galvanigraph/core-util';
+import { settleWithin, splitHl7Batch } from '@galvanigraph/core-util';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -41,6 +47,7 @@ import {
   JavaScriptDispatcher,
   DISPATCH_STATUS,
   type DispatchStatus,
+  type ConnectorMessage,
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvanigraph/connectors';
@@ -70,6 +77,8 @@ interface ChannelRecovery {
   readonly store: MessageStore;
   readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
   readonly sendFn: SendToDestination;
+  readonly variablesUsed: VariablesUsed;
+  readonly raiseAlert: AlertEventHandler;
   readonly horizon: Result<number>;
   readonly runSignal: AbortSignal;
   readonly haltSignal: AbortSignal;
@@ -95,6 +104,7 @@ export interface DeployedChannel {
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
   readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<SourceDispatchOutcome>>;
+  readonly variablesUsed: VariablesUsed;
   /**
    * Recover messages a prior crash left unprocessed. Runs on the first start
    * after deploy (call it after the runtime has started): destination
@@ -124,6 +134,9 @@ export interface SourceDispatchOutcome {
   /** A destination failed although status is PROCESSED (see `DispatchResult.destinationFailed`). */
   readonly destinationFailed?: true;
 }
+
+/** What a JavaScript destination's script can read its message's variables by. */
+const VARIABLE_GLOBALS: readonly string[] = ['channelMap', '$c', '$', 'connectorMessage', 'globalThis'];
 
 const RESPOND_BEFORE_DESTINATIONS: ReadonlySet<string> = new Set(['AUTO_BEFORE', 'AUTO_AFTER_TRANSFORMER']);
 
@@ -466,7 +479,6 @@ const SILENCE_CHECK_INTERVAL_MS = 30_000;
 const SEND_BACKSTOP_MS = 300_000;
 /** How long an undeploy waits for crash recovery to end the messages it was working on. */
 const RECOVERY_ENDS_MS = 10_000;
-const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destination ran. Reprocess the message to deliver it.';
 
 type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
 interface SourceFailureReport {
@@ -487,6 +499,8 @@ export class EngineManager {
   /** Shared by every channel. */
   private globalMap: Promise<GlobalMapProxy> | undefined;
   private readonly deploying = new Set<string>();
+  /** The messages and recoveries still being worked on, by channel, whichever deployment of it began them. */
+  private readonly working = new Map<string, Set<Promise<void>>>();
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor({
@@ -695,7 +709,7 @@ export class EngineManager {
 
     // Alerts are sent in the background. Awaiting them made every failing
     // message wait on the mail server, and the sender on the message.
-    const raiseAlert = (event: Parameters<AlertManager['handleEvent']>[0]): Promise<void> => {
+    const raiseAlert: AlertEventHandler = (event) => {
       alertManager.handleEvent(event).catch((error: unknown) => {
         logger.error({ channelId: channel.id, errMsg: error instanceof Error ? error.message : String(error) }, 'Alert handling failed');
       });
@@ -728,6 +742,12 @@ export class EngineManager {
       await this.runDeployScript(scripts.deploy, channel, maps, 'deploy');
     }
 
+    const messageFor = (metaDataId: number, messageId: number, content: string): ConnectorMessage => ({
+      channelId: channel.id, messageId, metaDataId, content, dataType: channel.inboundDataType,
+    });
+    const variablesUsed: VariablesUsed = (metaDataId, messageId, content) =>
+      destinations.get(metaDataId)?.variablesUsed(messageFor(metaDataId, messageId, content)) ?? [];
+
     const pipelineConfig: PipelineConfig = {
       channelId: channel.id,
       serverId: this.serverId,
@@ -742,13 +762,9 @@ export class EngineManager {
       responseSource: toResponseSource(channel.responseMode, channel.responseConnectorName),
       metadataColumns: channel.metadataColumns.flatMap((c) =>
         c.mappingExpression ? [{ name: c.name, dataType: c.dataType, mapping: c.mappingExpression }] : []),
+      variablesUsed,
       onError: raiseAlert,
-      onStoreFailure: (failure) => {
-        logger.error(
-          { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
-          'Message store write failed: part of a message status could not be saved',
-        );
-      },
+      onStoreFailure: logStoreFailure,
       onTiming: logger.level === 'debug' || logger.level === 'trace'
         ? (messageId, totalMs, stages) => {
             logger.debug(
@@ -766,10 +782,10 @@ export class EngineManager {
       }
       // Connectors apply their own configured timeouts; this is the backstop
       // that keeps a send from hanging forever if one does not.
-      return connector.send({
-        channelId: channel.id, messageId, metaDataId, content,
-        dataType: channel.inboundDataType, correlationId, variables,
-      }, AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]));
+      return connector.send(
+        { ...messageFor(metaDataId, messageId, content), correlationId, variables },
+        AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]),
+      );
     };
 
     const queueConsumers: QueueConsumer[] = [];
@@ -812,7 +828,7 @@ export class EngineManager {
 
     // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
-    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
+    const processOne = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
       activity.lastAt = Date.now();
       // Channel-to-channel routing sets it.
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
@@ -832,6 +848,8 @@ export class EngineManager {
       // channel's response mode defines it.
       return { ok: true, value: toSourceOutcome(result.value, channel.responseMode), error: null };
     };
+    const processMessage = (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> =>
+      this.track(channel.id, processOne(rawContent, sourceMap));
 
     const runtimeConfig: ChannelRuntimeConfig = {
       channelId: channel.id,
@@ -845,6 +863,7 @@ export class EngineManager {
     // Taken before the channel can receive anything: every unprocessed message
     // up to this id was left by an earlier run.
     const recoveryHorizon = await MessageService.getLatestMessageId(channel.id);
+    const earlierWork = [...(this.working.get(channel.id) ?? [])];
 
     const result = await runtime.deploy(runtimeConfig);
     if (!result.ok) {
@@ -874,16 +893,41 @@ export class EngineManager {
     const recoverOnce = (): Promise<void> => {
       const { runSignal, haltSignal } = runtime;
       const run = async (): Promise<void> => {
-        if (!recovered) recovered = await this.recoverChannel({ channel, store, processMessage, sendFn, horizon: recoveryHorizon, runSignal, haltSignal });
+        if (recovered || !(await this.earlierWorkEnds(channel.id, earlierWork, runSignal))) return;
+        recovered = await this.recoverChannel({
+          channel, store, processMessage, sendFn, variablesUsed, raiseAlert, horizon: recoveryHorizon, runSignal, haltSignal,
+        });
       };
       // An interrupted one may still be ending its sends.
-      recovering = recovering.then(run, run);
+      recovering = this.track(channel.id, recovering.then(run, run));
       runtime.runInBackground(recovering);
       return recovering;
     };
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, recoverOnce, resetClaimsOnce, activity });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, variablesUsed, recoverOnce, resetClaimsOnce, activity });
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
+  }
+
+  private track<T>(channelId: string, work: Promise<T>): Promise<T> {
+    const working = this.working.get(channelId) ?? new Set<Promise<void>>();
+    this.working.set(channelId, working);
+    const ended = (): void => { working.delete(tracked); };
+    const tracked: Promise<void> = work.then(ended, ended);
+    working.add(tracked);
+    return work;
+  }
+
+  /**
+   * A message that an earlier deployment is still working on is unprocessed too, and recovering it
+   * would send it twice. False when it has not ended: recovery is then for the next start.
+   */
+  private async earlierWorkEnds(channelId: string, earlierWork: readonly Promise<void>[], runSignal: AbortSignal): Promise<boolean> {
+    if (earlierWork.length === 0) return true;
+    const ended = await settleWithin(Promise.all(earlierWork), SEND_BACKSTOP_MS, runSignal);
+    if (!ended && !runSignal.aborted) {
+      logger.error({ channelId }, 'Channel recovery put off to the next start: an earlier deployment is still sending a message that could not be cancelled');
+    }
+    return ended;
   }
 
   /**
@@ -984,9 +1028,9 @@ export class EngineManager {
       }
     }
 
-    // A halt does not wait for recovery, and the next deployment recovers the same messages.
+    // A halt does not wait for recovery, and its sends are to end before their destinations are undeployed.
     if (!(await deployed.runtime.backgroundEnds(RECOVERY_ENDS_MS))) {
-      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message that could not be cancelled; the next deployment may send it again');
+      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message that could not be cancelled');
     }
     // Nothing has been torn down yet.
     if (deployed.runtime.getState() !== 'STOPPED') {
@@ -1024,11 +1068,12 @@ export class EngineManager {
    * - Stale PENDING claims (in-flight dispatches interrupted by a crash) are reset
    *   to QUEUED so the queue consumers redeliver them.
    * - RECEIVED source messages are reprocessed from their stored raw content.
-   * - RECEIVED destination messages are re-dispatched from their stored SENT content.
-   * QUEUED messages are left for the queue consumers. All failures are logged only.
+   * - RECEIVED destination messages are redispatched from their stored SENT content and variables.
+   * QUEUED messages are left for the queue consumers.
    * Resolves false when it is to go on at the next start.
    */
-  private async recoverChannel({ channel, store, processMessage, sendFn, horizon, runSignal, haltSignal }: ChannelRecovery): Promise<boolean> {
+  private async recoverChannel(recovery: ChannelRecovery): Promise<boolean> {
+    const { channel, store, processMessage, horizon, runSignal } = recovery;
     // Without the horizon there is no telling a leftover message from one the
     // running channel is working on right now, and recovering the latter would
     // process it twice. Skip, and say so.
@@ -1088,9 +1133,13 @@ export class EngineManager {
       // they were created. The original adds no error to the statistics: only
       // the outcome of the new message is counted.
       const note = `Interrupted by a server stop before it finished. Run again as message ${String(processed.value.messageId)}.`;
+      const rows = await MessageService.getConnectorMessages(channelId, messageId);
+      const connectorIds = rows.ok ? rows.value.map((row) => row.metaDataId) : [0];
       const closed = await Promise.all([
-        store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, note, 'TEXT'),
-        store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+        ...connectorIds.flatMap((id) => [
+          store.storeContent(channelId, messageId, id, CONTENT_TYPE.PROCESSING_ERROR, note, 'TEXT'),
+          store.updateConnectorMessageStatus(channelId, messageId, id, 'ERROR'),
+        ]),
         MessageService.markProcessed(channelId, messageId),
       ]);
       const failed = closed.find((r) => !r.ok);
@@ -1101,33 +1150,16 @@ export class EngineManager {
       return OK_VOID;
     };
 
-    const redispatchDestination = async (channelId: string, messageId: number, metaDataId: number): Promise<Result<void>> => {
-      const sent = await store.loadContent(channelId, messageId, metaDataId, CONTENT_TYPE.SENT);
-      if (!sent.ok) {
-        return { ok: false, value: null, error: sent.error } as Result<void>;
+    const redispatcher = this.redispatcherFor(recovery);
+    const redispatchDestination: RedispatchDestinationFn = async (channelId, messageId, metaDataId) => {
+      const result = await redispatcher.redispatch(messageId, metaDataId);
+      const record = { channelId, messageId, metaDataId };
+      if (result.ok && result.value === 'ERROR') {
+        logger.error(record, 'Crash recovery could not deliver a message and marked the destination ERROR; the message says why');
+      } else if (!result.ok && !runSignal.aborted) {
+        logger.error({ ...record, errMsg: result.error.message }, 'Crash recovery left a destination as it was; the next deployment recovers it');
       }
-      if (sent.value === null) {
-        // The server stopped before this destination's filter and transformer
-        // ran, so there is nothing ready to send. Running them now would need
-        // the maps of a message that no longer exists in memory; record the
-        // destination as failed so it shows up and can be reprocessed.
-        logger.error({ channelId, messageId, metaDataId }, 'Destination never ran before the server stopped; marked ERROR, reprocess the message to deliver it');
-        await Promise.all([
-          store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.PROCESSING_ERROR, NEVER_RAN_MESSAGE, 'TEXT'),
-          store.updateConnectorMessageStatus(channelId, messageId, metaDataId, 'ERROR'),
-          store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
-          store.incrementStats(channelId, metaDataId, this.serverId, 'errored'),
-        ]);
-        return OK_VOID;
-      }
-      if (runSignal.aborted) return INTERRUPTED;
-      const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.any([haltSignal, AbortSignal.timeout(30_000)]));
-      const success = sendResult.ok && sendResult.value.status === 'SENT';
-      // A halt ended it. The destination stays as it was, and the next start sends it again.
-      if (!sendResult.ok && haltSignal.aborted) return INTERRUPTED;
-      await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, success ? 'SENT' : 'ERROR');
-      await store.incrementStats(channelId, metaDataId, this.serverId, success ? 'sent' : 'errored');
-      return success ? OK_VOID : ({ ok: false, value: null, error: new Error('Redispatch send failed') } as Result<void>);
+      return result;
     };
 
     const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
@@ -1143,6 +1175,21 @@ export class EngineManager {
       logger.info({ channelId: channel.id, ...summary }, 'Channel recovery complete');
     }
     return !interrupted;
+  }
+
+  private redispatcherFor({ channel, store, sendFn, variablesUsed, raiseAlert, runSignal, haltSignal }: ChannelRecovery): DestinationRedispatcher {
+    return new DestinationRedispatcher({
+      channelId: channel.id,
+      serverId: this.serverId,
+      store,
+      send: sendFn,
+      queueMode: (metaDataId) => queueModeOf(channel.destinations.find((d) => d.metaDataId === metaDataId)),
+      variablesUsed,
+      runSignal,
+      haltSignal,
+      onError: raiseAlert,
+      onStoreFailure: logStoreFailure,
+    });
   }
 
   private async compileWithTemplates(
@@ -1269,7 +1316,7 @@ export class EngineManager {
         name: d.name,
         enabled: d.enabled,
         scripts: cleanScripts as DestinationScripts,
-        queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
+        queueMode: queueModeOf(d),
         waitForPrevious: d.waitForPrevious,
         ...(template === undefined ? {} : { template }),
       });
@@ -1311,6 +1358,8 @@ export class EngineManager {
       const cachedScript = await this.compileWithTemplates(
         destScript, 'destinationDispatcher', templates, `${channel.name}/js-dest-${String(dest.metaDataId)}.js`,
       );
+      const reads = await globalsNamed(cachedScript, VARIABLE_GLOBALS);
+      if (!reads.ok) throw reads.error;
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
         // The script sees the message as every other stage does: parsed for its
         // data type, with what earlier stages put in the channel map.
@@ -1321,7 +1370,7 @@ export class EngineManager {
         }, { connectorMessage });
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
-      });
+      }, reads.value);
     }
   }
 
@@ -1446,6 +1495,17 @@ export class EngineManager {
     }
     this.sandbox.dispose();
   }
+}
+
+function logStoreFailure(failure: StoreFailure): void {
+  logger.error(
+    { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
+    'Message store write failed: part of a message status could not be saved',
+  );
+}
+
+function queueModeOf(destination: ChannelDetail['destinations'][number] | undefined): DestinationConfig['queueMode'] {
+  return (destination?.queueMode ?? 'NEVER') as DestinationConfig['queueMode'];
 }
 
 interface FilterRuleRow {

@@ -2,7 +2,7 @@
 
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import { fillVariables } from '../base.js';
+import { fillVariables, variableNames } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';
 import {
   createKafkaProducer,
@@ -43,6 +43,10 @@ export class KafkaDispatcher implements DestinationConnectorRuntime {
     return tryCatch(async () => {
       this.producer ??= this.createProducer(this.config);
     });
+  }
+
+  variablesUsed(): readonly string[] {
+    return variableNames([this.config.topic, this.config.messageKey, ...Object.values(this.config.headers)]);
   }
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {

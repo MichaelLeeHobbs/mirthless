@@ -139,7 +139,7 @@ export class ChannelRuntime {
       // Stop source first (no new messages)
       const srcResult = await config.source.onStop();
       if (!srcResult.ok) failures.push(`Source stop failed: ${srcResult.error.message}`);
-      await this.backgroundEndsOrHalt(haltSignal);
+      await this.backgroundEnds(BACKGROUND_ENDS_MS, haltSignal);
 
       for (const [id, dest] of config.destinations) {
         if (haltSignal.aborted) break;
@@ -172,18 +172,9 @@ export class ChannelRuntime {
     this.background.add(tracked);
   }
 
-  /** False when the time was up first. */
-  backgroundEnds(withinMs: number): Promise<boolean> {
-    return settleWithin(Promise.all(this.background), withinMs);
-  }
-
-  private async backgroundEndsOrHalt(haltSignal: AbortSignal): Promise<void> {
-    if (haltSignal.aborted) return;
-    let onHalt = (): void => undefined;
-    const halted = new Promise<void>((resolve) => { onHalt = resolve; });
-    haltSignal.addEventListener('abort', onHalt);
-    await Promise.race([this.backgroundEnds(BACKGROUND_ENDS_MS), halted]);
-    haltSignal.removeEventListener('abort', onHalt);
+  /** False when the time was up, or the signal came, first. */
+  backgroundEnds(withinMs: number, signal?: AbortSignal): Promise<boolean> {
+    return settleWithin(Promise.all(this.background), withinMs, signal);
   }
 
   /**

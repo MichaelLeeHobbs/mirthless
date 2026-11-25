@@ -1,7 +1,7 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { toPoolConfig, type DatabasePool } from './connection-pool.js';
-import { prepare, type PreparedQuery } from './query-builder.js';
+import { parameterNames, prepare, type PreparedQuery } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
 
 export interface DatabaseDispatcherConfig {
@@ -50,6 +50,11 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
       }
       this.started = true;
     });
+  }
+
+  variablesUsed(message: ConnectorMessage): readonly string[] {
+    const withoutVariables = this.buildContext({ ...message, variables: undefined });
+    return parameterNames(this.config.query).filter((name) => !Object.hasOwn(withoutVariables, name));
   }
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {

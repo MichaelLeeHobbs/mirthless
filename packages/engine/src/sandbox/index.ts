@@ -7,7 +7,7 @@ export { workerEntry } from './worker-entry.js';
 export type { SandboxContext, SandboxLogger, LogEntry } from './sandbox-context.js';
 export { createSandboxContext } from './sandbox-context.js';
 export type { CompileOptions, FilterRuleInput, TransformerStepInput } from './script-compiler.js';
-export { compileScript, compileErrorMessages, clearScriptCache, scriptCacheSize, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
+export { compileScript, globalsNamed, compileErrorMessages, clearScriptCache, scriptCacheSize, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
 export type { BridgeFunctions, Hl7MessageProxy, BridgeDependencies, HttpFetchOptions, HttpFetchResult, RouteMessageResult } from './bridge-functions.js';
 export { createBridgeFunctions } from './bridge-functions.js';
 export { isAllowedHost, isBlockedAddress, isBlockedHostname, isReservedAddress, isReservedHostname } from './ssrf.js';

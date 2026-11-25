@@ -99,6 +99,19 @@ export async function compileScript(
   });
 }
 
+/**
+ * Which of these globals the script names. Asks esbuild, which knows a name from text in a string
+ * or a regular expression, and from a variable of the script's own.
+ */
+export async function globalsNamed(compiled: CompiledScript, names: readonly string[]): Promise<Result<readonly string[]>> {
+  return tryCatch(async () => {
+    const marker = (index: number): string => `__galvanigraphGlobal${String(index)}__`;
+    const define = Object.fromEntries(names.map((name, index) => [name, marker(index)]));
+    const marked = await transform(wrapScriptBody(compiled.code), { loader: 'js', target: 'es2022', define });
+    return names.filter((_name, index) => marked.code.includes(marker(index)));
+  });
+}
+
 interface CompileMessage {
   readonly text: string;
   readonly location?: { readonly line: number } | null;

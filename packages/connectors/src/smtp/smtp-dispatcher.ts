@@ -1,5 +1,5 @@
 import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
-import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
+import { fillVariables, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { createRequire } from 'node:module';
 import { withTimeoutSignal } from '../timeout.js';
 
@@ -72,17 +72,21 @@ export interface SmtpSendResult {
 
 export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
 
+function builtInValues(content: string, message: ConnectorMessage): Readonly<Record<string, string>> {
+  return {
+    msg: content,
+    messageId: String(message.messageId),
+    channelId: message.channelId,
+    metaDataId: String(message.metaDataId),
+  };
+}
+
 export function substituteTemplate(
   template: string,
   content: string,
   message: ConnectorMessage,
 ): string {
-  const builtIns = recordLookup({
-    msg: content,
-    messageId: String(message.messageId),
-    channelId: message.channelId,
-    metaDataId: String(message.metaDataId),
-  });
+  const builtIns = recordLookup(builtInValues(content, message));
   const variables = recordLookup(message.variables ?? {});
   return fillPlaceholders(template, (name) => builtIns(name) ?? variables(name));
 }
@@ -112,6 +116,13 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
     return tryCatch(async () => {
       this.started = true;
     });
+  }
+
+  variablesUsed(message: ConnectorMessage): readonly string[] {
+    const { from, to, cc, bcc, subject, bodyTemplate, attachments = [] } = this.config;
+    const builtIns = builtInValues(message.content, message);
+    const inTemplates = variableNames([subject, bodyTemplate, ...attachments.flatMap((a) => [a.filename, a.content])]);
+    return [...new Set([...variableNames([from, to, cc, bcc]), ...inTemplates.filter((name) => !Object.hasOwn(builtIns, name))])];
   }
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
