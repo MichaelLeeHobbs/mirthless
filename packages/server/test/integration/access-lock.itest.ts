@@ -4,13 +4,15 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { IssuedApiKey } from '@galvanigraph/core-models';
+import { settleWithin } from '@galvanigraph/core-util';
+import pg from 'pg';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole, WAIT,
   type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
+import { INTEGRATION_WAIT_MS } from '../time-budgets.js';
 
 type Tx = Parameters<Parameters<ServerModules['db']['transaction']>[0]>[0];
 
@@ -103,7 +105,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       const { rows } = await mods.pool.query<{ n: string }>('SELECT count(*) AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [held.pid]);
       waited = Number(rows[0]!.n) > 0;
       if (!waited && !finished) throw new Error('neither waiting nor finished');
-    }, { timeout: 10_000, interval: 20 });
+    }, WAIT);
     return { result, waited };
   }
 
@@ -286,12 +288,11 @@ describeIntegration('the access lock (real Postgres)', () => {
     await insertTestChannel(mods, CHANNEL);
     admin = await user('admin');
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (libraries.length > 0) await mods.pool.query('DELETE FROM code_template_libraries WHERE id = ANY($1::uuid[])', [libraries]);
     await mods.pool.query('DELETE FROM users WHERE id IN (SELECT user_id FROM api_keys WHERE issued_by = ANY($1::uuid[]))', [users]);
     await mods.pool.query('DELETE FROM roles WHERE key_role AND NOT EXISTS (SELECT 1 FROM assignments a WHERE a.role_id = roles.id)');
@@ -408,7 +409,7 @@ describeIntegration('the access lock (real Postgres)', () => {
       await vi.waitFor(async () => {
         const { rows } = await mods.pool.query<{ n: string }>('SELECT count(*) AS n FROM pg_stat_activity WHERE wait_event_type = \'Lock\' AND datname = current_database()');
         expect(Number(rows[0]!.n)).toBeGreaterThanOrEqual(2);
-      }, { timeout: 5_000, interval: 20 });
+      }, WAIT);
     } finally {
       await inAccess.release();
     }
@@ -416,53 +417,87 @@ describeIntegration('the access lock (real Postgres)', () => {
     expect(await leaving.result).toBe(200);
   });
 
-  it('runs every kind of access change at once without a deadlock', async () => {
-    for (let round = 0; round < 8; round++) {
-      const one = await actor();
-      const two = await actor();
-      const used = await group();
-      const other = await group();
-      const reader = await customRole(['channels:read']);
-      const target = await user();
-      await userWithRole(mods.pool, reader.name, [used]).then((u) => users.push(u.id));
-      const key = await call<IssuedApiKey>(one.who, 'POST', '/api-keys', {
-        name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString(),
-      });
-      const keyId = key.json.data!.key.id;
-      const spare = await call<IssuedApiKey>(one.who, 'POST', '/api-keys', {
-        name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString(),
-      });
-      const spareId = spare.json.data!.key.id;
-      const asKey: TestUser = { id: '', token: key.json.data!.token };
-      const scopes = round % 2 === 0 ? [used, other] : [other, used];
-      const shared = await library(null);
-      const statuses = await Promise.all([
-        restoreLibrary(two.who, shared, [CHANNEL]).then((s) => ({ status: s })),
-        call(one.who, 'PUT', `/code-templates/libraries/${shared}`, { channelIds: [CHANNEL], revision: 1 }),
-        call(admin, 'PUT', `/users/${one.who.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds: scopes }] }),
-        call(two.who, 'PUT', `/users/${target.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds: scopes }] }),
-        call(one.who, 'PUT', `/roles/${two.roleId}`, { permissions: [...EVERYTHING] }),
-        call(two.who, 'PUT', `/roles/${one.roleId}`, { permissions: EVERYTHING.filter((p) => p !== 'users:delete') }),
-        call(one.who, 'POST', '/api-keys', { name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: scopes, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString() }),
-        call(admin, 'POST', `/api-keys/${keyId}/replace`, { mode: 'leak' }),
-        call(one.who, 'PATCH', `/api-keys/${keyId}/enabled`, { enabled: false }),
-        call(two.who, 'PATCH', `/api-keys/${keyId}/enabled`, { enabled: true }),
-        call(two.who, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: scopes }),
-        call(admin, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [...scopes].reverse() }),
-        call(asKey, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [other] }),
-        call(admin, 'PUT', `/users/${two.who.id}`, { role: reader.name, enabled: round % 3 !== 0 }),
-        call(admin, 'DELETE', `/users/${one.who.id}?takeOwnership=${keyId}`),
-        call(admin, 'PUT', `/users/${one.who.id}`, { email: `${one.who.id}@example.test`, enabled: false }),
-        call(one.who, 'POST', `/api-keys/${spareId}/revoke`, { reason: 'Done with it' }),
-        call<{ id: string }>(two.who, 'POST', '/users', { username: `itest-new-${randomUUID().slice(0, 8)}`, email: `${randomUUID()}@example.test`, password: 'Itest-password-1!', role: reader.name })
-          .then((made) => { if (made.json.data) users.push(made.json.data.id); return made; }),
-        call(admin, 'DELETE', `/channel-groups/${other}`),
-        call(admin, 'POST', `/users/${target.id}/password`, { newPassword: 'Itest-password-2!' }),
-        grants.restoreMembership(CHANNEL, used, { userId: two.who.id }).then(() => ({ status: 200 }), (err: unknown) => ({ status: (err as { code?: string }).code === 'FORBIDDEN' || pgCode(err) === '23505' ? 403 : 500 })),
-      ]);
-      expect(statuses.map((s) => s.status).filter((s) => s >= 500), `round ${String(round)}`).toEqual([]);
-    }
+  it.each([0, 1, 2, 3, 4, 5, 6, 7])('runs every kind of access change at once without a deadlock, round %i', async (round) => {
+    const one = await actor();
+    const two = await actor();
+    const used = await group();
+    const other = await group();
+    const reader = await customRole(['channels:read']);
+    const target = await user();
+    await userWithRole(mods.pool, reader.name, [used]).then((u) => users.push(u.id));
+    const key = await call<IssuedApiKey>(one.who, 'POST', '/api-keys', {
+      name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString(),
+    });
+    const keyId = key.json.data!.key.id;
+    const spare = await call<IssuedApiKey>(one.who, 'POST', '/api-keys', {
+      name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString(),
+    });
+    const spareId = spare.json.data!.key.id;
+    const asKey: TestUser = { id: '', token: key.json.data!.token };
+    const scopes = round % 2 === 0 ? [used, other] : [other, used];
+    const shared = await library(null);
+    await allAnswered({
+      'restoring the library': restoreLibrary(two.who, shared, [CHANNEL]).then((s) => ({ status: s })),
+      'taking a link out of the library': call(one.who, 'PUT', `/code-templates/libraries/${shared}`, { channelIds: [CHANNEL], revision: 1 }),
+      'setting the first actor\'s assignments': call(admin, 'PUT', `/users/${one.who.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds: scopes }] }),
+      'setting a user\'s assignments': call(two.who, 'PUT', `/users/${target.id}/assignments`, { assignments: [{ roleId: reader.id, groupIds: scopes }] }),
+      'changing the second actor\'s role': call(one.who, 'PUT', `/roles/${two.roleId}`, { permissions: [...EVERYTHING] }),
+      'changing the first actor\'s role': call(two.who, 'PUT', `/roles/${one.roleId}`, { permissions: EVERYTHING.filter((p) => p !== 'users:delete') }),
+      'issuing a key': call(one.who, 'POST', '/api-keys', { name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: scopes, expiresAt: new Date(Date.now() + 24 * HOUR_MS).toISOString() }),
+      'replacing the key': call(admin, 'POST', `/api-keys/${keyId}/replace`, { mode: 'leak' }),
+      'disabling the key': call(one.who, 'PATCH', `/api-keys/${keyId}/enabled`, { enabled: false }),
+      'enabling the key': call(two.who, 'PATCH', `/api-keys/${keyId}/enabled`, { enabled: true }),
+      'setting the channel\'s groups': call(two.who, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: scopes }),
+      'setting them in the other order': call(admin, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [...scopes].reverse() }),
+      'setting them with the key': call(asKey, 'PUT', `/channels/${CHANNEL}/groups`, { groupIds: [other] }),
+      'changing the second actor': call(admin, 'PUT', `/users/${two.who.id}`, { role: reader.name, enabled: round % 3 !== 0 }),
+      'deleting the first actor and taking the key over': call(admin, 'DELETE', `/users/${one.who.id}?takeOwnership=${keyId}`),
+      'disabling the first actor': call(admin, 'PUT', `/users/${one.who.id}`, { email: `${one.who.id}@example.test`, enabled: false }),
+      'revoking the spare key': call(one.who, 'POST', `/api-keys/${spareId}/revoke`, { reason: 'Done with it' }),
+      'creating a user': call<{ id: string }>(two.who, 'POST', '/users', { username: `itest-new-${randomUUID().slice(0, 8)}`, email: `${randomUUID()}@example.test`, password: 'Itest-password-1!', role: reader.name })
+        .then((made) => { if (made.json.data) users.push(made.json.data.id); return made; }),
+      'deleting a group': call(admin, 'DELETE', `/channel-groups/${other}`),
+      'resetting a password': call(admin, 'POST', `/users/${target.id}/password`, { newPassword: 'Itest-password-2!' }),
+      'restoring a membership': grants.restoreMembership(CHANNEL, used, { userId: two.who.id }).then(() => ({ status: 200 }), (err: unknown) => ({ status: (err as { code?: string }).code === 'FORBIDDEN' || pgCode(err) === '23505' ? 403 : 500 })),
+    });
   });
+
+  /** Before the pool's connection timeout, or the statement timeout, breaks the deadlock this looks for. */
+  const STUCK_MS = INTEGRATION_WAIT_MS - 15_000;
+
+  /** Postgres ends a deadlock of its own with a 500. One that also waits on this process never ends. */
+  async function allAnswered(requests: Readonly<Record<string, Promise<{ readonly status: number }>>>): Promise<void> {
+    const pending = new Set(Object.keys(requests));
+    const failed: string[] = [];
+    const all = Object.entries(requests).map(async ([name, answer]) => {
+      const { status: got } = await answer.finally(() => { pending.delete(name); });
+      if (got >= 500) failed.push(`${name}: ${String(got)}`);
+    });
+    const answered = Promise.all(all);
+    if (!await settleWithin(answered, STUCK_MS)) throw new Error(await whatIsStuck(pending));
+    await answered;
+    expect(failed).toEqual([]);
+  }
+
+  /** A connection of its own, because the pool may have none left. */
+  async function whatIsStuck(pending: ReadonlySet<string>): Promise<string> {
+    const { totalCount, idleCount, waitingCount } = mods.pool;
+    const client = new pg.Client({ connectionString: process.env['DATABASE_URL'] });
+    await client.connect();
+    try {
+      const { rows } = await client.query(`SELECT pid, state, wait_event_type, wait_event, pg_blocking_pids(pid) AS blocked_by,
+          round(extract(epoch FROM clock_timestamp() - state_change))::int AS seconds, left(query, 120) AS query
+        FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state <> 'idle' ORDER BY seconds DESC`);
+      return [
+        `Unanswered after ${String(STUCK_MS / 1_000)} s: ${[...pending].join(', ')}.`,
+        'Statements that have waited for a lock all that time, or requests that wait for a connection, are a deadlock. Neither is a slow host.',
+        `Pool: ${JSON.stringify({ totalCount, idleCount, waitingCount })}`,
+        ...rows.map((r) => JSON.stringify(r)),
+      ].join('\n');
+    } finally {
+      await client.end();
+    }
+  }
 
   function pgCode(err: unknown): unknown {
     return (err as { code?: unknown }).code ?? (err as { cause?: { code?: unknown } }).cause?.code;

@@ -1,15 +1,15 @@
 // A role holding a non-GET route's permission is sent input the route's
 // validator refuses, so the 400 shows the guard let it through and nothing
 // changed. A non-GET route with no validator would run on any request, so it is
-// not called. Refusals are recorded once a minute per caller, route and reason (#158).
+// not called. Refusals are recorded once a minute per caller, route and reason (#158),
+// so this file stops the clock: the walk is one minute however long it takes (#421).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { USER_ROLE } from '@galvanigraph/core-models';
 import { builtInRolePermissions, defaultRoles } from '../../src/db/seeds/roles.js';
-import { describeIntegration } from './_setup.js';
+import { closeServer, describeIntegration, listen } from './_setup.js';
 import type { ApiRoute, WalkedRoute } from '../../src/routes/__tests__/api-routes.js';
 
 const ID = '3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c';
@@ -56,6 +56,8 @@ describeIntegration('route walk per principal (real authenticate)', () => {
   let base: string;
   let routes: readonly WalkedRoute[];
   const callers = new Map<string, Caller>();
+  const MINUTE_MS = 60_000;
+  let walkedAt: number;
 
   async function createCaller(name: string, role: string, flags: { enabled?: boolean; mustChange?: boolean } = {}): Promise<Caller> {
     const { signAccessToken } = await import('../../src/lib/jwt.js');
@@ -97,13 +99,14 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     await createCaller('must-change', USER_ROLE.ADMIN, { mustChange: true });
     const revoked = await createCaller('revoked', USER_ROLE.ADMIN);
     await pool.query('DELETE FROM sessions WHERE user_id = $1', [revoked.id]);
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
-  }, 120_000);
+    ({ server, base } = await listen(app));
+    walkedAt = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'], now: walkedAt });
+  });
 
   afterAll(async () => {
-    const running = server as Server | undefined;
-    if (running) await new Promise<void>((resolve) => { running.close(() => { resolve(); }); });
+    vi.useRealTimers();
+    await closeServer(server);
     const ids = [...callers.values()].map((c) => c.id);
     if (ids.length > 0) {
       // Their ACCESS_DENIED rows stay: audit_log refuses deletes, and has no key to users.
@@ -111,7 +114,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     }
     await pool?.query('DELETE FROM roles WHERE name = $1', [CUSTOM_ROLE]);
     await pool?.end();
-  }, 120_000); // as long as the setup's: closing the server and deleting the callers slow down on a loaded machine (#294)
+  });
 
   function caller(name: string): Caller {
     const c = callers.get(name);
@@ -160,7 +163,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
       else if (route.method !== 'GET' && answer.code !== 'VALIDATION_ERROR') wrong.push(`${label(route)}: the handler ran (${String(answer.status)})`);
     }
     expect(wrong).toEqual([]);
-  }, 120_000);
+  });
 
   it.each([
     ['disabled', 403, 'ACCOUNT_DEACTIVATED'],
@@ -174,32 +177,33 @@ describeIntegration('route walk per principal (real authenticate)', () => {
       if (answer.status !== status || answer.code !== code) wrong.push(`${label(route)}: ${String(answer.status)} ${String(answer.code)}`);
     }
     expect(wrong).toEqual([]);
-  }, 120_000);
+  });
 
-  /**
-   * A run that crosses a minute also gets the sweep's held-back counts
-   * (repeatsSinceLast above 0), which these checks leave out. Recording is
-   * fire-and-forget, so callers poll.
-   */
+  /** Recording is fire-and-forget, so callers poll. */
   async function refusalsOf(userId: string): Promise<readonly string[]> {
-    const { rows } = await pool.query<{ attributes: { method: string; route: string | null; reason: string } }>(
-      `SELECT attributes FROM audit_log WHERE action = 'ACCESS_DENIED' AND user_id = $1
-         AND (attributes->>'repeatsSinceLast')::int = 0`, [userId],
+    const { rows } = await pool.query<{ attributes: { method: string; route: string | null; reason: string; repeatsSinceLast: number } }>(
+      `SELECT attributes FROM audit_log WHERE action = 'ACCESS_DENIED' AND user_id = $1`, [userId],
     );
-    return rows.map((r) => `${r.attributes.method} ${r.attributes.route ?? '(before routing)'} ${r.attributes.reason}`).sort();
+    return rows.map(({ attributes: a }) =>
+      `${a.method} ${a.route ?? '(before routing)'} ${a.reason}${a.repeatsSinceLast > 0 ? ` (${String(a.repeatsSinceLast)} more)` : ''}`).sort();
   }
 
-  it('recorded each route a viewer was refused once, by template, and a repeat within the minute adds nothing', async () => {
+  it('recorded each route a viewer was refused once, by template, and counts a repeat within the minute instead of recording it', async () => {
     const viewer = caller(USER_ROLE.VIEWER);
     const refused = routes.filter((r) => !holds(USER_ROLE.VIEWER, r));
     const expected = refused.map((r) => `${label(r)} no_permission`).sort();
-    await expect.poll(() => refusalsOf(viewer.id), { timeout: 10_000 }).toEqual(expected);
+    await expect.poll(() => refusalsOf(viewer.id)).toEqual(expected);
 
     const first = refused[0];
     if (!first) throw new Error('the viewer is refused nothing');
+    // Back to it: expect.poll moves a stopped clock on.
+    vi.setSystemTime(walkedAt);
     await call(first, viewer.token, { param: ID });
-    await new Promise((resolve) => { setTimeout(resolve, 500); });
-    expect(await refusalsOf(viewer.id)).toEqual(expected);
+    // A minute later the next refusal closes the first one's window, which writes what it held back.
+    vi.setSystemTime(walkedAt + MINUTE_MS);
+    await call(first, viewer.token, { param: ID });
+    const again = `${label(first)} no_permission`;
+    await expect.poll(() => refusalsOf(viewer.id)).toEqual([...expected, again, `${again} (1 more)`].sort());
   });
 
   it.each([
@@ -208,8 +212,12 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     ['revoked', 'session_revoked'],
   ] as const)('recorded the %s caller once per method, before routing, across every route it was sent to', async (name, reason) => {
     // Before routing there is no template, so each method is one record whatever the path.
-    const methods = [...new Set(routes.map((r) => r.method))];
-    await expect.poll(() => refusalsOf(caller(name).id), { timeout: 10_000 })
-      .toEqual(methods.map((m) => `${m} (before routing) ${reason}`).sort());
+    const sent = routes.filter((r) => name !== 'must-change' || !PASSWORD_CHANGE_EXEMPT.some(same(r)));
+    const expected = [...new Set(sent.map((r) => r.method))].flatMap((m) => {
+      const repeats = sent.filter((r) => r.method === m).length - 1;
+      const once = `${m} (before routing) ${reason}`;
+      return repeats > 0 ? [once, `${once} (${String(repeats)} more)`] : [once];
+    }).sort();
+    await expect.poll(() => refusalsOf(caller(name).id)).toEqual(expected);
   });
 });

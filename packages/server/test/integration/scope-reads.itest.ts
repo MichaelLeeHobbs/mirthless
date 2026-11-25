@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole,
   type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -58,12 +57,11 @@ describeIntegration('system reads and Test Connection under a scope (real Postgr
     scoped = await userWithRole(mods.pool, role, [lab]);
     users.push(scoped.id);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     await mods.pool.query('DELETE FROM alerts WHERE id = $1', [alertId]);
     await mods.pool.query('DELETE FROM channel_tags WHERE id = $1', [tagId]);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);

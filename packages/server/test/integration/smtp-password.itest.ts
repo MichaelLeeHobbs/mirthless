@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { UpsertSettingInput } from '@galvanigraph/core-models';
-import { describeIntegration, loadServerModules, type ServerModules } from './_setup.js';
+import { describeIntegration, loadServerModules, WAIT, type ServerModules } from './_setup.js';
 
 const KEYS = ['smtp.host', 'smtp.auth_pass', 'smtp.from', 'smtp.port'] as const;
 
@@ -29,7 +29,7 @@ describeIntegration('the stored SMTP password (real Postgres)', () => {
         "SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
       );
       expect(Number(rows[0]!.n)).toBe(n);
-    }, { timeout: 5_000, interval: 20 });
+    }, WAIT);
   }
 
   async function putBack(): Promise<void> {
@@ -151,6 +151,6 @@ describeIntegration('the stored SMTP password (real Postgres)', () => {
 
     await expect.poll(async () => (await mods.pool.query<{ attributes: unknown }>(
       "SELECT attributes FROM events WHERE user_id = $1 AND name = 'SETTINGS_CHANGED'", [actor],
-    )).rows.map((r) => r.attributes), { timeout: 10_000 }).toEqual([{ key: 'smtp.host', cleared: 'smtp.auth_pass' }]);
+    )).rows.map((r) => r.attributes)).toEqual([{ key: 'smtp.host', cleared: 'smtp.auth_pass' }]);
   });
 });

@@ -83,6 +83,17 @@ describe('configSchema', () => {
     expect(configSchema.safeParse({ ...base, DATABASE_STATEMENT_TIMEOUT_MS: '-1' }).success).toBe(false);
   });
 
+  it('waits 5 seconds for a connection unless told otherwise', () => {
+    expect(configSchema.parse(base).DATABASE_CONNECT_TIMEOUT_MS).toBe(5_000);
+    expect(configSchema.parse({ ...base, DATABASE_CONNECT_TIMEOUT_MS: '60000' }).DATABASE_CONNECT_TIMEOUT_MS).toBe(60_000);
+  });
+
+  it('rejects a connection time limit that is none, or that a timer cannot keep', () => {
+    for (const bad of ['0', '-1', '1.5', 'soon', '2147483648']) {
+      expect(refused({ ...base, DATABASE_CONNECT_TIMEOUT_MS: bad })).toEqual(['DATABASE_CONNECT_TIMEOUT_MS']);
+    }
+  });
+
   it('accepts an API rate limit and rejects one that the limiter would ignore', () => {
     expect(configSchema.parse(base).API_RATE_LIMIT_MAX).toBeUndefined();
     expect(configSchema.parse({ ...base, API_RATE_LIMIT_MAX: '2000' }).API_RATE_LIMIT_MAX).toBe(2000);

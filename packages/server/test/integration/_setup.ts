@@ -3,7 +3,10 @@
 // database; without one they skip.
 
 import { randomUUID } from 'node:crypto';
+import { createServer, type RequestListener, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe } from 'vitest';
+import { INTEGRATION_WAIT_MS } from '../time-budgets.js';
 
 function isTestDatabaseConfigured(): boolean {
   const url = process.env.DATABASE_URL;
@@ -131,6 +134,24 @@ export async function insertTestGroup(pool: ServerModules['pool']): Promise<stri
   return rows[0]!.id;
 }
 
+/** For `vi.waitFor`. `expect.poll` has the same limit from the suite's config. */
+export const WAIT = { timeout: INTEGRATION_WAIT_MS, interval: 20 } as const;
+
+export async function listen(handler: RequestListener): Promise<{ readonly server: Server; readonly base: string }> {
+  const server = createServer(handler);
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  return { server, base: `http://127.0.0.1:${String((server.address() as AddressInfo).port)}` };
+}
+
+/** Undefined when the setup failed before `listen`. Waiting for that one never ends, and hides the setup's error (#405). */
+export async function closeServer(server: Server | undefined): Promise<void> {
+  if (server === undefined) return;
+  await new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
+}
+
 export interface ApiAnswer<T> {
   readonly status: number;
   readonly json: { readonly data?: T; readonly error?: { readonly code?: string; readonly message?: string; readonly details?: { readonly missing?: string[] } } };
@@ -148,10 +169,8 @@ export async function deleteTestChannel(mods: ServerModules, id: string): Promis
   await mods.db.execute(mods.sql`DELETE FROM channels WHERE id = ${id}`);
 }
 
-const LOCK_WAIT_TIMEOUT_MS = 10_000;
-
 /** A blocked statement shows in pg_stat_activity as a Lock wait with the statement as its query. */
-export async function waitForBlocked(pool: ServerModules['pool'], queryPrefix: string, timeoutMs = LOCK_WAIT_TIMEOUT_MS): Promise<void> {
+export async function waitForBlocked(pool: ServerModules['pool'], queryPrefix: string, timeoutMs = INTEGRATION_WAIT_MS): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const { rows } = await pool.query<{ waiting: string }>(
