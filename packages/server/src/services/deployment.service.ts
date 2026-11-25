@@ -369,20 +369,22 @@ export class DeploymentService {
 
       await Promise.all(deployed.queueConsumers.map((c) => c.halt()));
 
+      const wasStopped = deployed.runtime.getState() === 'STOPPED';
       const result = await deployed.runtime.halt();
-      if (!result.ok) {
+      const state = deployed.runtime.getState();
+      if (!result.ok && (wasStopped || state !== 'STOPPED')) {
         throw new ServiceError('CONFLICT', `Cannot halt channel: ${result.error.message}`);
       }
 
       emitEvent({
-        level: 'INFO', name: 'CHANNEL_STOPPED', outcome: 'SUCCESS',
+        level: result.ok ? 'INFO' : 'ERROR', name: 'CHANNEL_STOPPED', outcome: result.ok ? 'SUCCESS' : 'FAILURE',
         userId: context?.userId ?? null, channelId,
-        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: { method: 'halt' },
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { method: 'halt', ...(result.ok ? {} : { reason: result.error.message }) },
       });
-
-      const state = deployed.runtime.getState();
       emitStateChange(channelId, state);
 
+      if (!result.ok) throw new ServiceError('CONFLICT', `The channel is halted, but: ${result.error.message}`);
       return { channelId, state };
     });
   }

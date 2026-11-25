@@ -408,6 +408,41 @@ describe('DeploymentService', () => {
     });
   });
 
+  describe('halt', () => {
+    const FAILED = { ok: false, value: null, error: new Error('Source halt failed: port still open') };
+    const deployed = (): void => {
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
+    };
+
+    it('says what failed when a connector did not halt, and records that the channel stopped (#419)', async () => {
+      deployed();
+      mockRuntime.getState.mockReturnValueOnce('STARTED').mockReturnValue('STOPPED');
+      mockRuntime.halt.mockResolvedValue(FAILED);
+
+      const result = await DeploymentService.halt(CHANNEL_ID);
+
+      expect(result.error).toMatchObject({ code: 'CONFLICT', message: 'The channel is halted, but: Source halt failed: port still open' });
+      expect(mockEmitEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        name: 'CHANNEL_STOPPED', level: 'ERROR', outcome: 'FAILURE', channelId: CHANNEL_ID,
+        attributes: { method: 'halt', reason: 'Source halt failed: port still open' },
+      }));
+    });
+
+    it.each([
+      ['it was not running', 'STOPPED', 'STOPPED'],
+      ['it is still running', 'STARTED', 'STARTED'],
+    ])('records nothing when the channel was not halted because %s', async (_why, before, after) => {
+      deployed();
+      mockRuntime.getState.mockReturnValueOnce(before).mockReturnValue(after);
+      mockRuntime.halt.mockResolvedValue({ ok: false, value: null, error: new Error('no') });
+
+      const result = await DeploymentService.halt(CHANNEL_ID);
+
+      expect(result.error).toMatchObject({ code: 'CONFLICT', message: 'Cannot halt channel: no' });
+      expect(mockEmitEvent).not.toHaveBeenCalled();
+    });
+  });
+
   describe('redeploy of a running channel', () => {
     it('fails when the channel cannot be started again', async () => {
       deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });

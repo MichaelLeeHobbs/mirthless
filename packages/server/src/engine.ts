@@ -793,10 +793,12 @@ export class EngineManager {
       const sent = variables && Object.keys(variables).length > 0 ? variables : undefined;
       // Connectors apply their own configured timeouts; this is the backstop
       // that keeps a send from hanging forever if one does not.
-      return connector.send(
+      const called = await tryCatch(() => connector.send(
         { ...messageFor(metaDataId, messageId, content), correlationId, variables: sent },
         AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]),
-      );
+      ));
+      // One that throws fails this send, not the whole message with its other destinations.
+      return called.ok ? called.value : called;
     };
 
     const queueConsumers: QueueConsumer[] = [];
