@@ -66,6 +66,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from './services/connector-tls-resolver.js';
 import { ServiceError } from './lib/service-error.js';
+import { whyNotTaking } from './lib/taking-messages.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
@@ -747,7 +748,7 @@ export class EngineManager {
         throw new Error('An alert cannot be sent into the channel it is about');
       }
       const target = this.runtimes.get(targetChannelId);
-      if (!target || target.runtime.getState() !== 'STARTED') {
+      if (!target || whyNotTaking(target.runtime) !== null) {
         throw new Error(`Alert target channel ${targetChannelId} is not deployed and started`);
       }
       const sent = await target.processMessage(content, { alertSourceChannelId: channel.id });
@@ -921,6 +922,7 @@ export class EngineManager {
       channelId: channel.id,
       source,
       destinations,
+      queues: queueConsumers,
       onMessage: async (raw) => (batched
         ? processHl7Batch(raw)
         : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) })))),
@@ -1040,9 +1042,9 @@ export class EngineManager {
   }
 
   /**
-   * Stops the channel (queue consumers too, as a stop from the UI does) so the
-   * dashboard shows it stopped. The failed message stays on its queue or topic
-   * until an operator fixes the cause and starts the channel again.
+   * Stops the channel so the dashboard shows it stopped. The failed message
+   * stays on its queue or topic until an operator fixes the cause and starts
+   * the channel again.
    */
   private async stopAfterSourceFailure(report: SourceFailureReport): Promise<void> {
     const { channelId, runtime, error, raiseAlert } = report;
@@ -1061,7 +1063,6 @@ export class EngineManager {
     });
     await raiseAlert({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: error.message, timestamp: Date.now() });
 
-    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
     const stopped = await deployed.runtime.stop();
     if (!stopped.ok) {
       logger.error({ channelId, errMsg: stopped.error.message }, 'Could not stop the channel after its source failed');
@@ -1102,9 +1103,9 @@ export class EngineManager {
       if (!deployed) {
         throw new ServiceError('NOT_FOUND', `Channel ${channelId} is not deployed`);
       }
-      const state = deployed.runtime.getState();
-      if (state !== 'STARTED') {
-        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to receive messages`);
+      const why = whyNotTaking(deployed.runtime);
+      if (why !== null) {
+        throw new ServiceError('CONFLICT', `Channel is ${why}, must be STARTED to receive messages`);
       }
       return deployed;
     });
@@ -1128,11 +1129,6 @@ export class EngineManager {
     if (!deployed) {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
-
-    // Stop queue consumers before the connectors: stop() waits for the send in
-    // flight, so no queued delivery fails (and burns a retry) because its
-    // destination was stopped underneath it.
-    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
     // Stop first: runtime.undeploy() requires STOPPED, and undeploy must never
     // throw on a STARTED channel (that would sever in-flight messages and skip
