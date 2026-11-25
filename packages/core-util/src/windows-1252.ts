@@ -8,7 +8,7 @@ const CHARS_80_9F: readonly number[] = [
   0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178,
 ];
 
-const CHARS: readonly number[] = Array.from({ length: 256 }, (_, byte) => CHARS_80_9F[byte - 0x80] ?? byte);
+const CHARS = Uint16Array.from({ length: 256 }, (_, byte) => CHARS_80_9F[byte - 0x80] ?? byte);
 
 /** A call takes only so many arguments. */
 const CHUNK_BYTES = 8192;
@@ -22,9 +22,10 @@ export function decodeWindows1252(bytes: Uint8Array): string {
   const chars = new Uint16Array(Math.min(CHUNK_BYTES, bytes.length));
   for (let start = 0; start < bytes.length; start += CHUNK_BYTES) {
     const chunk = bytes.subarray(start, start + CHUNK_BYTES);
-    // A loop and no spread: a callback per byte, or a spread of a typed array, blocks the server for seconds on a large body.
-    for (let i = 0; i < chunk.length; i++) chars[i] = CHARS[chunk[i] ?? 0] ?? 0;
-    chunks.push(Reflect.apply(String.fromCharCode, null, chars.subarray(0, chunk.length)));
+    // A callback per byte, or spreading a typed array, blocks the server for seconds on a large body.
+    for (let i = 0; i < chunk.length; i++) chars[i] = CHARS[chunk[i]!]!;
+    const text: string = Reflect.apply(String.fromCharCode, null, chars.subarray(0, chunk.length));
+    chunks.push(text);
   }
   return chunks.join('');
 }

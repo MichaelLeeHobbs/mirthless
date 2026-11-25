@@ -17,10 +17,21 @@ describe('decodeWindows1252', () => {
     expect(decodeWindows1252(new Uint8Array())).toBe('');
   });
 
-  it('reads a large payload whole, in order', () => {
-    const bytes = new Uint8Array(256 * 1000 + 7).map((_, i) => i % 256);
+  // The bytes must not repeat with the 8192 it decodes at a time, or a piece read twice or out of order looks right.
+  it.each([8191, 8192, 8193, 100_000])('reads %i bytes whole, in order', (length) => {
+    const bytes = Buffer.alloc(length).map((_, i) => ((i % 251) + (i >> 13)) % 0x80);
 
-    expect(decodeWindows1252(bytes)).toBe(decodeWindows1252(EVERY_BYTE).repeat(1000) + decodeWindows1252(EVERY_BYTE).slice(0, 7));
+    expect(decodeWindows1252(bytes) === Buffer.from(bytes).toString('latin1')).toBe(true);
+  });
+
+  it('reads the bytes on both sides of 8192 as Windows-1252', () => {
+    const bytes = Buffer.alloc(16_385, 'x');
+    bytes.set([0x93, 0x94], 8191);
+    bytes.set([0x80, 0x96], 16_383);
+
+    const text = decodeWindows1252(bytes);
+
+    expect([text.length, text.slice(8190, 8194), text.slice(16_382)]).toEqual([16_385, 'x“”x', 'x€–']);
   });
 
   it('reads only the bytes a view covers', () => {
