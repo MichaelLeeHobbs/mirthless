@@ -25,7 +25,7 @@ export interface IsolationLimits {
   readonly maxMemoryGrowthMb: number;
 }
 
-/** Each is blind to something the other sees (D-368). */
+/** Each is blind to something the other sees (D-369). */
 export interface WorkerMemory {
   /** The whole process's. A machine short of memory pages it out, and it shrinks. */
   readonly residentBytes: number;
@@ -40,7 +40,7 @@ const MEMORY_SAMPLE_MS = 20;
  * Past the script's limit and the result-collecting limit of the same length (D-323). Covers
  * building the sandbox's globals, counted against neither, and a script the sandbox fails to stop.
  */
-const STOP_GRACE_MS = 5_000;
+export const STOP_GRACE_MS = 5_000;
 
 export interface WorkerStart {
   readonly input: ScriptTestInput;
@@ -80,7 +80,10 @@ async function answer(readers: ScriptTestReaders, request: Extract<WorkerRequest
 function watchMemory(worker: Worker, before: WorkerMemory, limitBytes: number, exceeded: () => void): ReturnType<typeof setInterval> {
   let asking = false;
   return setInterval(() => {
-    if (process.memoryUsage.rss() - before.residentBytes > limitBytes) exceeded();
+    if (process.memoryUsage.rss() - before.residentBytes > limitBytes) {
+      exceeded();
+      return;
+    }
     if (asking) return;
     asking = true;
     worker.getHeapStatistics().then(

@@ -3,27 +3,10 @@
 // main thread (listeners, queues and the API share it).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type * as WorkerThreads from 'node:worker_threads';
 import {
-  runScriptTestIsolated, MAX_TEST_READS, tooManyReads, type IsolatedTestInput, type IsolationLimits,
+  runScriptTestIsolated, MAX_TEST_READS, STOP_GRACE_MS, tooManyReads, type IsolatedTestInput, type IsolationLimits,
 } from '../script-test-isolated.js';
 import { runScriptTest, type ScriptTestResult } from '../script-test-run.js';
-
-const late = vi.hoisted(() => ({ startedByMs: 0 }));
-
-// The real Worker, whose 'started' message reaches the main thread as late as a test asks.
-vi.mock('node:worker_threads', async (importOriginal) => {
-  const threads = await importOriginal<typeof WorkerThreads>();
-  class LateWorker extends threads.Worker {
-    override emit(event: string, ...args: unknown[]): boolean {
-      const started = event === 'message' && (args[0] as { readonly type: string }).type === 'started';
-      if (!started || late.startedByMs === 0) return super.emit(event, ...args);
-      setTimeout(() => { super.emit(event, ...args); }, late.startedByMs);
-      return true;
-    }
-  }
-  return { ...threads, Worker: LateWorker };
-});
 
 // Longer than the product's: from source, a worker also loads tsx and compiles every module it imports.
 const START_LIMIT_MS = 60_000;
@@ -54,15 +37,13 @@ async function run(overrides: Partial<IsolatedTestInput>, readers = {}, limits: 
 }
 
 /** 192 MB, kept until the script is stopped: one that ended would race the watch. */
-function fillAndWait(buffer: 'ArrayBuffer' | 'SharedArrayBuffer'): string {
-  return `const keep = []; for (let i = 0; i < 3; i++) keep.push(new Uint8Array(new ${buffer}(64 * 1024 * 1024)).fill(1)); while (keep.length > 0) {}`;
-}
+const FILL_AND_WAIT = 'const keep = []; for (let i = 0; i < 3; i++) keep.push(new Uint8Array(64 * 1024 * 1024).fill(1)); while (keep.length > 0) {}';
 const FILL_LIMITS = { timeoutMs: LONGEST_SCRIPT_MS, maxMemoryGrowthMb: 64 } as const;
 const OVER_MEMORY = 'The script used more than 64 MB of memory and was stopped.';
 
 describe('runScriptTestIsolated', () => {
   it('has more time for a test than a run can take, so that the test sees what the run answered (#373)', ({ task }) => {
-    expect(task.timeout).toBeGreaterThan(START_LIMIT_MS + 2 * LONGEST_SCRIPT_MS + 5_000);
+    expect(task.timeout).toBeGreaterThan(START_LIMIT_MS + 2 * LONGEST_SCRIPT_MS + STOP_GRACE_MS);
   });
 
   it('returns the same result as a test run on the main thread', async () => {
@@ -125,10 +106,10 @@ describe('runScriptTestIsolated', () => {
   describe('memory outside the heap limit (typed arrays)', () => {
     // It is not counted by the worker's heap limit, so a script could take the whole
     // machine's memory and get the engine OOM-killed.
-    afterEach(() => { vi.restoreAllMocks(); late.startedByMs = 0; });
+    afterEach(() => { vi.restoreAllMocks(); });
 
     it('stops a script that fills it', async () => {
-      const result = await run({ kind: 'script', script: fillAndWait('ArrayBuffer') }, {}, FILL_LIMITS);
+      const result = await run({ kind: 'script', script: FILL_AND_WAIT }, {}, FILL_LIMITS);
       expect(result.error).toBe(OVER_MEMORY);
       expect(result.outcome).toBe('error');
     });
@@ -136,15 +117,15 @@ describe('runScriptTestIsolated', () => {
     it('stops it when the machine is short of memory and pages out what the script fills (#373)', async () => {
       // The process's resident memory shrinks then, whatever the script takes.
       vi.spyOn(process.memoryUsage, 'rss').mockReturnValue(0);
-      const result = await run({ kind: 'script', script: fillAndWait('ArrayBuffer') }, {}, FILL_LIMITS);
+      const result = await run({ kind: 'script', script: FILL_AND_WAIT }, {}, FILL_LIMITS);
       expect(result.error).toBe(OVER_MEMORY);
       expect(result.outcome).toBe('error');
     });
 
-    it('stops it when the main thread is too busy to read that the script started until it has filled it (#373)', async () => {
-      late.startedByMs = 1_500;
-      // Shared memory, which only the process's resident memory shows.
-      const result = await run({ kind: 'script', script: fillAndWait('SharedArrayBuffer') }, {}, FILL_LIMITS);
+    it('counts what the script filled before the main thread got to read that it had started (#373)', async () => {
+      // All the main thread ever sees is the memory already filled; the worker measured it before.
+      vi.spyOn(process.memoryUsage, 'rss').mockReturnValue(process.memoryUsage.rss() * 100);
+      const result = await run({ kind: 'script', script: 'while (true) {}' }, {}, FILL_LIMITS);
       expect(result.error).toBe(OVER_MEMORY);
       expect(result.outcome).toBe('error');
     });

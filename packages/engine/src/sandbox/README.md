@@ -87,7 +87,7 @@ The limit does not stop every script. Each timed call is shown in shared memory 
 
 - There is **no** `memoryLimit` knob — `node:vm` cannot enforce one, so it was
   removed rather than left as a dead security control.
-- A test run's worker has a heap limit, which counts no typed arrays. Their memory is sampled from the main thread every 20 ms, in two ways: the growth of the process's resident memory, and of the worker's own `external_memory` (D-369). It is a sample, so it bounds what a script keeps, not one step: a single large allocation is seen after it is made, and a thread inside one long fill ends when the fill does. A `SharedArrayBuffer` shows in the resident memory only, so one that the machine has paged out is not seen.
+- A test run's worker has a heap limit, which counts no typed arrays. Their memory is sampled from the main thread every 20 ms, in two ways: the growth of the process's resident memory, and of the worker's own `external_memory` (D-369). It is a sample, so what it bounds is memory that a script goes on keeping: a single large allocation is seen after it is made, a thread inside one long fill ends when the fill does, and while the main thread is busy nothing is sampled, so a script that fills memory and ends within that time is not stopped. A `SharedArrayBuffer` shows in the resident memory only, so one that the machine has paged out is not seen. The resident memory is the whole process's: a script is also stopped when the server grows by the limit while it runs.
 - Data injection is a JSON round-trip per execution (deep-clones, drops functions/
   `Date`s in maps). This is intentional (correctness/security over microseconds).
   Revisit only if profiling shows it matters.
