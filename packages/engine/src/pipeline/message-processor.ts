@@ -145,6 +145,8 @@ export interface PipelineInput {
   readonly correlationId?: string | undefined;
   /** A message in the store to run again, left as it was when it was received, instead of creating one. */
   readonly received?: ReceivedMessage | undefined;
+  /** Called once a new message is in the store, before any script or destination runs. */
+  readonly onStored?: (() => void) | undefined;
 }
 
 export interface ReceivedMessage {
@@ -343,6 +345,7 @@ export class MessageProcessor {
       // polling source would read the same input again and recovery would retry it
       // on every deploy.
       try {
+      input.onStored?.();
       let content = input.rawContent;
 
       try {

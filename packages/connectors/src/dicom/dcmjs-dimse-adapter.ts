@@ -10,12 +10,14 @@
 // association is rejected ("Source: Service User"). The accept-list here mirrors
 // what production DIMSE services commonly accept.
 
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { Result } from '@galvanigraph/core-util';
+import { settleWithin, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
+import { makeDirectory, syncDirectory, syncFile } from './durable-file.js';
 
 const { Server, Scp, Dataset, constants, responses, log } = pkg;
 const { SopClass, StorageClass, TransferSyntax, PresentationContextResult, Status } = constants;
@@ -114,6 +116,12 @@ function writeDataset(dataset: DatasetType, filePath: string): Promise<void> {
   });
 }
 
+/** What the source map of a message from this SCP names as its source. */
+export const DIMSE_SOURCE = 'dcmjs-dimse';
+
+/** How long an association that ended waits for its images that are still being stored. */
+const STORES_END_MS = 30_000;
+
 /** Copies of one instance that may wait in the storage directory at once. */
 const MAX_COPIES = 100;
 
@@ -139,44 +147,47 @@ async function claimFileName(dir: string, uid: string): Promise<string> {
 
 class DimseReceiver implements DcmtkReceiver {
   private server: ServerType | null = null;
-  private fileListener: ((data: DcmtkFileData) => void) | null = null;
+  private fileListener: ((data: DcmtkFileData) => Promise<void>) | null = null;
   private assocListener: ((data: DcmtkAssociationData) => void) | null = null;
   private errorListener: ((data: { readonly error: Error }) => void) | null = null;
 
   constructor(private readonly options: ReceiverOptions) {}
 
-  onFileReceived(listener: (data: DcmtkFileData) => void): void { this.fileListener = listener; }
+  onFileReceived(listener: (data: DcmtkFileData) => Promise<void>): void { this.fileListener = listener; }
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void { this.assocListener = listener; }
   onEvent(_event: 'error', listener: (data: { readonly error: Error }) => void): void { this.errorListener = listener; }
 
   /**
-   * Persist a received dataset to a .dcm file and notify listeners. The
-   * storage directory is checked against the roots before every write, so one
-   * swapped for a link out of them since deploy is refused.
+   * Persist a received dataset to a .dcm file and hand it to the listener. Once this resolves the
+   * file is on disk and the listener has taken it, so the sender can be told it is stored; when it
+   * rejects the sender keeps the image, and the file is removed. The storage directory is checked
+   * against the roots before every write, so one swapped for a link out of them since deploy is
+   * refused.
    */
   private async handleInstance(dataset: DatasetType, callingAe: string, calledAe: string, assocId: string, files: string[]): Promise<void> {
     const elements = dataset.getElements() as Record<string, unknown>;
     const sopInstanceUid = instanceUid(elements['SOPInstanceUID']);
     const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
-    await fs.mkdir(dir, { recursive: true });
+    await makeDirectory(dir);
     const filePath = await claimFileName(dir, sopInstanceUid);
     try {
       await writeDataset(dataset, filePath);
+      await syncFile(filePath);
+      await syncDirectory(dir);
+      await this.fileListener?.({
+        filePath,
+        associationId: assocId,
+        associationDir: this.options.storageDir,
+        callingAE: callingAe,
+        calledAE: calledAe,
+        source: DIMSE_SOURCE,
+        instance: { dataset: elements },
+      });
     } catch (err) {
-      // Give the name back; the sender is told the store failed.
       await fs.rm(filePath, { force: true });
       throw err;
     }
     files.push(filePath);
-    this.fileListener?.({
-      filePath,
-      associationId: assocId,
-      associationDir: this.options.storageDir,
-      callingAE: callingAe,
-      calledAE: calledAe,
-      source: 'dcmjs-dimse',
-      instance: { dataset: elements },
-    });
   }
 
   async start(): Promise<Result<void>> {
@@ -184,14 +195,42 @@ class DimseReceiver implements DcmtkReceiver {
     const handleInstance = this.handleInstance.bind(this);
     const emitAssociation = (data: DcmtkAssociationData): void => { this.assocListener?.(data); };
     const emitError = (error: Error): void => { this.errorListener?.({ error }); };
-    let assocCounter = 0;
 
     class ConnectorScp extends Scp {
       private callingAe = '';
       private calledAe = '';
-      private readonly assocId = `assoc-${String(++assocCounter)}`;
+      private readonly assocId = `assoc-${randomUUID()}`;
       private readonly files: string[] = [];
+      private readonly storing = new Set<Promise<void>>();
       private readonly startedAt = Date.now();
+      private ended = false;
+
+      constructor(...args: ConstructorParameters<typeof Scp>) {
+        super(...args);
+        this.on('close', () => { this.end(false); });
+      }
+
+      /** The association has ended, whether its sender released it, aborted it or hung up: what it stored is complete. */
+      private end(released: boolean): void {
+        if (this.ended) return;
+        this.ended = true;
+        void settleWithin(Promise.all(this.storing), STORES_END_MS).then(() => {
+          if (!released && this.files.length === 0) return;
+          emitAssociation({
+            associationId: this.assocId,
+            associationDir: storageDir,
+            callingAE: this.callingAe,
+            calledAE: this.calledAe,
+            source: DIMSE_SOURCE,
+            files: [...this.files],
+            durationMs: Date.now() - this.startedAt,
+            released,
+          });
+        });
+      }
+
+      /** The library closes the socket, which ends the association. */
+      override abort(): void { /* nothing else to do */ }
 
       override associationRequested(association: AssociationType): void {
         this.callingAe = association.getCallingAeTitle();
@@ -201,15 +240,7 @@ class DimseReceiver implements DcmtkReceiver {
       }
 
       override associationReleaseRequested(): void {
-        emitAssociation({
-          associationId: this.assocId,
-          associationDir: storageDir,
-          callingAE: this.callingAe,
-          calledAE: this.calledAe,
-          source: 'dcmjs-dimse',
-          files: [...this.files],
-          durationMs: Date.now() - this.startedAt,
-        });
+        this.end(true);
         this.sendAssociationReleaseResponse();
       }
 
@@ -228,13 +259,17 @@ class DimseReceiver implements DcmtkReceiver {
           return;
         }
         // The SCU waits for the response, so it learns whether the file was stored.
-        void handleInstance(dataset, this.callingAe, this.calledAe, this.assocId, this.files).then(
+        const stored = handleInstance(dataset, this.callingAe, this.calledAe, this.assocId, this.files).then(
           () => { response.setStatus(Status.Success); },
           (err: unknown) => {
             emitError(err instanceof Error ? err : new Error(String(err)));
             response.setStatus(Status.ProcessingFailure);
           },
-        ).finally(() => { callback(response); });
+        ).finally(() => {
+          callback(response);
+          this.storing.delete(stored);
+        });
+        this.storing.add(stored);
       }
     }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { MessageDispatcher } from '@galvanigraph/connectors';
 import { bundleOf } from '../../../test/deployment-bundle.js';
 
 const mockSend = vi.hoisted(() => vi.fn());
@@ -96,7 +97,7 @@ vi.mock('../../config/index.js', () => ({
 
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
-const { createDestinationConnector } = await import('@galvanigraph/connectors');
+const { createDestinationConnector, createSourceConnector } = await import('@galvanigraph/connectors');
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 const OK_EMPTY = { ok: true, value: [], error: null };
@@ -181,6 +182,21 @@ async function deployAndRecover(destination: Record<string, unknown> = DEST): Pr
 }
 
 describe('EngineManager recovery', () => {
+  it('tells a source that a message it dispatched is stored, before it is sent', async () => {
+    ms.initializeMessage.mockResolvedValue(ok({ messageId: 41, correlationId: 'c' }));
+    const engine = new EngineManager('test-server');
+    await engine.deploy(bundleOf(makeChannel({ destinations: [DEST], inboundDataType: 'RAW' })));
+    const source = vi.mocked(createSourceConnector).mock.results.at(-1)?.value as { setDispatcher: ReturnType<typeof vi.fn> };
+    const dispatch = source.setDispatcher.mock.lastCall?.[0] as MessageDispatcher;
+    const sentBefore: number[] = [];
+
+    await dispatch({ content: 'x', sourceMap: {}, onStored: () => { sentBefore.push(mockSend.mock.calls.length); } });
+
+    expect(sentBefore).toEqual([0]);
+    expect(mockSend).toHaveBeenCalledOnce();
+    await engine.dispose();
+  });
+
   it('only recovers messages that were already there when the channel was deployed', async () => {
     const engine = await deployAndRecover();
 

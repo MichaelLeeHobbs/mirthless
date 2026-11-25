@@ -6,6 +6,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import pkg from 'dcmjs-dimse';
 import {
   DicomReceiver,
   DicomDispatcher,
@@ -16,6 +17,10 @@ import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } 
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 import { freePort } from '../../__fixtures__/free-port.js';
 import { startFakeScp, type FakeScp, type ScpBehaviour } from '../../__fixtures__/fake-scp.js';
+
+const { Client, constants, requests } = pkg;
+const { CStoreRequest } = requests;
+const { AbortReason, AbortSource } = constants;
 
 const SCP_PORT = await freePort();
 const TCP_PORT = await freePort();
@@ -54,6 +59,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
         dispatchMode: 'PER_FILE',
         postAction: 'NONE',
         moveToDirectory: '',
+        channelId: 'e2e',
         roots: TMP_ROOTS,
       }),
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
@@ -115,6 +121,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
         dispatchMode: 'PER_FILE',
         postAction: 'DELETE',
         moveToDirectory: '',
+        channelId: 'e2e',
         roots: TMP_ROOTS,
       }),
       destinations: [{
@@ -169,6 +176,7 @@ describe('DICOM connector cascade (dcmjs-dimse SCU → SCP)', () => {
         dispatchMode: 'PER_FILE',
         postAction: 'NONE',
         moveToDirectory: '',
+        channelId: 'e2e',
         roots: TMP_ROOTS,
       }),
       destinations: [{ metaDataId: 1, name: 'archive', connector: pacsSink }],
@@ -211,6 +219,7 @@ describe('DICOM archive that does not store the image (#410)', () => {
         dispatchMode: 'PER_FILE',
         postAction: 'DELETE',
         moveToDirectory: '',
+        channelId: 'e2e',
         roots: TMP_ROOTS,
       }),
       destinations: [{
@@ -277,6 +286,43 @@ describe('DICOM archive that does not store the image (#410)', () => {
     await waitFor(() => destinationOf(channel)?.status === 'SENT', 15_000);
     await waitFor(async () => (await fs.readdir(storageDir)).length === 0, 5_000);
   }, 45_000);
+});
+
+describe('DICOM association that its sender aborts (#410)', () => {
+  it('still gives one message of the images it answered, and deletes them once delivered', async () => {
+    const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mless-dicom-aborted-'));
+    tempDirs.push(storageDir);
+    const port = await freePort();
+    const sink = new CaptureDestination();
+    const channel = await deployChannel({
+      channelId: '00000000-0000-0000-0000-conndicom0ab',
+      dataType: 'RAW',
+      source: new DicomReceiver({
+        port,
+        storageDir,
+        aeTitle: 'LISTENER',
+        connectionTimeoutMs: 15_000,
+        dispatchMode: 'PER_ASSOCIATION',
+        postAction: 'DELETE',
+        moveToDirectory: '',
+        channelId: 'e2e',
+        roots: TMP_ROOTS,
+      }),
+      destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
+    });
+    deployed.push(channel);
+
+    const client = new Client();
+    const request = new CStoreRequest(SAMPLE_DCM);
+    request.on('response', () => { client.abort(AbortSource.ServiceUser, AbortReason.NotSpecified); });
+    client.addRequest(request);
+    client.send('127.0.0.1', port, 'MODALITY', 'LISTENER', { connectTimeout: 10_000, associationTimeout: 10_000, pduTimeout: 10_000, associationLingerTimeout: 5_000 });
+
+    await waitFor(() => sink.received.length > 0, 15_000);
+    expect(JSON.parse(sink.lastContent() ?? '')).toHaveLength(1);
+    await waitFor(async () => (await fs.readdir(storageDir)).every((name) => !name.endsWith('.dcm')), 5_000);
+    expect(channel.store.messageCount()).toBe(1);
+  }, 30_000);
 });
 
 /** Poll until `check` holds, or fail after `timeoutMs`. */

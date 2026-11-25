@@ -476,6 +476,10 @@ The migration builds the index of waiting messages again, which reads the whole 
 
 A DICOM Sender took a refused C-STORE, a rejected presentation context, an aborted association and a closed connection as sent, and a DICOM Listener in front of it deleted its file. Each is now an ERROR that names the status or the reason, and a destination with a queue retries it. Nothing in the database is rewritten: a message that reads SENT from before the upgrade is no proof that the archive has the image, so compare with the archive where that matters. Expect errors on channels whose archive has been refusing images unnoticed.
 
+## A DICOM Listener answers once the message is safe (#410)
+
+A DICOM Listener answered success before the message was stored. In `PER_FILE` mode it now answers when the message is in the database, and a sender gets a C-STORE failure while the database is down. In `PER_ASSOCIATION` mode it keeps a list of answered files under `.galvanigraph-pending` in the storage directory until the message is stored ([DICOM](../user/connector-reference.md#dicom), D-351): include that folder in the backup of the storage directory, and let nothing clean it up. An association that was aborted now gives a message of the images it answered, where it gave none. `associationId` in the source map is now unique (`assoc-<uuid>`), where it started again at `assoc-1` with each start. Files that were left in a storage directory without a message before the upgrade are not picked up.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
