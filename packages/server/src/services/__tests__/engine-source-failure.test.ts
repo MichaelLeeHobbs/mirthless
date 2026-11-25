@@ -1,15 +1,18 @@
-// A source stops itself when the store always rejects a Kafka record or AMQP message.
+// A source that fails: one that stops itself (the store always rejects a Kafka record or AMQP message), and one that goes on trying.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { DeployedChannel } from '../../engine.js';
 import { bundleOf } from '../../../test/deployment-bundle.js';
 
 const OK_RESULT = { ok: true, value: undefined, error: null };
 const source = vi.hoisted(() => ({
   fatal: null as ((error: Error) => void) | null,
+  health: null as ((failure: Error | null) => void) | null,
 }));
 const sourceMock = vi.hoisted(() => ({
   setDispatcher: vi.fn(),
   setFatalHandler: vi.fn(),
+  setHealthHandler: vi.fn(),
   onDeploy: vi.fn(),
   onStart: vi.fn(),
   onStop: vi.fn(),
@@ -81,12 +84,12 @@ const QUEUED_BUNDLE = bundleOf({
   }],
 } as never);
 
-function alertOnSourceErrors(): void {
+function alertOnSourceErrors(reAlertIntervalMs: number | null = null): void {
   const detail = {
     id: 'a1', name: 'Source down', enabled: true, channelIds: [CHANNEL_ID],
     trigger: { type: 'CHANNEL_ERROR', errorTypes: ['SOURCE_CONNECTOR'], regex: null },
     actions: [{ id: 'act1', actionType: 'EMAIL', recipients: ['oncall@example.org'], properties: null }],
-    subjectTemplate: null, bodyTemplate: 'ALERT ${errorMessage}', reAlertIntervalMs: null, maxAlerts: null,
+    subjectTemplate: null, bodyTemplate: 'ALERT ${errorMessage}', reAlertIntervalMs, maxAlerts: null,
   };
   alerts.listEnabled.mockResolvedValue(ok([detail]));
 }
@@ -98,6 +101,7 @@ beforeEach(() => {
     fn.mockResolvedValue(OK_RESULT);
   }
   sourceMock.setFatalHandler.mockImplementation((handler: (error: Error) => void) => { source.fatal = handler; });
+  sourceMock.setHealthHandler.mockImplementation((handler: (failure: Error | null) => void) => { source.health = handler; });
   ms.getLatestMessageId.mockResolvedValue(ok(0));
   ms.resetPending.mockResolvedValue(OK_RESULT);
   ms.waitingByDestination.mockResolvedValue(ok([]));
@@ -107,6 +111,75 @@ beforeEach(() => {
 
 /** Generous, so a loaded machine cannot fail a wait that would succeed (#125). */
 const WAIT = { timeout: 10_000 };
+
+describe('a source that cannot poll, or has lost its partner (#417)', () => {
+  const DOWN = new Error('connect ECONNREFUSED');
+  let engine: InstanceType<typeof EngineManager>;
+
+  async function running(): Promise<DeployedChannel> {
+    await engine.deploy(BUNDLE);
+    const deployed = engine.getRuntime(CHANNEL_ID)!;
+    await deployed.runtime.start();
+    return deployed;
+  }
+
+  /** The alert goes out on microtasks only: the mail service is a fake. */
+  async function polls(...failures: ReadonlyArray<Error | null>): Promise<void> {
+    for (const failure of failures) {
+      source.health?.(failure);
+      await vi.advanceTimersByTimeAsync(5_000);
+    }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    engine = new EngineManager('test-server');
+    alertOnSourceErrors(0); // Every event the engine raises.
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await engine.dispose();
+  });
+
+  it('raises one alert for an outage, however many polls it lasts, with the reason', async () => {
+    await running();
+
+    await polls(null, DOWN, DOWN, null, DOWN, DOWN);
+
+    expect(alerts.sendMail).toHaveBeenCalledTimes(1);
+    expect(alerts.sendMail.mock.calls[0]?.[2]).toBe('ALERT The source cannot receive, and goes on trying: connect ECONNREFUSED');
+  });
+
+  it('raises one for the next outage, once the source has worked for a minute', async () => {
+    await running();
+
+    await polls(DOWN, ...Array.from({ length: 13 }, () => null), DOWN);
+
+    expect(alerts.sendMail).toHaveBeenCalledTimes(2);
+  });
+
+  it('raises one for the same outage after the channel was started again', async () => {
+    const { runtime } = await running();
+    await polls(DOWN);
+
+    await runtime.stop();
+    await runtime.start();
+    await polls(DOWN, DOWN);
+
+    expect(alerts.sendMail).toHaveBeenCalledTimes(2);
+  });
+
+  it('raises none once the channel is stopped, or while it stops', async () => {
+    const { runtime } = await running();
+    sourceMock.onStop.mockImplementation(async () => { source.health?.(DOWN); return OK_RESULT; });
+
+    await runtime.stop();
+    await polls(DOWN);
+
+    expect(alerts.sendMail).not.toHaveBeenCalled();
+  });
+});
 
 describe('EngineManager source failure', () => {
   it('stops the channel, records an ERROR event and raises a SOURCE_CONNECTOR alert', async () => {

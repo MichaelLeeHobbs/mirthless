@@ -6,6 +6,7 @@ import {
   GlobalChannelMap,
   GlobalMapProxy,
   QueueConsumer,
+  SourceHealth,
   compileScript,
   globalsNamed,
   compileFilterRulesToScript,
@@ -792,6 +793,7 @@ export class EngineManager {
     // The runtime identifies this deployment (and its source): a report that
     // arrives after an undeploy and redeploy must not stop the new one.
     source.setFatalHandler?.((error) => { void this.stopAfterSourceFailure({ channelId: channel.id, runtime, error, raiseAlert }); });
+    alertOnOutages(source, { channelId: channel.id, runtime, raiseAlert });
 
     const configMapRecord: Record<string, unknown> = {};
     for (const entry of configMapResult.value) {
@@ -1635,6 +1637,19 @@ export class EngineManager {
     }
     this.sandbox.dispose();
   }
+}
+
+function alertOnOutages(source: SourceConnectorRuntime, { channelId, runtime, raiseAlert }: Omit<SourceFailureReport, 'error'>): void {
+  let run: { readonly signal: AbortSignal; readonly health: SourceHealth } | null = null;
+  source.setHealthHandler?.((failure) => {
+    const { runSignal } = runtime;
+    // A source that is being stopped may lose its connection under a poll.
+    if (runSignal.aborted) return;
+    if (run?.signal !== runSignal) run = { signal: runSignal, health: new SourceHealth() };
+    const timestamp = Date.now();
+    if (!run.health.report(failure, timestamp) || failure === null) return;
+    void raiseAlert({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: `The source cannot receive, and goes on trying: ${failure.message}`, timestamp });
+  });
 }
 
 /** An alert that names no channel is about every channel. */
