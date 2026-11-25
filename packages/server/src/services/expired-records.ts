@@ -47,7 +47,7 @@ export async function pruneExpiredRecords(budgetMs: number): Promise<ExpiredPrun
       deleted += batch.length;
       for (const id of batch) byCollection[id] = (byCollection[id] ?? 0) + 1;
       // As it goes: a server that is stopped meanwhile does not get to the event.
-      if (batch.length > 0) logger.info({ deleted, byCollection }, 'Data pruner deleted expired collection records');
+      if (batch.length > 0) logger.warn({ deleted, byCollection }, 'Data pruner deleted expired collection records');
       if (batch.length < BATCH_ROWS) return true;
       if (Date.now() - started >= budgetMs) return false;
     }
