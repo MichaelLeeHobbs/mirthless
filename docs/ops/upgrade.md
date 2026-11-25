@@ -429,7 +429,7 @@ The production compose file now gives the server 45 seconds to stop (`stop_grace
 
 ## A disabled account's email is locked (#419)
 
-`PUT /api/v1/users/:id` answers 409 when it would change the email address of a disabled account, unless it also enables the account. A script that frees the address of someone who left must enable the account, change the address and disable it again. Nothing already stored changes, and the API keys that were disabled with the person stay disabled.
+`PUT /api/v1/users/:id` answers 409 when it would change the email address of a disabled account, unless it also enables the account. A script that frees the address of someone who left must send `enabled: true` and the new address in one request and disable the account again at once: the person can sign in with their old password between the two. Nothing already stored changes, and the API keys that were disabled with the person stay disabled.
 
 ## Alert email signs in over TLS only (#358)
 

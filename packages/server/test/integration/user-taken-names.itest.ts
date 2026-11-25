@@ -149,12 +149,34 @@ describeIntegration('a username or an email an account has (real Postgres)', () 
     ]);
   });
 
-  it('records no change that was refused', async () => {
-    const [one, other] = [await person(), await person()];
+  it('records no change that was undone by what failed after it', async () => {
+    const one = await person();
+    const before = await stored(one.id);
 
-    expect((await call('PUT', `/users/${one.id}`, { email: other.email, firstName: 'Changed' })).status).toBe(409);
+    expect((await call('PUT', `/users/${one.id}`, { firstName: 'Changed', role: 'no-such-role' })).status).toBe(400);
 
+    expect(await stored(one.id)).toEqual(before);
     expect(await detailChanges(one.id)).toEqual([]);
+  });
+
+  it('records where a change came from', async () => {
+    const one = await person();
+
+    expect((await call('PUT', `/users/${one.id}`, { firstName: 'Changed' })).status).toBe(200);
+
+    const { rows } = await mods.pool.query<{ ip_address: string | null }>(
+      `SELECT ip_address FROM audit_log WHERE action = 'USER_DETAILS_CHANGED' AND attributes->>'targetUserId' = $1`, [one.id],
+    );
+    expect(rows.map((r) => r.ip_address)).toEqual([expect.stringContaining('127.0.0.1')]);
+  });
+
+  it('records a name as it was stored', async () => {
+    const one = await person();
+
+    expect((await call('PUT', `/users/${one.id}`, { firstName: 'a\ud800b' })).status).toBe(200);
+
+    expect(await stored(one.id)).toMatchObject({ first_name: 'a\ufffdb' });
+    expect(await detailChanges(one.id)).toEqual([{ by: admin.id, before: { firstName: null }, after: { firstName: 'a\ufffdb' } }]);
   });
 
   it('saves an edit that sends the account\'s own email', async () => {

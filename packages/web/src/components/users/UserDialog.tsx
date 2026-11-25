@@ -127,6 +127,7 @@ export function UserDialog({ open, user, isSelf, onClose, onSave, error, saving 
               required
               disabled={emailLocked}
               helperText={emailLocked ? 'Enable the account to change its email.' : undefined}
+              slotProps={{ formHelperText: { disabled: false } }}
             />
           </Grid>
           <Grid size={12}>

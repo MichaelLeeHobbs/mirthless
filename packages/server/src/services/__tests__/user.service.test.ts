@@ -42,7 +42,8 @@ const mockSelectFrom = vi.fn().mockImplementation(() => ({
 }));
 const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
-const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+const mockReturning = vi.fn().mockResolvedValue([]);
+const mockUpdateWhere = vi.fn(() => Object.assign(Promise.resolve(), { returning: mockReturning }));
 const mockSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
 const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 
@@ -225,6 +226,7 @@ describe('UserService', () => {
       pushAccessLock();
       pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([makeUser()], { forUpdate: true }); // the target, under lock
+      mockReturning.mockResolvedValueOnce([makeUser({ email: 'updated@test.com' })]);
       pushResponse([makeUser({ email: 'updated@test.com' })]); // getUser after update
 
       const result = await UserService.updateUser(USER_ID, { email: 'updated@test.com' }, ADMIN_ID);
@@ -270,6 +272,8 @@ describe('UserService', () => {
       const result = await update({ enabled: false }, { email: 'JSmith@test.com' });
 
       expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
       expect(mockUpdate).not.toHaveBeenCalled();
     });
   });
