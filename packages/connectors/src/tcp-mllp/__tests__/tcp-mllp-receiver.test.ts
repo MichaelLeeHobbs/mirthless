@@ -652,7 +652,7 @@ describe('TcpMllpReceiver stop', () => {
     const { dispatch, letGo, entered } = heldDispatcher();
     const setTimeoutOf = net.Socket.prototype.setTimeout;
     const shortened = vi.spyOn(net.Socket.prototype, 'setTimeout').mockImplementation(function (this: net.Socket, ms: number) {
-      return setTimeoutOf.call(this, ms === 300_000 ? 100 : ms);
+      return setTimeoutOf.call(this, ms === 300_000 ? 500 : ms);
     });
     try {
       receiver = new TcpMllpReceiver(makeConfig(), makeLogger().logger);
@@ -662,7 +662,7 @@ describe('TcpMllpReceiver stop', () => {
       client.write(wrapMllp(VALID_HL7));
       await entered;
 
-      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      await new Promise((resolve) => { setTimeout(resolve, 1_200); });
       letGo();
       await closed;
 

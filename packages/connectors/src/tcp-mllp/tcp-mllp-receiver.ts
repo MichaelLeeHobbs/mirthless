@@ -207,7 +207,11 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     // maxConnections, after which new senders would be silently refused.
     socket.setTimeout(IDLE_SOCKET_TIMEOUT_MS);
     socket.on('timeout', () => {
-      if (connection.inHand) return;
+      if (connection.inHand) {
+        // Only traffic re-arms it, and a message may end without an answer.
+        socket.setTimeout(IDLE_SOCKET_TIMEOUT_MS);
+        return;
+      }
       this.logger.warn({ remoteAddress: socket.remoteAddress }, 'MLLP connection idle timeout; closing');
       socket.destroy();
     });
