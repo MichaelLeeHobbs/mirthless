@@ -3,10 +3,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
-import { QueueConsumer, type QueueReadFailure } from '../queue-consumer.js';
-import type { MessageStore } from '../../pipeline/message-processor.js';
+import { QueueConsumer } from '../queue-consumer.js';
+import type { MessageStore, StoreReadFailure } from '../../pipeline/message-processor.js';
 
 const CHANNEL = '00000000-0000-0000-0000-000000000001';
+const CONFIG = { channelId: CHANNEL, metaDataId: 1, serverId: 'server-01', retryCount: 0, retryIntervalMs: 10_000, batchSize: 5, pollIntervalMs: 1_000 };
 const MESSAGE = { channelId: CHANNEL, messageId: 10, metaDataId: 1, sendAttempts: 0 };
 
 function ok<T>(value: T): Result<T> {
@@ -29,12 +30,12 @@ function makeStore(overrides: Partial<MessageStore>): MessageStore {
   };
 }
 
-let failures: QueueReadFailure[];
+let failures: StoreReadFailure[];
 
 function consumerOf(overrides: Partial<MessageStore>): QueueConsumer {
   return new QueueConsumer(
     {
-      channelId: CHANNEL, metaDataId: 1, serverId: 'server-01', retryCount: 0, retryIntervalMs: 10_000, batchSize: 5, pollIntervalMs: 1_000,
+      ...CONFIG,
       onReadFailure: (failure) => { failures.push(failure); },
       onMessageDelivered: async () => undefined,
     },
@@ -66,6 +67,17 @@ describe('a queue that cannot be read', () => {
     });
   });
 
+  it('is reported when the poll throws, although a read failed within the last minute', async () => {
+    let reads = 0;
+    const consumer = consumerOf({ dequeue: async () => { reads += 1; if (reads === 1) return fail('db down'); throw new Error('pool closed'); } });
+
+    consumer.start();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await consumer.stop();
+
+    expect(failures.map((f) => f.errorMessage)).toEqual(['Queued destination 1 could not read its queue: db down', 'Queued destination 1 poll failed: pool closed']);
+  });
+
   it('is reported when the poll throws', async () => {
     const consumer = consumerOf({ dequeue: async () => { throw new Error('pool closed'); } });
 
@@ -89,6 +101,18 @@ describe('a queued message that cannot be read', () => {
     await consumer.poll();
 
     expect(failures).toEqual([expect.objectContaining({ messageId: 10, errorMessage: expect.stringContaining(text) as string })]);
+  });
+
+  it('is reported although another message was within the last minute', async () => {
+    const consumer = new QueueConsumer(
+      { ...CONFIG, rotate: true, onReadFailure: (failure) => { failures.push(failure); } },
+      makeStore({ dequeue: async () => ok([MESSAGE, { ...MESSAGE, messageId: 11 }]), loadContent: async () => fail('cannot decrypt') }),
+      async () => ok({ status: 'SENT' as const, content: 'ACK' }),
+    );
+
+    await consumer.poll();
+
+    expect(failures.map((f) => f.messageId)).toEqual([10, 11]);
   });
 
   it('is reported at most once a minute while it is retried', async () => {

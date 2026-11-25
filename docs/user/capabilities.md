@@ -244,7 +244,7 @@ Named data that every channel's scripts can use, managed from the web UI and the
 | Live dashboard of channel state and counts | Yes | | | | Dashboard | `packages/server/src/services/__tests__/statistics.service.test.ts`<br>`packages/server/src/services/__tests__/socket-emission.test.ts`<br>`e2e/dashboard.spec.ts` |
 | Alert by email on channel errors | Yes | Throttle state is lost on restart, so a restart can send one extra alert (D-217). | | | Alerts | `packages/engine/src/alerts/__tests__/alert-evaluator.test.ts`<br>`packages/engine/src/alerts/__tests__/alert-manager.test.ts`<br>`packages/server/test/integration/alert.itest.ts`<br>`e2e/alerts.spec.ts` |
 | Alert when a channel receives nothing for a while | Yes | | | | | `packages/engine/src/alerts/__tests__/alert-evaluator.test.ts`<br>`packages/server/src/__tests__/engine-silence.test.ts` |
-| Alert on queue depth and error rate | No | Scrape `/metrics` with Prometheus and alert there. | ROADMAP B1 | [../ops/resource-and-observability.md](../ops/resource-and-observability.md) | | |
+| Alert on queue depth and error rate | No | Watch the queued and errored counts on the dashboard. `/metrics` has neither (N10). | ROADMAP B1 | [../ops/resource-and-observability.md](../ops/resource-and-observability.md) | | |
 | Webhook alert action and an error triage view | No | An alert email to a mail-to-webhook bridge. | ROADMAP V1 | | | |
 | Scope an alert to one connector or error stage | No | Filter in the alert's channel list and read the message. | ROADMAP N15 | | Alert per connector | |
 | Connection status per connector | No | Read the server log and the channel state. | ROADMAP N10 | | Dashboard connection status | |

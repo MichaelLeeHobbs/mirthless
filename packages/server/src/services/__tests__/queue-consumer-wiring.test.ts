@@ -265,7 +265,7 @@ describe('QueueConsumer wiring', () => {
       });
     });
 
-    it('logs a queue or a message on it that could not be read (#417)', async () => {
+    it('logs what the queue could not read (#417)', async () => {
       const logger = (await import('../../lib/logger.js')).default;
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(makeChannel({ destinations: [makeDest()] }) as never));
@@ -274,7 +274,7 @@ describe('QueueConsumer wiring', () => {
       config.onReadFailure?.({ channelId: CHANNEL_ID, metaDataId: 1, messageId: 7, errorMessage: 'db down' });
 
       expect(logger.error).toHaveBeenCalledWith(
-        { channelId: CHANNEL_ID, metaDataId: 1, messageId: 7, errMsg: 'db down' }, 'A destination queue, or a message on it, could not be read',
+        { channelId: CHANNEL_ID, metaDataId: 1, messageId: 7, errMsg: 'db down' }, 'A destination queue could not be worked on as it should',
       );
     });
 

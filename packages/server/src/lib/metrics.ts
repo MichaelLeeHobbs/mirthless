@@ -39,7 +39,7 @@ export const messagesProcessedTotal = new Counter({
 
 export const dbPoolTotal = new Gauge({
   name: 'galvanigraph_db_pool_total',
-  help: 'Number of open database pool connections, idle ones included',
+  help: 'Number of database connections the pool holds, idle ones and ones still connecting included',
   registers: [registry],
 });
 

@@ -1,6 +1,6 @@
 import type { Result } from '@galvanigraph/core-util';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
-import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler, StoreFailure } from '../pipeline/message-processor.js';
+import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler, StoreFailure, StoreReadFailure } from '../pipeline/message-processor.js';
 import { reportUnsaved } from '../pipeline/report-unsaved.js';
 import { sendFailureReason } from '../pipeline/send-failure.js';
 import { parseStoredVariables } from '../pipeline/stored-variables.js';
@@ -29,7 +29,7 @@ export interface QueueConsumerConfig {
   /** For the log: a store write for one message that failed, whether or not it raises an alert too. */
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
   /** For the log: the queue, or what is stored with a message on it, could not be read. */
-  readonly onReadFailure?: ((failure: QueueReadFailure) => void) | undefined;
+  readonly onReadFailure?: ((failure: StoreReadFailure) => void) | undefined;
   /**
    * Called once a delivery leaves the whole message delivered (every connector
    * SENT or FILTERED, per `MessageStore.isFullyDelivered`), with the raw
@@ -37,14 +37,6 @@ export interface QueueConsumerConfig {
    * (a DICOM file it deletes or moves) acts on it here.
    */
   readonly onMessageDelivered?: ((messageId: number, rawContent: string) => Promise<void>) | undefined;
-}
-
-export interface QueueReadFailure {
-  readonly channelId: string;
-  readonly metaDataId: number;
-  /** Absent when it was the queue itself. */
-  readonly messageId?: number | undefined;
-  readonly errorMessage: string;
 }
 
 interface QueuedMessage {
@@ -63,7 +55,7 @@ const STATUS_OF = {
   QUEUED: 'the QUEUED status of a destination',
 } as const;
 
-/** A read that is tried again is reported at most this often: the queue is polled every second. */
+/** What is tried again is reported at most this often: the queue is polled every second. */
 const READ_FAILURE_REPEAT_MS = 60_000;
 
 export class QueueConsumer {
@@ -78,7 +70,8 @@ export class QueueConsumer {
   private retryNotBefore = 0;
   private queueReadFailing = false;
   private failureAlerted = false;
-  private readFailureReportedAt: number | null = null;
+  /** When each failure that is tried again was last reported. */
+  private readonly readFailuresReported = new Map<string | number, number>();
 
   constructor(
     config: QueueConsumerConfig,
@@ -138,7 +131,7 @@ export class QueueConsumer {
 
     if (!dequeueResult.ok) {
       const errorMessage = `Queued destination ${String(this.config.metaDataId)} could not read its queue: ${dequeueResult.error.message}`;
-      this.reportRetriedRead(errorMessage);
+      this.reportRetriedRead('queue', errorMessage);
       // Alert on the first failure of a streak, not on every poll.
       if (!this.queueReadFailing) {
         this.queueReadFailing = true;
@@ -194,7 +187,7 @@ export class QueueConsumer {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const errorMessage = `Queued destination ${String(this.config.metaDataId)} poll failed: ${message}`;
-      this.reportRetriedRead(errorMessage);
+      this.reportRetriedRead('poll', errorMessage);
       await this.alert(errorMessage).catch(() => undefined);
     }
   }
@@ -375,7 +368,7 @@ export class QueueConsumer {
   }
 
   private async reportUnread(msg: QueuedMessage, errorMessage: string): Promise<void> {
-    this.reportRetriedRead(errorMessage, msg.messageId);
+    this.reportRetriedRead(msg.messageId, errorMessage, msg.messageId);
     await this.alertOnce(errorMessage);
   }
 
@@ -385,10 +378,13 @@ export class QueueConsumer {
     await this.alert(errorMessage);
   }
 
-  private reportRetriedRead(errorMessage: string, messageId?: number): void {
+  private reportRetriedRead(of: string | number, errorMessage: string, messageId?: number): void {
     const now = Date.now();
-    if (this.readFailureReportedAt !== null && now - this.readFailureReportedAt < READ_FAILURE_REPEAT_MS) return;
-    this.readFailureReportedAt = now;
+    for (const [key, at] of this.readFailuresReported) {
+      if (now - at >= READ_FAILURE_REPEAT_MS) this.readFailuresReported.delete(key);
+    }
+    if (this.readFailuresReported.has(of)) return;
+    this.readFailuresReported.set(of, now);
     this.reportRead(errorMessage, messageId);
   }
 
