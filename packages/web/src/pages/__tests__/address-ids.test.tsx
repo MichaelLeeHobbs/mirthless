@@ -56,7 +56,7 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   '/roles': [ROLE],
   [`/collections/${ID}`]: COLLECTION,
   [`/collections/${ID}/records`]: { items: [], total: 0 },
-  '/connectors/test': { success: true, message: 'ok', latencyMs: 5 },
+  '/connectors/test': { success: true, message: 'HTTP 200 OK', latencyMs: 5 },
 };
 
 interface Sent { readonly method: string; readonly path: string; readonly body: string }
@@ -143,7 +143,7 @@ describe('the channel editor at an address in capitals', () => {
     const client = open('/channels/:id', `/channels/${TYPED}`, <TestConnectionButton connectorType="HTTP" mode="DESTINATION" properties={{}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
-    await screen.findByText('Connected (5ms)');
+    await screen.findByText('HTTP 200 OK (5ms)');
 
     expect(JSON.parse(sent.find((s) => s.path === '/connectors/test')?.body ?? '{}')).toMatchObject({ channelId: ID });
     expect(idsAsTyped(client)).toEqual([]);

@@ -141,3 +141,9 @@ export async function resolveHttpSourceTls(
     return { ...props, tls: pemTls };
   });
 }
+
+type TlsResolver = (properties: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
+
+/** By connector type: the types that take certificates from the store. */
+export const SOURCE_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpSourceTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
+export const DESTINATION_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpDestinationTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
