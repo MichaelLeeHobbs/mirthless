@@ -192,6 +192,12 @@ describeIntegration('what an update leaves out (real Postgres)', () => {
       });
     });
 
+    it('refuses a destination whose id has a stray character, rather than put a new one that is on in its place', async () => {
+      const answer = await apiCall(base, admin, 'PUT', `/channels/${channelId!}`, { revision: before.revision, destinations: [{ ...NAMED, id: `${before.destinations[0]!.id}\r` }] });
+      expect(answer.status).toBe(400);
+      expect(await read()).toEqual(before);
+    });
+
     it('lets someone who may not deploy rename a channel that is enabled', async () => {
       const name = `itest-400-${randomUUID()}`;
       await expectOnly({ name }, { name }, await user('developer'));

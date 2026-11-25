@@ -28,7 +28,7 @@ export const channelPropertiesSchema = z.object({
 
 export const destinationInputSchema = z.object({
   /**
-   * On update, the id of the destination this is, or other text that is not a UUID for a new one, for
+   * On update, the id of the destination this is, or other text that holds no UUID for a new one, for
    * its filter and transformer to name it by. On create every destination is new.
    */
   id: destinationRefSchema.optional(),

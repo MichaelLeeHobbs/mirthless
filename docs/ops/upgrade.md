@@ -551,7 +551,7 @@ A script that counted on the defaults must send them. These now get a 400:
 - `PUT /api/v1/settings/:key` and `/settings/bulk` without the `value`, or with the mask a read shows for a password, which was stored in place of the password.
 - `PUT /api/v1/alerts/:id` with a `CHANNEL_ERROR` trigger without its `regex` (null for none).
 
-A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth, which leaves out scripts that are Mirth's defaults, or from a file without all four scripts.
+A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
 ## Standard upgrade (Docker)
 
