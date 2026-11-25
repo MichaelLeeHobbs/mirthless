@@ -99,6 +99,7 @@ describe('DestinationRedispatcher', () => {
   describe('the destination it was prepared for', () => {
     it.each([
       ['is another one now', [partner({ name: 'Clinic' })], 'it was prepared for the destination "Lab", and this is now "Clinic"'],
+      ['may be one of two with its name', [partner(), partner({ metaDataId: 3 })], 'more than one destination named "Lab"'],
       ['is gone', [partner({ metaDataId: 1 })], 'no longer has the destination'],
       ['is switched off', [partner({ enabled: false })], 'switched off'],
     ])('%s: nothing is sent or queued, and it says why', async (_what, destinations, why) => {

@@ -25,7 +25,6 @@ function variablesNotKept(names: readonly string[]): string {
   return `this destination uses the message's variables (${names.join(', ')}), and they are kept only for a destination that queues. ${MAY_BE_DELIVERED}`;
 }
 
-
 /** How it ended, as recorded. A QUEUED one is the queue consumer's from then on. */
 export type RedispatchOutcome = 'SENT' | 'QUEUED' | 'ERROR';
 
@@ -73,12 +72,15 @@ export class DestinationRedispatcher {
     });
   }
 
-  /** Or why there is none to send to. A save numbers the destinations anew, so another can have its number. */
+  /** Or why there is none to send to. A save numbers the destinations anew, so another can have its number. Names need not differ. */
   private destinationFor(metaDataId: number, preparedFor: string | null): DestinationConfig | string {
     const now = this.config.destinations.find((d) => d.metaDataId === metaDataId);
     if (!now) return `the channel no longer has the destination it was prepared for. ${MAY_BE_DELIVERED}`;
     if (preparedFor !== null && preparedFor !== now.name) {
       return `it was prepared for the destination "${preparedFor}", and this is now "${now.name}". ${MAY_BE_DELIVERED}`;
+    }
+    if (preparedFor !== null && this.config.destinations.filter((d) => d.name === preparedFor).length > 1) {
+      return `the channel has more than one destination named "${preparedFor}", so which one it was prepared for is not known. ${MAY_BE_DELIVERED}`;
     }
     return now.enabled ? now : `this destination is switched off. ${MAY_BE_DELIVERED}`;
   }
