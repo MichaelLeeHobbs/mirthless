@@ -1,5 +1,6 @@
 import { Writable } from 'node:stream';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
+import { onScriptLoggingOff, SCRIPT_LOG_COMPONENT } from '../lib/script-log.js';
 import { emitToRoom } from '../lib/socket.js';
 
 const MAX_ENTRIES = 10_000;
@@ -10,6 +11,12 @@ export interface LogEntry {
   readonly levelLabel: string;
   readonly logger: string;
   readonly message: string;
+  /** Counts the lines since the server started. */
+  readonly seq: number;
+}
+
+interface KeptEntry extends LogEntry {
+  readonly ofScript: boolean;
 }
 
 export interface LogQueryParams {
@@ -33,11 +40,24 @@ const LEVEL_LABELS: Record<number, string> = {
   60: 'FATAL',
 };
 
-const buffer: LogEntry[] = [];
+const buffer: KeptEntry[] = [];
 let writeIndex = 0;
 let totalWritten = 0;
+let holdsScripts = false;
 
-function addEntry(entry: LogEntry): void {
+/** What scripts wrote can hold PHI, and is kept no longer than it is logged (D-387). */
+function forgetScripts(): void {
+  if (!holdsScripts) return;
+  const kept = getEntries().filter((e) => !e.ofScript);
+  buffer.splice(0, buffer.length, ...kept);
+  writeIndex = kept.length % MAX_ENTRIES;
+  holdsScripts = false;
+}
+
+onScriptLoggingOff(forgetScripts);
+
+function addEntry(entry: KeptEntry): void {
+  holdsScripts ||= entry.ofScript;
   if (buffer.length < MAX_ENTRIES) {
     buffer.push(entry);
   } else {
@@ -47,10 +67,7 @@ function addEntry(entry: LogEntry): void {
   totalWritten++;
 }
 
-function getEntries(): readonly LogEntry[] {
-  if (totalWritten <= MAX_ENTRIES) {
-    return buffer;
-  }
+function getEntries(): readonly KeptEntry[] {
   return [...buffer.slice(writeIndex), ...buffer.slice(0, writeIndex)];
 }
 
@@ -72,7 +89,7 @@ export class LogStreamService {
     entries.reverse();
 
     const total = entries.length;
-    const paged = entries.slice(offset, offset + limit);
+    const paged = entries.slice(offset, offset + limit).map(({ ofScript: _ofScript, ...entry }) => entry);
 
     return { entries: paged, total };
   }
@@ -105,9 +122,10 @@ export class LogStreamService {
             levelLabel: LEVEL_LABELS[level] ?? 'UNKNOWN',
             logger: loggerName,
             message: msg,
+            seq: totalWritten,
           };
 
-          addEntry(entry);
+          addEntry({ ...entry, ofScript: obj['component'] === SCRIPT_LOG_COMPONENT });
           emitToRoom('logs', SOCKET_EVENT.SERVER_LOG, entry);
         } catch {
           // Not JSON — ignore non-JSON log lines
@@ -127,10 +145,11 @@ export class LogStreamService {
     buffer.length = 0;
     writeIndex = 0;
     totalWritten = 0;
+    holdsScripts = false;
   }
 
   /** Tests only. */
-  static _addEntry(entry: LogEntry): void {
-    addEntry(entry);
+  static _addEntry(entry: Omit<LogEntry, 'seq'>): void {
+    addEntry({ ...entry, seq: totalWritten, ofScript: false });
   }
 }

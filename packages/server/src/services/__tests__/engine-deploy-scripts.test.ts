@@ -36,7 +36,7 @@ const mockConfigMapList = vi.fn().mockResolvedValue({ ok: true, value: [], error
 
 const mockSandboxExecute = vi.fn().mockResolvedValue({
   ok: true,
-  value: { returnValue: undefined, mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
+  value: { returnValue: undefined, mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }},
   error: null,
 });
 const mockSandboxDispose = vi.fn();
@@ -211,7 +211,7 @@ describe('EngineManager deploy/undeploy scripts', () => {
 
       await new EngineManager('test-server').deploy(bundleOf(channel as never));
 
-      expect(mockSandboxExecute.mock.calls[0]![2]).toEqual({ timeout: 7_000, channelId: CHANNEL_ID });
+      expect(mockSandboxExecute.mock.calls[0]![2]).toMatchObject({ timeout: 7_000, channelId: CHANNEL_ID });
     });
 
     it('applies globalChannelMap updates from deploy script', async () => {
@@ -220,7 +220,6 @@ describe('EngineManager deploy/undeploy scripts', () => {
         value: {
           returnValue: undefined,
           mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: { deployKey: 'deployValue' } },
-          logs: [],
         },
         error: null,
       });
@@ -266,7 +265,7 @@ describe('EngineManager deploy/undeploy scripts', () => {
         callOrder.push('sandbox');
         return {
           ok: true,
-          value: { returnValue: undefined, mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
+          value: { returnValue: undefined, mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }},
           error: null,
         };
       });

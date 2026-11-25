@@ -36,8 +36,8 @@ const INITIAL_STATES = ['STARTED', 'STOPPED', 'PAUSED'] as const;
 
 const STORAGE_MODES = [
   { value: 'DEVELOPMENT', label: 'Development', description: 'Store everything (incl. maps + debug content)' },
-  { value: 'PRODUCTION', label: 'Production', description: 'Store raw, sent, response + errors (supports queuing)' },
-  { value: 'RAW', label: 'Raw', description: 'Store raw message + errors only (no queued destinations)' },
+  { value: 'PRODUCTION', label: 'Production', description: 'Store raw, sent, response, errors + script logs (supports queuing)' },
+  { value: 'RAW', label: 'Raw', description: 'Store raw message, errors + script logs only (no queued destinations)' },
   { value: 'METADATA', label: 'Metadata', description: 'Metadata only — no content, no queued destinations' },
   { value: 'DISABLED', label: 'Disabled', description: 'No message storage — no queued destinations' },
 ] as const;

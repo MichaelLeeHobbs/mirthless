@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { formatClockTime } from '../LogViewer.js';
+import { formatClockTime } from '../format.js';
 
 // Node reads TZ on every Date call, so each block sets the zone it means.
 const ORIGINAL_TZ = process.env['TZ'];

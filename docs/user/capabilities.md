@@ -254,7 +254,7 @@ Named data that every channel's scripts can use, managed from the web UI and the
 | Health endpoints for probes | Yes | | | [../ops/deployment.md](../ops/deployment.md) | | `packages/server/src/services/__tests__/health.service.test.ts` |
 | Event log of user and system actions | Yes | | | | Events | `packages/server/src/services/__tests__/event.service.test.ts`<br>`packages/server/src/services/__tests__/event-export.service.test.ts`<br>`e2e/events.spec.ts` |
 | Server log viewer | Yes | In memory, last 10,000 entries. | | | Server Log | `packages/server/src/services/__tests__/log-stream.service.test.ts` |
-| Script logger output in the message browser | No | none known; logger output is collected and discarded. | [#164](https://github.com/MichaelLeeHobbs/mirthless/issues/164) | [scripting-api.md](scripting-api.md) | logger | |
+| Script logger output in the message browser | Yes | Per message and connector, the first 200 lines of each script run, long ones cut; of a destination that is tried again and again, the first 5 and the last 15 runs, or fewer of those when they are long (D-387). In the server log too once an administrator turns that on; off by default, because the text can hold PHI. | | [scripting-api.md](scripting-api.md#logging) | logger | `packages/server/test/integration/script-log.itest.ts` |
 | Trace a message across channels with OpenTelemetry | No | Follow the `correlationId` in the logs. | ROADMAP B4 | | | |
 | Push alerts to a phone | No | Email to an SMS gateway. | [#147](https://github.com/MichaelLeeHobbs/mirthless/issues/147) | | | |
 

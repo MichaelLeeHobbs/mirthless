@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../lib/socket.js', () => ({
   emitToRoom: vi.fn(),
@@ -6,6 +6,7 @@ vi.mock('../../lib/socket.js', () => ({
 
 const { LogStreamService } = await import('../log-stream.service.js');
 const { emitToRoom } = await import('../../lib/socket.js');
+const { setScriptLogging } = await import('../../lib/script-log.js');
 
 function makeEntry(overrides?: Partial<Record<string, unknown>>): {
   readonly timestamp: string;
@@ -27,6 +28,65 @@ function makeEntry(overrides?: Partial<Record<string, unknown>>): {
 beforeEach(() => {
   vi.clearAllMocks();
   LogStreamService._reset();
+});
+
+describe('what channel scripts wrote (#164)', () => {
+  function write(...lines: ReadonlyArray<Readonly<Record<string, unknown>>>): void {
+    const stream = LogStreamService.createWritableStream();
+    for (const line of lines) stream.write(`${JSON.stringify({ level: 30, time: 1_790_000_000_000, ...line })}\n`);
+  }
+  const messages = (): string[] => LogStreamService.query().entries.map((e) => e.message);
+
+  afterEach(() => { setScriptLogging(false); });
+
+  it('is shown while it is logged, and not once that is off', () => {
+    setScriptLogging(true);
+    write({ msg: 'server up' }, { msg: '[Deploy, channel c] MRN 1', component: 'channel-script' });
+    expect(messages()).toEqual(['[Deploy, channel c] MRN 1', 'server up']);
+
+    setScriptLogging(false);
+    expect(messages()).toEqual(['server up']);
+    expect(LogStreamService.query().total).toBe(1);
+  });
+
+  it('is not shown either once the buffer has gone round', () => {
+    setScriptLogging(true);
+    write(...Array.from({ length: 10_010 }, (_, i) => ({ msg: `line ${String(i)}`, ...(i % 2 === 0 ? { component: 'channel-script' } : {}) })));
+    setScriptLogging(false);
+    expect(LogStreamService.query({ limit: 2 }).entries.map((e) => e.message)).toEqual(['line 10009', 'line 10007']);
+  });
+
+  it('does not come back when it is logged again', () => {
+    setScriptLogging(true);
+    write({ msg: 'server up' }, { msg: '[Deploy, channel c] MRN 1', component: 'channel-script' });
+    setScriptLogging(false);
+    setScriptLogging(true);
+    write({ msg: 'on again' });
+    write({ msg: '[Deploy, channel c] MRN 2', component: 'channel-script' });
+    expect(messages()).toEqual(['[Deploy, channel c] MRN 2', 'on again', 'server up']);
+  });
+
+  it('leaves the buffer in order, full or not', () => {
+    setScriptLogging(true);
+    write(...Array.from({ length: 10_003 }, (_, i) => ({ msg: String(i), ...(i % 3 === 0 ? { component: 'channel-script' } : {}) })));
+    setScriptLogging(false);
+    write(...Array.from({ length: 4_000 }, (_, i) => ({ msg: `then ${String(i)}` })));
+
+    const { entries, total } = LogStreamService.query({ limit: 20_000 });
+    expect(total).toBe(10_000);
+    expect(entries[0]?.message).toBe('then 3999');
+    expect(entries[4_000]?.message).toBe('10001');
+    expect(entries.map((e) => e.seq)).toEqual([...entries.map((e) => e.seq)].sort((a, b) => b - a));
+    expect(new Set(entries.map((e) => e.seq)).size).toBe(10_000);
+  });
+
+  it('has a number for each line, so that two of the same text are two', () => {
+    write({ msg: 'same' }, { msg: 'same' });
+    const { entries } = LogStreamService.query();
+    expect(entries.map((e) => e.seq)).toEqual([1, 0]);
+    expect(Object.keys(entries[0]!).sort()).toEqual(['level', 'levelLabel', 'logger', 'message', 'seq', 'timestamp']);
+    expect(vi.mocked(emitToRoom).mock.calls.map(([, , e]) => (e as { seq: number }).seq)).toEqual([0, 1]);
+  });
 });
 
 describe('LogStreamService', () => {
@@ -119,7 +179,7 @@ describe('LogStreamService', () => {
       await write(JSON.stringify({ level: 30, msg: 'test log', time: Date.UTC(2026, 2, 2, 12), name: 'api' }));
 
       expect(LogStreamService.query().entries).toEqual([
-        { timestamp: '2026-03-02T12:00:00.000Z', level: 30, levelLabel: 'INFO', logger: 'api', message: 'test log' },
+        { timestamp: '2026-03-02T12:00:00.000Z', level: 30, levelLabel: 'INFO', logger: 'api', message: 'test log', seq: 0 },
       ]);
     });
 

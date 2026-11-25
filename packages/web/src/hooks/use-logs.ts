@@ -10,6 +10,8 @@ export interface LogEntry {
   readonly levelLabel: string;
   readonly logger: string;
   readonly message: string;
+  /** Counts the lines since the server started. */
+  readonly seq: number;
 }
 
 interface LogQueryResult {

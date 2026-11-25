@@ -28,6 +28,7 @@ vi.mock('@galvanigraph/connectors', () => ({
 }));
 
 const mockStoreContent = vi.fn();
+const mockLoadContent = vi.fn();
 const mockMarkProcessed = vi.fn();
 const mockDeleteContent = vi.fn();
 const mockDeleteAttachments = vi.fn();
@@ -40,7 +41,7 @@ vi.mock('../message.service.js', () => ({
     storeContent: mockStoreContent,
     markProcessed: mockMarkProcessed,
     enqueue: vi.fn(),
-    loadContent: vi.fn(),
+    loadContent: mockLoadContent,
     incrementStats: vi.fn(),
     dequeue: vi.fn(),
     release: vi.fn(),
@@ -69,7 +70,7 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 // Must import after mocks
-const { shouldStoreContent, storageModeSupportsQueue } = await import('../../engine.js');
+const { createMessageStoreAdapter, shouldStoreContent, storageModeSupportsQueue } = await import('../../engine.js');
 
 function ok<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
@@ -85,7 +86,7 @@ beforeEach(() => {
 
 describe('shouldStoreContent', () => {
   it('DEVELOPMENT stores all content types', () => {
-    for (const ct of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]) {
+    for (const ct of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
       expect(shouldStoreContent('DEVELOPMENT', ct)).toBe(true);
     }
   });
@@ -93,8 +94,8 @@ describe('shouldStoreContent', () => {
   it('PRODUCTION stores delivery/recovery/browser content (raw, transformed, encoded, sent, response*) and errors', () => {
     // Stored: RAW(1), TRANSFORMED(3), ENCODED(4), SENT(5), RESPONSE(6),
     // RESPONSE_TRANSFORMED(7), RESPONSE_SENT(8), a queued destination's
-    // variables CHANNEL_MAP(10), and errors(11-13).
-    for (const ct of [1, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]) {
+    // variables CHANNEL_MAP(10), errors(11-13) and what scripts logged(14).
+    for (const ct of [1, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14]) {
       expect(shouldStoreContent('PRODUCTION', ct)).toBe(true);
     }
     // Not stored: PROCESSED(2) debug copy, SOURCE_MAP(9).
@@ -112,26 +113,50 @@ describe('shouldStoreContent', () => {
     expect(shouldStoreContent('RAW', 5)).toBe(false);
   });
 
-  it('RAW stores raw (1) and errors (11-13)', () => {
+  it('RAW stores raw (1), errors (11-13) and what scripts logged (14)', () => {
     expect(shouldStoreContent('RAW', 1)).toBe(true);
     for (const ct of [2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       expect(shouldStoreContent('RAW', ct)).toBe(false);
     }
-    for (const ct of [11, 12, 13]) {
+    for (const ct of [11, 12, 13, 14]) {
       expect(shouldStoreContent('RAW', ct)).toBe(true);
     }
   });
 
   it('METADATA stores nothing', () => {
-    for (const ct of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]) {
+    for (const ct of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
       expect(shouldStoreContent('METADATA', ct)).toBe(false);
     }
   });
 
   it('DISABLED stores nothing', () => {
-    for (const ct of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]) {
+    for (const ct of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
       expect(shouldStoreContent('DISABLED', ct)).toBe(false);
     }
+  });
+});
+
+describe('what a script logged (#164)', () => {
+  const RUN = { script: 'Source filter', lines: [{ level: 'INFO' as const, time: 't', text: 'x' }], leftOut: 0 };
+
+  it('is added to what is stored', async () => {
+    mockLoadContent.mockResolvedValue(ok(JSON.stringify({ runs: [RUN], runsLeftOut: 2 })));
+    expect(await createMessageStoreAdapter().storeScriptLog!('ch', 1, 0, RUN)).toEqual(ok(undefined));
+    expect(mockLoadContent).toHaveBeenCalledExactlyOnceWith('ch', 1, 0, 14);
+    expect(mockStoreContent).toHaveBeenCalledExactlyOnceWith('ch', 1, 0, 14, JSON.stringify({ runs: [RUN, RUN], runsLeftOut: 2 }), 'JSON', false);
+  });
+
+  it('is not stored, and that is said, when what is stored cannot be read: it would be overwritten', async () => {
+    const error = new Error('connection terminated');
+    mockLoadContent.mockResolvedValue({ ok: false, value: null, error });
+    expect(await createMessageStoreAdapter().storeScriptLog!('ch', 1, 0, RUN)).toEqual({ ok: false, value: null, error });
+    expect(mockStoreContent).not.toHaveBeenCalled();
+  });
+
+  it('is neither read nor stored on a channel that keeps no content', async () => {
+    expect(await createMessageStoreAdapter({ messageStorageMode: 'METADATA', removeContentOnCompletion: false, removeAttachmentsOnCompletion: false } as never).storeScriptLog!('ch', 1, 0, RUN)).toEqual(ok(undefined));
+    expect(mockLoadContent).not.toHaveBeenCalled();
+    expect(mockStoreContent).not.toHaveBeenCalled();
   });
 });
 

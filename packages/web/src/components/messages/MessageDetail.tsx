@@ -19,6 +19,7 @@ import { useMessageDetail, useDeleteMessage, type ConnectorDetail } from '../../
 import { DELETE_WARNING } from '../../lib/message-delete.js';
 import { useResendDestination } from '../../hooks/use-message-actions.js';
 import { ContentViewer } from './ContentViewer.js';
+import { ScriptLogView } from './ScriptLogView.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
@@ -37,6 +38,7 @@ const CONTENT_TABS = [
   { key: 'response', label: 'Response' },
   { key: 'error', label: 'Error' },
   { key: 'processingError', label: 'Processing Error' },
+  { key: 'scriptLog', label: 'Script Log' },
 ] as const;
 
 const MAP_KEYS = ['sourceMap', 'channelMap', 'connectorMap', 'responseMap'] as const;
@@ -73,7 +75,7 @@ function ConnectorContentTabs({ connector }: { readonly connector: ConnectorDeta
           <Tab key={t.key} label={t.label} />
         ))}
       </Tabs>
-      <ContentViewer content={content} />
+      {activeTab.key === 'scriptLog' ? <ScriptLogView content={content} /> : <ContentViewer content={content} />}
 
       {MAP_KEYS.some(k => connector.content[k] !== undefined) && (
         <Accordion disableGutters sx={{ mt: 1 }}>

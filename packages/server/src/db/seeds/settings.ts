@@ -87,6 +87,13 @@ export const defaultSettings: readonly NewSystemSetting[] = [
     category: 'pruner',
     description: 'Cron expression for data pruner schedule (default: 3 AM daily)',
   },
+  {
+    key: 'logging.script_output',
+    value: 'false',
+    type: 'boolean',
+    category: 'logging',
+    description: 'Write what channel scripts log to the server log (the text can hold PHI)',
+  },
   // Audit log (D-312). drop_expired_audit_partitions() reads it and never keeps less than 6.
   {
     key: 'audit.retention_years',

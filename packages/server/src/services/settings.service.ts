@@ -3,6 +3,8 @@ import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { UpsertSettingInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import logger from '../lib/logger.js';
+import { SCRIPT_LOG_SETTING, setScriptLogging } from '../lib/script-log.js';
 import { REDACTED, redactSettingValue } from '../lib/secret-redaction.js';
 import { db } from '../lib/db.js';
 import { systemSettings } from '../db/schema/index.js';
@@ -99,8 +101,23 @@ async function saveAll(inputs: readonly UpsertSettingInput[]): Promise<{ readonl
   });
 }
 
+/** One read after the other, so the last one sees the last change. */
+let applying: Promise<void> = Promise.resolve();
+
+async function readScriptLogging(): Promise<void> {
+  const stored = await SettingsService.getStoredValues([SCRIPT_LOG_SETTING]);
+  if (!stored.ok) logger.error({ key: SCRIPT_LOG_SETTING, errMsg: stored.error.message }, 'Whether scripts log to the server log could not be read: they do not');
+  setScriptLogging(stored.ok && stored.value.get(SCRIPT_LOG_SETTING) === 'true');
+}
+
 function clearedAttribute(cleared: boolean): { readonly cleared?: string } {
   return cleared ? { cleared: SMTP_PASSWORD } : {};
+}
+
+/** Who can read what scripts write depends on it, so the record says which way it was set: the last one is stored. */
+function scriptLogAttribute(inputs: readonly UpsertSettingInput[]): Record<string, unknown> {
+  const set = inputs.filter(({ key }) => key === SCRIPT_LOG_SETTING).at(-1);
+  return set === undefined ? {} : { [SCRIPT_LOG_SETTING]: set.value };
 }
 
 function recordChange(attributes: Record<string, unknown>, context: AuditContext | undefined): void {
@@ -151,10 +168,18 @@ export class SettingsService {
     });
   }
 
+  /** Puts what is stored into force: for these settings, or at start for all that are. */
+  static async applied(keys: readonly string[] = [SCRIPT_LOG_SETTING]): Promise<void> {
+    if (!keys.includes(SCRIPT_LOG_SETTING)) return;
+    applying = applying.then(readScriptLogging);
+    await applying;
+  }
+
   static async upsert(input: UpsertSettingInput, context?: AuditContext): Promise<Result<SettingDetail>> {
     return tryCatch(async () => {
       const { detail, cleared } = await saveAll([input]);
-      recordChange({ key: input.key, ...clearedAttribute(cleared) }, context);
+      await SettingsService.applied([input.key]);
+      recordChange({ key: input.key, ...scriptLogAttribute([input]), ...clearedAttribute(cleared) }, context);
       return detail[0]!;
     });
   }
@@ -162,7 +187,8 @@ export class SettingsService {
   static async bulkUpsert(inputs: readonly UpsertSettingInput[], context?: AuditContext): Promise<Result<readonly SettingDetail[]>> {
     return tryCatch(async () => {
       const { detail, cleared } = await saveAll(inputs);
-      recordChange({ keys: inputs.map((i) => i.key), ...clearedAttribute(cleared) }, context);
+      await SettingsService.applied(inputs.map((i) => i.key));
+      recordChange({ keys: inputs.map((i) => i.key), ...scriptLogAttribute(inputs), ...clearedAttribute(cleared) }, context);
       return detail;
     });
   }
@@ -184,6 +210,7 @@ export class SettingsService {
         await tx.delete(systemSettings).where(eq(systemSettings.key, key));
         return clears;
       });
+      await SettingsService.applied([key]);
       recordChange({ key, action: 'delete', ...clearedAttribute(cleared) }, context);
     });
   }
