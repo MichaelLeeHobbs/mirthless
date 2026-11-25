@@ -4,7 +4,7 @@ import { checkScriptTypes } from '../script-type-check.js';
 
 afterAll(async () => { await stopTypeChecker(); });
 
-// Longer than the product's: from source, the worker also loads tsx and compiles what it imports (D-369).
+// Longer than the product's: from source, the worker also loads tsx and compiles what it imports (D-373).
 const CHECK = { timeoutMs: 60_000 } as const;
 
 const HL7 = { dataType: 'HL7V2', templateContext: 'SOURCE_FILTER_TRANSFORMER' } as const;

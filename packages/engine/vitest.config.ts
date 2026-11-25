@@ -7,7 +7,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     passWithNoTests: true,
     // Longer than every limit the code under test sets itself, worker starts included, so that a
-    // test on a loaded machine sees the code's answer (D-369). Tests about a limit set a short one.
+    // test on a loaded machine sees the code's answer (D-373). Tests about a limit set a short one.
     testTimeout: 120_000,
     coverage: {
       provider: 'v8',

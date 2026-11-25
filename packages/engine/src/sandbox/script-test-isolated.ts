@@ -25,7 +25,7 @@ export interface IsolationLimits {
   readonly maxMemoryGrowthMb: number;
 }
 
-/** Each is blind to something the other sees (D-369). */
+/** Each is blind to something the other sees (D-373). */
 export interface WorkerMemory {
   /** The whole process's. A machine short of memory pages it out, and it shrinks. */
   readonly residentBytes: number;

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Longer than a run's own limits (30 s to start, then up to 15 s), so that a test on a
-// loaded machine sees what the run answered (D-369).
+// loaded machine sees what the run answered (D-373).
 vi.setConfig({ testTimeout: 120_000 });
 
 const mockChannelService = { getById: vi.fn() };
