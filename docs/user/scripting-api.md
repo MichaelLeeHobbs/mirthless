@@ -194,6 +194,8 @@ const [order] = await dbQuery('reporting-db',
   concatenation.
 - **Read-only by default** — a data source rejects writes unless an admin marks it read-write.
 - Bounded by a per-source statement timeout and a max-rows cap (a larger result set fails loud).
+- Dates, times and large numbers come back as text, as they stand in a DATABASE source's message
+  ([connector reference](connector-reference.md#database-what-it-does)).
 - PostgreSQL only in v1.
 
 ## Collections

@@ -315,7 +315,17 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 
 The source runs `selectQuery` on each poll and sends every row as a JSON message, at most 1,000 rows per poll; it can then run `updateQuery` to mark rows as read. The destination runs `query` once per message. `${name}` parameters in a query are sent as bound parameters, never pasted into the SQL.
 
-It talks to PostgreSQL and to MySQL or MariaDB, picked with `vendor` (D-259 in [DECISIONS.md](../progress/DECISIONS.md)). Any other vendor, such as SQL Server or Oracle, refuses to deploy.
+The name in `${name}` is everything between the braces, without surrounding spaces, and is one key, never a path: `${patient-id}` and `${a.b}` are the columns or variables with exactly those names. A name with only letters, digits and underscores that the row or message lacks is bound as NULL. Any other missing name is left as written, and the database refuses the statement.
+
+It talks to PostgreSQL and to MySQL or MariaDB, picked with `vendor` (D-259 in [DECISIONS.md](../progress/DECISIONS.md)). Any other vendor, such as SQL Server or Oracle, refuses to deploy. No test has run against MariaDB.
+
+How a value stands in a message (D-358):
+
+- A PostgreSQL `date` is `2026-01-15`, a `timestamp` is `2026-01-15T00:30:00.123456`, in no time zone, and a `timestamptz` is the instant in UTC, `2026-01-15T08:30:00.123456Z`. Three to six digits of a second, whatever the time zone of the server. A value outside those forms (`infinity`, a year before 1 or after 9999, a `DateStyle` other than ISO) is the database's own text. MySQL dates and times are the database's own text.
+- A `bigint`, a `numeric` (in an array too) and a MySQL `DECIMAL` are text. So is a number inside a `json` or `jsonb` value that JavaScript cannot hold (MySQL: a whole number), and a `NaN` or `Infinity`. Other numbers are numbers.
+- The same text goes back in `updateQuery`, so a row can be found by its time.
+
+A statement that takes too long is stopped by the database, so a failed statement does not take effect later. PostgreSQL gives it 30 seconds. MySQL gives it 25: the server ends a wait for a lock and a long SELECT by itself, and the connector stops any other statement with `KILL QUERY` on a second connection as the same user. A statement that ends before it is stopped is reported as it ended. When the server gives no answer for 30 seconds (for PostgreSQL, 35), or the connection is lost, nobody knows whether the statement took effect; on MySQL the error then says that it may. What a stopped MySQL statement had already done stays only where MySQL cannot undo it: in a table without transactions, such as MyISAM, and, unless `useTransaction` is on, in the statements a stored procedure had finished.
 
 ### DATABASE security
 
@@ -331,7 +341,7 @@ Set `tls` to true to connect over TLS. The database server's certificate is then
 | `database` | Yes | Database name. |
 | `username` | No | Database user. Deploy does not check it. Left empty, PostgreSQL connects as the `PGUSER` environment variable or the server process's operating system user, and MySQL connects with no user name. Set it. |
 | `password` | No | Password, if the database asks for one. |
-| `selectQuery` | Yes | Query that returns the rows to send. |
+| `selectQuery` | Yes | Query that returns the rows to send. With an update mode it is sent with `FOR UPDATE SKIP LOCKED`, so two sources cannot take the same row; `FOR UPDATE` of its own stays, and `FOR SHARE` becomes `FOR UPDATE`. |
 | `updateQuery` | No | Statement run after rows are sent, such as marking them processed. Required when `updateMode` is `ALWAYS` or `ON_SUCCESS`. |
 | `updateMode` | No | `NEVER` (default), `ALWAYS` or `ON_SUCCESS`: when `updateQuery` runs. With `NEVER`, the next poll returns the same rows again unless `selectQuery` excludes them. |
 | `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647 (about 24.8 days). Defaults to 5000. |
@@ -359,6 +369,8 @@ A key neither table lists refuses to deploy, naming the key.
 
 - PostgreSQL and MySQL/MariaDB only. A Mirth channel on SQL Server or Oracle imports with a warning but refuses to deploy.
 - One poll sends at most 1,000 rows; the rest wait for the next poll.
+- When `updateQuery` fails for a row whose message was stored, the row is not sent again: each poll that still returns it tries the update again, and logs an ERROR while it fails. A row that comes back with different content is a new row, so a `selectQuery` that returns something new at every poll, such as `now()`, sends it every time. A restart of the server or a deploy of the channel forgets which rows were sent, and sends each such row once more.
+- A stop waits for the row being processed, marks it, and takes no more rows. A halt does not wait; the row is still marked when its message is done.
 - The only row format is JSON.
 
 ## JAVASCRIPT
