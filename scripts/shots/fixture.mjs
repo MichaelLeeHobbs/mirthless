@@ -139,6 +139,20 @@ const dicomDetail = {
   }],
 };
 
+/** Files to a pharmacy partner over SFTP (#412). */
+const sftpDetail = {
+  ...channelDetail,
+  id: 'c7', name: 'Pharmacy RDE Feed',
+  destinations: [{
+    ...channelDetail.destinations[0], name: 'To Pharmacy', connectorType: 'SFTP',
+    properties: {
+      host: 'sftp.example.test', port: 22, username: 'galvanigraph', password: 'example', privateKey: '', passphrase: '',
+      remoteDirectory: '/inbound/rde', fileNameTemplate: '${messageId}.hl7', tempFileEnabled: true, appendMode: false,
+      strictHostKey: true, hostKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIExample',
+    },
+  }],
+};
+
 // A Delimited file drop written to a partner's MySQL: shows the Delimited
 // settings and the database type.
 const billingDetail = {
@@ -344,6 +358,7 @@ export function route(pathname, search) {
   if (p === '/channels/c9') return scriptedDetail;
   if (p === '/channels/c5') return dicomDetail;
   if (p === '/channels/c4') return httpDetail;
+  if (p === '/channels/c7') return sftpDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;
