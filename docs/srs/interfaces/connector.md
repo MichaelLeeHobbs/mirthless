@@ -87,6 +87,7 @@ type SourceFatalHandler = (error: Error) => void;
 interface SourceConnectorRuntime extends ConnectorLifecycle {
   setDispatcher(dispatcher: MessageDispatcher): void;      // after onDeploy, before onStart
   setFatalHandler?(handler: SourceFatalHandler): void;
+  setHealthHandler?(handler: (failure: Error | null) => void): void; // each poll and connection, null when it worked (D-391)
   setErrorReporter(reportError: (error: ConnectorError) => void): void; // planned (CPI-SRC-14); before onStart
   onMessageDelivered?(content: string): Promise<void>;
 }
@@ -129,7 +130,7 @@ interface SourceConnectorRuntime extends ConnectorLifecycle {
 - CPI-SRC-11: source: D-334 (an HTTP body that is not valid in its charset gets 415), `toRawMessage` in the Kafka and AMQP receivers (`charsetError`); README Purpose ("never be ... corrupted without someone being told"). Today TCP_MLLP, FILE, SFTP and EMAIL decode without checking.
 - CPI-SRC-12: source: srs-debate 2026-11-24, finding C3 (Contractor 2, Customer 2, Scope 5, Tester). Replaces CPI-SRC-09: when this row is accepted, that row becomes Superseded by CPI-SRC-12.
 - CPI-SRC-13: source: srs-debate 2026-11-24, finding C3 (Tester).
-- CPI-SRC-14: source: srs-debate 2026-11-24, finding C4 (Contractor 3; Customer and Scope agree).
+- CPI-SRC-14: source: srs-debate 2026-11-24, finding C4 (Contractor 3; Customer and Scope agree). Today `setHealthHandler` raises the alert, for polls and connections only, and the engine holds back the repeats (D-391); it records no event.
 - CPI-SRC-15: source: srs-debate 2026-11-24, finding C10 (Domain 3, Contractor 9, Tester, Scope). conflict: D-254 lets a batch answer not-ok after parts were recorded. Replaces CPI-SRC-01: when this row is accepted, that row becomes Superseded by CPI-SRC-15.
 - CPI-SRC-16: source: srs-debate 2026-11-24, finding C11 (Contractor 10 with Tester 2, Domain 6). DICOM answers before the dispatch (CONN-DCM-12), so no sender waits there: decision D-C4. Replaces CPI-SRC-03: when this row is accepted, that row becomes Superseded by CPI-SRC-16.
 - CPI-SRC-17: source: srs-debate 2026-11-24, finding C11 (Contractor 10, Tester 2). The other half of CPI-SRC-03.

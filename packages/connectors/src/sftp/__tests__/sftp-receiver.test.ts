@@ -447,7 +447,7 @@ describe('file names a Mirth File Reader leaves alone (#244)', () => {
 });
 
 describe('connection loss', () => {
-  it('logs the poll-cycle failure and reconnects on the next cycle', async () => {
+  it('logs the poll-cycle failure when a new connection fails too, and reconnects on the next cycle', async () => {
     const state = new RemoteState();
     state.addFile('a.hl7', 'X', Date.now() - 10_000);
     const { logger, errors } = makeMockLogger();
@@ -455,7 +455,7 @@ describe('connection loss', () => {
     let clientIdx = 0;
     const factory: SftpClientFactory = () => {
       clientIdx++;
-      return makeMockSftpClient(state, clientIdx === 1 ? { list: true } : {});
+      return makeMockSftpClient(state, clientIdx <= 2 ? { list: true } : {});
     };
 
     const captured: RawMessage[] = [];

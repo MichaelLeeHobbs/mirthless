@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import {
@@ -106,6 +106,8 @@ function heldBack(name: string, listed: ReadonlySet<string>): boolean {
   return name.endsWith(IGNORE_SUFFIX) || listed.has(name + IGNORE_SUFFIX);
 }
 
+const LISTING_LATE_MS = 60_000;
+
 interface FileEntry extends FileVersion {
   readonly name: string;
   readonly fullPath: string;
@@ -125,10 +127,12 @@ export class FileReceiver implements SourceConnectorRuntime {
   private readonly config: FileReceiverConfig;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
   /** False once stop or halt is requested: the cycle in flight takes no more files. */
   private running = false;
+  private listingSince: number | null = null;
   /** The poll cycle in flight, so stop can wait for the file being processed. */
   private cycle: Promise<void> | null = null;
   /**
@@ -147,6 +151,10 @@ export class FileReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -184,7 +192,10 @@ export class FileReceiver implements SourceConnectorRuntime {
 
       this.running = true;
       this.pollTimer = setInterval(() => {
-        if (this.polling) return;
+        if (this.polling) {
+          this.reportLateListing();
+          return;
+        }
         this.cycle = this.pollCycle();
       }, this.config.pollingIntervalMs);
     });
@@ -215,7 +226,10 @@ export class FileReceiver implements SourceConnectorRuntime {
     if (this.polling || !this.dispatcher) return;
     this.polling = true;
     try {
+      this.listingSince = Date.now();
       const entries = await this.listMatchingFiles();
+      this.listingSince = null;
+      this.reportHealth(null);
       const sorted = this.sortEntries(entries);
       for (const entry of sorted) {
         if (!this.running) break;
@@ -234,9 +248,21 @@ export class FileReceiver implements SourceConnectorRuntime {
         { ...errorInfo(err), directory: this.config.directory },
         'File poll cycle failed',
       );
+      this.reportHealth(stderr(err));
     } finally {
+      this.listingSince = null;
       this.polling = false;
     }
+  }
+
+  /** A mount that is gone can hang the listing for ever. Another one beside it would take up one more thread. */
+  private reportLateListing(): void {
+    if (this.listingSince === null || Date.now() - this.listingSince < LISTING_LATE_MS) return;
+    this.reportHealth(new Error(`The directory has not been listed for ${String(LISTING_LATE_MS / 1_000)} s`));
+  }
+
+  private reportHealth(failure: Error | null): void {
+    if (this.running) this.health(failure);
   }
 
   /**
@@ -248,17 +274,23 @@ export class FileReceiver implements SourceConnectorRuntime {
     const dirEntries = await fs.readdir(directory, { withFileTypes: true });
     const listed = new Set(dirEntries.map((e) => e.name));
     const results: FileEntry[] = [];
+    let failure: unknown = null;
 
     for (const entry of dirEntries) {
       if (!entry.isFile() || !this.takesName(entry.name, listed)) continue;
 
       const fullPath = path.join(directory, entry.name);
-      const version = await versionOf(fullPath).catch(() => null);
+      const version = await versionOf(fullPath).catch((err: unknown) => {
+        failure = err;
+        this.logger.error({ ...errorInfo(err), file: fullPath }, 'File could not be looked at; skipping it this poll');
+        return null;
+      });
       // Gone since the listing (another reader took it): nothing to process.
       if (version === null || isTooNew(version, this.minAgeMs())) continue;
 
       results.push({ name: entry.name, fullPath, ...version });
     }
+    if (results.length === 0 && failure !== null) throw failure;
     return results;
   }
 

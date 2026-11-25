@@ -661,6 +661,62 @@ describe('FileReceiver', () => {
       expect(errors[0]!.msg).toContain('poll cycle failed');
     });
 
+    describe('reported to the engine (#417)', () => {
+      const seen: Array<string | null> = [];
+
+      async function start(): Promise<ReturnType<typeof makeMockLogger>> {
+        const log = makeMockLogger();
+        seen.length = 0;
+        receiver = new FileReceiver(makeConfig(), log.logger);
+        receiver.setDispatcher(makeDispatcher());
+        receiver.setHealthHandler((failure) => { seen.push(failure?.message ?? null); });
+        await receiver.onStart();
+        return log;
+      }
+
+      const eacces = (): Error => Object.assign(new Error('EACCES: permission denied, stat'), { code: 'EACCES' });
+
+      it('is a directory in which no file can be looked at, and the log names each', async () => {
+        mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7')] as never);
+        mockStat.mockRejectedValue(eacces());
+        const { errors } = await start();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(seen).toEqual(['EACCES: permission denied, stat']);
+        expect(errors.map((e) => e.obj['file'])).toEqual(expect.arrayContaining([expect.stringContaining('a.hl7'), expect.stringContaining('b.hl7')]));
+      });
+
+      it('is not one file among others that cannot be looked at, which the log names', async () => {
+        mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7')] as never);
+        mockStat.mockImplementation(async (p) => {
+          if (String(p).endsWith('a.hl7')) throw eacces();
+          return makeStatResult(Date.now() - 5_000, 100) as never;
+        });
+        mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+        const { errors } = await start();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(seen).toEqual([null]);
+        expect(errors.filter((e) => String(e.obj['file']).endsWith('a.hl7'))).toHaveLength(1);
+      });
+
+      it('is a listing that hangs, as that of a mount that is gone does, and no second one is begun', async () => {
+        let end: (entries: never) => void = () => undefined;
+        mockReaddir.mockImplementation(() => new Promise((resolve) => { end = resolve; }));
+        await start();
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(seen).toEqual([]);
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(seen).toEqual(['The directory has not been listed for 60 s']);
+        expect(mockReaddir).toHaveBeenCalledTimes(1);
+        end([] as never);
+      });
+    });
+
     it('quarantines a file whose post-action fails, preventing re-dispatch', async () => {
       const { logger, errors } = makeMockLogger();
       const now = Date.now();

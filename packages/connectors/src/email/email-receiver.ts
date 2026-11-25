@@ -1,5 +1,5 @@
-import { settleUnlessAborted, tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
+import { settleUnlessAborted, stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
@@ -70,6 +70,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private readonly createClient: ImapClientFactory;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private session: Session | null = null;
   /** Of the latest start: a halt aborts it, which ends what a stop waits for. */
@@ -98,6 +99,10 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -182,7 +187,10 @@ export class EmailReceiver implements SourceConnectorRuntime {
       await this.takeEmails(session);
     } catch (err) {
       // Otherwise a dropped connection leaves the channel STARTED but silently idle.
-      if (session.live) this.logger.error(errorInfo(err), 'Email poll cycle failed; will reconnect');
+      if (session.live) {
+        this.logger.error(errorInfo(err), 'Email poll cycle failed; will reconnect');
+        this.health(stderr(err));
+      }
       await this.disconnect(session);
     } finally {
       this.polling = false;
@@ -191,9 +199,9 @@ export class EmailReceiver implements SourceConnectorRuntime {
   }
 
   private async takeEmails(session: Session): Promise<void> {
-    const client = session.client ?? await this.connect(session);
+    const { client, unread } = await this.list(session);
     if (!session.live) return;
-    const unread = await withTimeout(client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread');
+    this.health(null);
     this.forgetGone(unread);
     const listed = unread.emails.filter((email) => this.matchesSubjectFilter(email)).map((email) => this.known(unread, email));
     this.report(unread, listed);
@@ -210,6 +218,25 @@ export class EmailReceiver implements SourceConnectorRuntime {
         session.inHand = false;
       }
     }
+  }
+
+  /** A server may close a connection that is kept from poll to poll, so one that fails is replaced at once. */
+  private async list(session: Session): Promise<{ readonly client: ImapClient; readonly unread: UnreadEmails }> {
+    const kept = session.client;
+    if (kept !== null) {
+      const listed = await tryCatch(() => this.unreadOf(kept));
+      if (listed.ok) return { client: kept, unread: listed.value };
+      if (!session.live) throw listed.error;
+      this.logger.warn(errorInfo(listed.error), 'Email folder could not be read on the connection kept from the last poll; trying a new one');
+      await this.disconnect(session);
+    }
+    const client = await this.connect(session);
+    if (!session.live) throw new Error('The source was stopped while it connected');
+    return { client, unread: await this.unreadOf(client) };
+  }
+
+  private unreadOf(client: ImapClient): Promise<UnreadEmails> {
+    return withTimeout(client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread');
   }
 
   private known({ uidValidity }: UnreadEmails, email: EmailMessage): ListedEmail {
