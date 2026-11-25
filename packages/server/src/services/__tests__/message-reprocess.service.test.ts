@@ -196,7 +196,7 @@ describe('MessageReprocessService, deleting', () => {
   });
 
   it.each([
-    ['one', [5], /^Message 5 was not deleted: it is still being processed or sent.*undeploy the channel/],
+    ['one', [5], /^Message 5 was not deleted: it is still being processed or sent.*stop the channel first/],
     ['several', [5, 6], /^2 messages were not deleted: they are still being processed or sent/],
   ])('refuses %s that something may be working on, and records no deletion', async (_what, ids, message) => {
     outcome([], ids);

@@ -1088,9 +1088,10 @@ export class EngineManager {
     }
   }
 
-  /** Nothing works on the channel's messages. A stopped channel may still be ending a queued send. */
+  /** Nothing works on the channel's messages. It reads STOPPED once its queues have ended, and what outlives a halt is in `working`. */
   isAtRest(channelId: string): boolean {
-    return !this.runtimes.has(channelId) && !this.deploying.has(channelId) && (this.working.get(channelId)?.size ?? 0) === 0;
+    const state = this.runtimes.get(channelId)?.runtime.getState() ?? 'STOPPED';
+    return state === 'STOPPED' && (this.working.get(channelId)?.size ?? 0) === 0;
   }
 
   getRuntime(channelId: string): DeployedChannel | undefined {

@@ -1532,6 +1532,21 @@ describe('MessageProcessor stores nothing once a message is processed', () => {
     expect(storedWhenMarked).toEqual([true]);
   });
 
+  it('stores nothing beside a custom metadata value that cannot be read', async () => {
+    const store = { ...makeStore(), storeCustomMetadata: vi.fn().mockResolvedValue(ok(undefined)) };
+    const circular: Record<string, unknown> = {};
+    circular['self'] = circular;
+    const config = makeConfig({ metadataColumns: [{ name: 'Order', dataType: 'STRING', mapping: 'order' }] });
+    const processor = new MessageProcessor(sandbox, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(
+      { ...makeInput(), sourceMap: { order: circular }, received: { messageId: 7, correlationId: 'c' } }, AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('ERROR');
+    expect(vi.mocked(store.storeContent).mock.calls.map((c) => c[3])).toEqual([CONTENT_TYPE.PROCESSING_ERROR]);
+    expect(store.createConnectorMessage).not.toHaveBeenCalled();
+  });
+
   it('waits for a destination that is still being sent to when another throws', async () => {
     const store = makeStore();
     let answer: (response: Result<DestinationResponse>) => void = () => undefined;

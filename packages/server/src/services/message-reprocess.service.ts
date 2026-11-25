@@ -63,7 +63,7 @@ async function deleteUnused(channelId: string, messageIds: readonly number[]): P
   if (result.deletedIds.length > 0) return result;
   if (result.refusedIds.length === 0) throw new ServiceError('NOT_FOUND', 'No matching messages found');
   const what = result.refusedIds.length === 1 ? `Message ${String(result.refusedIds[0])} was not deleted: it is` : `${String(result.refusedIds.length)} messages were not deleted: they are`;
-  throw new ServiceError('CONFLICT', `${what} still being processed or sent. Try again once that has ended. If it does not end, stop the channel to delete what is on a queue, or undeploy the channel to delete the rest.`);
+  throw new ServiceError('CONFLICT', `${what} still being processed or sent. Try again once that has ended. If it does not end, stop the channel first.`);
 }
 
 export class MessageReprocessService {

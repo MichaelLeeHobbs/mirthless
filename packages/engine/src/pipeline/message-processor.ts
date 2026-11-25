@@ -447,11 +447,12 @@ export class MessageProcessor {
       const activeDests = this.config.destinations
         .filter((d) => d.enabled && (!activeIds || activeIds.has(d.metaDataId)));
       const prepared = await Promise.all([
+        // First: it throws on a value it cannot read, and writes begun before it would go on behind the failed message.
+        this.storeSourceMetadata(messageId, mapState, input.sourceMap),
         this.config.scripts.sourceTransformer
           ? this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.TRANSFORMED, content, dataType)
           : Promise.resolve({ ok: true as const, value: undefined, error: null }),
         ...activeDests.map((d) => this.store.createConnectorMessage(channelId, messageId, d.metaDataId, d.name, 'RECEIVED')),
-        this.storeSourceMetadata(messageId, mapState, input.sourceMap),
       ]);
       const notPrepared = prepared.find((r) => !r.ok);
       if (notPrepared && !notPrepared.ok) return errorOut('prepareDestinations', notPrepared.error.message);

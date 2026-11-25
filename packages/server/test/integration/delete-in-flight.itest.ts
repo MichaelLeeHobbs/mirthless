@@ -1,5 +1,5 @@
 // Deleting a message while something still works on it left its content behind, where neither the
-// pruner nor the browser finds it, and could lose a queued delivery (#403, D-369).
+// pruner nor the browser finds it, and could lose a queued delivery (#403, D-370).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -169,13 +169,14 @@ describeIntegration('Deleting a message that is still worked on (real Postgres, 
       await letAnswer(partner);
       await waitForBlocked(mods.pool, '%INSERT INTO message_statistics');
       unwrap(await deployment.halt(channelId, actor));
+      const refusedHalted = await reprocess.bulkDelete(channelId, [messageId], actor);
       unwrap(await deployment.undeploy(channelId, actor));
 
       const refused = await reprocess.bulkDelete(channelId, [messageId], actor);
       await end(statistics, 'ROLLBACK');
       await sending;
 
-      expect(refused).toMatchObject(refusal);
+      expect([refusedHalted, refused]).toMatchObject([refusal, refusal]);
       expect(await state(messageId)).toEqual(DELIVERED);
       expect(unwrap(await reprocess.bulkDelete(channelId, [messageId], actor))).toEqual({ deletedCount: 1, refusedIds: [] });
       expect(await leftBehind()).toEqual({});
@@ -243,7 +244,11 @@ describeIntegration('Deleting a message that is still worked on (real Postgres, 
   });
 
   describe('that will never finish', () => {
-    it.each(['RECEIVED', 'PENDING'] as const)('%s, it can be deleted once its channel is undeployed, and the record names it', async (destination) => {
+    it.each([
+      ['RECEIVED', 'stopped'],
+      ['PENDING', 'stopped'],
+      ['PENDING', 'undeployed'],
+    ] as const)('%s, it can be deleted once its channel is %s, and the record names it', async (destination, once) => {
       await running();
       const { MessageService } = mods;
       const { messageId } = unwrap(await MessageService.createMessage(channelId, 'itest'));
@@ -252,11 +257,10 @@ describeIntegration('Deleting a message that is still worked on (real Postgres, 
       unwrap(await MessageService.storeContent(channelId, messageId, 1, CONTENT_TYPE.SENT, 'PHI', 'RAW'));
 
       expect(await reprocess.deleteMessage(channelId, messageId, actor)).toMatchObject({
-        ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('undeploy the channel') as string },
+        ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('stop the channel first') as string },
       });
       unwrap(await deployment.stop(channelId, actor));
-      expect(await reprocess.deleteMessage(channelId, messageId, actor)).toMatchObject(refusal);
-      unwrap(await deployment.undeploy(channelId, actor));
+      if (once === 'undeployed') unwrap(await deployment.undeploy(channelId, actor));
       unwrap(await reprocess.deleteMessage(channelId, messageId, actor));
 
       expect(await state(messageId)).toEqual(GONE);

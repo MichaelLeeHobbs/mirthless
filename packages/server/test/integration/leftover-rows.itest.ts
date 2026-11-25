@@ -1,4 +1,4 @@
-// What the pruner does with rows of messages that are no longer there (#403, D-369). It deletes stored
+// What the pruner does with rows of messages that are no longer there (#403, D-370). It deletes stored
 // content for good, so most of this is about what it must not touch.
 
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
@@ -179,6 +179,30 @@ describeIntegration('Rows that deleted messages left behind (real Postgres)', ()
     expect(await sweep(0)).toEqual({ rowsDeleted: 0, complete: false, failed: false });
     expect(await rowsOf(gone)).toEqual(ALL);
     expect((await sweep(AMPLE_MS)).rowsDeleted).toBe(6);
+  });
+
+  it('a table it could not read leaves the run failed, and it and those that go on from it incomplete', async () => {
+    const gone = await leftover();
+    await message();
+    const execute = mods.db.execute.bind(mods.db);
+    const now = Date.now.bind(Date);
+    let late = 0;
+    let calls = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => now() + late);
+    // The read of the first table fails, and the time is up after it.
+    vi.spyOn(mods.db, 'execute').mockImplementation(((query: Parameters<typeof execute>[0]) => {
+      calls += 1;
+      if (calls !== 2) return execute(query);
+      late = 100 * AMPLE_MS;
+      return Promise.reject(new Error('no more locks'));
+    }) as unknown as typeof execute);
+
+    expect(await sweep(AMPLE_MS)).toEqual({ rowsDeleted: 0, complete: false, failed: true });
+    vi.restoreAllMocks();
+
+    expect(await sweep(AMPLE_MS)).toMatchObject({ complete: false, failed: false });
+    expect(await sweep(AMPLE_MS)).toMatchObject({ complete: true, failed: false });
+    expect(await rowsOf(gone)).toEqual(NONE);
   });
 
   it('a run beside another does nothing', async () => {

@@ -15,7 +15,7 @@ export const SWEEP_BUDGET_MS = { REQUEST: 30_000, SCHEDULED: 300_000 } as const;
 
 export interface SweepResult {
   readonly rowsDeleted: number;
-  /** It got to the end, and nothing failed. */
+  /** It got to the end, and nothing failed, in the runs it went on from either. */
   readonly complete: boolean;
   readonly failed: boolean;
 }
@@ -31,6 +31,7 @@ interface Position extends Step {
 
 /** Where a run that used up its time goes on. */
 let resumeAt: Position | null = null;
+let failedBefore = false;
 let sweeping = false;
 
 /** Every id below it was given out at least a day ago, or before this run when no message is younger than that. */
@@ -98,6 +99,7 @@ async function sweep(budgetMs: number): Promise<SweepResult> {
   const resumed = resumeAt;
   const start = Math.max(0, steps.findIndex((s) => s.channelId === resumed?.channelId && s.table === resumed.table));
   resumeAt = null;
+  if (start === 0) failedBefore = false;
 
   let rowsDeleted = 0;
   let failed = false;
@@ -120,7 +122,8 @@ async function sweep(budgetMs: number): Promise<SweepResult> {
       break;
     }
   }
-  return { rowsDeleted, complete: !failed && resumeAt === null, failed };
+  failedBefore ||= failed;
+  return { rowsDeleted, complete: !failedBefore && resumeAt === null, failed };
 }
 
 /** Deletes rows of messages that are no longer there. A run that finds another under way does nothing. */
