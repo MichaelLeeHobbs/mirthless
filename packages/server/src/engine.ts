@@ -258,7 +258,7 @@ function splitBatch(content: string, run: BatchRun): readonly string[] {
 /**
  * Process each message of a batch, in order, as Mirth does, and report the batch as one outcome.
  * A message that was not recorded ends it and the batch is not taken, so the source offers it
- * again, and the messages before that one are then processed again (D-254, D-359). Otherwise the
+ * again, and the messages before that one are then processed again (D-254, D-364). Otherwise the
  * first error, if any message was recorded with one, or the last message's outcome.
  */
 export async function processBatch(content: string, run: BatchRun): Promise<Result<SourceDispatchOutcome>> {

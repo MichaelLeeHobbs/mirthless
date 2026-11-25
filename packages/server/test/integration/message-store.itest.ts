@@ -44,7 +44,7 @@ describeIntegration('Message store statements (real Postgres)', () => {
     const { MessageService } = mods;
     const row = (contentType: number, content: string): Parameters<typeof MessageService.initializeMessage>[3] => [{ metaDataId: 0, contentType, content, dataType: 'HL7V2' }];
 
-    // A batch is refused up front on this (D-359).
+    // A batch is refused up front on this (D-364).
     const raw = await MessageService.initializeMessage(channelId, 'itest-server', 'Source', row(CONTENT_TYPE.RAW, 'MSH|\u0000'));
     const sourceMap = await MessageService.initializeMessage(channelId, 'itest-server', 'Source', row(CONTENT_TYPE.SOURCE_MAP, JSON.stringify({ name: '\u0000' })));
 
