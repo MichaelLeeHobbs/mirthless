@@ -13,13 +13,15 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import type { Writable } from 'node:stream';
 import type { Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
-import { makeDirectory, syncDirectory, syncFile } from './durable-file.js';
+import { fileHeader, readableDataset, startsWithFileMeta } from './dicom-file.js';
+import { makeDirectory, syncDirectory } from './durable-file.js';
 
-const { Server, Scp, Dataset, constants, responses, log } = pkg;
+const { Server, Scp, Dataset, Implementation, constants, responses, log } = pkg;
 const { SopClass, StorageClass, TransferSyntax, PresentationContextResult, Status } = constants;
 const { CEchoResponse, CStoreResponse } = responses;
 
@@ -31,7 +33,7 @@ type CStoreRequestType = InstanceType<typeof pkg.requests.CStoreRequest>;
 type CStoreResponseType = InstanceType<typeof pkg.responses.CStoreResponse>;
 type CEchoRequestType = InstanceType<typeof pkg.requests.CEchoRequest>;
 type CEchoResponseType = InstanceType<typeof pkg.responses.CEchoResponse>;
-type DatasetType = InstanceType<typeof pkg.Dataset>;
+type PresentationContextType = InstanceType<typeof pkg.association.PresentationContext>;
 type ServerType = InstanceType<typeof pkg.Server>;
 
 function ok<T>(value: T): Result<T> {
@@ -98,22 +100,61 @@ interface ReceiverOptions {
 const DICOM_UID = /^[0-9]+(\.[0-9]+)*$/;
 const MAX_UID_LENGTH = 64;
 
-/**
- * The SOP Instance UID that names a received file. The sending AE supplies
- * it, so anything but a DICOM UID is refused (#313). One that is missing gets
- * a generated UID, as before.
- */
-function instanceUid(value: unknown): string {
-  if (value === undefined || value === '') return Dataset.generateDerivedUid();
-  if (typeof value === 'string' && value.length <= MAX_UID_LENGTH && DICOM_UID.test(value)) return value;
+/** The SOP Instance UID names the file, and the sending AE supplies it, so anything but a DICOM UID is refused (#313). */
+function checkedUid(uid: string): string {
+  if (uid.length <= MAX_UID_LENGTH && DICOM_UID.test(uid)) return uid;
   throw new Error('The SOP Instance UID is not a DICOM UID (digits and dots, at most 64 characters); the instance was not stored');
 }
 
-/** Write a dataset as a DICOM P10 file. */
-function writeDataset(dataset: DatasetType, filePath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    dataset.toFile(filePath, (error) => { if (error) reject(error); else resolve(); });
+/** PS3.4 B.2.3. The library's constants stop at the general statuses. */
+const CANNOT_UNDERSTAND = 0xc000;
+
+/** A received dataset: its attributes as the library reads them, for the source map, and the bytes that came, for the file. */
+class ReceivedDataset extends Dataset {
+  readonly sopClass: string;
+  readonly sopInstance: string;
+
+  /** Throws when the bytes do not name the instance: the library reads anything, and what it found none in is not a dataset. */
+  constructor(readonly bytes: Buffer, transferSyntax: string) {
+    const readable = readableDataset(bytes, transferSyntax);
+    // In the file it would be read as more of the header, and change what the file says it is.
+    if (startsWithFileMeta(readable)) throw new Error('The dataset starts with file meta information');
+    super(readable, transferSyntax);
+    const { SOPClassUID, SOPInstanceUID } = this.getElements();
+    if (typeof SOPClassUID !== 'string' || typeof SOPInstanceUID !== 'string' || SOPClassUID === '' || SOPInstanceUID === '') {
+      throw new Error('The dataset has no SOP Class UID or no SOP Instance UID');
+    }
+    this.sopClass = SOPClassUID;
+    this.sopInstance = SOPInstanceUID;
+  }
+}
+
+/** What the library collected of a C-STORE. Its types leave the method out. */
+function bytesOf(stream: Writable): Buffer {
+  if ('toBuffer' in stream && typeof stream.toBuffer === 'function') {
+    const bytes: unknown = stream.toBuffer();
+    if (Buffer.isBuffer(bytes)) return bytes;
+  }
+  throw new Error('The received dataset cannot be read back');
+}
+
+/** Write an instance as a DICOM file with its dataset as it came. It is on disk once this resolves. */
+async function writeInstance(dataset: ReceivedDataset, filePath: string): Promise<void> {
+  const header = fileHeader({
+    sopClass: dataset.sopClass,
+    sopInstance: dataset.sopInstance,
+    transferSyntax: dataset.getTransferSyntaxUid(),
+    implementationClass: Implementation.getImplementationClassUid(),
+    implementationVersion: Implementation.getImplementationVersion(),
   });
+  const handle = await fs.open(filePath, 'w');
+  try {
+    await handle.writeFile(header);
+    await handle.writeFile(dataset.bytes);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 /** What the source map of a message from this SCP names as its source. */
@@ -160,15 +201,13 @@ class DimseReceiver implements DcmtkReceiver {
    * against the roots before every write, so one swapped for a link out of them since deploy is
    * refused.
    */
-  private async handleInstance(dataset: DatasetType, callingAe: string, calledAe: string, assocId: string, files: string[]): Promise<void> {
-    const elements = dataset.getElements() as Record<string, unknown>;
-    const sopInstanceUid = instanceUid(elements['SOPInstanceUID']);
+  private async handleInstance(dataset: ReceivedDataset, callingAe: string, calledAe: string, assocId: string, files: string[]): Promise<void> {
+    const sopInstanceUid = checkedUid(dataset.sopInstance);
     const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
     await makeDirectory(dir);
     const filePath = await claimFileName(dir, sopInstanceUid);
     try {
-      await writeDataset(dataset, filePath);
-      await syncFile(filePath);
+      await writeInstance(dataset, filePath);
       await syncDirectory(dir);
     } catch (err) {
       await fs.rm(filePath, { force: true });
@@ -181,7 +220,7 @@ class DimseReceiver implements DcmtkReceiver {
       callingAE: callingAe,
       calledAE: calledAe,
       source: DIMSE_SOURCE,
-      instance: { dataset: elements },
+      instance: { dataset: dataset.getElements() },
     });
     files.push(filePath);
   }
@@ -239,6 +278,21 @@ class DimseReceiver implements DcmtkReceiver {
         this.sendAssociationReleaseResponse();
       }
 
+      override createDatasetFromStoreWritableStream(
+        stream: Writable,
+        context: PresentationContextType,
+        callback: (dataset: ReceivedDataset) => void,
+      ): void {
+        let dataset: ReceivedDataset | undefined;
+        try {
+          dataset = new ReceivedDataset(bytesOf(stream), context.getAcceptedTransferSyntaxUid() ?? '');
+        } catch (err) {
+          // Answered as not understood; thrown, it would end the association.
+          emitError(err instanceof Error ? err : new Error(String(err)));
+        }
+        callback(dataset as ReceivedDataset);
+      }
+
       override cEchoRequest(request: CEchoRequestType, callback: (response: CEchoResponseType) => void): void {
         const response = CEchoResponse.fromRequest(request);
         response.setStatus(Status.Success);
@@ -249,8 +303,8 @@ class DimseReceiver implements DcmtkReceiver {
         const response = CStoreResponse.fromRequest(request);
         const dataset = request.getDataset();
         // Sent after the release: nothing would make a message of it.
-        if (!dataset || this.ended) {
-          response.setStatus(Status.ProcessingFailure);
+        if (!(dataset instanceof ReceivedDataset) || this.ended) {
+          response.setStatus(dataset instanceof ReceivedDataset ? Status.ProcessingFailure : CANNOT_UNDERSTAND);
           callback(response);
           return;
         }

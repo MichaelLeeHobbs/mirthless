@@ -1,11 +1,13 @@
+import type { Writable } from 'node:stream';
 import pkg from 'dcmjs-dimse';
 import { freePort } from './free-port.js';
 
-const { Server, Scp, constants, responses } = pkg;
-const { PresentationContextResult, AbortSource, AbortReason, TransferSyntax } = constants;
+const { Server, Scp, Dataset, constants, responses } = pkg;
+const { PresentationContextResult, AbortSource, AbortReason } = constants;
 const { CStoreResponse } = responses;
 
 type AssociationType = InstanceType<typeof pkg.association.Association>;
+type PresentationContextType = InstanceType<typeof pkg.association.PresentationContext>;
 type CStoreRequestType = InstanceType<typeof pkg.requests.CStoreRequest>;
 
 export type ScpBehaviour =
@@ -15,7 +17,6 @@ export type ScpBehaviour =
   | { readonly answerThenAbort: number }
   | 'reject-association'
   | 'reject-contexts'
-  | 'uncompressed-only'
   | 'abort'
   | 'close'
   | 'never-answer';
@@ -24,12 +25,17 @@ export interface FakeScp {
   readonly port: number;
   /** C-STORE requests that reached it. */
   readonly stores: () => number;
+  /** What came, byte for byte. */
+  readonly received: { readonly transferSyntax: string; readonly dataset: Buffer }[];
   behaviour: ScpBehaviour;
   close(): void;
 }
 
-/** A DICOM archive that refuses, aborts or hangs up as told, over a real association. */
-export async function startFakeScp(behaviour: ScpBehaviour): Promise<FakeScp> {
+/**
+ * A DICOM archive that refuses, aborts or hangs up as told, over a real association. Of a context's
+ * transfer syntaxes it takes the first of `accepts`, or without it, the first proposed.
+ */
+export async function startFakeScp(behaviour: ScpBehaviour, accepts: readonly string[] | null = null): Promise<FakeScp> {
   const port = await freePort();
   let stores = 0;
 
@@ -41,8 +47,8 @@ export async function startFakeScp(behaviour: ScpBehaviour): Promise<FakeScp> {
       }
       for (const { id } of association.getPresentationContexts()) {
         const context = association.getPresentationContext(id);
-        const transferSyntax = context.getTransferSyntaxUids()
-          .find((uid) => fake.behaviour !== 'uncompressed-only' || uid === TransferSyntax.ImplicitVRLittleEndian);
+        const proposed = context.getTransferSyntaxUids();
+        const transferSyntax = accepts === null ? proposed[0] : accepts.find((uid) => proposed.includes(uid));
         if (fake.behaviour === 'reject-contexts' || transferSyntax === undefined) {
           context.setResult(PresentationContextResult.RejectAbstractSyntaxNotSupported);
         } else {
@@ -55,6 +61,16 @@ export async function startFakeScp(behaviour: ScpBehaviour): Promise<FakeScp> {
     override associationReleaseRequested(): void {
       if (typeof fake.behaviour === 'object' && 'answerThenHang' in fake.behaviour) return;
       this.sendAssociationReleaseResponse();
+    }
+
+    override createDatasetFromStoreWritableStream(
+      stream: Writable & { toBuffer?(): Buffer },
+      context: PresentationContextType,
+      callback: (dataset: InstanceType<typeof Dataset>) => void,
+    ): void {
+      const transferSyntax = context.getAcceptedTransferSyntaxUid() ?? '';
+      fake.received.push({ transferSyntax, dataset: stream.toBuffer?.() ?? Buffer.alloc(0) });
+      callback(new Dataset({}, transferSyntax));
     }
 
     override cStoreRequest(request: CStoreRequestType): void {
@@ -80,7 +96,7 @@ export async function startFakeScp(behaviour: ScpBehaviour): Promise<FakeScp> {
   }
 
   const server = new Server(Archive as unknown as typeof Scp);
-  const fake: FakeScp = { port, stores: () => stores, behaviour, close: () => { server.close(); } };
+  const fake: FakeScp = { port, stores: () => stores, received: [], behaviour, close: () => { server.close(); } };
   // Once it listens, an error is an association that a test broke on purpose.
   const listening = new Promise<void>((resolve, reject) => {
     server.on('listening', () => { resolve(); });
