@@ -58,9 +58,11 @@ The word `import` in a script shows up as `i\u006dport` where a script reads sou
 ### How a changed message is written back
 
 - **Delimited** rows keep their columns in the order they were read. Columns you add come
-  after them. A row you build yourself is written in the order of its keys; if one of its
-  keys is a whole number (`2`), JavaScript has no order for them, and the columns go by
-  their place in the channel's column names.
+  after them. A row you build yourself is written in the order of its keys, and one you give
+  as an array in the order of its values. JavaScript lists keys that are whole numbers (`2`)
+  before all others, smallest first, whenever you add them. If such a key is one of the
+  channel's column names, the row goes by the columns' places in those names instead, and
+  other keys after them; any other such key is written first.
 - **XML** keeps the original document's element order, comments, CDATA sections and
   whitespace. Elements you add are appended to their parent; elements you remove are
   dropped. Values are always text, never converted to numbers.

@@ -25,12 +25,14 @@ describe('delimitedOptionsSchema', () => {
   });
 
   // Reading such a row would keep only the later of the two (#372).
-  it.each([[['column2']], [['a', 'column3']], [['column1', 'column9']]])('refuses a name that a later column without a name has: %j', (columnNames) => {
+  it.each([
+    [['column2'], '2'], [['a', 'column3'], '3'], [['column1', 'column9'], '9'], [['column3', 'b'], '3'], [['column10', 'b'], '10'], [['column9007199254740993'], '9007199254740993'],
+  ])('refuses a name that a later column without a name has: %j', (columnNames, n) => {
     const { error } = delimitedOptionsSchema.safeParse({ columnNames });
-    expect(error?.issues.map((i) => i.message)).toEqual([expect.stringContaining(`"${columnNames.at(-1)!}" is what column`)]);
+    expect(error?.issues.map((i) => i.message)).toEqual([`"column${n}" is what column ${n} is called without a name, so it cannot name an earlier column`]);
   });
 
-  it.each([[['column1']], [['a', 'column1']], [['column2', 'b']], [['column02']], [['column']], [['mycolumn9']], [['column9x']], [['2', '1', '__proto__']]])('accepts %j, where no two columns have one name', (columnNames) => {
+  it.each([[['column1']], [['a', 'column1']], [['column2', 'b']], [['column02']], [['column']], [['mycolumn9']], [['column9x']], [['Column9']], [['2', '1', '__proto__']]])('accepts %j, where no two columns have one name', (columnNames) => {
     expect(delimitedOptionsSchema.safeParse({ columnNames }).success).toBe(true);
   });
 });

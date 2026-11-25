@@ -667,9 +667,18 @@ This reads the whole table, so run it at a quiet time. Start the server only on 
 
 ## Delimited columns keep their order (#372)
 
-A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read. Nothing has to be changed for that; messages sent before stay as they were, so check them with the partner if a channel has such names.
+A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read (D-378). Look at the channels with such names before the upgrade: a script that swapped the columns back, and a partner that reads them swapped, must stop doing that. Messages sent before stay as they were, so check them with the partner.
 
-A column name that a later column without a name has is refused when the channel deploys, for example `column2` as the only name: each row lost its first such column when it was read. A restart does not deploy such a channel either and reports it, so rename the column, and what scripts call it, before the upgrade.
+A column name that a later column without a name has is refused when the channel deploys, for example `column2` as the only name, or `column9` as the second of two: a row wide enough to have that later column lost the earlier one when it was read. The refusal does not depend on how wide the rows are. Before the upgrade rename such a column, change what scripts call it, and redeploy the channel: a restart deploys what was last deployed, not what was saved, and one that is refused is reported as a channel that failed to redeploy.
+
+This lists the column names of every Delimited channel:
+
+```sql
+SELECT c.id, c.name, t.inbound_properties->'delimited'->'columnNames' AS column_names
+FROM channels c JOIN channel_transformers t ON t.channel_id = c.id AND t.connector_id IS NULL
+WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
+  AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
+```
 
 ## Standard upgrade (Docker)
 

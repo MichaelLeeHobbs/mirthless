@@ -59,8 +59,8 @@ export const delimitedOptionsSchema = z.object({
   .refine((o) => new Set(o.columnNames).size === o.columnNames.length, { message: 'Column names must be unique' })
   .superRefine((o, ctx) => {
     for (const name of o.columnNames) {
-      const n = Number(/^column([1-9]\d*)$/.exec(name)?.[1]);
-      if (n > o.columnNames.length) ctx.addIssue({ code: 'custom', path: ['columnNames'], message: `"${name}" is what column ${String(n)} is called without a name, so it cannot name an earlier column` });
+      const n = /^column([1-9]\d*)$/.exec(name)?.[1];
+      if (Number(n) > o.columnNames.length) ctx.addIssue({ code: 'custom', path: ['columnNames'], message: `"${name}" is what column ${String(n)} is called without a name, so it cannot name an earlier column` });
     }
   });
 

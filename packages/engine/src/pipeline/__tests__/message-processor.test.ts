@@ -905,6 +905,23 @@ describe('MessageProcessor', () => {
     expect(sendFn).toHaveBeenCalledWith(1, 1, 'A,B,C,CAB\n', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
+  it.each([
+    ['adds a value', 'msg = msg.map((row) => ["A", "B"].concat("NEW"));', 'A,B,NEW\n'],
+    ['swaps the values', 'msg = [["B", "A"]];', 'B,A\n'],
+  ])('a Delimited preprocessor that gives rows as arrays and %s is taken at its word, whatever the names', async (_case, code, sent) => {
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      dataType: 'DELIMITED',
+      dataTypeOptions: { delimited: delimitedOptionsSchema.parse({ columnNames: ['2', '1'] }) },
+      scripts: { preprocessor: { code } },
+    });
+    const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput('A,B\n'), AbortSignal.timeout(5_000));
+
+    expect(sendFn).toHaveBeenCalledWith(1, 1, sent, expect.any(AbortSignal), expect.any(String), undefined);
+  });
+
   it('does not count the source as SENT when the only destination errors (stats overcount)', async () => {
     const store = makeStore();
     const sendFn: SendToDestination = vi.fn().mockResolvedValue({

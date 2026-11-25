@@ -100,33 +100,27 @@ function writeValue(raw: unknown, o: DelimitedOptions): string {
   return o.quote + escaped + o.quote;
 }
 
-const WHOLE_NUMBER = /^(?:0|[1-9]\d*)$/;
-const DEFAULT_NAME = /^column([1-9]\d*)$/;
-
-/** Where the column is in a record that was read; a key that is no such column goes last. */
-function columnPlace(key: string, places: ReadonlyMap<string, number>): number {
-  const named = places.get(key);
-  if (named !== undefined) return named;
-  const n = Number(DEFAULT_NAME.exec(key)?.[1]);
-  return n > places.size ? n - 1 : Number.MAX_SAFE_INTEGER;
+/** JavaScript lists an object's keys that are these whole numbers first, whenever they were added. */
+function isListedFirst(key: string): boolean {
+  return /^(?:0|[1-9]\d*)$/.test(key) && Number(key) < 2 ** 32 - 1;
 }
 
 /**
- * In the row's key order. JavaScript lists keys that are whole numbers first, so a row that has one no
- * longer says which order its columns were in: they go by their place in the record.
+ * In the row's key order. A row with a column that JavaScript lists first no longer says which order its
+ * columns were in: they go by their place in the record, and what is no column stays before or after them.
  */
-function rowValues(row: Readonly<Record<string, unknown>>, places: ReadonlyMap<string, number>): unknown[] {
-  const keys = Object.keys(row);
-  if (WHOLE_NUMBER.test(keys[0] ?? '')) keys.sort((a, b) => columnPlace(a, places) - columnPlace(b, places));
-  return keys.map((key) => row[key]);
+function rowValues(row: object, columnNames: readonly string[]): unknown[] {
+  if (Array.isArray(row) || !columnNames.some((name) => isListedFirst(name) && Object.hasOwn(row, name))) return Object.values(row);
+  const places = new Map(columnNames.map((name, index) => [name, index]));
+  const place = (key: string): number => places.get(key) ?? (isListedFirst(key) ? -1 : places.size);
+  return Object.entries(row).sort(([a], [b]) => place(a) - place(b)).map(([, value]: [string, unknown]) => value);
 }
 
 export function serializeDelimited(rows: unknown, options: DelimitedOptions): string {
   const list: readonly unknown[] = Array.isArray(rows) ? rows : [rows];
-  const places = new Map(options.columnNames.map((name, index) => [name, index]));
   let out = '';
   for (const row of list) {
-    const values = row !== null && typeof row === 'object' ? rowValues(row as Record<string, unknown>, places) : [row];
+    const values = row !== null && typeof row === 'object' ? rowValues(row, options.columnNames) : [row];
     out += values.map((v) => writeValue(v, options)).join(options.columnDelimiter) + options.recordDelimiter;
   }
   return out;
