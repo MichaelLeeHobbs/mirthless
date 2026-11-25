@@ -584,6 +584,10 @@ A script that counted on the defaults must send them. These now get a 400:
 
 A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
+## Changed alerts are in force at once (#417)
+
+An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
+
 ## Database values, timeouts and marked rows (#411)
 
 **PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:

@@ -179,15 +179,12 @@ vi.mock('../config-map.service.js', () => ({
   ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
 }));
 
-const mockAlertServiceList = vi.fn();
-const mockAlertServiceGetById = vi.fn();
-const mockAlertServiceGetByIds = vi.fn();
+const mockAlertServiceListEnabled = vi.fn();
 
 vi.mock('../alert.service.js', () => ({
   AlertService: {
-    list: mockAlertServiceList,
-    getById: mockAlertServiceGetById,
-    getByIds: mockAlertServiceGetByIds,
+    listEnabled: mockAlertServiceListEnabled,
+    onChange: vi.fn(),
   },
 }));
 
@@ -229,20 +226,6 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
-function makeAlertSummary(id: string, enabled: boolean): Record<string, unknown> {
-  return {
-    id,
-    name: `Alert ${id}`,
-    enabled,
-    triggerType: 'CHANNEL_ERROR',
-    revision: 1,
-    channelCount: 0,
-    actionCount: 1,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-}
-
 function makeAlertDetail(id: string, channelIds: readonly string[]): Record<string, unknown> {
   return {
     id,
@@ -273,12 +256,7 @@ beforeEach(() => {
   mockRuntimeGetState.mockReturnValue('STOPPED');
   mockRuntimeStop.mockResolvedValue({ ok: true, value: undefined, error: null });
   mockRuntimeHalt.mockResolvedValue({ ok: true, value: undefined, error: null });
-  mockAlertServiceList.mockResolvedValue({
-    ok: true,
-    value: { data: [], pagination: { page: 1, pageSize: 1000, total: 0, totalPages: 0 } },
-    error: null,
-  });
-  mockAlertServiceGetByIds.mockResolvedValue({
+  mockAlertServiceListEnabled.mockResolvedValue({
     ok: true, value: [], error: null,
   });
 });
@@ -298,18 +276,7 @@ describe('EngineManager', () => {
     });
 
     it('loads enabled alerts and passes them to AlertManager', async () => {
-      mockAlertServiceList.mockResolvedValue({
-        ok: true,
-        value: {
-          data: [
-            makeAlertSummary(ALERT_ID, true),
-            makeAlertSummary(ALERT_ID_2, false), // disabled
-          ],
-          pagination: { page: 1, pageSize: 1000, total: 2, totalPages: 1 },
-        },
-        error: null,
-      });
-      mockAlertServiceGetByIds.mockResolvedValue({
+      mockAlertServiceListEnabled.mockResolvedValue({
         ok: true,
         value: [makeAlertDetail(ALERT_ID, [])],
         error: null,
@@ -317,9 +284,6 @@ describe('EngineManager', () => {
 
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(makeChannel() as never));
-
-      expect(mockAlertServiceGetByIds).toHaveBeenCalledOnce();
-      expect(mockAlertServiceGetByIds).toHaveBeenCalledWith([ALERT_ID]);
 
       expect(mockAlertManager.loadAlerts).toHaveBeenCalledOnce();
       const loadedAlerts = mockAlertManager.loadAlerts.mock.calls[0]![0] as readonly unknown[];
@@ -329,18 +293,7 @@ describe('EngineManager', () => {
     it('filters alerts by channel scope', async () => {
       const otherChannelId = '00000000-0000-0000-0000-999999999999';
 
-      mockAlertServiceList.mockResolvedValue({
-        ok: true,
-        value: {
-          data: [
-            makeAlertSummary(ALERT_ID, true),
-            makeAlertSummary(ALERT_ID_2, true),
-          ],
-          pagination: { page: 1, pageSize: 1000, total: 2, totalPages: 1 },
-        },
-        error: null,
-      });
-      mockAlertServiceGetByIds.mockResolvedValue({
+      mockAlertServiceListEnabled.mockResolvedValue({
         ok: true,
         value: [
           makeAlertDetail(ALERT_ID, [otherChannelId]),
@@ -359,15 +312,7 @@ describe('EngineManager', () => {
     });
 
     it('includes alerts scoped to this specific channel', async () => {
-      mockAlertServiceList.mockResolvedValue({
-        ok: true,
-        value: {
-          data: [makeAlertSummary(ALERT_ID, true)],
-          pagination: { page: 1, pageSize: 1000, total: 1, totalPages: 1 },
-        },
-        error: null,
-      });
-      mockAlertServiceGetByIds.mockResolvedValue({
+      mockAlertServiceListEnabled.mockResolvedValue({
         ok: true,
         value: [makeAlertDetail(ALERT_ID, [CHANNEL_ID])],
         error: null,
@@ -381,8 +326,8 @@ describe('EngineManager', () => {
       expect((loadedAlerts[0] as { id: string }).id).toBe(ALERT_ID);
     });
 
-    it('refuses to deploy when the alert list cannot be loaded', async () => {
-      mockAlertServiceList.mockResolvedValue({
+    it('refuses to deploy when the alerts cannot be loaded', async () => {
+      mockAlertServiceListEnabled.mockResolvedValue({
         ok: false, value: null, error: { code: 'INTERNAL', message: 'DB error' },
       });
 
@@ -390,27 +335,6 @@ describe('EngineManager', () => {
 
       await expect(engine.deploy(bundleOf(makeChannel() as never))).rejects.toThrow('failed to load alerts: DB error');
       expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
-    });
-
-    it('refuses to deploy when alert details cannot be loaded', async () => {
-      mockAlertServiceList.mockResolvedValue({
-        ok: true,
-        value: {
-          data: [
-            makeAlertSummary(ALERT_ID, true),
-            makeAlertSummary(ALERT_ID_2, true),
-          ],
-          pagination: { page: 1, pageSize: 1000, total: 2, totalPages: 1 },
-        },
-        error: null,
-      });
-      mockAlertServiceGetByIds.mockResolvedValue({
-        ok: false, value: null, error: { code: 'INTERNAL', message: 'DB error' },
-      });
-
-      const engine = new EngineManager('test-server');
-
-      await expect(engine.deploy(bundleOf(makeChannel() as never))).rejects.toThrow('failed to load alerts: DB error');
     });
 
     it('passes onError callback to PipelineConfig', async () => {

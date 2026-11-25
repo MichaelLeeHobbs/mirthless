@@ -62,7 +62,7 @@ import { config } from './config/index.js';
 import { CollectionService, type CollectionRecordResult } from './services/collection.service.js';
 import { ResourceService } from './services/resource.service.js';
 import { DataSourceService } from './services/data-source.service.js';
-import { AlertService } from './services/alert.service.js';
+import { AlertService, type AlertDetail } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from './services/connector-tls-resolver.js';
 import { ServiceError } from './lib/service-error.js';
@@ -239,7 +239,7 @@ export interface BatchRules {
 export function batchRulesFor(channel: Pick<ChannelDetail, 'sourceConnectorType' | 'encryptData' | 'messageStorageMode'>): BatchRules {
   return {
     offeredOnce: channel.sourceConnectorType === 'JAVASCRIPT',
-    storesPlainText: !channel.encryptData && shouldStoreContent(channel.messageStorageMode as MessageStorageMode, CONTENT_TYPE.RAW),
+    storesPlainText: storesPlainText(channel),
   };
 }
 
@@ -352,6 +352,15 @@ export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
   return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
 }
 
+/** Never for what is sent on, or run again, from the store (D-367). */
+function shownNul(text: string): string {
+  return text.replaceAll('\u0000', '\u2400');
+}
+
+function storesPlainText(channel: Pick<ChannelDetail, 'encryptData' | 'messageStorageMode'>): boolean {
+  return !channel.encryptData && shouldStoreContent(channel.messageStorageMode as MessageStorageMode, CONTENT_TYPE.RAW);
+}
+
 export function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
   const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
   const encrypt = config?.encryptData ?? false;
@@ -382,7 +391,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
         toStore = enc.value;
       } else if (READ_ONLY_CONTENT_TYPES.has(contentType) && content.includes('\u0000')) {
         logger.warn({ channelId, messageId, metaDataId, contentType }, 'A response or error holds U+0000, which PostgreSQL cannot store as text: U+2400 is stored for each');
-        toStore = content.replaceAll('\u0000', '\u2400');
+        toStore = shownNul(content);
       }
       return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
     },
@@ -524,6 +533,8 @@ function whyQueueHeld(dest: ChannelDetail['destinations'][number] | undefined): 
 }
 
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
+/** A read on a dead connection would keep every later change from the running channels. */
+const ALERTS_READ_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
 const RAW_NOT_STORED = 'Not finished after a server stop: its raw content is not stored, so it cannot be run again. '
@@ -552,8 +563,17 @@ export class EngineManager {
   private readonly deploying = new Set<string>();
   /** The messages and recoveries still being worked on, by channel, whichever deployment of it began them. */
   private readonly working = new Map<string, Set<Promise<void>>>();
+  private alertChanges = 0;
+  private alertsRefreshed = Promise.resolve();
+  private alertsRefreshQueued = false;
+  /** The last read of changed alerts failed. */
+  private alertsStale = false;
 
   constructor(serverId?: string) {
+    AlertService.onChange(() => {
+      this.alertChanges += 1;
+      void this.refreshAlerts();
+    });
     this.sandbox = new VmSandboxExecutor({
       collections: createCollectionBridge(),
       getResource: createResourceBridge(),
@@ -710,14 +730,16 @@ export class EngineManager {
 
     // Alerts, the configuration map and the global map are server settings,
     // read live at every deploy; the channel's own code comes from the bundle.
-    const [loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
-      this.loadAlertsForChannel(channel.id),
+    const { alertChanges } = this;
+    const [enabledAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
+      AlertService.listEnabled(),
       ConfigMapService.list(),
       this.sharedGlobalMap(channel.id),
     ]);
 
-    // Fail loud, never silent: a channel deployed without its config map or
+    // Fail loud, never silent: a channel deployed without its alerts, config map or
     // global map would run with different behaviour from the one it was configured with.
+    if (!enabledAlerts.ok) throw deployLoadError(channel.id, 'alerts', enabledAlerts.error);
     if (!configMapResult.ok) throw deployLoadError(channel.id, 'the configuration map', configMapResult.error);
 
     const templates = templateData(bundle);
@@ -751,12 +773,14 @@ export class EngineManager {
       if (!target || whyNotTaking(target.runtime) !== null) {
         throw new Error(`Alert target channel ${targetChannelId} is not deployed and started`);
       }
-      const sent = await target.processMessage(content, { alertSourceChannelId: channel.id });
+      const unstorable = content.includes('\u0000') && storesPlainText(target.config);
+      if (unstorable) logger.warn({ channelId: channel.id, targetChannelId }, 'An alert holds U+0000, which its target channel cannot store as text: it is sent with U+2400 for each');
+      const sent = await target.processMessage(unstorable ? shownNul(content) : content, { alertSourceChannelId: channel.id });
       if (!sent.ok) throw sent.error;
     };
 
     const alertManager = new AlertManager({ logger, emailSender, channelSender, channelName: channel.name });
-    alertManager.loadAlerts(loadedAlerts);
+    alertManager.loadAlerts(alertsFor(channel.id, enabledAlerts.value));
 
     // Alerts are sent in the background. Awaiting them made every failing
     // message wait on the mail server, and the sender on the message.
@@ -979,6 +1003,7 @@ export class EngineManager {
     };
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, variablesUsed, recoverOnce, resetClaimsOnce, activity });
+    if (alertChanges !== this.alertChanges) void this.refreshAlerts();
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
   }
 
@@ -1070,11 +1095,36 @@ export class EngineManager {
     emitToChannelAudience(channelId, SOCKET_EVENT.CHANNEL_STATE, { channelId, state: deployed.runtime.getState() });
   }
 
+  /** Gives every deployed channel the alerts as they are saved now. Changes that come at once share one read. Never rejects. */
+  private refreshAlerts(): Promise<void> {
+    if (!this.alertsRefreshQueued) {
+      this.alertsRefreshQueued = true;
+      this.alertsRefreshed = this.alertsRefreshed.then(() => {
+        this.alertsRefreshQueued = false;
+        return this.readAlerts();
+      });
+    }
+    return this.alertsRefreshed;
+  }
+
+  private async readAlerts(): Promise<void> {
+    const read = await tryCatch(async () => {
+      const reading = AlertService.listEnabled();
+      if (!(await settleWithin(reading, ALERTS_READ_MS))) throw new Error(`No answer within ${String(ALERTS_READ_MS / 1_000)} s`);
+      const enabled = await reading;
+      if (!enabled.ok) throw enabled.error;
+      for (const { channelId, alertManager } of this.runtimes.values()) alertManager.loadAlerts(alertsFor(channelId, enabled.value));
+    });
+    this.alertsStale = !read.ok;
+    if (!read.ok) logger.error({ errMsg: read.error.message }, 'Changed alerts could not be read: the running channels keep those they have, and it is tried again');
+  }
+
   /**
    * A channel that is not STARTED restarts its silence clock, so stopping it
    * never alerts and a restart gets a full window before the first alert.
    */
   async checkSilentChannels(now: number = Date.now()): Promise<void> {
+    if (this.alertsStale) void this.refreshAlerts();
     for (const deployed of this.runtimes.values()) {
       if (deployed.runtime.getState() !== 'STARTED') {
         deployed.activity.lastAt = now;
@@ -1573,48 +1623,6 @@ export class EngineManager {
     }
   }
 
-  private async loadAlertsForChannel(channelId: string): Promise<readonly LoadedAlert[]> {
-    const listResult = await AlertService.list({ page: 1, pageSize: 1000 });
-    if (!listResult.ok) throw deployLoadError(channelId, 'alerts', listResult.error);
-
-    const enabledAlerts = listResult.value.data.filter((a) => a.enabled);
-    if (enabledAlerts.length === 0) return [];
-
-    const ids = enabledAlerts.map((a) => a.id);
-    const detailsResult = await AlertService.getByIds(ids);
-    if (!detailsResult.ok) throw deployLoadError(channelId, 'alerts', detailsResult.error);
-
-    return this.filterAlertsForChannel(detailsResult.value, channelId);
-  }
-
-  private filterAlertsForChannel(
-    details: readonly import('./services/alert.service.js').AlertDetail[],
-    channelId: string,
-  ): readonly LoadedAlert[] {
-    const loaded: LoadedAlert[] = [];
-    for (const detail of details) {
-      if (detail.channelIds.length > 0 && !detail.channelIds.includes(channelId)) continue;
-      loaded.push({
-        id: detail.id,
-        name: detail.name,
-        enabled: detail.enabled,
-        trigger: detail.trigger,
-        channelIds: detail.channelIds as readonly string[],
-        actions: detail.actions.map((a) => ({
-          id: a.id,
-          actionType: a.actionType as 'EMAIL' | 'CHANNEL',
-          recipients: a.recipients,
-          properties: a.properties,
-        })),
-        subjectTemplate: detail.subjectTemplate,
-        bodyTemplate: detail.bodyTemplate,
-        reAlertIntervalMs: detail.reAlertIntervalMs,
-        maxAlerts: detail.maxAlerts,
-      });
-    }
-    return loaded;
-  }
-
   async dispose(): Promise<void> {
     if (this.silenceTimer) clearInterval(this.silenceTimer);
     this.silenceTimer = undefined;
@@ -1625,6 +1633,29 @@ export class EngineManager {
     }
     this.sandbox.dispose();
   }
+}
+
+/** An alert that names no channel is about every channel. */
+function alertsFor(channelId: string, alerts: readonly AlertDetail[]): readonly LoadedAlert[] {
+  return alerts
+    .filter((alert) => alert.channelIds.length === 0 || alert.channelIds.includes(channelId))
+    .map((alert) => ({
+      id: alert.id,
+      name: alert.name,
+      enabled: alert.enabled,
+      trigger: alert.trigger,
+      channelIds: alert.channelIds,
+      actions: alert.actions.map((a) => ({
+        id: a.id,
+        actionType: a.actionType as 'EMAIL' | 'CHANNEL',
+        recipients: a.recipients,
+        properties: a.properties,
+      })),
+      subjectTemplate: alert.subjectTemplate,
+      bodyTemplate: alert.bodyTemplate,
+      reAlertIntervalMs: alert.reAlertIntervalMs,
+      maxAlerts: alert.maxAlerts,
+    }));
 }
 
 function logStoreFailure(failure: StoreFailure): void {
