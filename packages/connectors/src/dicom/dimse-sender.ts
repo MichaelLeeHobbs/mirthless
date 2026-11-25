@@ -1,16 +1,14 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import type { DcmtkSender, DcmtkSendResult } from './dicom-dispatcher.js';
+import './quiet-libraries.js';
 import { StoredDataset } from './stored-dataset.js';
 
-const { Client, association: associations, constants, requests, responses, log } = pkg;
+const { Client, association: associations, constants, requests, responses } = pkg;
 const { PresentationContext } = associations;
 const { Status, TransferSyntax } = constants;
 const { CStoreRequest } = requests;
 const { CStoreResponse } = responses;
-
-// Quiets the library's per-association INFO chatter; the connector reports failures itself.
-log.setLevel('warn');
 
 type AssociationType = InstanceType<typeof pkg.association.Association>;
 type PresentationContextType = InstanceType<typeof pkg.association.PresentationContext>;

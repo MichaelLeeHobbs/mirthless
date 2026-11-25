@@ -4,10 +4,12 @@
 // A dcmjs-dimse DICOM SCU that sends DICOM files via C-STORE.
 // Expects message content to be a file path.
 
+import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
+import type { FileRoots } from '../file/file-roots.js';
 import { createDimseSender, statusText } from './dimse-sender.js';
+import { resolveImage } from './image-path.js';
 
 export interface DicomDispatcherConfig {
   readonly host: string;
@@ -116,7 +118,11 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
         throw new Error('Message content is empty — expected a DICOM file path');
       }
 
-      const allowed = await tryCatch(resolveWithinRoots(message.content.trim(), this.config.roots));
+      const file = message.content.trim();
+      if (!path.isAbsolute(file)) {
+        return { status: 'ERROR' as const, content: '', errorMessage: 'The message content is not the absolute path of a DICOM file' };
+      }
+      const allowed = await tryCatch(resolveImage(file, this.config.roots));
       if (!allowed.ok) {
         return { status: 'ERROR' as const, content: '', errorMessage: allowed.error.message };
       }

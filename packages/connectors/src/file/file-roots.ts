@@ -39,30 +39,30 @@ async function realPathOf(target: string): Promise<string> {
   }
 }
 
-function isWithin(child: string, parent: string): boolean {
+export function isWithin(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
 }
 
 /**
  * Call it at deploy and again before each read, move or write, so a directory
- * later swapped for a symlink is caught.
+ * later swapped for a symlink is caught. `name` is what its errors call the path.
  */
-export async function resolveWithinRoots(target: string, roots: FileRoots): Promise<string> {
+export async function resolveWithinRoots(target: string, roots: FileRoots, name = `File connector path "${target}"`): Promise<string> {
   if (!path.isAbsolute(target)) {
-    throw new Error(`File connector path "${target}" must be absolute`);
+    throw new Error(`${name} must be absolute`);
   }
   const real = await realPathOf(target);
   const denied = await Promise.all([...SYSTEM_DENIED, ...roots.denied].map(realPathOf));
   if (denied.some((dir) => isWithin(real, dir))) {
-    throw new Error(`File connector path "${target}" is in one of the server's own directories, which File connectors may not use`);
+    throw new Error(`${name} is in one of the server's own directories, which File connectors may not use`);
   }
   if (roots.allowed.length === 0) {
     throw new Error('File connectors are turned off: FILE_CONNECTOR_ROOTS is not set. List the directories File connectors may use in it.');
   }
   const allowed = await Promise.all(roots.allowed.map(realPathOf));
   if (!allowed.some((dir) => isWithin(real, dir))) {
-    throw new Error(`File connector path "${target}" is outside FILE_CONNECTOR_ROOTS`);
+    throw new Error(`${name} is outside FILE_CONNECTOR_ROOTS`);
   }
   return real;
 }
