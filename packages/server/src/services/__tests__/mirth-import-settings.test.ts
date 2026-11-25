@@ -258,6 +258,10 @@ describe('a TCP connector\'s charset', () => {
     expect(warningsWith(result, 'default charset')).toEqual([]);
   });
 
+  it('of an export whose class is the JavaScript one follows the transport name, the hold too', () => {
+    expectHeld(convert({ destinations: [{ ...sender('UTF-8', true), className: 'js.JavaScriptDispatcherProperties' }] }), 'the TCP Sender "Out" sends binary data');
+  });
+
   it('holds the channel for binary data, which text cannot hold', () => {
     expectHeld(convert({ source: listener('UTF-8', true) }), 'its TCP Listener receives binary data');
     expectHeld(convert({ destinations: [sender('UTF-8', true)] }), 'the TCP Sender "Out" sends binary data');
@@ -463,6 +467,13 @@ describe('code template libraries in a channel export', () => {
     expect(result).toMatchObject({ ok: true, value: { importResult: { created: 1, errors: ['Code template libraries were not imported: outside your scope'] } } });
   });
 
+  it('are read for E4X that is no JavaScript at all', () => {
+    for (const code of ['var x = <a/>;', 'return <PID/>;', 'var y = m..PID;']) {
+      expect(warningsWith(convert({ exportData: exported(library('Old', code)) }), 'Code template "f"', 'E4X literal')).toHaveLength(1);
+    }
+    expect(convert({ exportData: exported(library('New', "if (a < b) { x = '../y'; f(...z); n = a <b; }")) }).warnings).toEqual([]);
+  });
+
   it('that fail part way are reported with what was written', async () => {
     vi.spyOn(ChannelImportService, 'importChannels').mockResolvedValue({ ok: true, value: { created: 1, updated: 0, skipped: 0, errors: [] }, error: null });
     vi.spyOn(CodeTemplateService, 'listLibraries').mockResolvedValue({ ok: true, value: [], error: null });
@@ -470,14 +481,27 @@ describe('code template libraries in a channel export', () => {
     vi.spyOn(CodeTemplateService, 'createLibrary').mockResolvedValue({ ok: true, value: { id: 'l' }, error: null } as never);
     vi.spyOn(CodeTemplateService, 'listTemplates').mockResolvedValue({ ok: true, value: [], error: null });
     vi.spyOn(CodeTemplateService, 'createTemplate')
-      .mockResolvedValueOnce({ ok: true, value: { id: 't' }, error: null } as never)
-      .mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') } as never);
+      .mockResolvedValueOnce({ ok: false, value: null, error: new Error('Line 1: Unexpected "<"') } as never)
+      .mockResolvedValueOnce({ ok: true, value: { id: 't' }, error: null } as never);
     const two = channelXml({ exportData: exported(library('One') + library('Two')) });
     const result = await MirthImportService.importFromXml(two, { collisionMode: 'SKIP', dryRun: false });
     expect(result).toMatchObject({ ok: true, value: {
       codeTemplates: { created: 1, updated: 0, skipped: 0 },
-      importResult: { errors: ['Code template libraries were imported only in part: db down. Import again'] },
+      importResult: { errors: ['Code template "f" in library "One" was not imported: Line 1: Unexpected "<"'] },
     } });
+  });
+
+  it('that cannot be created leaves the others to be imported', async () => {
+    vi.spyOn(ChannelImportService, 'importChannels').mockResolvedValue({ ok: true, value: { created: 1, updated: 0, skipped: 0, errors: [] }, error: null });
+    vi.spyOn(CodeTemplateService, 'listLibraries').mockResolvedValue({ ok: true, value: [], error: null });
+    vi.spyOn(CodeTemplateService, 'assertCanWriteLinks').mockResolvedValue({ ok: true, value: undefined, error: null });
+    vi.spyOn(CodeTemplateService, 'createLibrary')
+      .mockResolvedValueOnce({ ok: false, value: null, error: new Error('refused') } as never)
+      .mockResolvedValueOnce({ ok: true, value: { id: 'l' }, error: null } as never);
+    vi.spyOn(CodeTemplateService, 'listTemplates').mockResolvedValue({ ok: true, value: [], error: null });
+    vi.spyOn(CodeTemplateService, 'createTemplate').mockResolvedValue({ ok: true, value: { id: 't' }, error: null } as never);
+    const result = await MirthImportService.importFromXml(channelXml({ exportData: exported(library('One') + library('Two')) }), { collisionMode: 'SKIP', dryRun: false });
+    expect(result).toMatchObject({ ok: true, value: { codeTemplates: { created: 1 }, importResult: { errors: ['Code template library "One" was not imported: refused'] } } });
   });
 
   describe('when the library is here already', () => {
@@ -570,7 +594,7 @@ describe('a Message Builder step', () => {
   it('with nothing to set is refused at deploy, with a warning, unless it is disabled', () => {
     const result = convert({ source: { transformer: { elements: builderStep('', "msg['PID']") } } });
     expect(compileTransformerStepsToScript(steps(result))).toMatchObject({ ok: false });
-    expect(warningsWith(result, 'Message Builder step "Set name"', 'will not deploy')).toHaveLength(1);
+    expect(warningsWith(result, 'step "Set name" (MESSAGE_BUILDER)', 'will not deploy')).toHaveLength(1);
     expect(convert({ source: { transformer: { elements: builderStep('', 'x', '', '<replacements/>', false) } } }).warnings).toEqual([]);
   });
 
@@ -578,7 +602,12 @@ describe('a Message Builder step', () => {
     const legacy = (script: string): ChannelXml => ({ source: { transformer: { more: `<steps><step><sequenceNumber>0</sequenceNumber><name>Old</name><enabled>true</enabled><type>Message Builder</type>${script}</step></steps>` } } });
     const xml = (script: string): string => channelXml(legacy(script)).replace('<transformer version="4.5.0"><elements/>', '<transformer version="3.0.0">');
     expect(steps(convertRaw(xml('<script>tmp.a = 1;</script>')))[0]).toMatchObject({ type: 'MESSAGE_BUILDER', script: 'tmp.a = 1;' });
-    expect(warningsWith(convertRaw(xml('')), 'Message Builder step "Old"', 'will not deploy')).toHaveLength(1);
+    expect(warningsWith(convertRaw(xml('')), 'step "Old" (MESSAGE_BUILDER)', 'will not deploy')).toHaveLength(1);
+  });
+
+  it('is not the only kind that is named when it cannot run', () => {
+    expect(warningsWith(convert({ source: { transformer: { elements: MAPPER } } }), 'step "Map id" (MAPPER)', 'will not deploy')).toHaveLength(1);
+    expect(warningsWith(convert({ destinations: [{ transformer: { elements: MAPPER } }] }), 'step "Map id" (MAPPER)')).toHaveLength(1);
   });
 
   it('is carried in a response transformer too', () => {
@@ -589,6 +618,10 @@ describe('a Message Builder step', () => {
 });
 
 describe('Mirth-only constructs in a connector\'s script', () => {
+  it('are not a variable named responseStatus', () => {
+    expect(convert({ destinations: [{ props: '<script>var responseStatus = 2; return responseStatus;</script>' }] }).warnings).toEqual([]);
+  });
+
   it('are named for a JavaScript Reader and a JavaScript Writer', () => {
     const reader = convert({ source: { transport: 'JavaScript Reader', className: 'js.JavaScriptReceiverProperties', props: '<script>return new java.util.ArrayList();</script>' } });
     expect(warningsWith(reader, 'Mirth-only constructs', 'Java classes')).toHaveLength(1);
@@ -610,6 +643,19 @@ describe('a File Reader\'s file size range', () => {
 
   it('whose minimum is a reference holds it too', () => {
     expectHeld(convert(reader('<fileSizeMinimum>${min}</fileSizeMinimum>')), 'file size range');
+  });
+
+  it.each(['SFTP', 'FILE'])('and binary files over %s: SFTP is text only here', (scheme) => {
+    const file = `<scheme>${scheme}</scheme><host>files.example.com/in</host><fileFilter>*</fileFilter><afterProcessingAction>DELETE</afterProcessingAction><binary>true</binary>`;
+    const read = convert({ source: { transport: 'File Reader', className: 'file.FileReceiverProperties', props: file } });
+    const write = convert({ destinations: [{ transport: 'File Writer', className: 'file.FileDispatcherProperties', props: `<scheme>${scheme}</scheme><host>files.example.com/in</host><outputPattern>a</outputPattern><binary>true</binary>` }] });
+    if (scheme === 'FILE') {
+      expectNotHeld(read);
+      expectNotHeld(write);
+    } else {
+      expectHeld(read, 'its File Reader reads binary files over SFTP');
+      expectHeld(write, 'the File Writer "Out" writes binary files over SFTP');
+    }
   });
 
   it('that takes every file holds nothing', () => {
@@ -671,6 +717,11 @@ describe('${...} references', () => {
     const started = performance.now();
     convert({ destinations: [{ props: `<script>${text}</script>` }, { ...tcp('partner', text).destinations![0]!, id: 2, name: 'Two' }] });
     expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  it('in no template at all: a blank one sends nothing, as in Mirth, and not the whole message', () => {
+    expect(firstDest(convert(http('http://api', 'x', ''))).properties['template']).toBe('');
+    expect(firstDest(convert(http('http://api', 'x'))).properties).not.toHaveProperty('template');
   });
 
   it('to the message id become the name GalvaniGraph fills', () => {
@@ -754,9 +805,16 @@ describe('the retry count', () => {
 
   it('is joined by a warning where the queue retries what Mirth\'s gives up: a NACK and a script that fails', () => {
     const tcpSender = { ...queue(true, false, 0).destinations![0]!, transport: 'TCP Sender', className: 'tcp.TcpDispatcherProperties', props: '<remoteAddress>p</remoteAddress><remotePort>1</remotePort><charsetEncoding>UTF-8</charsetEncoding>' };
-    expect(warningsWith(convert({ destinations: [tcpSender] }), '"Out"', 'negative acknowledgement', 'sends it again', 'behind it')).toHaveLength(1);
+    expect(warningsWith(convert({ destinations: [tcpSender] }), '"Out"', 'negative acknowledgement', 'sends again', 'behind it')).toHaveLength(1);
     expect(warningsWith(convert(queue(true, false, 0)), '"Out"', 'script', 'runs it again')).toHaveLength(1);
     expect(convert(queue(false, false, 0)).warnings).toEqual([]);
+    const ignoring = { ...tcpSender, props: `${tcpSender.props}<ignoreResponse>true</ignoreResponse>` };
+    expectHeld(convert({ destinations: [ignoring] }), 'the TCP Sender "Out" ignores the answer in Mirth');
+    const unqueued = convert({ destinations: [{ ...ignoring, queue: '<queueEnabled>false</queueEnabled>' }] });
+    expectNotHeld(unqueued);
+    expect(warningsWith(unqueued, '"Out"', 'ignores the answer', 'ERROR')).toHaveLength(1);
+    const timeout = convert({ destinations: [{ ...tcpSender, props: `${tcpSender.props}<queueOnResponseTimeout>false</queueOnResponseTimeout>` }] });
+    expect(warningsWith(timeout, '"Out"', 'no answer', 'does not queue')).toHaveLength(1);
     const http = { ...tcpSender, transport: 'HTTP Sender', className: 'http.HttpDispatcherProperties', props: '<host>http://api</host>' };
     expect(convert({ destinations: [http] }).warnings).toEqual([]);
   });

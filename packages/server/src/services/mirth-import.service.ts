@@ -28,7 +28,7 @@ import {
 } from './mirth-not-carried.js';
 import { referenceNames, referenceWarnings, renameReferences } from './mirth-references.js';
 import {
-  filterOf, messageBuilderWarnings, mirthDataType, responseTransformer, responseTransformerWarnings, scriptElements, transforms, transformerSteps,
+  filterOf, unrunnableStepWarnings, mirthDataType, responseTransformer, responseTransformerWarnings, scriptElements, transforms, transformerSteps,
 } from './mirth-steps.js';
 import { getBoolean, getNestedRecord, getNumber, getString, stringList, toRecordList } from './mirth-xml.js';
 import { withCopies } from '../lib/import-copies.js';
@@ -176,8 +176,6 @@ interface ImportedFile extends Pick<MirthImportResult, 'importResult' | 'codeTem
   readonly warnings: readonly string[];
 }
 
-const NO_TEMPLATES: CodeTemplateImportCounts = { created: 0, updated: 0, skipped: 0 };
-
 /**
  * Templates are shared by every channel, so they change only when every
  * channel in the file imported: a failed import must not leave other
@@ -197,30 +195,40 @@ async function importConverted(
   );
   if (!imported.ok) throw imported.error;
 
+  const channelFailures = imported.value.errors.length;
+  const libraries = converted.codeTemplateLibraries.length === 0 ? NO_LIBRARIES
+    : channelFailures > 0 ? { ...NO_LIBRARIES, errors: [`Code template libraries were not imported because ${String(channelFailures)} channel(s) failed; fix them and import again`] }
+      : await importLibraries(converted, collisionMode === 'OVERWRITE', context);
+  return {
+    importResult: { ...imported.value, errors: [...imported.value.errors, ...libraries.errors] },
+    codeTemplates: libraries.counts,
+    warnings: libraries.warnings,
+  };
+}
+
+interface ImportedLibraries {
+  readonly counts: CodeTemplateImportCounts;
+  readonly errors: readonly string[];
+  readonly warnings: readonly string[];
+}
+
+const NO_LIBRARIES: ImportedLibraries = { counts: { created: 0, updated: 0, skipped: 0 }, errors: [], warnings: [] };
+
+/** The channels are in by now, so what stops a library is reported beside them, not as a failed import. */
+async function importLibraries(converted: MirthConvertResult, overwrite: boolean, context: AuditContext | undefined): Promise<ImportedLibraries> {
   const libraries = converted.codeTemplateLibraries;
-  const channelErrors = imported.value.errors;
-  const withError = (error: string, codeTemplates: CodeTemplateImportCounts = NO_TEMPLATES): ImportedFile =>
-    ({ importResult: { ...imported.value, errors: [...channelErrors, error] }, codeTemplates, warnings: [] });
-  if (libraries.length === 0) return { importResult: imported.value, codeTemplates: NO_TEMPLATES, warnings: [] };
-  if (channelErrors.length > 0) {
-    return withError(`Code template libraries were not imported because ${String(channelErrors.length)} channel(s) failed; fix them and import again`);
-  }
   const here = await CodeTemplateService.listLibraries();
   // Other channels share a library here, so only a backup, which is the whole server, replaces it.
-  const replace = collisionMode === 'OVERWRITE' && converted.isBackup;
-  const templates = here.ok ? await importCodeTemplateLibraries(libraries, replace, context) : here;
-  // The channels are in by now, so what stops the libraries is reported beside them, not as a failed import.
-  if (!templates.ok) {
-    logger.error({ errMsg: templates.error.message, stack: templates.error.stack }, 'Code template libraries of a Mirth import were not imported');
-    return withError(`Code template libraries were not imported: ${templates.error.message}`);
+  const replace = overwrite && converted.isBackup;
+  const imported = here.ok ? await importCodeTemplateLibraries(libraries, replace, context) : here;
+  if (!imported.ok) {
+    logger.error({ errMsg: imported.error.message, stack: imported.error.stack }, 'Code template libraries of a Mirth import were not imported');
+    return { ...NO_LIBRARIES, errors: [`Code template libraries were not imported: ${imported.error.message}`] };
   }
-  const { failed, ...codeTemplates } = templates.value;
-  if (failed !== undefined) return withError(`Code template libraries were imported only in part: ${failed}. Import again`, codeTemplates);
   const kept = here.ok && !replace ? here.value : [];
-  const left = collisionMode === 'OVERWRITE' ? libraries.filter((l) => kept.some((k) => k.name === l.name)) : [];
+  const left = overwrite ? libraries.filter((l) => kept.some((k) => k.name === l.name)) : [];
   return {
-    importResult: imported.value,
-    codeTemplates,
+    ...imported.value,
     warnings: [
       ...left.map((l) => `Code template library "${l.name}" is here already and was left as it is: other channels can share it, so a channel's export only adds what it lacks`),
       ...keptLibraryNotes(libraries, kept, converted.channels),
@@ -329,7 +337,7 @@ function convertChannel(
   };
   if (sourceConnector) warnings.push(...ackWarnings(sourceConnector, name));
   warnings.push(...attachmentWarnings(mirthChannel, name), ...exportDataWarnings(mirthChannel, name));
-  warnings.push(...transformers.flatMap((t) => messageBuilderWarnings(t.steps, name)));
+  warnings.push(...transformers.flatMap((t) => unrunnableStepWarnings(t.steps, name)));
   warnings.push(...delimitedWarnings(entry));
   const scriptWarning = mirthOnlyWarning(`Channel "${name}": its scripts use`, channelScripts(entry));
   if (scriptWarning) warnings.push(scriptWarning);
@@ -768,10 +776,17 @@ function sourceHolds(mirthChannel: Record<string, unknown>): string[] {
   if (type === 'TCP_MLLP' && getBoolean(propsNode, 'dataTypeBinary', false)) {
     reasons.push('its TCP Listener receives binary data, which GalvaniGraph reads as text');
   }
+  if (type === 'FILE' && binaryOverSftp(propsNode)) {
+    reasons.push('its File Reader reads binary files over SFTP, which GalvaniGraph reads as text');
+  }
   if (type === 'FILE' && skipsFilesBySize(propsNode)) {
     reasons.push('its File Reader skips files outside a file size range in Mirth and would read them here, and delete or move them when it does that to what it reads');
   }
   return reasons;
+}
+
+function binaryOverSftp(propsNode: Record<string, unknown>): boolean {
+  return fileScheme(propsNode) === 'SFTP' && getBoolean(propsNode, 'binary', false);
 }
 
 /** Mirth's names for the text a destination sends instead of the encoded message. */
@@ -798,6 +813,12 @@ function destinationHolds(dest: Record<string, unknown>): string[] {
   const type = connectorType(dest);
   if (type === 'TCP_MLLP' && getBoolean(propsNode, 'dataTypeBinary', false)) {
     reasons.push(`the TCP Sender "${name}" sends binary data, which GalvaniGraph writes as text`);
+  }
+  if (type === 'TCP_MLLP' && getBoolean(propsNode, 'ignoreResponse', false) && convertQueueSettings(dest, propsNode).queueMode !== 'NEVER') {
+    reasons.push(`the TCP Sender "${name}" ignores the answer in Mirth, and its queue would send a message again until it gets one here`);
+  }
+  if (type === 'FILE' && binaryOverSftp(propsNode)) {
+    reasons.push(`the File Writer "${name}" writes binary files over SFTP, which GalvaniGraph writes as text`);
   }
   const smtp = type === 'SMTP' ? smtpHold(propsNode, name) : null;
   if (smtp) reasons.push(smtp);
@@ -1137,10 +1158,10 @@ function databaseProperties(propsNode: Record<string, unknown>): Record<string, 
   return result;
 }
 
-/** Mirth's default, the encoded message itself, needs no template. */
+/** The encoded message itself needs no template. A blank one sends nothing, as in Mirth: with none, the whole message would go. */
 function sendTemplate(propsNode: Record<string, unknown>, key: string): Record<string, unknown> {
   const template = getString(propsNode, key);
-  if (template === null || template.trim() === '' || template.trim() === '${message.encodedData}') return {};
+  if (template === null || template.trim() === '${message.encodedData}') return {};
   return { template: renameReferences(template, { 'message.messageId': 'messageId' }) };
 }
 
@@ -1263,6 +1284,14 @@ function withRawDataRenamed(properties: Record<string, unknown>, dest: Record<st
     : { ...properties, template: renameReferences(template, { 'message.rawData': 'message.encodedData' }) };
 }
 
+function tcpAnswerWarnings(propsNode: Record<string, unknown>, prefix: string): string[] {
+  if (getBoolean(propsNode, 'ignoreResponse', false)) {
+    return [`${prefix} ignores the answer in Mirth; GalvaniGraph waits for an acknowledgement, and a message that gets none is an ERROR or is sent again by its queue`];
+  }
+  return getBoolean(propsNode, 'queueOnResponseTimeout', true) ? []
+    : [`${prefix} does not queue a message again in Mirth when it gets no answer in time; GalvaniGraph's queue sends it again`];
+}
+
 interface ConvertedDestination {
   readonly type: string;
   readonly propsNode: Record<string, unknown>;
@@ -1275,7 +1304,10 @@ function destinationSettingWarnings({ type, propsNode, properties, name }: Conve
     case 'DATABASE': return databaseWarnings(propsNode, properties['vendor'], `Database Writer "${name}"`, channelName);
     case 'FILE': return fileConnectorWarnings(propsNode, properties, `File Writer "${name}"`, channelName);
     case 'DICOM': return dicomWarnings(propsNode, 'destination', `DICOM Sender "${name}"`, channelName);
-    case 'TCP_MLLP': return tcpEncodingWarnings(propsNode, properties, `TCP Sender "${name}"`, channelName);
+    case 'TCP_MLLP': return [
+      ...tcpEncodingWarnings(propsNode, properties, `TCP Sender "${name}"`, channelName),
+      ...tcpAnswerWarnings(propsNode, `Channel "${channelName}": the TCP Sender "${name}"`),
+    ];
     case 'SMTP': return smtpWarnings(propsNode, name, channelName);
     case 'HTTP': return [httpDigestWarning(propsNode, `HTTP Sender "${name}"`, channelName) ?? []].flat();
     default: return [];
@@ -1323,7 +1355,7 @@ function queueWarnings(type: string, queue: QueueSettings): string[] {
   }
   const behind = queue.rotateQueue ? '' : ', and the messages behind it wait';
   if (type === 'TCP_MLLP') {
-    warnings.push(`ends a message in Mirth on a negative acknowledgement (as ERROR, or as SENT when it does not validate responses); here the queue sends it again until it is accepted${behind}`);
+    warnings.push(`ends a message in Mirth on a negative acknowledgement (as ERROR, or as SENT when it does not validate responses); here the queue sends again what the partner refuses, what gets no answer and what the charset cannot hold${behind}`);
   }
   if (type === 'JAVASCRIPT') {
     warnings.push(`ends a message as ERROR in Mirth when its script fails; here the queue runs it again until it succeeds${behind}`);

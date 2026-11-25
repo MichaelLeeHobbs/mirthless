@@ -107,10 +107,10 @@ function runnable(step: TransformerStep): boolean {
   return compileTransformerStepsToScript([{ ...step, enabled: true }]).ok;
 }
 
-export function messageBuilderWarnings(steps: readonly TransformerStep[], channelName: string): string[] {
+export function unrunnableStepWarnings(steps: readonly TransformerStep[], channelName: string): string[] {
   return steps
-    .filter((s) => s.enabled && s.type === 'MESSAGE_BUILDER' && !runnable(s))
-    .map((s) => `Channel "${channelName}": Message Builder step "${s.name ?? ''}" names nothing to set; it will not deploy until it is rewritten or disabled`);
+    .filter((s) => s.enabled && !runnable(s))
+    .map((s) => `Channel "${channelName}": GalvaniGraph cannot run the transformer step "${s.name ?? ''}" (${s.type}); the channel will not deploy until it is rewritten or disabled`);
 }
 
 export interface ResponseTransformer {

@@ -115,7 +115,7 @@ export function referenceWarnings(connector: ImportedConnector, channelName: str
   const prefix = `Channel "${channelName}": the ${connector.label} uses`;
   const warnings: string[] = [];
   if (unfilled.size > 0) {
-    warnings.push(`${prefix} ${named(unfilled)}, which GalvaniGraph cannot fill and would send as written; set a map variable in a script and write it \${name}`);
+    warnings.push(`${prefix} ${named(unfilled)}, which GalvaniGraph cannot fill and sends as written; where Mirth filled it, set a map variable in a script and write it \${name}`);
   }
   if (atDeploy.size > 0) {
     warnings.push(`${prefix} ${named(atDeploy)}, which GalvaniGraph fills only from the configuration map at deploy, never from a message or script; add the entries first`);

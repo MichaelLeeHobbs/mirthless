@@ -46,7 +46,9 @@ export function connectorTypeOfTransport(transportName: string): string | null {
   return TRANSPORTS.get(transportName) ?? null;
 }
 
-export function connectorType(connector: Record<string, unknown>): string | null {
+/** A connector whose class is unknown or the JavaScript one goes by its transport name. */
+export function connectorType(connector: Record<string, unknown>): string {
   const className = getString(getNestedRecord(connector, 'properties') ?? {}, '@_class') ?? '';
-  return connectorTypeOfClass(className) ?? connectorTypeOfTransport(getString(connector, 'transportName') ?? '');
+  const byClass = connectorTypeOfClass(className) ?? 'JAVASCRIPT';
+  return byClass === 'JAVASCRIPT' ? connectorTypeOfTransport(getString(connector, 'transportName') ?? '') ?? byClass : byClass;
 }

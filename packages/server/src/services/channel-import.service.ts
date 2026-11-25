@@ -140,6 +140,7 @@ async function importSingleChannel(
     if (existing) {
       if (mode === 'SKIP') return 'skipped';
       if (mode === 'OVERWRITE') return await overwriteChannel(entry, run);
+      // An id the file has twice, or that came to be here since copyIds looked.
       return await createChannel({ ...entry, id: randomUUID(), destinations: entry.destinations.map(({ id: _id, ...d }) => d) }, run);
     }
 
