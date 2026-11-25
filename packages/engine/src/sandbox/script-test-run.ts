@@ -3,7 +3,7 @@
 
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
-import { templateDeclarations, type ScriptSurface, type ScriptTestResult, type TemplateSource } from '@galvanigraph/core-models';
+import { CODE_TEMPLATE_CONTEXT, templateDeclarations, type ScriptSurface, type ScriptTestResult, type TemplateSource } from '@galvanigraph/core-models';
 import { compileScript, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
 import { VmSandboxExecutor } from './sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from './sandbox-context.js';
@@ -39,6 +39,8 @@ export interface ScriptTestInput {
 }
 
 export type { ScriptTestResult };
+
+const PREPROCESSORS: ReadonlySet<string> = new Set([CODE_TEMPLATE_CONTEXT.GLOBAL_PREPROCESSOR, CODE_TEMPLATE_CONTEXT.CHANNEL_PREPROCESSOR]);
 
 /** The pipeline's rule: a returned value replaces the message unless it is nothing or a boolean. */
 function replacement(returnValue: unknown, msg: unknown): unknown {
@@ -100,7 +102,8 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
       try {
         parsed = parseForSandbox(input.sample, dataType);
       } catch (err: unknown) {
-        return errorResult(`The sample is not valid ${dataType}: ${err instanceof Error ? err.message : String(err)}`, started);
+        // A preprocessor gets it as text, and may repair it.
+        if (!PREPROCESSORS.has(input.surface.templateContext ?? '')) return errorResult(`The sample is not valid ${dataType}: ${err instanceof Error ? err.message : String(err)}`, started);
       }
     }
 
