@@ -489,8 +489,6 @@ const SILENCE_CHECK_INTERVAL_MS = 30_000;
 const SEND_BACKSTOP_MS = 300_000;
 const RAW_NOT_STORED = 'Not finished after a server stop: its raw content is not stored, so it cannot be run again. '
   + 'No destination was sent to, but its scripts may have run. Check whether the channel has received it again before you send it again.';
-/** How many messages one alert names. */
-const MAX_NAMED_MESSAGES = 20;
 /** How long an undeploy waits for crash recovery to end the messages it was working on. */
 const RECOVERY_ENDS_MS = 10_000;
 
@@ -983,7 +981,7 @@ export class EngineManager {
     if (earlierWork.length === 0) return true;
     while (!(await settleWithin(Promise.all(earlierWork), SEND_BACKSTOP_MS, runSignal))) {
       if (runSignal.aborted) return false;
-      const errorMessage = 'Crash recovery is waiting: an earlier deployment of the channel is still sending a message that could not be cancelled. If that never ends, restart the server';
+      const errorMessage = 'Crash recovery is waiting: an earlier deployment of the channel is still sending a message. If that never ends, restart the server';
       logger.error({ channelId }, errorMessage);
       await raiseAlert({ channelId, errorType: 'DESTINATION_CONNECTOR', errorMessage, timestamp: Date.now() });
     }
@@ -1090,7 +1088,7 @@ export class EngineManager {
 
     // A halt does not wait for recovery, and its sends are to end before their destinations are undeployed.
     if (!(await deployed.runtime.backgroundEnds(RECOVERY_ENDS_MS))) {
-      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message that could not be cancelled');
+      logger.error({ channelId }, 'Undeploying a channel whose crash recovery is still sending a message');
     }
     // Nothing has been torn down yet.
     if (deployed.runtime.getState() !== 'STOPPED') {
@@ -1173,7 +1171,7 @@ export class EngineManager {
       }
     };
 
-    const notRunAgain: number[] = [];
+    let toldOfUnstored = false;
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
       const leave = (error: Error): Result<void> => {
         logger.error({ channelId, messageId, errMsg: error.message }, 'Crash recovery could not run a message again and left it as it was');
@@ -1185,7 +1183,14 @@ export class EngineManager {
         if (runSignal.aborted) return INTERRUPTED;
         const given = await this.giveUpUnstored(recovery, messageId);
         if (!given.ok) return leave(given.error);
-        notRunAgain.push(messageId);
+        // One for all of them: an alert is sent at most once a minute.
+        if (!toldOfUnstored) {
+          toldOfUnstored = true;
+          await recovery.raiseAlert({
+            channelId, errorType: 'SOURCE_CONNECTOR', timestamp: Date.now(),
+            errorMessage: `Crash recovery marked message ${String(messageId)} ERROR; the server log names each one it does that to. ${RAW_NOT_STORED}`,
+          });
+        }
         return { ok: false, value: null, error: new Error(RAW_NOT_STORED) } as Result<void>;
       }
       const sourceMap = await loadSourceMap(channelId, messageId);
@@ -1211,15 +1216,6 @@ export class EngineManager {
 
     const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
     const recovered = await manager.recover(channel.id, runSignal);
-    // One alert: an alert is sent at most once a minute.
-    if (notRunAgain.length > 0) {
-      const first = notRunAgain.slice(0, MAX_NAMED_MESSAGES).join(', ');
-      const which = notRunAgain.length > MAX_NAMED_MESSAGES ? `${first} and more, which the log names` : first;
-      await recovery.raiseAlert({
-        channelId: channel.id, errorType: 'SOURCE_CONNECTOR', timestamp: Date.now(),
-        errorMessage: `Crash recovery marked ${String(notRunAgain.length)} message(s) ERROR (${which}). ${RAW_NOT_STORED}`,
-      });
-    }
     if (!recovered.ok) {
       logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed; it goes on at the next start');
       return false;

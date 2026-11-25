@@ -1,5 +1,5 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
@@ -49,12 +49,6 @@ async function hasStoredVariables(channelId: string, messageId: number, metaData
       eq(messageContent.contentType, CONTENT_TYPE.CHANNEL_MAP),
     ));
   return rows.length > 0;
-}
-
-async function isProcessed(channelId: string, messageId: number): Promise<boolean> {
-  const [row] = await db.select({ processed: messages.processed }).from(messages)
-    .where(and(eq(messages.channelId, channelId), eq(messages.id, messageId)));
-  return row?.processed === true;
 }
 
 export class MessageReprocessService {
@@ -184,7 +178,11 @@ export class MessageReprocessService {
       }
 
       const [cm] = await db
-        .select({ status: connectorMessages.status })
+        .select({
+          status: connectorMessages.status,
+          // With the status, in one statement: read after it, a send that ended in between would look like none.
+          open: sql<boolean>`EXISTS (SELECT 1 FROM messages m WHERE m.channel_id = ${channelId} AND m.id = ${messageId} AND NOT m.processed)`,
+        })
         .from(connectorMessages)
         .where(and(
           eq(connectorMessages.channelId, channelId),
@@ -194,8 +192,8 @@ export class MessageReprocessService {
       if (!cm) {
         throw new ServiceError('NOT_FOUND', `No connector message for message ${String(messageId)} destination ${String(metaDataId)}.`);
       }
-      if (cm.status === 'RECEIVED' && !(await isProcessed(channelId, messageId))) {
-        throw new ServiceError('CONFLICT', `Message ${String(messageId)} is still being sent to "${dest.name}", or crash recovery is about to. Wait until it has ended.`);
+      if (cm.status === 'RECEIVED' && cm.open) {
+        throw new ServiceError('CONFLICT', `Message ${String(messageId)} is still being sent to "${dest.name}", or crash recovery is about to. Wait until that has ended; if it does not, redeploy the channel.`);
       }
       const its = await MessageService.isForItsNumber(channelId, messageId, metaDataId);
       if (!its.ok) throw its.error;

@@ -1,10 +1,12 @@
 import type { Logger } from 'pino';
-import { settleWithin } from '@galvanigraph/core-util';
+import { errorInfo } from '@galvanigraph/core-util';
 
 export interface ShutdownDeps {
   readonly logger: Logger;
   readonly stopAccepting: () => Promise<void>;
   readonly stopEngine: () => Promise<void>;
+  /** Ends the queued sends that are still under way. They go back on their queues. */
+  readonly haltQueues: () => Promise<void>;
   readonly stopSocketIO: () => Promise<void>;
   readonly stopPrunerScheduler: () => Promise<void>;
   readonly stopQueue: () => Promise<void>;
@@ -14,7 +16,7 @@ export interface ShutdownDeps {
 
 const DRAIN_TIMEOUT_MS = 30_000;
 
-/** Part of the drain timeout: the rest is for undeploying the channels. */
+/** From the signal on. What is left of the drain timeout is for what waited for the sends. */
 const QUEUES_END_MS = 20_000;
 
 /**
@@ -39,6 +41,12 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
       process.exit(1);
     }, DRAIN_TIMEOUT_MS);
     forceTimer.unref();
+
+    // An undeploy waits for a queued send, and so does closing HTTP when a request to stop a channel does.
+    setTimeout(() => {
+      deps.logger.warn({ phase: 'shutdown', waitedMs: QUEUES_END_MS }, 'Halting the queued sends that have not ended');
+      deps.haltQueues().catch((err: unknown) => { deps.logger.error({ phase: 'shutdown', ...errorInfo(err) }, 'Could not halt the queued sends'); });
+    }, QUEUES_END_MS).unref();
 
     // Nothing is left that could finish the step shutdown is at, so it would end here as if it had been a success.
     process.once('beforeExit', () => {
@@ -81,22 +89,6 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
   };
 }
 
-export interface QueueingEngine {
-  getAll(): ReadonlyMap<string, { readonly queueConsumers: ReadonlyArray<{ stop(): Promise<void>; halt(): Promise<void> }> }>;
-}
-
-/**
- * An undeploy waits for the queued send in flight, which may take minutes, and the channels are undeployed
- * one after another. A send that a halt ends is back on its queue.
- */
-export async function endQueues(engine: QueueingEngine, log: { warn(obj: object, msg: string): void }): Promise<void> {
-  const consumers = [...engine.getAll().values()].flatMap((c) => c.queueConsumers);
-  if (await settleWithin(Promise.all(consumers.map((c) => c.stop())), QUEUES_END_MS)) return;
-  log.warn({ phase: 'shutdown', waitedMs: QUEUES_END_MS }, 'A queued send has not ended; halting the queues, which puts it back');
-  // Not waited for: a connector that cannot cancel its send would hold up every channel's undeploy.
-  for (const c of consumers) void c.halt();
-}
-
 export interface UndeployableEngine {
   getAll(): ReadonlyMap<string, unknown>;
   undeploy(channelId: string): Promise<void>;
@@ -104,13 +96,14 @@ export interface UndeployableEngine {
 
 /**
  * One channel failing to undeploy must not leave the others running or skip the
- * steps that follow (the global map flush).
+ * steps that follow (the global map flush). Nor must one that waits for a send, so
+ * they are undeployed at once.
  */
 export async function undeployAll(
   engine: UndeployableEngine,
   log: { error(obj: object, msg: string): void },
 ): Promise<void> {
-  for (const id of [...engine.getAll().keys()]) {
+  await Promise.all([...engine.getAll().keys()].map(async (id) => {
     try {
       await engine.undeploy(id);
     } catch (err) {
@@ -119,5 +112,5 @@ export async function undeployAll(
         'Channel failed to undeploy during shutdown',
       );
     }
-  }
+  }));
 }

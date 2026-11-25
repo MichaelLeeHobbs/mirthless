@@ -187,13 +187,14 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
       expect(await statuses(other)).toHaveLength(2);
     });
 
-    it('takes a source that was transformed and had no destinations', async () => {
+    it.each([['resetToReceived', 'RECEIVED', false], ['failUnrouted', 'ERROR', true]] as const)('%s takes a source that was transformed and had no destinations', async (action, status, processed) => {
       const messageId = await unfinishedMessage(channelId);
-      unwrap(await mods.MessageService.updateConnectorMessageStatus(channelId, messageId, 0, 'TRANSFORMED'));
+      unwrap<unknown>(await mods.MessageService.updateConnectorMessageStatus(channelId, messageId, 0, 'TRANSFORMED'));
 
-      unwrap(await mods.MessageService.resetToReceived(channelId, messageId));
+      unwrap<unknown>(await mods.MessageService[action](channelId, messageId));
 
-      expect(await statuses(messageId)).toEqual([[0, 'RECEIVED']]);
+      expect(await statuses(messageId)).toEqual([[0, status]]);
+      expect((await mods.pool.query('SELECT processed FROM messages WHERE id = $1', [messageId])).rows).toEqual([{ processed }]);
     });
 
     it.each<[string, (messageId: number) => Promise<unknown>]>([

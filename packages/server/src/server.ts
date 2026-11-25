@@ -9,7 +9,7 @@ import { setLogCaptureStream } from './lib/logger.js';
 import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
 import { DeploymentService } from './services/deployment.service.js';
-import { createShutdownHandler, endQueues, undeployAll } from './lib/shutdown.js';
+import { createShutdownHandler, undeployAll } from './lib/shutdown.js';
 import { dataSourcePoolManager } from './services/data-source-pool-manager.js';
 import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
 import { installFatalHandlers } from './lib/fatal-handlers.js';
@@ -76,10 +76,13 @@ const shutdown = createShutdownHandler({
   stopEngine: async () => {
     const { getEngine } = await import('./engine.js');
     const engine = getEngine();
-    await endQueues(engine, logger);
     // Flushes global maps and runs undeploy scripts before dispose.
     await undeployAll(engine, logger);
     await engine.dispose();
+  },
+  haltQueues: async () => {
+    const { getEngine } = await import('./engine.js');
+    await Promise.all([...getEngine().getAll().values()].flatMap((c) => c.queueConsumers.map((q) => q.halt())));
   },
   stopSocketIO: shutdownSocketIO,
   stopPrunerScheduler: async () => { await PrunerSchedulerService.stop(); },

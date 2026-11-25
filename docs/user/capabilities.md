@@ -254,7 +254,7 @@ Named data that every channel's scripts can use, managed from the web UI and the
 |---|---|---|---|---|---|---|
 | Run in production with Docker Compose | Partial | Images fail to build from a checkout with installed dependencies (#137). No automated test proves the stack. | [#137](https://github.com/MichaelLeeHobbs/mirthless/issues/137) | [../ops/deployment.md](../ops/deployment.md) | | |
 | Back up and restore server configuration | Yes | Messages are not included; the export is unencrypted JSON. | | [../ops/backup-restore.md](../ops/backup-restore.md) | Backup/Restore Config | `packages/server/src/services/__tests__/server-backup.service.test.ts` |
-| Shut down without losing messages | Partial | The shutdown tests cover only the order of the steps and the exit codes; what happens to in-flight messages has no automated test. | | [../ops/upgrade.md](../ops/upgrade.md) | | `packages/server/src/lib/__tests__/shutdown.test.ts` |
+| Shut down without losing messages | Partial | The shutdown tests cover the order of the steps, their time limits and the exit codes; what happens to in-flight messages has no automated test. | | [../ops/upgrade.md](../ops/upgrade.md) | | `packages/server/src/lib/__tests__/shutdown.test.ts` |
 | Manage the server from a CLI | Won't | Script the REST API with `curl`; see [api-automation.md](../ops/api-automation.md). | D-280 "A CLI comes back only when someone needs one" | [api-automation.md](../ops/api-automation.md) | Mirth CLI | |
 | OpenAPI description of the REST API | Yes | | | | Swagger API | `packages/server/src/lib/__tests__/openapi.test.ts` |
 | Generated API clients and an MCP server | No | Generate a client from the OpenAPI description. | ROADMAP V14 | | | |

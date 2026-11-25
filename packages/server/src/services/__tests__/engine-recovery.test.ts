@@ -686,7 +686,7 @@ describe('EngineManager recovery', () => {
         expect(ms.resetToReceived).not.toHaveBeenCalled();
         expect(storedFor(0)).toEqual([[PROCESSING_ERROR, REASON]]);
         expect(ms.incrementStats.mock.calls).toEqual([[CHANNEL_ID, 0, 'test-server', 'errored']]);
-        expect(alerts).toHaveBeenCalledExactlyOnceWith('SOURCE_CONNECTOR', expect.stringMatching(/marked 1 message\(s\) ERROR \(7\)\. .*raw content is not stored/));
+        expect(alerts).toHaveBeenCalledExactlyOnceWith('SOURCE_CONNECTOR', expect.stringMatching(/marked message 7 ERROR; .*raw content is not stored/));
         expect(logger.error).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, reason: REASON }, expect.stringContaining('marked it ERROR'));
         await engine.dispose();
       });
@@ -697,7 +697,26 @@ describe('EngineManager recovery', () => {
         const engine = await deployAndRecover();
 
         expect(ms.failUnrouted).toHaveBeenCalledTimes(25);
-        expect(alerts).toHaveBeenCalledExactlyOnceWith('SOURCE_CONNECTOR', expect.stringMatching(/marked 25 message\(s\) ERROR \(1, 2, .*, 20 and more, which the log names\)/));
+        expect(alerts).toHaveBeenCalledExactlyOnceWith('SOURCE_CONNECTOR', expect.stringMatching(/marked message 1 ERROR; the server log names each/));
+        await engine.dispose();
+      });
+
+      it('alerts at once, not when the recovery has ended', async () => {
+        ms.getUnprocessedMessages.mockResolvedValue(ok([{ id: 7, channelId: CHANNEL_ID }, { id: 8, channelId: CHANNEL_ID }]));
+        let end: (result: unknown) => void = () => undefined;
+        ms.failUnrouted.mockImplementation((_c: string, messageId: number) => (messageId === 7 ? Promise.resolve(OK) : new Promise((resolve) => { end = resolve; })));
+        const engine = new EngineManager('test-server');
+        await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] })));
+        const deployed = engine.getRuntime(CHANNEL_ID)!;
+        vi.spyOn(deployed.alertManager, 'handleEvent').mockImplementation(async (event) => { alerts(event.errorType, event.errorMessage); });
+        await deployed.runtime.start();
+
+        const recovering = deployed.recoverOnce();
+        await vi.waitFor(() => { expect(alerts).toHaveBeenCalledOnce(); });
+        end(OK);
+        await recovering;
+
+        expect(alerts).toHaveBeenCalledOnce();
         await engine.dispose();
       });
 
@@ -715,12 +734,11 @@ describe('EngineManager recovery', () => {
       });
 
       it('is left for the next start when the channel stops first', async () => {
-        let engine: InstanceType<typeof EngineManager> | undefined;
+        const engine = new EngineManager('test-server');
         ms.loadContent.mockImplementation(async () => {
-          void engine?.getRuntime(CHANNEL_ID)?.runtime.halt();
+          void engine.getRuntime(CHANNEL_ID)?.runtime.halt();
           return ok(null);
         });
-        engine = new EngineManager('test-server');
         await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] })));
         const deployed = engine.getRuntime(CHANNEL_ID)!;
         await deployed.runtime.start();

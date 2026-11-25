@@ -45,9 +45,11 @@ The word `import` in a script shows up as `i\u006dport` where a script reads sou
   `return true`, `return false` and a bare `return` keep the message as it is. Transformer
   steps share one scope, so a `return` in one step skips the steps after it.
 - **Preprocessor.** It also runs on a message that its inbound data type cannot read, and may
-  repair it: `msg` is then the raw text, and what you return is checked again. A message that
-  is still not valid after the global and the channel preprocessor ends in ERROR. An HL7 batch
-  is split before that, so a preprocessor cannot repair the batch itself.
+  repair it: `msg` is then text, and what you return is checked again. A message that is still
+  not valid after the global and the channel preprocessor ends in ERROR. In TypeScript `msg` has
+  its data type's type there too, so repair the message from `rawData` (the text as received), or
+  from `String(msg)` to keep what a global preprocessor changed. An HL7 batch is split before
+  that, so a preprocessor cannot repair the batch itself.
 - **Results are data.** What a script returns, and what it puts in a map, is carried out of
   the sandbox as JSON. A value JSON cannot hold (a circular structure, a BigInt) is a script
   error. Functions are dropped and a `Date` becomes its ISO string. An HL7 message object

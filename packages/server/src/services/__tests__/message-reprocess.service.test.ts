@@ -334,7 +334,7 @@ describe('MessageReprocessService.resendDestination', () => {
   describe('a destination that has not been sent to yet', () => {
     it('is refused while the message is open: the pipeline or crash recovery may be sending it', async () => {
       mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ON_FAILURE' }]));
-      mockSelectSequence([{ status: 'RECEIVED' }], [{ processed: false }]);
+      mockSelectSequence([{ status: 'RECEIVED', open: true }]);
       const { set } = mockUpdateCapture();
 
       expect(await MessageReprocessService.resendDestination('ch-001', 5, 1)).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('still being sent to "Lab"') } });
@@ -343,7 +343,7 @@ describe('MessageReprocessService.resendDestination', () => {
 
     it('is taken once the message is finished: nothing else will send it', async () => {
       mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ON_FAILURE' }]));
-      mockSelectSequence([{ status: 'RECEIVED' }], [{ processed: true }], [{ content: 'MSH|sent' }]);
+      mockSelectSequence([{ status: 'RECEIVED', open: false }], [{ content: 'MSH|sent' }]);
       const { set } = mockUpdateCapture();
 
       expect((await MessageReprocessService.resendDestination('ch-001', 5, 1)).ok).toBe(true);
