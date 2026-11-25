@@ -156,7 +156,7 @@ Tests are mandatory, not optional. This is healthcare software.
 |---|---|---|---|---|
 | engine | 95 | 90 | 96 | 96 |
 | core-util | 95 | 89 | 96 | 97 |
-| connectors | 93 | 89 | 91 | 95 |
+| connectors | 93 | 90 | 91 | 95 |
 | server | 57 | 58 | 71 | 57 |
 | core-models | 79 | 87 | 90 | 79 |
 | web | 26 | 29 | 23 | 26 |
