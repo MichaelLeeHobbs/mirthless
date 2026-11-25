@@ -33,14 +33,15 @@ interface Reference {
   readonly quiet: boolean;
 }
 
+/** The values inside a list or map; anything else as it is. */
+function inner(value: unknown): readonly unknown[] {
+  return Array.isArray(value) || isPlainObject(value) ? Object.values(value) : [value];
+}
+
 function references(value: unknown): readonly Reference[] {
-  if (typeof value === 'string') {
-    return Array.from(value.matchAll(REFERENCE), (m) => ({ text: m[0], name: (m[2] ?? '').trim(), quiet: m[1] === '!' }));
-  }
-  // Connector settings hold text, or lists and maps of it, at most two levels deep.
-  if (!Array.isArray(value) && !isPlainObject(value)) return [];
-  return Object.values(value).flatMap((inner) =>
-    (isPlainObject(inner) ? Object.values(inner) : [inner]).filter((v) => typeof v === 'string').flatMap(references));
+  // Connector settings are text, or lists and maps of it, at most two levels deep.
+  return inner(value).flatMap(inner).filter((text) => typeof text === 'string').flatMap((text) =>
+    Array.from(text.matchAll(REFERENCE), (m) => ({ text: m[0], name: (m[2] ?? '').trim(), quiet: m[1] === '!' })));
 }
 
 export interface ImportedConnector {
