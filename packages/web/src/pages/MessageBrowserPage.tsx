@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
@@ -10,6 +10,7 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAddressId } from '../hooks/use-address-id.js';
 import { useChannel } from '../hooks/use-channels.js';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
 import { useMessageSearch, MESSAGE_KEYS, type MessageSearchParams } from '../hooks/use-messages.js';
@@ -30,10 +31,9 @@ import { sentDateTimeLocal } from '../lib/datetime-local.js';
 import { PERMISSION } from '../lib/permissions.js';
 
 export function MessageBrowserPage(): ReactNode {
-  const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [searchParamsUrl] = useSearchParams();
-  const channelId = id ?? '';
+  const channelId = useAddressId() ?? '';
 
   const { data: channel } = useChannel(channelId.length > 0 ? channelId : null);
 

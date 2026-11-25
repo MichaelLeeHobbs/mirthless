@@ -1,6 +1,7 @@
+import { useAddressId } from '../hooks/use-address-id.js';
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type SyntheticEvent } from 'react';
-import { useParams, useNavigate, useBlocker } from 'react-router';
+import { useNavigate, useBlocker } from 'react-router';
 import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -129,7 +130,7 @@ function TabPanel({ children, value, index }: TabPanelProps): ReactNode {
 }
 
 export function ChannelEditorPage(): ReactNode {
-  const { id } = useParams<{ id: string }>();
+  const id = useAddressId();
   const navigate = useNavigate();
   const isEditMode = id !== undefined;
   // Asked only of a writer scoped to several groups (D-310).
