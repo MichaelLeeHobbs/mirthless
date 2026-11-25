@@ -252,15 +252,16 @@ describe('createAlertSchema', () => {
 });
 
 describe('updateAlertSchema', () => {
-  it('accepts partial update with revision', () => {
-    const result = updateAlertSchema.safeParse({
-      name: 'Updated Name',
-      revision: 1,
-    });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.name).toBe('Updated Name');
-    expect(result.data.revision).toBe(1);
+  // #400: what it fills in, the server writes over what is stored, the actions included.
+  it.each([{}, { name: 'Updated Name' }])('fills nothing in: %j', (body) => {
+    expect(updateAlertSchema.parse({ revision: 1, ...body })).toEqual({ revision: 1, ...body });
+  });
+
+  it('refuses an error trigger without its regex, and takes one without a regex as null', () => {
+    const trigger = { type: 'CHANNEL_ERROR', errorTypes: ['ANY'] };
+    expect(updateAlertSchema.safeParse({ revision: 1, trigger }).error?.issues.map((i) => i.path)).toEqual([['trigger', 'regex']]);
+    expect(updateAlertSchema.parse({ revision: 1, trigger: { ...trigger, regex: null } }).trigger).toEqual({ ...trigger, regex: null });
+    expect(updateAlertSchema.parse({ revision: 1, trigger: { type: 'NO_MESSAGES', windowMinutes: 5 } }).trigger).toEqual({ type: 'NO_MESSAGES', windowMinutes: 5 });
   });
 
   it('requires revision', () => {
