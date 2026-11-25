@@ -107,7 +107,7 @@ export const channelExportEntrySchema = z.object({
   removeContentOnCompletion: z.boolean(),
   removeAttachmentsOnCompletion: z.boolean(),
   pruningEnabled: z.boolean(),
-  pruningMaxAgeDays: z.number().nullable(),
+  pruningMaxAgeDays: channelPropertiesSchema.shape.pruningMaxAgeDays.unwrap(),
   pruningArchiveEnabled: z.boolean(),
   /** The channel API's bound without its default. Absent in files exported before #334. */
   scriptTimeoutSeconds: channelPropertiesSchema.shape.scriptTimeoutSeconds.unwrap().optional(),
