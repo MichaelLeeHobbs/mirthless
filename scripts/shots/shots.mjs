@@ -55,6 +55,8 @@ const PAGES = {
       nextExpiryAt: new Date(Date.now() + 30 * 60_000).toISOString(),
     },
   },
+  // Disabling kpatel, who issued two working keys.
+  'user-offboard': { url: '/users', click: 'Disable kpatel', user: { grants: [{ permission: 'channels:deploy', scope: 'all' }, { permission: 'channels:read', scope: 'all' }] } },
   roles: '/roles',
   'api-keys': '/api-keys',
   'role-editor': '/roles/r8',

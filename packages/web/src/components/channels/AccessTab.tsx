@@ -15,7 +15,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import type { ChannelAccessView } from '@galvanigraph/core-models';
 import { api } from '../../api/client.js';
 import { useChannelGroups } from '../../hooks/use-channel-groups.js';
-import { accessCsv, describePath, permissionLabel } from '../../lib/channel-access.js';
+import { accessCsv, describePath, groupNamer, permissionLabel } from '../../lib/channel-access.js';
 import { saveFile } from '../../lib/download.js';
 import { fromDateTimeLocal } from '../../lib/datetime-local.js';
 import { formatTimestamp } from '../../lib/format.js';
@@ -76,7 +76,7 @@ export function AccessTab({ channelId, channelName }: AccessTabProps): ReactNode
   // The live answer is as of when it was fetched, not when Export is clicked.
   const fetchedAt = new Date(dataUpdatedAt).toISOString();
   const { data: groups } = useChannelGroups();
-  const groupName = (id: string): string => groups?.find((g) => g.id === id)?.name ?? id;
+  const groupName = groupNamer(groups);
   const time = (iso: string): string => formatTimestamp(iso);
 
   return (

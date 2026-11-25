@@ -38,6 +38,7 @@ let myId = 'me';
 vi.mock('../../stores/auth.store.js', () => ({
   useAuthStore: (pick: (s: { user: { id: string; grants: readonly Record<string, unknown>[] } }) => unknown) => pick({ user: { id: myId, grants } }),
 }));
+vi.mock('../../hooks/use-channel-groups.js', () => ({ useChannelGroups: () => ({ data: [] }) }));
 vi.mock('../../hooks/use-api-keys.js', () => ({
   useApiKeys: (enabled: boolean) => ({ data: enabled ? issuedKeys : undefined }),
 }));
