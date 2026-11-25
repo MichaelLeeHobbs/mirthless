@@ -39,7 +39,7 @@ import {
   type DataTypeOptions,
 } from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { settleWithin, splitHl7Batch } from '@galvanigraph/core-util';
+import { isPlainObject, settleWithin, splitHl7Batch } from '@galvanigraph/core-util';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -1108,37 +1108,34 @@ export class EngineManager {
       },
     };
 
-    // The original sourceMap (e.g. correlationId from an upstream channel) is
-    // stored with the message; carry it into the reprocess. It may be absent
-    // under storage modes that do not keep it, in which case it starts empty.
-    const loadSourceMap = async (channelId: string, messageId: number): Promise<Record<string, unknown>> => {
+    // Empty under a storage mode that does not keep it. One that cannot be read is not
+    // taken as empty: scripts that read it would route or fill the message differently.
+    const loadSourceMap = async (channelId: string, messageId: number): Promise<Result<Record<string, unknown>>> => {
       const stored = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.SOURCE_MAP);
-      if (!stored.ok || stored.value === null) return {};
-      try {
-        const parsed: unknown = JSON.parse(stored.value);
-        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-      } catch {
-        return {};
-      }
+      if (!stored.ok) return fail(stored.error);
+      return tryCatch(() => {
+        const parsed: unknown = stored.value === null ? {} : JSON.parse(stored.value);
+        return isPlainObject(parsed) ? parsed : {};
+      });
     };
 
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
+      const leave = (error: Error): Result<void> => {
+        logger.error({ channelId, messageId, errMsg: error.message }, 'Crash recovery could not run a message again and left it as it was');
+        return { ok: false, value: null, error } as Result<void>;
+      };
       const raw = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.RAW);
-      if (!raw.ok || raw.value === null) {
-        return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
-      }
+      if (!raw.ok) return leave(raw.error);
+      if (raw.value === null) return leave(new Error('Its raw content is not stored'));
       const sourceMap = await loadSourceMap(channelId, messageId);
+      if (!sourceMap.ok) return leave(sourceMap.error);
       if (runSignal.aborted) return INTERRUPTED;
-      // The raw content is in hand: from here the message is only what was received.
       const received = await MessageService.resetToReceived(channelId, messageId);
-      if (!received.ok) {
-        logger.error({ channelId, messageId, errMsg: received.error.message }, 'Crash recovery could not run a message again and left it as it was');
-        return { ok: false, value: null, error: received.error } as Result<void>;
-      }
+      if (!received.ok) return leave(received.error);
       if (runSignal.aborted) return INTERRUPTED;
       logger.info({ channelId, messageId }, 'Running a message again that a server stop interrupted');
-      const processed = await runAgain(received.value, raw.value, sourceMap);
-      return processed.ok ? OK_VOID : { ok: false, value: null, error: processed.error } as Result<void>;
+      const processed = await runAgain(received.value, raw.value, sourceMap.value);
+      return processed.ok ? OK_VOID : leave(processed.error);
     };
 
     const redispatcher = this.redispatcherFor(recovery);

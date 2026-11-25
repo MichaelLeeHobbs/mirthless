@@ -4,13 +4,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { CONTENT_TYPE, createChannelSchema } from '@galvanigraph/core-models';
 import { adminActor, describeIntegration, loadServerModules, unwrap, waitForBlocked, type ServerModules, type TestActor } from './_setup.js';
 
 const CHILD = fileURLToPath(new URL('./support/starting-server-child.ts', import.meta.url));
 const SERVER = fileURLToPath(new URL('../..', import.meta.url));
+/** A child loads the whole server through tsx first, as one that gets 60 s in restart-deploys-recorded does. */
+const START_TIMEOUT_MS = 60_000;
 
 describeIntegration('A message interrupted again and again (real Postgres, killed processes)', () => {
   let mods: ServerModules;
@@ -64,21 +65,37 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
     return Number(messageId);
   }
 
-  /** Start a server and kill it once `channelId`'s message is running again. */
+  /** Start a server and kill it once its recovery is running the message's script again. */
   async function startAndDie(): Promise<void> {
     const locker = await mods.pool.connect();
-    await locker.query('BEGIN');
-    await locker.query('LOCK TABLE resources IN ACCESS EXCLUSIVE MODE');
-    const child = spawn(process.execPath, ['--import', 'tsx', CHILD], { cwd: SERVER, stdio: 'ignore' });
     try {
-      await waitForBlocked(mods.pool, 'select %"resources"');
+      await locker.query('BEGIN');
+      await locker.query('LOCK TABLE resources IN ACCESS EXCLUSIVE MODE');
+      await dieOnceBlocked();
     } finally {
-      const gone = once(child, 'exit');
-      child.kill('SIGKILL');
-      await gone;
       await locker.query('ROLLBACK');
       locker.release();
     }
+  }
+
+  async function dieOnceBlocked(): Promise<void> {
+    const child = spawn(process.execPath, ['--import', 'tsx', CHILD], { cwd: SERVER, stdio: 'pipe' });
+    let output = '';
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    const ended = new Promise<Error>((resolve) => {
+      child.once('error', resolve);
+      child.once('exit', (code, signal) => { resolve(new Error(`The server ended by itself (${String(code ?? signal)}): ${output}`)); });
+    });
+    let early: Error | null = null;
+    try {
+      early = await Promise.race([waitForBlocked(mods.pool, 'select %"resources"', START_TIMEOUT_MS).then(() => null), ended]);
+    } catch (err) {
+      throw new Error(`${String(err)}: ${output}`, { cause: err });
+    } finally {
+      child.kill('SIGKILL');
+      await ended;
+    }
+    if (early !== null) throw early;
   }
 
   async function restart(): Promise<string | null> {
@@ -97,7 +114,7 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
     )).rows;
   }
 
-  it.each([1, 3])('is delivered once, as the same message, after %i more', { timeout: 120_000 }, async (more) => {
+  it.each([1, 3])('is delivered once, as the same message, after %i more', { timeout: 5 * START_TIMEOUT_MS }, async (more) => {
     const { id } = await stoppedChannel();
     const messageId = await unfinishedMessage(id);
 
@@ -160,6 +177,7 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
     });
 
     it.each<[string, (messageId: number) => Promise<unknown>]>([
+      ['it has been routed and may have been sent', async (id) => mods.MessageService.updateConnectorMessageStatus(channelId, id, 0, 'TRANSFORMED')],
       ['a destination has been sent to', async (id) => mods.MessageService.updateConnectorMessageStatus(channelId, id, 1, 'SENT')],
       ['a destination is queued', async (id) => mods.MessageService.updateConnectorMessageStatus(channelId, id, 1, 'QUEUED')],
       ['its source has failed', async (id) => mods.MessageService.updateConnectorMessageStatus(channelId, id, 0, 'ERROR')],

@@ -439,6 +439,10 @@ Importing a channel with `OVERWRITE`, or restoring a backup with it, used to cle
 
 Exports and backups now hold each channel's script timeout. Before, a channel imported as new, or restored onto a fresh server, got 30 seconds whatever it had. If you raised a channel's script timeout before such an import or restore, set it again. A file made before this version has no timeout: a channel it creates gets 30 seconds, and one it overwrites keeps its own.
 
+## Crash recovery runs an interrupted message again as the same message (#401)
+
+Before, a server that stopped again while crash recovery was running a message left a second copy of it, and the next start ran and delivered both. The upgrade stops that from happening, and it can't tell copies that are already there apart: each one is run and delivered once at the first start. If the server has been restarting over and over, disable the affected channels before the upgrade, and delete the extra RECEIVED copies in the message browser (same content, received seconds apart) before you enable and deploy them.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
