@@ -1172,6 +1172,13 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       expect(validateConnectorProperties('SFTP', 'source', props)).toMatchObject({ ok: false, error: { message: expect.stringContaining('moveToDirectory') } });
     });
 
+    it('carries the SFTP Writer\'s temporary-file setting, off as in Mirth when absent', () => {
+      const on = sftp('', '<temporary>true</temporary>').channels[0]?.destinations[0]?.properties ?? {};
+      expect(on['tempFileEnabled']).toBe(true);
+      expect(validateConnectorProperties('SFTP', 'destination', on)).toMatchObject({ ok: true });
+      expect(sftp('', '').channels[0]?.destinations[0]?.properties['tempFileEnabled']).toBe(false);
+    });
+
     it('imports the channel disabled when an SFTP Writer must fail rather than overwrite an existing file', () => {
       const result = sftp('', '<outputAppend>false</outputAppend><errorOnExists>true</errorOnExists>');
       expect(result.channels[0]?.destinations[0]?.connectorType).toBe('SFTP');

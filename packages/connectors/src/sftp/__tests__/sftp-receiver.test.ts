@@ -555,16 +555,97 @@ describe('robustness', () => {
     state.addFile('b.hl7', 'B', Date.now() - 10_000);
     const seen: string[] = [];
     const r = new SftpReceiver(makeConfig(), factoryFor(state));
+    let stopping: Promise<unknown> | null = null;
     r.setDispatcher(async (raw) => {
       seen.push(raw.content);
-      await r.onStop();
+      stopping ??= r.onStop();
       return { ok: true as const, value: { messageId: 1 }, error: null };
     });
     await r.onStart();
 
     await vi.advanceTimersByTimeAsync(5_000);
+    await stopping;
 
     expect(seen).toEqual(['A']);
+    expect(state.deleted).toEqual(['a.hl7']);
+    expect(state.endCount).toBe(1);
+  });
+
+  it.each(['onStop', 'onHalt'] as const)('does not wait for a file still being downloaded, or take it, on %s', async (how) => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'A', Date.now() - 10_000);
+    const { logger, errors } = makeMockLogger();
+    let downloaded = (): void => undefined;
+    const factory: SftpClientFactory = () => {
+      const client = makeMockSftpClient(state);
+      return {
+        ...client,
+        get: (remotePath) => new Promise((resolve) => { downloaded = (): void => { resolve(client.get(remotePath)); }; }),
+      };
+    };
+    const seen: string[] = [];
+    const r = new SftpReceiver(makeConfig(), factory, logger);
+    r.setDispatcher(makeDispatcher((raw) => { seen.push(raw.content); return { messageId: 1 }; }));
+    await r.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect((await r[how]()).ok).toBe(true);
+    expect(state.endCount).toBe(1);
+    downloaded();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(seen).toEqual([]);
+    expect(state.files.has('a.hl7')).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it('says nothing of a file whose download a stop cut off', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'A', Date.now() - 10_000);
+    const { logger, errors } = makeMockLogger();
+    let cutOff = (): void => undefined;
+    const factory: SftpClientFactory = () => ({
+      ...makeMockSftpClient(state),
+      get: () => new Promise((_resolve, reject) => { cutOff = (): void => { reject(new Error('No response from server')); }; }),
+    });
+    const r = new SftpReceiver(makeConfig(), factory, logger);
+    r.setDispatcher(makeDispatcher());
+    await r.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await r.onStop();
+    cutOff();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(errors).toEqual([]);
+  });
+
+  it('says so when the connection is gone before the quarantine can be written', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'A', Date.now() - 10_000);
+    const { logger, errors } = makeMockLogger();
+    receiver = new SftpReceiver(makeConfig(), () => {
+      const client = makeMockSftpClient(state);
+      let alive = true;
+      const whileAlive = <A extends unknown[], T>(f: (...args: A) => Promise<T>) => async (...args: A): Promise<T> => {
+        if (!alive) throw new Error('No SFTP connection available');
+        return f(...args);
+      };
+      return {
+        ...client,
+        get: async (remotePath) => { const data = await client.get(remotePath); alive = !remotePath.endsWith('a.hl7'); return data; },
+        stat: async (remotePath) => { const before = alive; alive = true; const v = await client.stat(remotePath); alive = before; return v; },
+        delete: whileAlive(client.delete),
+        put: whileAlive(client.put),
+      };
+    }, logger);
+    let dispatches = 0;
+    receiver.setDispatcher(makeDispatcher(() => { dispatches++; return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(dispatches).toBe(1);
+    expect(errors.map((e) => e.msg)).toEqual([
+      'Failed to persist quarantine ledger; quarantine will not survive a restart',
+      'Post-action failed after successful dispatch; quarantining file',
+    ]);
   });
 
   it('reports a quarantined file once, not on every poll', async () => {

@@ -112,6 +112,24 @@ describe('wrapSsh2Client mkdir', () => {
   });
 });
 
+describe('wrapSsh2Client replace', () => {
+  function replaceWith(posixRename: () => Promise<string>): Promise<boolean> {
+    return wrapSsh2Client({ posixRename } as unknown as Ssh2ClientInstance, makeOptions()).replace('/out/a', '/out/b');
+  }
+
+  it('is true when the server renamed over the file', async () => {
+    expect(await replaceWith(async () => 'ok')).toBe(true);
+  });
+
+  it('is false when the server answers that it does not support it', async () => {
+    expect(await replaceWith(() => Promise.reject(Object.assign(new Error('Operation unsupported'), { code: 8 })))).toBe(false);
+  });
+
+  it('rejects when the server refuses', async () => {
+    await expect(replaceWith(() => Promise.reject(Object.assign(new Error('Permission denied'), { code: 3 })))).rejects.toThrow('Permission denied');
+  });
+});
+
 describe('buildConnectOptions', () => {
   it('includes host, port, and username', () => {
     const opts = buildConnectOptions(makeOptions());

@@ -140,6 +140,17 @@ export function SftpDestinationForm({ properties, onChange }: DestConnectorFormP
         <FormControlLabel
           control={
             <Switch
+              checked={getBool(properties, 'tempFileEnabled', true)}
+              onChange={handleBool('tempFileEnabled')}
+            />
+          }
+          label="Use Temp File"
+          sx={{ mb: 2, display: 'block' }}
+        />
+
+        <FormControlLabel
+          control={
+            <Switch
               checked={getBool(properties, 'appendMode', false)}
               onChange={handleBool('appendMode')}
             />

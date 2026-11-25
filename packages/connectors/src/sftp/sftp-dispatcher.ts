@@ -3,6 +3,7 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';
+import { SftpFileWrite } from './sftp-file-write.js';
 import { resolveOutputFilename, unknownPlaceholders, unknownPlaceholderMessage } from '../file/file-dispatcher.js';
 import { joinRemote } from './sftp-receiver.js';
 import {
@@ -20,6 +21,8 @@ export interface SftpDispatcherConfig extends SftpConnectionOptions {
   readonly remoteDirectory: string;
   readonly fileNameTemplate: string;
   readonly appendMode: boolean;
+  /** Write under a temporary name, then rename. An append ignores it. */
+  readonly tempFileEnabled: boolean;
 }
 
 export class SftpDispatcher implements DestinationConnectorRuntime {
@@ -71,10 +74,7 @@ export class SftpDispatcher implements DestinationConnectorRuntime {
 
       const client = this.createClient(this.config);
       try {
-        await withTimeoutSignal(
-          this.writeRemote(client, message.content, remotePath),
-          SEND_TIMEOUT_MS, 'SFTP send', signal,
-        );
+        await this.write(client, remotePath, message.content, signal);
         return { status: 'SENT' as const, content: remotePath };
       } finally {
         await this.safeEnd(client);
@@ -82,14 +82,15 @@ export class SftpDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  private async writeRemote(client: SftpClient, content: string, remotePath: string): Promise<void> {
-    await client.connect();
-    await client.mkdir(this.config.remoteDirectory);
-    const data = Buffer.from(content, 'utf8');
-    if (this.config.appendMode) {
-      await client.append(data, remotePath);
-    } else {
-      await client.put(data, remotePath);
+  private async write(client: SftpClient, remotePath: string, content: string, signal: AbortSignal): Promise<void> {
+    const { remoteDirectory, appendMode, tempFileEnabled } = this.config;
+    const write = new SftpFileWrite(client, { directory: remoteDirectory, path: remotePath, appendMode, tempFileEnabled });
+    const done = write.run(Buffer.from(content, 'utf8'));
+    try {
+      await withTimeoutSignal(done, SEND_TIMEOUT_MS, 'SFTP send', signal);
+    } catch (err) {
+      const failure = await write.giveUp(done, err);
+      if (failure !== null) throw failure;
     }
   }
 

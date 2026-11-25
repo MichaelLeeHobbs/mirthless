@@ -193,13 +193,19 @@ The source polls a local directory for files that match a glob, reads each one a
 
 Only paths the server process can open are reachable: the local disk and anything the operating system has mounted. There is no FTP, SMB, S3 or WebDAV. For SFTP use the [SFTP](#sftp) connector.
 
-The source leaves alone the files a Mirth File Reader leaves alone. It never reads a name ending in `.ignore`, and it holds back a file while a file named after it plus `.ignore` sits next to it: `a.hl7` is not read while `a.hl7.ignore` exists, and is read on the next poll after that file is removed. With `ignoreDot` on (the default) it skips names starting with `.`, and its filter is case-sensitive.
+The source leaves alone the files a Mirth File Reader leaves alone. It never reads a name ending in `.ignore`, and it holds back a file while a file named after it plus `.ignore` sits next to it: `a.hl7` is not read while `a.hl7.ignore` exists, and is read on the next poll after that file is removed. With `ignoreDot` on (the default) it skips names starting with `.`, and its filter is case-sensitive. A name of the form `.galvanigraph-<uuid>.tmp` is a destination's temporary file and is never read.
+
+A file is checked again when its turn comes, which can be long after the folder was listed, and after it was read: one that changed and is too new, or that changes while it is read, waits for a later poll. It is checked once more before it is deleted or moved. One whose size or modification time changed while its message was processed is left in place and read again as it is then, so a sender that appends to a file after it was read has the whole file delivered again. A change that keeps both the size and the time is not seen, nor is one in the moment between the last check and the delete or move.
+
+A file the channel stored with an ERROR status, or whose delete or move failed after it was sent, is left in place and not read again, with an ERROR in the log. The list of those files is `.galvanigraph-quarantine.json` in the directory, as [for SFTP](#sftp-what-it-does).
+
+`MOVE` never replaces a file. When the target folder has one of the same name, the file stays where it was and is in that list: it was delivered once and is not delivered again. Rename or remove one of the two, and move the file yourself. A sender that uses the same name every day needs `DELETE`, or something that clears the target folder. On a file system without hard links (FAT, some network shares) a file of that name that appears in the same moment can still be replaced.
 
 ### FILE security
 
 A File source or destination may use only directories under `FILE_CONNECTOR_ROOTS`, a comma separated list of absolute paths the operator sets in the server's environment ([deployment](../ops/deployment.md)). With it unset, every File connector refuses to deploy, and Test Connection reports the same. The server's install directory (its code and `.env`), its working directory, `/proc`, `/sys` and `/dev` are refused even inside a root. The check runs after symlinks are resolved, at deploy, on every poll, before every move and before every write, so a `..` in `outputPattern` or a directory later replaced by a symlink cannot reach outside the roots. Files in a source directory that are themselves symlinks are skipped. Without this a deployer could read the server's `JWT_SECRET` through a File source or overwrite its code through a File destination (D-315 in [DECISIONS.md](../progress/DECISIONS.md)).
 
-The connector adds no transport security. A network share must be protected where it is mounted, and the server process's file permissions decide what it can read and write inside the roots. A destination writes through a temporary file and renames it by default, so a partner never reads half a file.
+The connector adds no transport security. A network share must be protected where it is mounted, and the server process's file permissions decide what it can read and write inside the roots. A destination writes through a temporary file and renames it by default, so a partner never reads half a file. An append or a write without a temporary file that is cut off leaves part of the message in the file, and the message's error names the file.
 
 ### FILE as a source
 
@@ -212,10 +218,10 @@ The connector adds no transport security. A network share must be protected wher
 | `sortBy` | No | `NAME` (default), `DATE` or `SIZE`: the order files are read in. |
 | `charset` | No | `utf-8` (default), `latin1` (ISO-8859-1), `ascii` or `utf16le`, used to decode the file. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other refuses to deploy, in binary mode too. |
 | `binary` | No | `true` reads the file as base64 instead of text. |
-| `checkFileAge` | No | On by default: skip files younger than `fileAgeMs`, so a file still being written is not read. |
+| `checkFileAge` | No | On by default: skip files younger than `fileAgeMs`, so a file still being written is not read. Checked when the folder is listed, and again for a file that changed before its turn. |
 | `fileAgeMs` | No | Minimum file age in milliseconds, a whole number from 0, 1000 by default. |
 | `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes each file after the pipeline accepts it. `NONE` leaves the file in place, so the next poll reads it again. |
-| `moveToDirectory` | No | Where `MOVE` puts processed files: an absolute path under `FILE_CONNECTOR_ROOTS`. Required when `postAction` is `MOVE`. |
+| `moveToDirectory` | No | Where `MOVE` puts processed files: an absolute path under `FILE_CONNECTOR_ROOTS`. Required when `postAction` is `MOVE`. A file already there is never replaced. |
 
 ### FILE as a destination
 
@@ -225,7 +231,7 @@ The connector adds no transport security. A network share must be protected wher
 | `outputPattern` | No | File name, `${messageId}.txt` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. Without `${messageId}` and with append off, each message overwrites the last file of that name (a warning is logged). A name that resolves outside `FILE_CONNECTOR_ROOTS` is not written and the message errors. |
 | `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to encode the file. |
 | `binary` | No | `true` decodes the content from base64 and writes the bytes. |
-| `tempFileEnabled` | No | On by default: write a temporary file, then rename it. |
+| `tempFileEnabled` | No | On by default: write a temporary file (`.galvanigraph-<uuid>.tmp` in the same folder), then rename it. Not used for an append. |
 | `appendMode` | No | `true` appends to the file instead of replacing it. |
 
 ### FILE limits
@@ -242,7 +248,13 @@ The source polls a directory on an SFTP server for files that match a glob, down
 
 A file the channel stored with an ERROR status, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvanigraph-quarantine.json` in the remote directory, so it survives a restart, and that file is never read as a message. A `.galvaniflow-quarantine.json` or `.mirthless-quarantine.json` left by a version from before a rename is still read, and never read as a message. The list records each file by name and modification time, so a file uploaded again with a new modification time is read.
 
+A file that changes between the listing and its turn, while it is read, or while its message is processed is handled [as for FILE](#file-what-it-does). SFTP carries modification times in whole seconds, so a change that keeps the size within the same second is not seen. `MOVE` never replaces a file, also as for FILE; on a server whose rename replaces, a file that appears in the target folder in the same moment can be.
+
+A source that is stopped waits for a file that is in the pipeline, and deletes, moves or lists it before the connection closes. One that is still being downloaded is left for the next start. A halt does not wait, and the file in the pipeline is dealt with when its message ends.
+
 The destination uploads each message as a file, encoded as UTF-8. Each send opens its own connection, creates `remoteDirectory` if it is missing, writes the file and disconnects. A send that takes over 30 seconds is an ERROR. The response is the remote path written.
+
+The file is written as `.galvanigraph-<uuid>.tmp` in the same folder and then renamed, so a partner never reads half a file, and a partner that reads every name in the folder can be told to leave that form alone. A source of this connector never reads it. The rename replaces an existing file in one step on OpenSSH and any server with its `posix-rename` extension. On another server whose rename refuses an existing name, that file is deleted first, so for a moment there is none. A server that allows no renames, or takes each upload as a file the moment it closes, needs `tempFileEnabled` off. A send that fails removes its temporary file, and the message's error names what it could not remove, and the file that may hold the message or, for an append or a write without a temporary file, part of it.
 
 A Mirth File Reader or File Writer with the sftp scheme imports as this connector.
 
@@ -269,8 +281,8 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | `ignoreDot` | No | On by default: names starting with `.` are never read or deleted, as in Mirth. `false` reads them. |
 | `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647. Defaults to 5000. |
 | `afterProcessing` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes the remote file after the pipeline accepts it. |
-| `moveToDirectory` | No | Remote directory for `MOVE`, created if missing. Required when `afterProcessing` is `MOVE`. |
-| `minFileAgeMs` | No | Skip files younger than this, so a file still being uploaded is not read. |
+| `moveToDirectory` | No | Remote directory for `MOVE`, created if missing. Required when `afterProcessing` is `MOVE`. A file already there is never replaced. |
+| `minFileAgeMs` | No | Skip files younger than this, so a file still being uploaded is not read; 1000 by default. Checked when the folder is listed, and again for a file that changed before its turn. |
 | `strictHostKey` | No | On by default. See security. |
 | `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |
 | `charset` | No | Character set to decode the file: `utf-8` (default), `latin1`, `ascii` or `utf16le`, in any case; `UTF-8`, `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other name refuses to deploy. |
@@ -287,6 +299,7 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | `passphrase` | No | Passphrase for an encrypted `privateKey`. |
 | `remoteDirectory` | Yes | Remote directory to write to; created if missing. |
 | `fileNameTemplate` | No | File name, `${messageId}.dat` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder, or an empty name, refuses to deploy. |
+| `tempFileEnabled` | No | On by default: write under a temporary name, then rename. Not used for an append. Off writes under the final name, where a partner can read half a file. |
 | `appendMode` | No | `true` appends to the remote file instead of replacing it. |
 | `strictHostKey` | No | On by default. See security. |
 | `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |

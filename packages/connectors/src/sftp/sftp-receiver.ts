@@ -2,7 +2,7 @@
 // (new instance) does not re-dispatch an already-dispatched file.
 
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
-import { tryCatch, type Result } from '@galvanigraph/core-util';
+import { stderr, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { selectsFileName } from '../file/file-receiver.js';
@@ -14,6 +14,8 @@ import {
   QuarantineLedger,
   dispatchQuarantined,
   isQuarantineLedgerName,
+  isTooNew,
+  type FileVersion,
   type LedgerStorage,
 } from '../quarantine-ledger.js';
 import {
@@ -57,16 +59,26 @@ export function joinRemote(dir: string, name: string): string {
   return `${trimmed}/${name}`;
 }
 
+/** One start of the source and its connection. A cycle that outlives a halt keeps its own, not a later start's. */
+interface Session {
+  client: SftpClient | null;
+  /** False once stop or halt is asked for, so a poll cycle in progress takes no more files. */
+  live: boolean;
+  /** Ends once the file in hand is deleted, moved, quarantined or left. */
+  file: Promise<void>;
+  /** The file in hand has gone into the pipeline. */
+  dispatched: boolean;
+}
+
 export class SftpReceiver implements SourceConnectorRuntime {
   private readonly config: SftpReceiverConfig;
   private readonly createClient: SftpClientFactory;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private polling = false;
-  /** False once stop or halt is asked for, so a poll cycle in progress takes no more files. */
-  private running = false;
-  private client: SftpClient | null = null;
+  private session: Session | null = null;
+  /** The session of the poll cycle in flight; there is never a second cycle. */
+  private polling: Session | null = null;
   /** Dispatched files whose pipeline errored or whose post-action failed, so they are not re-dispatched. */
   private readonly quarantine: QuarantineLedger;
 
@@ -113,174 +125,200 @@ export class SftpReceiver implements SourceConnectorRuntime {
       if (!this.dispatcher) {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
-      await this.reconnect();
+      const session: Session = { client: null, live: true, file: Promise.resolve(), dispatched: false };
+      await this.connect(session);
+      this.session = session;
       // Merge the current and legacy (pre-rename) ledgers, so entries
       // quarantined before the rename are still skipped.
       await this.quarantine.load(QUARANTINE_LEDGER_NAMES.map((name) => joinRemote(this.config.remoteDirectory, name)));
-      this.running = true;
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
       }, this.config.pollingIntervalMs);
     });
   }
 
+  /** Waits for a file in the pipeline, so it is deleted, moved or quarantined before its connection goes. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.running = false;
-      this.clearPollTimer();
-      await this.safeDisconnect();
-      this.client = null;
+      const session = this.endSession();
+      if (session === null) return;
+      if (session.dispatched) await session.file;
+      await this.disconnect(session);
     });
   }
 
+  /** Does not wait: a file in the pipeline keeps the connection, and the cycle closes it. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.running = false;
-      this.clearPollTimer();
-      await this.safeDisconnect();
-      this.client = null;
+      const session = this.endSession();
+      if (session !== null && !session.dispatched) await this.disconnect(session);
     });
+  }
+
+  private endSession(): Session | null {
+    const { session } = this;
+    this.clearPollTimer();
+    if (session !== null) session.live = false;
+    this.session = null;
+    return session;
   }
 
   async onUndeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.dispatcher = null;
-      this.client = null;
     });
   }
 
   private async pollCycle(): Promise<void> {
-    if (this.polling || !this.dispatcher) return;
-    this.polling = true;
+    const { session } = this;
+    if (this.polling !== null || session === null || !this.dispatcher) return;
+    this.polling = session;
     try {
-      if (!this.client) await this.reconnect();
-      const entries = await this.listMatchingFiles();
-      let failed = false;
-      for (const entry of entries) {
-        if (!this.running) break;
-        // One file that cannot be downloaded (permissions, a file removed
-        // mid-poll) must not stop the files after it, this cycle or any later one.
-        try {
-          await this.processFile(entry);
-        } catch (err) {
-          failed = true;
-          this.logger.error({ ...errorInfo(err), file: entry.name }, 'SFTP file could not be processed; continuing with the next file');
-        }
-      }
-      // The failure may have been the connection: start the next cycle on a fresh one.
-      if (failed) {
-        await this.safeDisconnect();
-        this.client = null;
-      }
+      await this.takeFiles(session);
     } catch (err) {
       // A dropped SFTP connection or vanished directory otherwise leaves the
       // channel STARTED yet silently idle. Surface it and drop the client so
       // the next cycle reconnects.
-      this.logger.error(
-        { ...errorInfo(err), remoteDirectory: this.config.remoteDirectory },
-        'SFTP poll cycle failed; will reconnect',
-      );
-      await this.safeDisconnect();
-      this.client = null;
+      if (session.live) {
+        this.logger.error(
+          { ...errorInfo(err), remoteDirectory: this.config.remoteDirectory },
+          'SFTP poll cycle failed; will reconnect',
+        );
+      }
+      await this.disconnect(session);
     } finally {
-      this.polling = false;
+      this.polling = null;
+      if (!session.live) await this.disconnect(session);
     }
   }
 
-  private async reconnect(): Promise<void> {
-    const client = this.createClient(this.config);
-    this.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
+  private async takeFiles(session: Session): Promise<void> {
+    const client = session.client ?? await this.connect(session);
+    const entries = await this.listMatchingFiles(client);
+    let failed = false;
+    for (const entry of entries) {
+      if (!session.live) break;
+      // One file that cannot be downloaded (permissions, a file removed
+      // mid-poll) must not stop the files after it, this cycle or any later one.
+      session.file = this.processFile(session, client, entry).catch((err: unknown) => {
+        failed = true;
+        // A stop or halt closes the connection under a file that is only being read.
+        if (!session.live) return;
+        this.logger.error({ ...errorInfo(err), file: entry.name }, 'SFTP file could not be processed; continuing with the next file');
+      });
+      await session.file;
+      session.dispatched = false;
+    }
+    // The failure may have been the connection: start the next cycle on a fresh one.
+    if (failed) await this.disconnect(session);
   }
 
-  private async listMatchingFiles(): Promise<readonly SftpFileInfo[]> {
-    if (!this.client) return [];
-    const entries = await withTimeout(
-      this.client.list(this.config.remoteDirectory), SFTP_OP_TIMEOUT_MS, 'SFTP list',
-    );
-    const now = Date.now();
+  private async connect(session: Session): Promise<SftpClient> {
+    const client = this.createClient(this.config);
+    session.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
+    return session.client;
+  }
+
+  private async listMatchingFiles(client: SftpClient): Promise<readonly SftpFileInfo[]> {
+    const entries = await withTimeout(client.list(this.config.remoteDirectory), SFTP_OP_TIMEOUT_MS, 'SFTP list');
     const results: SftpFileInfo[] = [];
     for (const entry of entries) {
       if (!entry.isFile) continue;
       if (isQuarantineLedgerName(entry.name)) continue;
       if (!selectsFileName(entry.name, this.config.filePattern, this.config.ignoreDot)) continue;
-      if (now - entry.modifyTime < this.config.minFileAgeMs) continue; // still being written
+      if (isTooNew(entry, this.config.minFileAgeMs)) continue; // still being written
       results.push(entry);
     }
     results.sort((a, b) => a.name.localeCompare(b.name));
     return results;
   }
 
-  private async processFile(entry: SftpFileInfo): Promise<void> {
-    if (!this.dispatcher || !this.client) return;
-    const client = this.client;
+  private async processFile(session: Session, client: SftpClient, entry: SftpFileInfo): Promise<void> {
+    const { dispatcher } = this;
+    if (!dispatcher) return;
+    const remotePath = joinRemote(this.config.remoteDirectory, entry.name);
     await dispatchQuarantined({
       ledger: this.quarantine,
       logger: this.logger,
-      key: `${entry.name}:${String(entry.modifyTime)}`,
+      name: entry.name,
+      listed: entry,
       file: entry.name,
-      read: () => this.downloadMessage(client, entry),
-      dispatcher: this.dispatcher,
-      postProcess: () => this.postProcess(entry),
+      minAgeMs: this.config.minFileAgeMs,
+      version: () => withTimeout(client.stat(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP stat'),
+      read: (version) => this.downloadMessage(client, entry.name, version),
+      dispatcher: async (raw) => {
+        if (!session.live) return { ok: false, value: null, error: stderr('The SFTP source was stopped before the file was taken') };
+        session.dispatched = true;
+        return dispatcher(raw);
+      },
+      postProcess: this.config.afterProcessing === SFTP_POST_ACTION.NONE ? null : () => this.postProcess(client, entry.name),
     });
   }
 
-  private async downloadMessage(client: SftpClient, entry: SftpFileInfo): Promise<RawMessage> {
-    const remotePath = joinRemote(this.config.remoteDirectory, entry.name);
+  private async downloadMessage(client: SftpClient, name: string, version: FileVersion): Promise<RawMessage> {
+    const remotePath = joinRemote(this.config.remoteDirectory, name);
     const buffer = await withTimeout(client.get(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP get');
     return {
       content: buffer.toString(normalizeEncoding(this.config.charset)),
       sourceMap: {
-        originalFilename: entry.name,
+        originalFilename: name,
         remoteDirectory: this.config.remoteDirectory,
-        fileSize: entry.size,
-        lastModified: entry.modifyTime,
+        fileSize: version.size,
+        lastModified: version.modifyTime,
       },
     };
   }
 
-  private async postProcess(entry: SftpFileInfo): Promise<void> {
-    if (!this.client) return;
-    const remotePath = joinRemote(this.config.remoteDirectory, entry.name);
+  private async postProcess(client: SftpClient, name: string): Promise<void> {
+    const remotePath = joinRemote(this.config.remoteDirectory, name);
     switch (this.config.afterProcessing) {
       case SFTP_POST_ACTION.DELETE:
-        await withTimeout(this.client.delete(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP delete');
+        await withTimeout(client.delete(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP delete');
         break;
       case SFTP_POST_ACTION.MOVE:
-        await withTimeout(this.client.mkdir(this.config.moveToDirectory), SFTP_OP_TIMEOUT_MS, 'SFTP mkdir');
-        await withTimeout(
-          this.client.rename(remotePath, joinRemote(this.config.moveToDirectory, entry.name)),
-          SFTP_OP_TIMEOUT_MS, 'SFTP rename',
-        );
+        await this.move(client, remotePath, joinRemote(this.config.moveToDirectory, name));
         break;
       case SFTP_POST_ACTION.NONE:
         break;
     }
   }
 
+  /** Some servers replace on a rename, so the name is checked first. */
+  private async move(client: SftpClient, from: string, to: string): Promise<void> {
+    await withTimeout(client.mkdir(this.config.moveToDirectory), SFTP_OP_TIMEOUT_MS, 'SFTP mkdir');
+    const kind = await withTimeout(client.pathKind(to), SFTP_OP_TIMEOUT_MS, 'SFTP pathKind');
+    if (kind !== 'missing') throw new Error(`"${to}" already exists, so "${from}" was not moved there`);
+    await withTimeout(client.rename(from, to), SFTP_OP_TIMEOUT_MS, 'SFTP rename');
+  }
+
   private remoteLedgerStorage(): LedgerStorage {
     return {
       read: async (ledgerPath: string): Promise<string | null> => {
-        if (!this.client) return null;
+        const client = this.session?.client;
+        if (!client) return null;
         let kind: SftpPathKind;
         try {
-          kind = await withTimeout(this.client.pathKind(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP pathKind');
+          kind = await withTimeout(client.pathKind(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP pathKind');
         } catch {
           return null;
         }
         if (kind === 'missing') return null;
-        const buf = await withTimeout(this.client.get(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP get ledger');
+        const buf = await withTimeout(client.get(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP get ledger');
         return buf.toString('utf8');
       },
       write: async (ledgerPath: string, text: string): Promise<void> => {
-        if (!this.client) return;
-        await withTimeout(this.client.put(Buffer.from(text, 'utf8'), ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP put ledger');
+        // Only a cycle writes it, on its own session: a later start's may not be connected yet.
+        const client = this.polling?.client;
+        if (!client) throw new Error('not connected');
+        await withTimeout(client.put(Buffer.from(text, 'utf8'), ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP put ledger');
       },
     };
   }
 
-  private async safeDisconnect(): Promise<void> {
-    const client = this.client;
+  private async disconnect(session: Session): Promise<void> {
+    const { client } = session;
     if (!client) return;
+    session.client = null;
     await closeQuietly({
       close: () => client.end(),
       timeoutMs: SFTP_OP_TIMEOUT_MS,

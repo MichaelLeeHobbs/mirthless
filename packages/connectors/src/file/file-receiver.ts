@@ -10,8 +10,12 @@ import {
   QuarantineLedger,
   dispatchQuarantined,
   isQuarantineLedgerName,
+  isTooNew,
+  type FileVersion,
   type LedgerStorage,
 } from '../quarantine-ledger.js';
+import { isTempFileName } from '../temp-file.js';
+import { moveWithoutReplacing } from './file-move.js';
 import { resolveWithinRoots, type FileRoots } from './file-roots.js';
 
 const FILE_SORT_BY = {
@@ -87,6 +91,7 @@ export function matchGlob(pattern: string, filename: string): boolean {
 
 /** Shared by the File and SFTP sources, so both pick the files a Mirth File Reader would. */
 export function selectsFileName(name: string, pattern: string, ignoreDot: boolean): boolean {
+  if (isTempFileName(name)) return false;
   if (ignoreDot && name.startsWith('.')) return false;
   return matchGlob(pattern, name);
 }
@@ -101,11 +106,14 @@ function heldBack(name: string, listed: ReadonlySet<string>): boolean {
   return name.endsWith(IGNORE_SUFFIX) || listed.has(name + IGNORE_SUFFIX);
 }
 
-interface FileEntry {
+interface FileEntry extends FileVersion {
   readonly name: string;
   readonly fullPath: string;
-  readonly mtime: number;
-  readonly size: number;
+}
+
+async function versionOf(fullPath: string): Promise<FileVersion> {
+  const stat = await fs.stat(fullPath);
+  return { modifyTime: stat.mtimeMs, size: stat.size };
 }
 
 export class FileReceiver implements SourceConnectorRuntime {
@@ -234,25 +242,23 @@ export class FileReceiver implements SourceConnectorRuntime {
     const directory = await resolveWithinRoots(this.config.directory, this.config.roots);
     const dirEntries = await fs.readdir(directory, { withFileTypes: true });
     const listed = new Set(dirEntries.map((e) => e.name));
-    const now = Date.now();
     const results: FileEntry[] = [];
 
     for (const entry of dirEntries) {
       if (!entry.isFile() || !this.takesName(entry.name, listed)) continue;
 
       const fullPath = path.join(directory, entry.name);
-      const stat = await fs.stat(fullPath).catch(() => null);
+      const version = await versionOf(fullPath).catch(() => null);
       // Gone since the listing (another reader took it): nothing to process.
-      if (stat === null) continue;
+      if (version === null || isTooNew(version, this.minAgeMs())) continue;
 
-      if (this.config.checkFileAge) {
-        const age = now - stat.mtimeMs;
-        if (age < this.config.fileAgeMs) continue;
-      }
-
-      results.push({ name: entry.name, fullPath, mtime: stat.mtimeMs, size: stat.size });
+      results.push({ name: entry.name, fullPath, ...version });
     }
     return results;
+  }
+
+  private minAgeMs(): number | null {
+    return this.config.checkFileAge ? this.config.fileAgeMs : null;
   }
 
   private takesName(name: string, listed: ReadonlySet<string>): boolean {
@@ -265,7 +271,7 @@ export class FileReceiver implements SourceConnectorRuntime {
     const copy = [...entries];
     switch (this.config.sortBy) {
       case FILE_SORT_BY.DATE:
-        copy.sort((a, b) => a.mtime - b.mtime);
+        copy.sort((a, b) => a.modifyTime - b.modifyTime);
         break;
       case FILE_SORT_BY.SIZE:
         copy.sort((a, b) => a.size - b.size);
@@ -283,16 +289,19 @@ export class FileReceiver implements SourceConnectorRuntime {
     await dispatchQuarantined({
       ledger: this.quarantine,
       logger: this.logger,
-      key: `${entry.name}:${String(entry.mtime)}`,
+      name: entry.name,
+      listed: entry,
       file: entry.fullPath,
-      read: () => this.readMessage(entry),
+      minAgeMs: this.minAgeMs(),
+      version: () => versionOf(entry.fullPath),
+      read: (version) => this.readMessage(entry, version),
       dispatcher: this.dispatcher,
-      postProcess: () => this.postProcess(entry),
+      postProcess: this.config.postAction === FILE_POST_ACTION.NONE ? null : () => this.postProcess(entry),
     });
   }
 
   /** Null for an unreadable file: reported and skipped, then tried again next poll. */
-  private async readMessage(entry: FileEntry): Promise<RawMessage | null> {
+  private async readMessage(entry: FileEntry, version: FileVersion): Promise<RawMessage | null> {
     let content: string;
     try {
       content = this.config.binary
@@ -310,8 +319,8 @@ export class FileReceiver implements SourceConnectorRuntime {
       sourceMap: {
         originalFilename: entry.name,
         directory: this.config.directory,
-        fileSize: entry.size,
-        lastModified: entry.mtime,
+        fileSize: version.size,
+        lastModified: version.modifyTime,
       },
     };
   }
@@ -324,7 +333,7 @@ export class FileReceiver implements SourceConnectorRuntime {
       case FILE_POST_ACTION.MOVE: {
         const target = await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
         await fs.mkdir(target, { recursive: true });
-        await fs.rename(entry.fullPath, path.join(target, entry.name));
+        await moveWithoutReplacing(entry.fullPath, path.join(target, entry.name));
         break;
       }
       case FILE_POST_ACTION.NONE:

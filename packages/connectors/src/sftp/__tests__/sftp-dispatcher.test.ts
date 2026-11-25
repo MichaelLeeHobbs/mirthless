@@ -14,6 +14,7 @@ function makeConfig(overrides?: Partial<SftpDispatcherConfig>): SftpDispatcherCo
     remoteDirectory: '/outbound',
     fileNameTemplate: '${messageId}.dat',
     appendMode: false,
+    tempFileEnabled: true,
     ...overrides,
   };
 }
@@ -186,6 +187,66 @@ describe('send timeout', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('a send that cannot tell how its last step ended', () => {
+  it('says the file may be in place when the rename is never answered, and how long it waits', async () => {
+    vi.useFakeTimers();
+    const state = new RemoteState();
+    const d = new SftpDispatcher(makeConfig(), () => ({
+      ...makeMockSftpClient(state),
+      replace: () => new Promise<boolean>(() => { /* never answered */ }),
+      delete: () => new Promise<void>(() => { /* never answered */ }),
+    }));
+    await d.onStart();
+    const sent = d.send(makeMessage(), makeSignal());
+    await vi.advanceTimersByTimeAsync(34_000);
+    const result = await sent;
+    expect(result.error?.message).toMatch(
+      /^SFTP send timed out after 30000ms; \/outbound\/42\.dat may hold this message; the temporary file \/outbound\/\.galvanigraph-.*\.tmp may be left on the server$/,
+    );
+  });
+
+  it('says the file may be in place when the connection is lost during the rename', async () => {
+    const d = new SftpDispatcher(makeConfig(), () => ({
+      ...makeMockSftpClient(new RemoteState()),
+      replace: () => Promise.reject(Object.assign(new Error('No response from server'), { code: 'ERR_GENERIC_CLIENT' })),
+    }));
+    await d.onStart();
+    const result = await d.send(makeMessage(), makeSignal());
+    expect(result.error?.message).toBe('No response from server; /outbound/42.dat may hold this message');
+  });
+
+  it('does not delete the existing file when a refused rename had replaced it after all', async () => {
+    const state = new RemoteState();
+    const client = makeMockSftpClient(state);
+    const d = new SftpDispatcher(makeConfig(), () => ({
+      ...client,
+      replace: async () => false,
+      rename: async (from, to) => { await client.rename(from, to); throw Object.assign(new Error('Failure'), { code: 4 }); },
+    }));
+    await d.onStart();
+    expect((await d.send(makeMessage({ content: 'NEW' }), makeSignal())).ok).toBe(false);
+    expect(state.files.get('42.dat')?.content).toBe('NEW');
+  });
+
+  it('keeps the temporary file when it is given up while the existing file is being deleted', async () => {
+    vi.useFakeTimers();
+    const state = new RemoteState();
+    state.addFile('42.dat', 'OLD', 0);
+    const d = new SftpDispatcher(makeConfig(), () => ({
+      ...makeMockSftpClient(state),
+      replace: async () => false,
+      rename: () => Promise.reject(Object.assign(new Error('Failure'), { code: 4 })),
+      delete: () => new Promise<void>(() => { /* never answered */ }),
+    }));
+    await d.onStart();
+    const sent = d.send(makeMessage({ content: 'NEW' }), makeSignal());
+    await vi.advanceTimersByTimeAsync(34_000);
+    const result = await sent;
+    expect(result.error?.message).toContain('/outbound/42.dat may have been removed to be replaced');
+    expect([...state.files.values()].map((f) => f.content)).toEqual(['OLD', 'NEW']);
   });
 });
 

@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FileDispatcher, resolveOutputFilename, type FileDispatcherConfig } from '../file-dispatcher.js';
 import type { ConnectorMessage } from '../../base.js';
+import { isTempFileName } from '../../temp-file.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(),
   appendFile: vi.fn(),
   rename: vi.fn(),
+  unlink: vi.fn(),
   mkdir: vi.fn(),
   stat: vi.fn(),
   realpath: vi.fn(),
@@ -18,6 +20,7 @@ import * as path from 'node:path';
 const mockWriteFile = vi.mocked(fs.writeFile);
 const mockAppendFile = vi.mocked(fs.appendFile);
 const mockRename = vi.mocked(fs.rename);
+const mockUnlink = vi.mocked(fs.unlink);
 const mockMkdir = vi.mocked(fs.mkdir);
 const mockRealpath = vi.mocked(fs.realpath);
 
@@ -55,6 +58,7 @@ beforeEach(() => {
   mockWriteFile.mockResolvedValue(undefined);
   mockAppendFile.mockResolvedValue(undefined);
   mockRename.mockResolvedValue(undefined);
+  mockUnlink.mockResolvedValue(undefined);
 });
 
 afterEach(async () => {
@@ -272,6 +276,60 @@ describe('FileDispatcher', () => {
       const first = mockWriteFile.mock.calls[0]![0] as string;
       const second = mockWriteFile.mock.calls[1]![0] as string;
       expect(first).not.toBe(second);
+    });
+
+    it('writes the temp file next to the file under a name no source reads', async () => {
+      dispatcher = new FileDispatcher(makeConfig());
+      await dispatcher.onStart();
+      await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      const written = mockWriteFile.mock.calls[0]![0] as string;
+      expect(path.dirname(written)).toBe(path.resolve('/data/outbound'));
+      expect(isTempFileName(path.basename(written))).toBe(true);
+    });
+
+    it('removes the temp file of a write that failed', async () => {
+      mockWriteFile.mockRejectedValue(Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC', syscall: 'write' }));
+      dispatcher = new FileDispatcher(makeConfig());
+      await dispatcher.onStart();
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      expect(result.ok).toBe(false);
+      expect(mockUnlink).toHaveBeenCalledWith(mockWriteFile.mock.calls[0]![0]);
+    });
+
+    it.each([
+      ['EPERM', 1],
+      ['ENOENT', 0],
+    ])('warns when the temp file of a failed write cannot be removed, unless there is none (%s)', async (code, count) => {
+      const { logger, warnings } = makeMockLogger();
+      mockRename.mockRejectedValue(new Error('EPERM: rename'));
+      mockUnlink.mockRejectedValue(Object.assign(new Error(code), { code }));
+      dispatcher = new FileDispatcher(makeConfig(), logger);
+      await dispatcher.onStart();
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain('EPERM: rename');
+      expect(warnings.map((w) => w.obj['file'])).toEqual(count === 1 ? [mockWriteFile.mock.calls[0]![0]] : []);
+    });
+
+    it.each([
+      ['append', { appendMode: true }],
+      ['direct write', { tempFileEnabled: false }],
+    ])('names the file that may hold part of the message when a %s is cut off', async (_label, overrides) => {
+      const full = Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC', syscall: 'write' });
+      mockAppendFile.mockRejectedValue(full);
+      mockWriteFile.mockRejectedValue(full);
+      dispatcher = new FileDispatcher(makeConfig(overrides));
+      await dispatcher.onStart();
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      expect(result.error?.message).toBe(`ENOSPC: no space left on device, write; ${path.join(path.resolve('/data/outbound'), '42.txt')} may hold part of this message`);
+    });
+
+    it('says nothing of a partial file when the file could not be opened', async () => {
+      mockAppendFile.mockRejectedValue(Object.assign(new Error('EACCES: permission denied, open'), { code: 'EACCES', syscall: 'open' }));
+      dispatcher = new FileDispatcher(makeConfig({ appendMode: true }));
+      await dispatcher.onStart();
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      expect(result.error?.message).toBe('EACCES: permission denied, open');
     });
 
     it('warns at deploy when every message would write the same file', async () => {

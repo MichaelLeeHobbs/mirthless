@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { stderr, type Result } from '@galvanigraph/core-util';
 import type { DispatchResult, RawMessage } from '../base.js';
-import { QuarantineLedger, dispatchQuarantined, type LedgerStorage, type QuarantinedFile } from '../quarantine-ledger.js';
+import { QuarantineLedger, dispatchQuarantined, type FileVersion, type LedgerStorage, type QuarantinedFile } from '../quarantine-ledger.js';
 import { makeMockLogger, type MockLogger } from '../__fixtures__/mock-logger.js';
 
 const LEDGER = '/in/.galvanigraph-quarantine.json';
@@ -126,6 +126,15 @@ function ok(value: DispatchResult): Result<DispatchResult> {
   return { ok: true, value, error: null };
 }
 
+const KEY = 'a.hl7:1';
+const LISTED: FileVersion = { modifyTime: 1, size: 5 };
+
+/** Answers each version in turn, and the last one from then on. */
+function versions(...answers: readonly FileVersion[]): () => Promise<FileVersion> {
+  let i = 0;
+  return async () => answers[Math.min(i++, answers.length - 1)]!;
+}
+
 interface Run {
   readonly job: QuarantinedFile;
   readonly log: MockLogger;
@@ -139,8 +148,11 @@ function makeJob(overrides: Partial<QuarantinedFile> = {}): Run {
   const job: QuarantinedFile = {
     ledger,
     logger: log.logger,
-    key: 'a.hl7:1',
+    name: 'a.hl7',
+    listed: LISTED,
     file: '/in/a.hl7',
+    minAgeMs: 1_000,
+    version: versions(LISTED),
     read: async () => { calls.push('read'); return RAW; },
     dispatcher: async () => { calls.push('dispatch'); return ok({ messageId: 1 }); },
     postProcess: async () => { calls.push('post'); },
@@ -159,7 +171,7 @@ describe('dispatchQuarantined', () => {
 
   it('skips a quarantined file without reading it and reports it once', async () => {
     const { job, log, calls } = makeJob();
-    await job.ledger.add(job.key);
+    await job.ledger.add(KEY);
     await dispatchQuarantined(job);
     await dispatchQuarantined(job);
     expect(calls).toEqual([]);
@@ -172,7 +184,7 @@ describe('dispatchQuarantined', () => {
     const { job, calls } = makeJob({ read: async () => null });
     await dispatchQuarantined(job);
     expect(calls).toEqual([]);
-    expect(job.ledger.has(job.key)).toBe(false);
+    expect(job.ledger.has(KEY)).toBe(false);
   });
 
   it('leaves the file for the next poll when the pipeline did not take it', async () => {
@@ -181,7 +193,7 @@ describe('dispatchQuarantined', () => {
     });
     await dispatchQuarantined(job);
     expect(calls).toEqual(['read']);
-    expect(job.ledger.has(job.key)).toBe(false);
+    expect(job.ledger.has(KEY)).toBe(false);
     expect(log.errors).toEqual([]);
   });
 
@@ -191,7 +203,7 @@ describe('dispatchQuarantined', () => {
     });
     await dispatchQuarantined(job);
     expect(calls).toEqual(['read']);
-    expect(job.ledger.has(job.key)).toBe(true);
+    expect(job.ledger.has(KEY)).toBe(true);
     expect(storage.files.get(LEDGER)).toBe('["a.hl7:1"]');
     expect(log.errors).toHaveLength(1);
     expect(log.errors[0]!.obj['file']).toBe('/in/a.hl7');
@@ -201,7 +213,7 @@ describe('dispatchQuarantined', () => {
   it('quarantines and persists a file whose post-action fails', async () => {
     const { job, log, storage } = makeJob({ postProcess: async () => { throw new Error('EPERM'); } });
     await dispatchQuarantined(job);
-    expect(job.ledger.has(job.key)).toBe(true);
+    expect(job.ledger.has(KEY)).toBe(true);
     expect(storage.files.get(LEDGER)).toBe('["a.hl7:1"]');
     expect(log.errors).toHaveLength(1);
     expect(log.errors[0]!.obj['errMsg']).toBe('EPERM');
@@ -209,9 +221,89 @@ describe('dispatchQuarantined', () => {
     expect(log.errors[0]!.msg).toBe('Post-action failed after successful dispatch; quarantining file');
   });
 
+  it('quarantines a file that cannot be looked at again after dispatch, without deleting or moving it', async () => {
+    let looks = 0;
+    const { job, calls, log, storage } = makeJob({
+      version: async () => {
+        if (++looks === 3) throw new Error('No SFTP connection available');
+        return LISTED;
+      },
+    });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read', 'dispatch']);
+    expect(storage.files.get(LEDGER)).toBe('["a.hl7:1"]');
+    expect(log.errors[0]!.msg).toBe('Post-action failed after successful dispatch; quarantining file');
+  });
+
+  it('does not read a file that is gone', async () => {
+    const { job, calls } = makeJob({ version: async () => { throw new Error('ENOENT'); } });
+    await expect(dispatchQuarantined(job)).rejects.toThrow('ENOENT');
+    expect(calls).toEqual([]);
+  });
+
+  it('does not read a file that changed since the listing and is now too new', async () => {
+    const { job, calls } = makeJob({ version: versions({ modifyTime: Date.now(), size: 9 }) });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual([]);
+  });
+
+  it.each([1_000, null])('reads a file that changed since the listing and is not too new (minimum age %s)', async (minAgeMs) => {
+    const now = { modifyTime: minAgeMs === null ? Date.now() : 2, size: 9 };
+    const read: FileVersion[] = [];
+    const { job, calls } = makeJob({
+      minAgeMs, version: versions(now), read: async (version) => { read.push(version); return RAW; },
+    });
+    await dispatchQuarantined(job);
+    expect(read).toEqual([now]);
+    expect(calls).toEqual(['dispatch', 'post']);
+  });
+
+  it('does not read a file quarantined as it is now, whatever the listing said', async () => {
+    const { job, calls } = makeJob({ version: versions({ modifyTime: 2, size: 5 }) });
+    await job.ledger.add('a.hl7:2');
+    await dispatchQuarantined(job);
+    expect(calls).toEqual([]);
+  });
+
+  it('quarantines the version it read, not the one listed', async () => {
+    const { job, storage } = makeJob({
+      version: versions({ modifyTime: 2, size: 5 }), dispatcher: async () => ok({ messageId: 9, status: 'ERROR' }),
+    });
+    await dispatchQuarantined(job);
+    expect(storage.files.get(LEDGER)).toBe('["a.hl7:2"]');
+  });
+
+  it.each([['grew', { modifyTime: 1, size: 6 }], ['has a new time', { modifyTime: 2, size: 5 }]])('does not dispatch a file that %s while it was read', async (_label, after) => {
+    const { job, calls, log } = makeJob({ version: versions(LISTED, after) });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read']);
+    expect(log.warnings[0]!.obj).toEqual({ file: '/in/a.hl7' });
+  });
+
+  it.each([['grew', { modifyTime: 1, size: 6 }], ['has a new time', { modifyTime: 2, size: 5 }]])('neither deletes nor quarantines a file that %s while it was processed', async (_label, after) => {
+    const { job, calls, log, storage } = makeJob({ version: versions(LISTED, LISTED, after) });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read', 'dispatch']);
+    expect(storage.files.size).toBe(0);
+    expect(log.warnings).toHaveLength(1);
+  });
+
+  it('takes two versions with no time as the same', async () => {
+    const untimed = { modifyTime: NaN, size: 5 };
+    const { job, calls } = makeJob({ listed: untimed, version: versions({ ...untimed }) });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read', 'dispatch', 'post']);
+  });
+
+  it('leaves a file with no post-action alone', async () => {
+    const { job, calls } = makeJob({ postProcess: null, version: versions(LISTED, LISTED, { modifyTime: 2, size: 5 }) });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read', 'dispatch']);
+  });
+
   it('lets a read failure propagate without quarantining', async () => {
     const { job } = makeJob({ read: async () => { throw new Error('SFTP get failed'); } });
     await expect(dispatchQuarantined(job)).rejects.toThrow('SFTP get failed');
-    expect(job.ledger.has(job.key)).toBe(false);
+    expect(job.ledger.has(KEY)).toBe(false);
   });
 });

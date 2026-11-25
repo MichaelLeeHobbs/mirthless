@@ -1,5 +1,6 @@
 // One RemoteState can back several clients, so a test can restart against the same remote files.
 
+import type { FileVersion } from '../quarantine-ledger.js';
 import type { SftpClient, SftpFileInfo, SftpPathKind } from '../sftp/sftp-client.js';
 
 const LEDGER_NAME = '.galvanigraph-quarantine.json';
@@ -43,6 +44,9 @@ export class RemoteState {
 function basename(remotePath: string): string {
   return remotePath.split('/').pop() ?? remotePath;
 }
+
+/** The folder a test moves files to; every other path is in the one folder `files` holds. */
+const MOVED = '/processed/';
 
 export function makeMockSftpClient(state: RemoteState, failures: MockFailures = {}): SftpClient {
   return {
@@ -107,10 +111,21 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
       state.files.delete(name);
       state.deleted.push(name);
     },
+    async stat(remotePath: string): Promise<FileVersion> {
+      const f = state.files.get(basename(remotePath));
+      if (!f) throw new Error(`no such file: ${remotePath}`);
+      return { modifyTime: f.modifyTime, size: f.size };
+    },
     async rename(from: string, to: string): Promise<void> {
       if (failures.rename) throw new Error('SFTP rename failed');
+      const f = state.files.get(basename(from));
       state.files.delete(basename(from));
+      if (f && !to.startsWith(MOVED)) state.files.set(basename(to), f);
       state.renamed.push([from, to]);
+    },
+    async replace(from: string, to: string): Promise<boolean> {
+      await this.rename(from, to);
+      return true;
     },
     async mkdir(remoteDirectory: string): Promise<void> {
       state.mkdirs.push(remoteDirectory);
@@ -119,7 +134,7 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
       const name = basename(remotePath);
       if (name === LEDGER_NAME) return state.ledger !== null ? 'file' : 'missing';
       if (LEGACY_LEDGER_NAMES.includes(name)) return state.legacyLedgers.has(name) ? 'file' : 'missing';
-      return state.files.has(name) ? 'file' : 'missing';
+      return state.files.has(name) && !remotePath.startsWith(MOVED) ? 'file' : 'missing';
     },
     async end(): Promise<void> {
       state.endCount++;
