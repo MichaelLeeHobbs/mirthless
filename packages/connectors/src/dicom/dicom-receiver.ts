@@ -10,7 +10,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
+import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { isMissing, resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
@@ -121,6 +121,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
   private readonly createReceiver: ReceiverFactory;
   private readonly logger: ConnectorLogger = createConnectorLogger('DICOM');
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private receiver: DcmtkReceiver | null = null;
   private readonly pending: PendingAssociations;
   private stopping = false;
@@ -135,6 +136,10 @@ export class DicomReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -341,15 +346,22 @@ export class DicomReceiver implements SourceConnectorRuntime {
     if (this.sweeping) return;
     this.sweeping = true;
     try {
-      for (const id of await this.pending.ids()) {
+      const ids = await this.pending.ids();
+      this.reportHealth(null);
+      for (const id of ids) {
         // The store is down: the rest would fail too.
         if (this.stopping || !(await this.recover(id))) return;
       }
     } catch (err) {
       this.logger.error(this.failed(err), 'DICOM associations waiting for their message could not be listed; tried again');
+      this.reportHealth(new Error(`Associations waiting for their message could not be listed (${this.withoutImage(err).message})`));
     } finally {
       this.sweeping = false;
     }
+  }
+
+  private reportHealth(failure: Error | null): void {
+    if (!this.stopping) this.health(failure);
   }
 
   /** False when the pipeline could not store the message. A list that cannot be read is left and does not hold up the others. */
@@ -359,6 +371,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
       association = await this.pending.open(associationId);
     } catch (err) {
       this.logger.error({ ...this.failed(err), associationId }, 'A DICOM association waiting for its message could not be read; tried again');
+      this.reportHealth(new Error(`An association waiting for its message could not be read (${this.withoutImage(err).message})`));
       return true;
     }
     if (association === null) return true;

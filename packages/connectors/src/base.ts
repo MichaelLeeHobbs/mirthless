@@ -80,8 +80,17 @@ export type MessageDispatcher = (raw: RawMessage) => Promise<Result<DispatchResu
  */
 export type SourceFatalHandler = (error: Error) => void;
 
+/**
+ * Told of each poll, and of a connection to a partner when it is made, when it is lost (null, then why)
+ * and when it cannot be made, while the source runs: why it failed, or null when it worked. The engine
+ * decides which failures are due an alert.
+ */
+export type SourceHealthHandler = (failure: Error | null) => void;
+
 export interface SourceConnectorRuntime extends ConnectorLifecycle {
   setDispatcher(dispatcher: MessageDispatcher): void;
+  /** Only sources that poll, or that connect to their partner, have it. */
+  setHealthHandler?(handler: SourceHealthHandler): void;
   /** Only sources that can stop themselves have it. */
   setFatalHandler?(handler: SourceFatalHandler): void;
   /**

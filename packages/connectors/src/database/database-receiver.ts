@@ -1,5 +1,5 @@
-import { tryCatch, type Result } from '@galvanigraph/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { stderr, tryCatch, type Result } from '@galvanigraph/core-util';
+import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { toPoolConfig, type DatabasePool, type TxQuery } from './connection-pool.js';
 import { appendLockClause, withSkippedRows } from './lock-clause.js';
@@ -49,6 +49,12 @@ function isWriteRefused(error: Error): boolean {
   return code === '25006' || code === 'ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION';
 }
 
+/** For an alert: a database's text can quote a value of a row. */
+function withoutText(error: Error): Error {
+  const { code } = error as { readonly code?: unknown };
+  return typeof code === 'string' ? new Error(`The database failed with ${code}; the server log has its text`) : error;
+}
+
 /** One start of the source. A cycle that outlives a halt keeps its own pool, not a later start's. */
 interface Session {
   readonly pool: DatabasePool;
@@ -67,6 +73,7 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
   private readonly openPool: () => DatabasePool;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
+  private health: SourceHealthHandler = () => undefined;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private session: Session | null = null;
   /** The poll cycle in flight, of this session or of one that was halted; there is never a second. */
@@ -87,6 +94,10 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setHealthHandler(handler: SourceHealthHandler): void {
+    this.health = handler;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -182,7 +193,12 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
         { ...errorInfo(err), database: this.config.database },
         'Database poll cycle failed',
       );
+      this.reportHealth(session, stderr(err));
     }
+  }
+
+  private reportHealth(session: Session, failure: Error | null): void {
+    if (session.live) this.health(failure === null ? null : withoutText(failure));
   }
 
   /** Nothing to lock or ack: the query's own WHERE must exclude processed rows. */
@@ -195,8 +211,10 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
         { ...errorInfo(queryResult.error), database: this.config.database },
         'Database poll SELECT failed',
       );
+      this.reportHealth(session, queryResult.error);
       return;
     }
+    this.reportHealth(session, null);
     for (const row of this.capRows(queryResult.value.rows)) {
       if (!session.live) return;
       await this.dispatchRow(session, { row, content: JSON.stringify(row) });
@@ -221,7 +239,10 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
         { ...errorInfo(txResult.error), database: this.config.database, dispatched: taken.length },
         'Database poll transaction failed',
       );
+      this.reportHealth(session, txResult.error);
       if (taken.length > 0) await this.reack(session, taken);
+    } else {
+      this.reportHealth(session, null);
     }
     this.unmarked.settle(taken);
   }
