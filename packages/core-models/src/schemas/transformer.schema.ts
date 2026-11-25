@@ -56,6 +56,12 @@ export const delimitedOptionsSchema = z.object({
   .refine((o) => o.columnDelimiter !== o.recordDelimiter, { message: 'Column and record delimiters must differ' })
   .refine((o) => o.quote !== o.columnDelimiter && o.quote !== o.recordDelimiter, { message: 'The quote cannot be a delimiter' })
   // Two columns with one name would make a row object keep only the last.
-  .refine((o) => new Set(o.columnNames).size === o.columnNames.length, { message: 'Column names must be unique' });
+  .refine((o) => new Set(o.columnNames).size === o.columnNames.length, { message: 'Column names must be unique' })
+  .superRefine((o, ctx) => {
+    for (const name of o.columnNames) {
+      const n = /^column([1-9]\d*)$/.exec(name)?.[1];
+      if (Number(n) > o.columnNames.length) ctx.addIssue({ code: 'custom', path: ['columnNames'], message: `"${name}" is what column ${String(n)} is called without a name, so it cannot name an earlier column` });
+    }
+  });
 
 export type DelimitedOptions = z.infer<typeof delimitedOptionsSchema>;
