@@ -25,9 +25,15 @@ function countsText({ channelsPruned, totalDeleted, expiredRecordsDeleted }: Pru
 type RunResult = NonNullable<ReturnType<typeof useRunPrunerNow>['data']>;
 
 function leftText({ failedChannelIds, expiredRecordsFailed, expiredRecordsComplete }: RunResult): string {
-  const failedChannels = failedChannelIds.length > 0 ? `. Pruning failed for ${String(failedChannelIds.length)} channels; see the server log.` : '';
-  if (expiredRecordsFailed) return `${failedChannels}. Not every expired collection record could be deleted; see the server log.`;
-  return expiredRecordsComplete ? failedChannels : `${failedChannels}. There were more expired collection records than it had time for. The next run goes on with the rest.`;
+  const sentences: string[] = [];
+  if (failedChannelIds.length > 0) sentences.push(`Pruning failed for ${String(failedChannelIds.length)} channels; see the server log.`);
+  if (expiredRecordsFailed) sentences.push('Not every expired collection record could be deleted; see the server log.');
+  else if (!expiredRecordsComplete) sentences.push('There were more expired collection records than it had time for. The next run goes on with the rest.');
+  return sentences.length === 0 ? '' : `. ${sentences.join(' ')}`;
+}
+
+function isFailed(run: RunResult & { readonly failed?: boolean }): boolean {
+  return run.failed === true || run.failedChannelIds.length > 0 || run.expiredRecordsFailed;
 }
 
 export function PrunerSection(): ReactNode {
@@ -119,7 +125,7 @@ export function PrunerSection(): ReactNode {
       )}
 
       {runNowMutation.isSuccess && (
-        <Alert severity={runNowMutation.data.failedChannelIds.length > 0 || runNowMutation.data.expiredRecordsFailed ? 'error' : 'info'} sx={{ mb: 2 }}>
+        <Alert severity={isFailed(runNowMutation.data) ? 'error' : 'info'} sx={{ mb: 2 }}>
           Pruner run: {countsText(runNowMutation.data)}{leftText(runNowMutation.data)}
         </Alert>
       )}
@@ -137,10 +143,8 @@ export function PrunerSection(): ReactNode {
           }}>
             Last run: {new Date(status.lastRunResult.completedAt).toLocaleString()}
           </Typography>
-          <Typography variant="body2" sx={{
-            color: 'text.secondary'
-          }}>
-            {countsText(status.lastRunResult)}
+          <Typography variant="body2" sx={{ color: isFailed(status.lastRunResult) ? 'error.main' : 'text.secondary' }}>
+            {status.lastRunResult.failed ? 'The run failed. See the server log.' : `${countsText(status.lastRunResult)}${leftText(status.lastRunResult)}`}
           </Typography>
         </Box>
       )}

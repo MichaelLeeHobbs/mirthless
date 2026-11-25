@@ -227,7 +227,7 @@ export function CollectionsPage(): ReactNode {
           <TextField
             margin="dense"
             label="Default TTL (seconds)"
-            helperText="How long scripts find a record after it is stored; then the data pruner deletes it. Leave blank to find it for ever. Records already stored keep their expiry."
+            helperText="How long scripts find a record after it is stored; then the data pruner deletes it, when it runs. Leave blank to find it for ever. Records already stored keep their expiry."
             fullWidth
             type="number"
             value={ttlInput}

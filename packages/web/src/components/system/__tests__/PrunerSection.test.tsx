@@ -27,6 +27,11 @@ const { PrunerSection } = await import('../PrunerSection.js');
 const IDLE: RunState = { isSuccess: false, isError: false, isPending: false, error: null };
 const PRUNED = { channelsPruned: 1, totalDeleted: 20, failedChannelIds: [], expiredRecordsDeleted: 7, expiredRecordsComplete: true, expiredRecordsFailed: false };
 
+const LAST = {
+  channelsPruned: 2, totalDeleted: 9, expiredRecordsDeleted: 4, failed: false, failedChannelIds: [],
+  expiredRecordsComplete: true, expiredRecordsFailed: false, completedAt: '2026-11-25T03:00:00Z',
+};
+
 function show(state: RunState = IDLE): void {
   runNow.state = state;
   render(<ThemeProvider theme={lightTheme}><PrunerSection /></ThemeProvider>);
@@ -82,6 +87,12 @@ describe('Run Now', () => {
     expect(alert.textContent).toContain(text);
   });
 
+  it('says both when it failed for channels and had no time for all the expired records', () => {
+    show({ ...IDLE, isSuccess: true, data: { ...PRUNED, failedChannelIds: ['c1'], expiredRecordsComplete: false } });
+
+    expect(screen.getByRole('alert').textContent).toContain('records deleted. Pruning failed for 1 channels; see the server log. There were more');
+  });
+
   it('says that the next run goes on when there were more expired records than it had time for', () => {
     show({ ...IDLE, isSuccess: true, data: { ...PRUNED, expiredRecordsComplete: false } });
 
@@ -91,9 +102,19 @@ describe('Run Now', () => {
 
 describe('the last scheduled run', () => {
   it('shows its counts', () => {
-    schedule.lastRunResult = { channelsPruned: 2, totalDeleted: 9, expiredRecordsDeleted: 4, completedAt: '2026-11-25T03:00:00Z' };
+    schedule.lastRunResult = LAST;
     show();
 
     expect(screen.getByText('2 channels pruned, 9 messages and 4 expired collection records deleted')).toBeTruthy();
+  });
+
+  it.each([
+    ['the expired records', { expiredRecordsFailed: true, expiredRecordsComplete: false }, /Not every expired collection record could be deleted/],
+    ['everything', { failed: true, totalDeleted: 0, expiredRecordsDeleted: 0 }, /The run failed\. See the server log\./],
+  ])('says that it failed for %s', (_what, failure, text) => {
+    schedule.lastRunResult = { ...LAST, ...failure };
+    show();
+
+    expect(screen.getByText(text)).toBeTruthy();
   });
 });

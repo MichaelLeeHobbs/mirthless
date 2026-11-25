@@ -1,6 +1,6 @@
 // Which collection records a pruner run deletes (#417, D-379). Real SQL: row locks, batches and clocks.
 
-import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
@@ -105,6 +105,8 @@ describeIntegration('pruneExpiredRecords (real Postgres)', () => {
       expect(run.byCollection[id]).toBe(1_199);
       await client.query('COMMIT');
     } finally {
+      // Nothing to roll back once it is committed.
+      await client.query('ROLLBACK');
       client.release();
     }
     await pruneExpiredRecords(LONG);
@@ -118,9 +120,8 @@ describeIntegration('pruneExpiredRecords (real Postgres)', () => {
     const runs = await Promise.all([pruneExpiredRecords(LONG), pruneExpiredRecords(LONG)]);
 
     expect(runs.map((run) => run.failed)).toEqual([false, false]);
-    await pruneExpiredRecords(LONG);
     expect(await left(id)).toEqual([]);
-    expect((runs[0].byCollection[id] ?? 0) + (runs[1].byCollection[id] ?? 0)).toBeLessThanOrEqual(3_000);
+    expect((runs[0].byCollection[id] ?? 0) + (runs[1].byCollection[id] ?? 0)).toBe(3_000);
   });
 
   it('stops after the batch in which its time was up, and the next run goes on', async () => {
@@ -167,12 +168,14 @@ describeIntegration('pruneExpiredRecords (real Postgres)', () => {
     }).toBe('4');
   });
 
-  it('never deletes by the clock of a server that is ahead of the database', async () => {
+  it.each([
+    ['the server is a year ahead', 1, `now() + interval '1 hour'`],
+    ['the database is, for which the server is behind it', -1, `now() - interval '1 hour'`],
+  ])('deletes nothing that only one clock calls expired: %s', async (_whose, years, life) => {
     const { id } = await collection();
-    await records(id, 1, `now() + interval '1 hour'`);
-    const { vi } = await import('vitest');
+    await records(id, 1, life);
 
-    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 365 * 86_400_000 });
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + years * 365 * 86_400_000 });
     try {
       await pruneExpiredRecords(LONG);
     } finally {

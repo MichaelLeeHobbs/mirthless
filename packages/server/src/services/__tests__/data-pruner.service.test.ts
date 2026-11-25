@@ -324,7 +324,8 @@ describe('DataPrunerService', () => {
       mockPruneExpired.mockResolvedValue({ deleted: 1_000, byCollection: { k1: 1_000 }, complete: false, failed: false });
 
       expect(await DataPrunerService.pruneAll(undefined, 30_000)).toMatchObject({ ok: true, value: { expiredRecordsComplete: false } });
-      expect(mockPruneExpired).toHaveBeenCalledExactlyOnceWith(30_000);
+      // Run Now is a request that waits for both.
+      expect(mockPruneExpired).toHaveBeenCalledExactlyOnceWith(15_000);
       expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCESS', attributes: expect.objectContaining({ expiredRecordsComplete: false }) }));
     });
 
@@ -333,7 +334,8 @@ describe('DataPrunerService', () => {
 
       expect(await DataPrunerService.pruneAll()).toMatchObject({ ok: true, value: { expiredRecordsDeleted: 1_000, expiredRecordsFailed: true } });
       expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
-        level: 'ERROR', outcome: 'FAILURE', attributes: expect.objectContaining({ expiredRecordsDeleted: 1_000, expiredRecordsByCollection: { k1: 1_000 } }),
+        level: 'ERROR', outcome: 'FAILURE',
+        attributes: expect.objectContaining({ expiredRecordsDeleted: 1_000, expiredRecordsByCollection: { k1: 1_000 }, expiredRecordsFailed: true }),
       }));
     });
 
@@ -358,7 +360,7 @@ describe('DataPrunerService', () => {
       mockSweep.mockResolvedValue({ rowsDeleted: 12, complete: false, failed: false });
 
       expect(await DataPrunerService.pruneAll(undefined, 30_000)).toMatchObject({ ok: true, value: { leftoverRowsComplete: false } });
-      expect(mockSweep).toHaveBeenCalledExactlyOnceWith(30_000);
+      expect(mockSweep).toHaveBeenCalledExactlyOnceWith(15_000);
       expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCESS', attributes: expect.objectContaining({ leftoverRowsComplete: false }) }));
     });
 

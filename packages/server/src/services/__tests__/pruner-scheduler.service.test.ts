@@ -144,7 +144,19 @@ describe('PrunerSchedulerService', () => {
     it('keeps how many messages and expired records it deleted', async () => {
       mockPruneAll.mockResolvedValue(okResult(pruned));
 
-      expect(await run()).toMatchObject({ channelsPruned: 1, totalDeleted: 2, expiredRecordsDeleted: 5 });
+      expect(await run()).toMatchObject({ failed: false, channelsPruned: 1, totalDeleted: 2, expiredRecordsDeleted: 5 });
+    });
+
+    it('keeps what it did not get to and what failed', async () => {
+      mockPruneAll.mockResolvedValue(okResult({ ...pruned, failedChannelIds: ['c1'], expiredRecordsComplete: false, expiredRecordsFailed: true }));
+
+      expect(await run()).toMatchObject({ failed: false, failedChannelIds: ['c1'], expiredRecordsComplete: false, expiredRecordsFailed: true });
+    });
+
+    it('is kept as failed when nothing could be pruned', async () => {
+      mockPruneAll.mockResolvedValue(errResult(new Error('db down')));
+
+      expect(await run()).toMatchObject({ failed: true, totalDeleted: 0, expiredRecordsDeleted: 0 });
     });
 
     it.each([

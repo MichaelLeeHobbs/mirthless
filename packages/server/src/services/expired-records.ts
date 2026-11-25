@@ -9,7 +9,7 @@ export interface ExpiredPrune {
   readonly deleted: number;
   /** The number deleted, by collection id. */
   readonly byCollection: Readonly<Record<string, number>>;
-  /** False when some are for the next run. */
+  /** False when the time was up first, or it failed. */
   readonly complete: boolean;
   readonly failed: boolean;
 }
@@ -46,6 +46,8 @@ export async function pruneExpiredRecords(budgetMs: number): Promise<ExpiredPrun
       const batch = await deleteBatch(now);
       deleted += batch.length;
       for (const id of batch) byCollection[id] = (byCollection[id] ?? 0) + 1;
+      // As it goes: a server that is stopped meanwhile does not get to the event.
+      if (batch.length > 0) logger.info({ deleted, byCollection }, 'Data pruner deleted expired collection records');
       if (batch.length < BATCH_ROWS) return true;
       if (Date.now() - started >= budgetMs) return false;
     }
