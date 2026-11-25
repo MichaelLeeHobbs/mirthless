@@ -32,7 +32,7 @@ export type {
   ChannelRuntimeConfig,
 } from './runtime/channel-runtime.js';
 export { QueueConsumer } from './runtime/queue-consumer.js';
-export type { QueueConsumerConfig } from './runtime/queue-consumer.js';
+export type { QueueConsumerConfig, QueueReadFailure } from './runtime/queue-consumer.js';
 export { GlobalChannelMap } from './runtime/global-channel-map.js';
 export { GlobalMapProxy } from './runtime/global-map-proxy.js';
 export type { GlobalMapStore, GlobalMapRow } from './runtime/global-map-proxy.js';

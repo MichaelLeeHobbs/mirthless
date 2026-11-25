@@ -33,13 +33,13 @@ export const startedChannelsGauge = new Gauge({
 
 export const messagesProcessedTotal = new Counter({
   name: 'galvanigraph_messages_processed_total',
-  help: 'Total number of messages processed',
+  help: 'Messages the pipeline finished since the server started: delivered, queued, filtered or recorded with an error',
   registers: [registry],
 });
 
 export const dbPoolTotal = new Gauge({
   name: 'galvanigraph_db_pool_total',
-  help: 'Total number of database pool connections',
+  help: 'Number of open database pool connections, idle ones included',
   registers: [registry],
 });
 

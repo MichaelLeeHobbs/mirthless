@@ -265,6 +265,19 @@ describe('QueueConsumer wiring', () => {
       });
     });
 
+    it('logs a queue or a message on it that could not be read (#417)', async () => {
+      const logger = (await import('../../lib/logger.js')).default;
+      const engine = new EngineManager('test-server');
+      await engine.deploy(bundleOf(makeChannel({ destinations: [makeDest()] }) as never));
+
+      const config = MockQueueConsumerCtor.mock.calls[0]![0] as { onReadFailure?: (failure: Record<string, unknown>) => void };
+      config.onReadFailure?.({ channelId: CHANNEL_ID, metaDataId: 1, messageId: 7, errorMessage: 'db down' });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        { channelId: CHANNEL_ID, metaDataId: 1, messageId: 7, errMsg: 'db down' }, 'A destination queue, or a message on it, could not be read',
+      );
+    });
+
     it('hands a delivered queued message to the source that keeps its input until then (#243)', async () => {
       const { createSourceConnector } = await import('@galvanigraph/connectors');
       const done = { ok: true, value: undefined, error: null };

@@ -33,6 +33,7 @@ import {
   type CompiledScript,
   type CodeTemplateData,
   type QueueConsumerConfig,
+  type QueueReadFailure,
   type LoadedAlert,
   type ResponseSource,
   parseForSandbox,
@@ -69,6 +70,7 @@ import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
+import { messagesProcessedTotal } from './lib/metrics.js';
 import { emitAuditEvent, emitEvent } from './lib/event-emitter.js';
 import { emitToChannelAudience } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
@@ -854,6 +856,7 @@ export class EngineManager {
         pollIntervalMs: 1_000,
         onError: raiseAlert,
         onStoreFailure: logStoreFailure,
+        onReadFailure: logQueueReadFailure,
         // A source that keeps its input until every destination delivered (DICOM).
         onMessageDelivered: source.onMessageDelivered
           ? (_messageId, rawContent) => source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
@@ -896,6 +899,7 @@ export class EngineManager {
         runtime.haltSignal,
       );
       if (!result.ok) return result;
+      messagesProcessedTotal.inc();
       // Surface the pipeline's final status so the source connector can build the
       // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AA), as the
       // channel's response mode defines it.
@@ -1629,6 +1633,10 @@ function logStoreFailure(failure: StoreFailure): void {
     { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
     'Message store write failed: part of a message could not be saved',
   );
+}
+
+function logQueueReadFailure({ channelId, messageId, metaDataId, errorMessage }: QueueReadFailure): void {
+  logger.error({ channelId, messageId, metaDataId, errMsg: errorMessage }, 'A destination queue, or a message on it, could not be read');
 }
 
 interface FilterRuleRow {

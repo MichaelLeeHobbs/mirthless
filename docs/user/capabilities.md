@@ -248,7 +248,7 @@ Named data that every channel's scripts can use, managed from the web UI and the
 | Webhook alert action and an error triage view | No | An alert email to a mail-to-webhook bridge. | ROADMAP V1 | | | |
 | Scope an alert to one connector or error stage | No | Filter in the alert's channel list and read the message. | ROADMAP N15 | | Alert per connector | |
 | Connection status per connector | No | Read the server log and the channel state. | ROADMAP N10 | | Dashboard connection status | |
-| Prometheus metrics | Yes | No per-channel labels yet (N10). | | [../ops/resource-and-observability.md](../ops/resource-and-observability.md) | | `packages/server/src/lib/__tests__/metrics.test.ts`<br>`packages/server/src/middleware/__tests__/metrics.middleware.test.ts` |
+| Prometheus metrics | Yes | No per-channel labels yet (N10). | | [../ops/resource-and-observability.md](../ops/resource-and-observability.md) | | `packages/server/src/lib/__tests__/metrics.test.ts`<br>`packages/server/src/routes/__tests__/metrics-route.test.ts`<br>`packages/server/src/middleware/__tests__/metrics.middleware.test.ts` |
 | Health endpoints for probes | Yes | | | [../ops/deployment.md](../ops/deployment.md) | | `packages/server/src/services/__tests__/health.service.test.ts` |
 | Event log of user and system actions | Yes | | | | Events | `packages/server/src/services/__tests__/event.service.test.ts`<br>`packages/server/src/services/__tests__/event-export.service.test.ts`<br>`e2e/events.spec.ts` |
 | Server log viewer | Yes | In memory, last 10,000 entries. | | | Server Log | `packages/server/src/services/__tests__/log-stream.service.test.ts` |
