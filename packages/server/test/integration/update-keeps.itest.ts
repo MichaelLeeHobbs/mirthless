@@ -1,10 +1,9 @@
-// An update keeps what the request leaves out (#400, D-356).
+// An update keeps what the request leaves out (#400, D-358).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { apiCall, deleteTestChannel, describeIntegration, loadServerModules, userWithRole, type ServerModules } from './_setup.js';
+import { apiCall, closeServer, deleteTestChannel, describeIntegration, listen, loadServerModules, userWithRole, type ServerModules } from './_setup.js';
 
 type Json = Readonly<Record<string, unknown>>;
 interface Script { readonly scriptType: string; readonly script: string; readonly language: string }
@@ -29,9 +28,10 @@ const SCRIPTS = {
   deploy: 'return 1;', undeploy: 'return 2;', preprocessor: 'return message;', postprocessor: 'return 4;',
   languages: { deploy: 'TYPESCRIPT', undeploy: 'TYPESCRIPT', preprocessor: 'TYPESCRIPT', postprocessor: 'TYPESCRIPT' },
 };
-const NAMED = { name: 'Lab', enabled: false, connectorType: 'JAVASCRIPT', properties: { script: 'return 1;' } };
+const NAMED = { name: 'Lab', connectorType: 'JAVASCRIPT', properties: { script: 'return 1;' } };
+const BARE = { name: 'Clinic', connectorType: 'JAVASCRIPT', properties: { script: 'return 2;' } };
 const DESTINATION = {
-  ...NAMED, queueMode: 'ON_FAILURE', retryCount: 7, retryIntervalMs: 2500, rotateQueue: true, queueThreadCount: 3, waitForPrevious: true,
+  ...NAMED, enabled: false, queueMode: 'ON_FAILURE', retryCount: 7, retryIntervalMs: 2500, rotateQueue: true, queueThreadCount: 3, waitForPrevious: true,
   responseTransformer: 'return response;', responseTransformerLanguage: 'TYPESCRIPT',
 };
 const COLUMN = { name: 'PatientId', dataType: 'STRING', mappingExpression: 'msg.id' };
@@ -44,6 +44,9 @@ const STEPS = [
   { type: 'JAVASCRIPT', enabled: true, name: null, script: 'msg = msg;', language: 'TYPESCRIPT', sourceField: null, targetField: null, defaultValue: null, mapping: null },
 ];
 const TRANSFORMER = { inboundDataType: 'JSON', outboundDataType: 'XML', inboundProperties: { a: 1 }, outboundProperties: { b: 2 }, inboundTemplate: '{}', outboundTemplate: '<a/>', steps: STEPS };
+/** In the order of their types. */
+const STORED_SCRIPTS = [['DEPLOY', 'return 1;', 'TYPESCRIPT'], ['POSTPROCESSOR', 'return 4;', 'TYPESCRIPT'], ['PREPROCESSOR', 'return message;', 'TYPESCRIPT'], ['UNDEPLOY', 'return 2;', 'TYPESCRIPT']];
+const stored = (scripts: readonly Script[]): unknown[] => scripts.map((s) => [s.scriptType, s.script, s.language]).sort();
 const ALERT = { description: 'Wakes someone', enabled: false, subjectTemplate: 'Down', bodyTemplate: 'Look', reAlertIntervalMs: 60_000, maxAlerts: 5 };
 const PASSWORD = { type: 'password', description: 'For the lab', category: 'extensions' };
 
@@ -53,6 +56,8 @@ describeIntegration('what an update leaves out (real Postgres)', () => {
   let base: string;
   let admin: string;
   let channelId: string | undefined;
+  /** What a new channel makes of a destination that has no settings. */
+  let defaults: Json;
   const users: string[] = [];
 
   async function user(role: string): Promise<string> {
@@ -72,17 +77,20 @@ describeIntegration('what an update leaves out (real Postgres)', () => {
     mods = await loadServerModules();
     admin = await user('admin');
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
-    const { id } = await call<Channel>('POST', '/channels', {
+    ({ server, base } = await listen(app));
+    const { id, scripts, destinations } = await call<Channel>('POST', '/channels', {
       name: `itest-400-${randomUUID()}`, inboundDataType: 'JSON', outboundDataType: 'XML',
-      sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 }, destinations: [DESTINATION],
+      sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 },
+      scripts: SCRIPTS, destinations: [DESTINATION, BARE],
     });
     channelId = id;
-  }, 60_000);
+    expect(stored(scripts)).toEqual(STORED_SCRIPTS);
+    expect(destinations[0]).toMatchObject(DESTINATION);
+    defaults = destinations[1]!;
+  });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (channelId !== undefined) await deleteTestChannel(mods, channelId);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     await mods?.pool.end();
@@ -108,9 +116,7 @@ describeIntegration('what an update leaves out (real Postgres)', () => {
         ...FIELDS, ...PROPERTIES, destinations: [{ ...DESTINATION, id }], metadataColumns: [COLUMN],
         filters: [{ connectorId: id, rules: RULES }], transformers: [{ connectorId: id, ...TRANSFORMER }],
       });
-      expect(before.scripts.map((s) => [s.scriptType, s.script, s.language])).toEqual([
-        ['DEPLOY', 'return 1;', 'TYPESCRIPT'], ['POSTPROCESSOR', 'return 4;', 'TYPESCRIPT'], ['PREPROCESSOR', 'return message;', 'TYPESCRIPT'], ['UNDEPLOY', 'return 2;', 'TYPESCRIPT'],
-      ]);
+      expect(stored(before.scripts)).toEqual(STORED_SCRIPTS);
     });
 
     /** The channel after the update, which changes `changed` and nothing else. */
@@ -159,6 +165,13 @@ describeIntegration('what an update leaves out (real Postgres)', () => {
       await expectOnly({ scripts: {} }, {});
     });
 
+    // So has one that was imported without its scripts.
+    it('stores a script of a channel that has no row for it', async () => {
+      await mods.pool.query('DELETE FROM channel_scripts WHERE channel_id = $1', [channelId]);
+      await call('PUT', `/channels/${channelId!}`, { revision: before.revision, scripts: { postprocessor: 'return 4;', languages: { deploy: 'TYPESCRIPT' } } });
+      expect(stored((await read()).scripts)).toEqual([['DEPLOY', '', 'TYPESCRIPT'], ['POSTPROCESSOR', 'return 4;', 'JAVASCRIPT']]);
+    });
+
     it('keeps the settings of a destination that the request leaves out, its filter and its transformer', async () => {
       await expectOnly({ destinations: [{ ...NAMED, id: before.destinations[0]!.id }] }, {});
     });
@@ -167,19 +180,15 @@ describeIntegration('what an update leaves out (real Postgres)', () => {
       ['enabled', true], ['queueMode', 'ALWAYS'], ['retryCount', 0], ['retryIntervalMs', 10_000], ['rotateQueue', false], ['queueThreadCount', 1], ['waitForPrevious', false],
       ['responseTransformer', null], ['responseTransformerLanguage', 'JAVASCRIPT'],
     ])('changes the %s of a destination and keeps the rest', async (key, value) => {
-      const [stored] = before.destinations;
-      await expectOnly({ destinations: [{ ...NAMED, id: stored!.id, [key]: value }] }, { destinations: [{ ...stored, [key]: value }] });
+      const [stays] = before.destinations;
+      await expectOnly({ destinations: [{ ...NAMED, id: stays!.id, [key]: value }] }, { destinations: [{ ...stays, [key]: value }] });
     });
 
     it('gives a new destination the defaults of one in a new channel', async () => {
-      const [stored] = before.destinations;
-      const added = { name: 'Clinic', enabled: true, connectorType: 'JAVASCRIPT', properties: { script: 'return 2;' } };
-      await expectOnly({ destinations: [{ ...NAMED, id: stored!.id }, { id: 'new-1', ...added }] }, {
-        destinations: [stored, {
-          ...added, id: expect.any(String) as string, metaDataId: expect.any(Number) as number,
-          queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10_000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
-          responseTransformer: null, responseTransformerLanguage: 'JAVASCRIPT',
-        }],
+      const [stays] = before.destinations;
+      expect(defaults).toMatchObject({ ...BARE, enabled: true, queueMode: 'NEVER', retryCount: 0, responseTransformer: null });
+      await expectOnly({ destinations: [{ ...NAMED, id: stays!.id }, { ...BARE, id: 'new-1' }] }, {
+        destinations: [stays, { ...defaults, id: expect.any(String) as string, metaDataId: expect.any(Number) as number }],
       });
     });
 
@@ -241,41 +250,51 @@ describeIntegration('what an update leaves out (real Postgres)', () => {
   describe('of a setting', () => {
     let key: string;
 
-    const stored = async (of = key): Promise<unknown> =>
+    const row = async (of = key): Promise<unknown> =>
       (await mods.pool.query('SELECT value, type, description, category FROM system_settings WHERE key = $1', [of])).rows[0];
 
     beforeEach(async () => {
       key = `itest.${randomUUID()}`;
       await call('PUT', `/settings/${key}`, { key, value: 'first', ...PASSWORD });
-      expect(await stored()).toEqual({ value: 'first', ...PASSWORD });
+      expect(await row()).toEqual({ value: 'first', ...PASSWORD });
       return async () => { await mods.pool.query('DELETE FROM system_settings WHERE key = ANY($1)', [[key, `${key}.new`]]); };
     });
 
     it('changes the value and keeps the rest, so a password stays masked', async () => {
       await call('PUT', `/settings/${key}`, { key, value: 'second' });
-      expect(await stored()).toEqual({ value: 'second', ...PASSWORD });
+      expect(await row()).toEqual({ value: 'second', ...PASSWORD });
       expect(await call('GET', `/settings/${key}`)).toMatchObject({ key, value: '__REDACTED__' });
     });
 
     it('does so for several at once', async () => {
       await call('PUT', '/settings/bulk', { settings: [{ key, value: 'second' }, { key: `${key}.new`, value: 'x' }] });
-      expect(await stored()).toEqual({ value: 'second', ...PASSWORD });
-      expect(await stored(`${key}.new`)).toEqual({ value: 'x', type: 'string', description: null, category: 'general' });
+      expect(await row()).toEqual({ value: 'second', ...PASSWORD });
+      expect(await row(`${key}.new`)).toEqual({ value: 'x', type: 'string', description: null, category: 'general' });
     });
 
     it.each([['type', 'string'], ['description', null], ['category', 'lab']])('changes the %s and keeps the rest', async (field, value) => {
       await call('PUT', `/settings/${key}`, { key, value: 'first', [field]: value });
-      expect(await stored()).toEqual({ value: 'first', ...PASSWORD, [field]: value });
+      expect(await row()).toEqual({ value: 'first', ...PASSWORD, [field]: value });
     });
 
     it('refuses one without its value, and keeps the stored one', async () => {
       expect((await apiCall(base, admin, 'PUT', `/settings/${key}`, { key, type: 'string' })).status).toBe(400);
-      expect(await stored()).toEqual({ value: 'first', ...PASSWORD });
+      expect(await row()).toEqual({ value: 'first', ...PASSWORD });
+    });
+
+    it.each(['alone', 'with others'])('refuses a password sent back as a read shows it, %s, and changes nothing', async (how) => {
+      const shown = await call<Json>('GET', `/settings/${key}`);
+      const answer = how === 'alone'
+        ? await apiCall(base, admin, 'PUT', `/settings/${key}`, shown)
+        : await apiCall(base, admin, 'PUT', '/settings/bulk', { settings: [{ key: `${key}.new`, value: 'x' }, { key, value: shown['value'] }] });
+      expect(answer.status).toBe(400);
+      expect(answer.json.error?.message).toContain('__REDACTED__');
+      expect([await row(), await row(`${key}.new`)]).toEqual([{ value: 'first', ...PASSWORD }, undefined]);
     });
 
     it('gives a new one the defaults', async () => {
       await call('PUT', `/settings/${key}.new`, { key: `${key}.new`, value: 'new' });
-      expect(await stored(`${key}.new`)).toEqual({ value: 'new', type: 'string', description: null, category: 'general' });
+      expect(await row(`${key}.new`)).toEqual({ value: 'new', type: 'string', description: null, category: 'general' });
     });
   });
 });

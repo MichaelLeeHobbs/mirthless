@@ -284,7 +284,7 @@ describe('updateChannelSchema', () => {
   // #400: what it fills in, the server writes over what is stored.
   it.each([
     {}, { name: 'Just rename' }, { properties: {} }, { properties: { pruningEnabled: true } }, { scripts: {} }, { scripts: { deploy: 'return;' } },
-    { scripts: { languages: { undeploy: 'TYPESCRIPT' } } }, { destinations: [{ id: 'new-1', name: 'D', enabled: true, connectorType: 'HTTP', properties: {} }] },
+    { scripts: { languages: { undeploy: 'TYPESCRIPT' } } }, { destinations: [{ id: 'new-1', name: 'D', connectorType: 'HTTP', properties: {} }] },
   ])('fills nothing in: %j', (body) => {
     expect(updateChannelSchema.parse({ revision: 5, ...body })).toEqual({ revision: 5, ...body });
   });
@@ -710,12 +710,12 @@ describe('destinations on update', () => {
     expect([destinations![0]!.id, filters![0]!.connectorId]).toEqual([dest.id, dest.id]);
   });
 
-  it.each(['id', 'enabled'])('refuses one without its %s, which cannot be guessed', (key) => {
+  it.each(['id', 'name', 'connectorType', 'properties'])('refuses one without its %s', (key) => {
     const { [key as 'id']: _left, ...rest } = dest;
     expect(issues({ destinations: [dest, rest] })).toEqual([['destinations', 1, key]]);
   });
 
-  it('create needs neither', () => {
+  it('create needs no id, and a destination is on unless it says otherwise', () => {
     const { id: _id, enabled: _enabled, ...rest } = dest;
     const input = createChannelSchema.parse({ name: 'C', inboundDataType: 'RAW', outboundDataType: 'RAW', sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {}, destinations: [rest] });
     expect(input.destinations).toEqual([expect.objectContaining({ name: 'D', enabled: true })]);

@@ -64,8 +64,9 @@ export class SettingsController {
     const result = await SettingsService.bulkUpsert(settings, context);
 
     if (!result.ok) {
-      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to bulk upsert settings');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      const status = mapErrorToStatus(result.error);
+      if (status === 500) logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to bulk upsert settings');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

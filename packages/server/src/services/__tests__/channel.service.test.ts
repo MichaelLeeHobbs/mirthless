@@ -60,6 +60,7 @@ const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
 const mockInsertReturning = vi.fn().mockResolvedValue([]);
+const mockOnConflictDoUpdate = vi.fn();
 const mockInsertValues = vi.fn().mockImplementation(() => {
   return Object.assign(Promise.resolve(undefined), {
     returning: mockInsertReturning,
@@ -206,9 +207,11 @@ beforeEach(() => {
   mockDeleteWhere.mockResolvedValue(undefined);
   mockDelete.mockReturnValue({ where: mockDeleteWhere });
   mockInsertReturning.mockResolvedValue([]);
+  mockOnConflictDoUpdate.mockResolvedValue(undefined);
   mockInsertValues.mockImplementation(() => {
     return Object.assign(Promise.resolve(undefined), {
       returning: mockInsertReturning,
+      onConflictDoUpdate: mockOnConflictDoUpdate,
     });
   });
   mockInsert.mockReturnValue({ values: mockInsertValues });
@@ -776,29 +779,33 @@ describe('ChannelService', () => {
 
   // Drizzle skips an undefined value, so it is not written; update-keeps.itest.ts checks the rows (#183, #400).
   describe('update — channel scripts and their languages', () => {
-    async function scriptSets(scripts: NonNullable<Parameters<typeof ChannelService.update>[1]['scripts']>): Promise<Array<Record<string, unknown>>> {
+    /** What is written over the stored row, by script type. Each write also inserts it where there is no row. */
+    async function written(scripts: NonNullable<Parameters<typeof ChannelService.update>[1]['scripts']>): Promise<Record<string, unknown>> {
+      mockInsertValues.mockClear();
+      mockOnConflictDoUpdate.mockClear();
       pushResponse([makeChannel()]);
       setupGetByIdMocks(makeChannel({ revision: 2 }));
       const result = await ChannelService.update(CHANNEL_ID, { revision: 1, scripts });
       expect(result.ok).toBe(true);
-      return mockSet.mock.calls
-        .map((c) => c[0] as Record<string, unknown>)
-        .filter((v) => 'script' in v);
+      const sets = mockOnConflictDoUpdate.mock.calls.map(([conflict]) => (conflict as { set: unknown }).set);
+      const rows = mockInsertValues.mock.calls.map(([row]) => row as Record<string, unknown>).filter((row) => 'scriptType' in row);
+      expect(rows).toEqual(rows.map(({ scriptType }, i) => ({ channelId: CHANNEL_ID, scriptType, ...(sets[i] as Record<string, unknown>) })));
+      return Object.fromEntries(rows.map(({ scriptType }, i) => [scriptType, sets[i]]));
     }
 
     it('keeps the stored language when the request leaves it out', async () => {
-      expect(await scriptSets({ deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: {} }))
-        .toEqual([{ script: 'return;' }, { script: '' }, { script: '' }, { script: '' }]);
+      expect(await written({ deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: {} }))
+        .toEqual({ DEPLOY: { script: 'return;' }, UNDEPLOY: { script: '' }, PREPROCESSOR: { script: '' }, POSTPROCESSOR: { script: '' } });
     });
 
     it('writes the language the request gives', async () => {
-      expect(await scriptSets({ deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: { deploy: 'TYPESCRIPT' } }))
-        .toEqual([{ script: 'return;', language: 'TYPESCRIPT' }, { script: '' }, { script: '' }, { script: '' }]);
+      expect(await written({ deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: { deploy: 'TYPESCRIPT' } }))
+        .toEqual({ DEPLOY: { script: 'return;', language: 'TYPESCRIPT' }, UNDEPLOY: { script: '' }, PREPROCESSOR: { script: '' }, POSTPROCESSOR: { script: '' } });
     });
 
     it('writes only the scripts and languages that the request has', async () => {
-      expect(await scriptSets({ undeploy: 'return 2;', languages: { preprocessor: 'TYPESCRIPT' } })).toEqual([{ script: 'return 2;' }, { language: 'TYPESCRIPT' }]);
-      expect(await scriptSets({})).toHaveLength(2);
+      expect(await written({ undeploy: 'return 2;', languages: { preprocessor: 'TYPESCRIPT' } })).toEqual({ UNDEPLOY: { script: 'return 2;' }, PREPROCESSOR: { language: 'TYPESCRIPT' } });
+      expect(await written({})).toEqual({});
     });
   });
 

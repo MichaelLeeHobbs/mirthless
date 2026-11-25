@@ -573,10 +573,11 @@ async function syncScripts(tx: ChannelTx, channelId: string, scripts: NonNullabl
     const script = scripts[key] === null ? '' : scripts[key];
     const language = scripts.languages?.[key];
     if (script === undefined && language === undefined) continue;
+    // A channel that was imported without this script has no row for it.
     await tx
-      .update(channelScripts)
-      .set({ script, language })
-      .where(and(eq(channelScripts.channelId, channelId), eq(channelScripts.scriptType, scriptType)));
+      .insert(channelScripts)
+      .values({ channelId, scriptType, script, language })
+      .onConflictDoUpdate({ target: [channelScripts.channelId, channelScripts.scriptType], set: { script, language } });
   }
 }
 

@@ -126,18 +126,15 @@ function updateScripts(input: z.infer<typeof updateChannelBaseSchema>): Readonly
   return found;
 }
 
-/**
- * Which destination each one is cannot be guessed: what waits on its queue goes by it (#395). `enabled`
- * is required too, for a new one: switching it on is for the request to say.
- */
+/** Which destination each one is cannot be guessed: what waits on its queue goes by it (#395). */
 const updateDestinationInputSchema = withoutDefaults(destinationInputSchema)
-  .partial({ queueMode: true, retryCount: true, retryIntervalMs: true, rotateQueue: true, queueThreadCount: true, waitForPrevious: true })
+  .partial({ enabled: true, queueMode: true, retryCount: true, retryIntervalMs: true, rotateQueue: true, queueThreadCount: true, waitForPrevious: true })
   .extend({ id: destinationRefSchema });
 
 export type UpdateDestinationInput = z.infer<typeof updateDestinationInputSchema>;
 
 // Filters, transformers and metadata columns are replaced, and nothing says which stored rule or step one
-// is, so what the request leaves out of them cannot be kept. They are given whole (D-356).
+// is, so what the request leaves out of them cannot be kept. They are given whole (D-358).
 const updateFilterInputSchema = withoutDefaults(filterInputSchema).extend({
   metaDataId: connectorRefFields.metaDataId,
   rules: z.array(withoutDefaults(filterRuleInputSchema)),
@@ -161,7 +158,7 @@ const updateChannelBaseSchema = withoutDefaults(createChannelSchema.omit({ group
 
 /**
  * Update replaces rules and steps by position, so it cannot keep what the request leaves out of one;
- * a default language would turn TypeScript into JavaScript and switch off its deploy type check (D-294, D-356).
+ * a default language would turn TypeScript into JavaScript and switch off its deploy type check (D-294, D-358).
  */
 export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
   for (const s of updateScripts(input)) {
