@@ -96,11 +96,12 @@ class StoreAnswers {
   }
 }
 
-/**
- * The remote AE takes one transfer syntax of those proposed in a context, so the file's own is
- * proposed alone as well: whatever it prefers, it can take the bytes as they are.
- */
+/** The library proposes these two in one context, of which the remote AE takes one. Any other it proposes alone. */
+const PROPOSED_TOGETHER: ReadonlySet<string> = new Set<string>([TransferSyntax.ImplicitVRLittleEndian, TransferSyntax.ExplicitVRLittleEndian]);
+
+/** Propose the file's own transfer syntax alone as well: whatever the remote AE prefers, it can take the bytes as they are. */
 function proposeAsStored(client: InstanceType<typeof Client>, dataset: StoredDataset): void {
+  if (!PROPOSED_TOGETHER.has(dataset.getTransferSyntaxUid())) return;
   client.addAdditionalPresentationContext(new PresentationContext(0, dataset.getElement('SOPClassUID') ?? '', dataset.getTransferSyntaxUid()), true);
 }
 
@@ -113,6 +114,20 @@ function encodeFor(dataset: StoredDataset, accepted: PresentationContextType | u
   }
   const implicit = accepted.getAcceptedTransferSyntaxUid() === TransferSyntax.ImplicitVRLittleEndian ? dataset.asImplicit() : null;
   return implicit ?? new Error(`The remote AE does not accept the image's transfer syntax ${transferSyntax}, and it cannot be converted unchanged; the image was not sent`);
+}
+
+/** Set what each store sends. The error says why one sends nothing: left as it is, the library skips it and still ends normally. */
+function encodeAll(stores: ReadonlyMap<CStoreRequestType, StoredDataset>, association: AssociationType): Error | null {
+  try {
+    for (const [store, dataset] of stores) {
+      const encoded = encodeFor(dataset, association.getAcceptedPresentationContextFromRequest(store));
+      if (encoded instanceof Error) return encoded;
+      store.setDataset(encoded);
+    }
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err : new Error(String(err));
+  }
 }
 
 class DimseSender implements DcmtkSender {
@@ -141,18 +156,7 @@ class DimseSender implements DcmtkSender {
         if (failure !== null) reject(failure);
         else resolve({ files, fileCount: files.length, durationMs: Date.now() - startedAt, warnings: answers.warnings() });
       };
-      client.on('associationAccepted', (association: AssociationType) => {
-        try {
-          for (const [store, dataset] of stores) {
-            const encoded = encodeFor(dataset, association.getAcceptedPresentationContextFromRequest(store));
-            // Left as it is, the library sends nothing of it and still ends normally.
-            if (encoded instanceof Error) cause = encoded;
-            else store.setDataset(encoded);
-          }
-        } catch (err) {
-          cause = err instanceof Error ? err : new Error(String(err));
-        }
-      });
+      client.on('associationAccepted', (association: AssociationType) => { cause = encodeAll(stores, association) ?? cause; });
       client.on('associationRejected', (r: { result: number; source: number; reason: number }) => {
         cause = new Error(`DICOM association rejected: result=${String(r.result)} source=${String(r.source)} reason=${String(r.reason)}`);
       });
