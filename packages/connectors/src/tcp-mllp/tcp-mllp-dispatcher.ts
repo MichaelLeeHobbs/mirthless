@@ -137,6 +137,10 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     return new Error(reason === null ? 'Send aborted' : `Send aborted while ${this.remote} could not be reached: ${reason}`);
   }
 
+  variablesUsed(): readonly string[] {
+    return [];
+  }
+
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
       if (!this.run) {

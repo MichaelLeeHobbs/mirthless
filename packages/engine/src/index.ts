@@ -8,6 +8,7 @@ export type {
   DestinationScripts,
   DestinationConfig,
   SendToDestination,
+  VariablesUsed,
   DestinationResponse,
   MessageStore,
   PipelineInput,
@@ -20,6 +21,7 @@ export type {
   ContentRow,
   StageTiming,
   TimingCallback,
+  StoreFailure,
 } from './pipeline/message-processor.js';
 export { ChannelRuntime } from './runtime/channel-runtime.js';
 export type {
@@ -32,6 +34,7 @@ export type { QueueConsumerConfig } from './runtime/queue-consumer.js';
 export { GlobalChannelMap } from './runtime/global-channel-map.js';
 export { GlobalMapProxy } from './runtime/global-map-proxy.js';
 export type { GlobalMapStore, GlobalMapRow } from './runtime/global-map-proxy.js';
+export { DestinationRedispatcher, type RedispatchConfig, type RedispatchOutcome } from './runtime/destination-redispatcher.js';
 export { RecoveryManager } from './runtime/recovery-manager.js';
 export type { RecoveryStore, RecoveryResult, UnprocessedMessage, ConnectorMessageRecord, ReprocessSourceFn, RedispatchDestinationFn } from './runtime/recovery-manager.js';
 export { DestinationSet, createDestinationSetProxy } from './pipeline/destination-set.js';

@@ -59,6 +59,10 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
     });
   }
 
+  variablesUsed(): readonly string[] {
+    return [];
+  }
+
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
       if (!this.started) throw new Error('Dispatcher not started');

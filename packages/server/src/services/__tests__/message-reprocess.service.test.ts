@@ -34,8 +34,9 @@ function mockSelectSequence(...results: unknown[]): void {
   }
 }
 
+const mockVariablesUsed = vi.fn();
 function deployedWithDests(state: string, destinations: { metaDataId: number; queueMode: string }[]) {
-  return { runtime: { getState: () => state }, config: { destinations } };
+  return { runtime: { getState: () => state }, config: { destinations }, variablesUsed: mockVariablesUsed };
 }
 
 function mockUpdateCapture(): { set: ReturnType<typeof vi.fn> } {
@@ -59,6 +60,7 @@ beforeEach(() => {
   mockUpdate.mockReset();
   mockGetRuntime.mockReset();
   mockTxExecute.mockReset();
+  mockVariablesUsed.mockReset().mockReturnValue([]);
   mockTxExecute.mockResolvedValue({ rows: [], rowCount: 0 });
 });
 
@@ -273,6 +275,40 @@ describe('MessageReprocessService.resendDestination', () => {
     expect(result.value).toEqual({ messageId: 5, metaDataId: 1, status: 'QUEUED' });
     // Re-enqueued with a fresh retry budget.
     expect(set).toHaveBeenCalledWith({ status: 'QUEUED', sendAttempts: 0 });
+  });
+
+  it('re-enqueues a destination that uses variables when they were stored with the message', async () => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
+    mockVariablesUsed.mockReturnValue(['mrn']);
+    mockSelectSequence([{ status: 'ERROR' }], [{ content: 'MSH|sent' }], [{ contentType: 10 }]);
+    const { set } = mockUpdateCapture();
+
+    const result = await MessageReprocessService.resendDestination('ch-001', 5, 1);
+
+    expect(result.ok).toBe(true);
+    expect(mockVariablesUsed).toHaveBeenCalledExactlyOnceWith(1, 5, 'MSH|sent');
+    expect(set).toHaveBeenCalledWith({ status: 'QUEUED', sendAttempts: 0 });
+  });
+
+  it('refuses to resend without the variables a destination uses, as when it did not queue at the time', async () => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
+    mockVariablesUsed.mockReturnValue(['mrn', 'dob']);
+    mockSelectSequence([{ status: 'ERROR' }], [{ content: 'MSH|sent' }], []);
+    const { set } = mockUpdateCapture();
+
+    const result = await MessageReprocessService.resendDestination('ch-001', 5, 1);
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('(mrn, dob)') } });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it('refuses to resend content it cannot decrypt', async () => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
+    mockSelectSequence([{ status: 'ERROR' }], [{ content: 'enc:v1:not-really' }]);
+    const { set } = mockUpdateCapture();
+
+    expect((await MessageReprocessService.resendDestination('ch-001', 5, 1)).ok).toBe(false);
+    expect(set).not.toHaveBeenCalled();
   });
 
   it('returns CONFLICT when the channel is not deployed', async () => {

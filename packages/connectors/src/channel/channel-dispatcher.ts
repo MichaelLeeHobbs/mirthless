@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
-import { DISPATCH_STATUS, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
+import { DISPATCH_STATUS, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { getChannelDispatcher, hasChannel } from './channel-registry.js';
 
 export interface ChannelDispatcherConfig {
@@ -40,6 +40,10 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
     return tryCatch(async () => {
       this.started = true;
     });
+  }
+
+  variablesUsed(): readonly string[] {
+    return variableNames([this.config.targetChannelId]);
   }
 
   /** The target may be `${name}`, filled per message, so a router picks the channel at run time (Mirth's `${destinationChannelId}`). */

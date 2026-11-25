@@ -1,4 +1,5 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
+import type { RedispatchOutcome } from './destination-redispatcher.js';
 
 export interface UnprocessedMessage {
   readonly messageId: number;
@@ -9,6 +10,8 @@ export interface ConnectorMessageRecord {
   readonly messageId: number;
   readonly metaDataId: number;
   readonly status: string;
+  /** Its name when the message was routed. */
+  readonly connectorName: string | null;
 }
 
 export interface RecoveryStore {
@@ -29,7 +32,8 @@ export interface RecoveryStore {
 
 export type ReprocessSourceFn = (channelId: string, messageId: number) => Promise<Result<void>>;
 
-export type RedispatchDestinationFn = (channelId: string, messageId: number, metaDataId: number) => Promise<Result<void>>;
+/** Not ok when the destination was left as it was, for a later recovery. */
+export type RedispatchDestinationFn = (channelId: string, destination: ConnectorMessageRecord) => Promise<Result<RedispatchOutcome>>;
 
 export interface RecoveryResult {
   readonly recovered: number;
@@ -39,8 +43,20 @@ export interface RecoveryResult {
   readonly interrupted: boolean;
 }
 
+interface MessageOutcome {
+  readonly recovered: number;
+  readonly errors: number;
+  readonly skipped: number;
+}
+
 const PAGE_SIZE = 200;
 const CONCURRENCY = 5;
+
+/** Nothing has been sent: destinations are sent to only after the source is TRANSFORMED and their rows exist. */
+function stoppedBeforeRouting(connectors: readonly ConnectorMessageRecord[]): boolean {
+  const source = connectors.find((c) => c.metaDataId === 0);
+  return source?.status === 'RECEIVED' || (source?.status === 'TRANSFORMED' && !connectors.some((c) => c.metaDataId > 0));
+}
 
 export class RecoveryManager {
   private readonly store: RecoveryStore;
@@ -91,57 +107,47 @@ export class RecoveryManager {
   }
 
   /**
-   * - Source RECEIVED or TRANSFORMED with no destination rows: the crash hit
-   *   before routing, so the message is reprocessed from its raw content
-   *   (reprocessSource marks the original processed on success).
-   * - Destination RECEIVED: re-dispatched. QUEUED: left to the queue consumer.
-   * - When nothing was left to do and nothing failed (every connector already
-   *   reached a final status, e.g. a crash between the last send and finalize),
-   *   the message is marked processed so it is not rescanned on every deploy.
+   * A message the crash hit before routing is run again from its raw content, and
+   * reprocessSource closes the original. Otherwise each destination still RECEIVED is
+   * redispatched, and the message is closed once every destination has an outcome.
    */
-  private async recoverMessage(
-    channelId: string,
-    messageId: number,
-    stop: AbortSignal,
-  ): Promise<{ recovered: number; errors: number; skipped: number }> {
+  private async recoverMessage(channelId: string, messageId: number, stop: AbortSignal): Promise<MessageOutcome> {
     const connResult = await this.store.getConnectorMessages(channelId, messageId);
-    if (!connResult.ok) {
-      return { recovered: 0, errors: 1, skipped: 0 };
-    }
+    if (!connResult.ok) return { recovered: 0, errors: 1, skipped: 0 };
 
     const connectors = connResult.value;
-    const hasDestinations = connectors.some((c) => c.metaDataId > 0);
-    let reprocessed = false;
-    let messageRecovered = false;
-    let pending = false;
+    if (stop.aborted) return { recovered: 0, errors: 0, skipped: 0 };
+    if (stoppedBeforeRouting(connectors)) {
+      const again = await this.reprocessSource(channelId, messageId);
+      return again.ok ? { recovered: 1, errors: 0, skipped: 0 } : { recovered: 0, errors: 1, skipped: 0 };
+    }
+
+    let recovered = 0;
     let errors = 0;
     let skipped = 0;
-
+    let complete = true;
     for (const conn of connectors) {
-      if (stop.aborted) {
-        pending = true;
-        break;
+      if (stop.aborted) return { recovered, errors, skipped };
+      if (conn.status !== 'RECEIVED') {
+        skipped++;
+        continue;
       }
-      const outcome = await this.recoverConnector(channelId, messageId, conn, hasDestinations);
-      if (outcome === 'reprocessed') { reprocessed = true; messageRecovered = true; }
-      else if (outcome === 'recovered') messageRecovered = true;
-      else if (outcome === 'error') errors++;
-      else if (outcome === 'queued') { pending = true; skipped++; }
-      else skipped++;
+      const result = await this.redispatchDestination(channelId, conn);
+      if (!result.ok) complete = false;
+      if (!result.ok || result.value === 'ERROR') errors++;
+      else recovered = 1;
     }
 
-    if (!reprocessed && !pending && errors === 0) {
-      if (!(await this.closeMessage(channelId, messageId, connectors))) errors++;
-    }
-
-    return { recovered: messageRecovered ? 1 : 0, errors, skipped };
+    if (complete && !(await this.closeMessage(channelId, messageId, connectors))) errors++;
+    return { recovered, errors, skipped };
   }
 
   /**
    * A source that had routed the message (TRANSFORMED) never reached its final
    * status because the server stopped first; give it one now, from the
    * destinations as they stand after recovery, so the message does not sit in
-   * the browser looking unfinished.
+   * the browser looking unfinished. A queued destination is the queue's from
+   * here on, as it is when the pipeline ends.
    */
   private async closeMessage(
     channelId: string,
@@ -158,28 +164,5 @@ export class RecoveryManager {
     }
     const marked = await this.store.markProcessed(channelId, messageId);
     return marked.ok;
-  }
-
-  private async recoverConnector(
-    channelId: string,
-    messageId: number,
-    conn: ConnectorMessageRecord,
-    hasDestinations: boolean,
-  ): Promise<'reprocessed' | 'recovered' | 'error' | 'queued' | 'skipped'> {
-    if (conn.status === 'QUEUED') return 'queued';
-
-    if (conn.metaDataId === 0) {
-      const beforeRouting = conn.status === 'RECEIVED' || (conn.status === 'TRANSFORMED' && !hasDestinations);
-      if (!beforeRouting) return 'skipped';
-      const rpResult = await this.reprocessSource(channelId, messageId);
-      return rpResult.ok ? 'reprocessed' : 'error';
-    }
-
-    if (conn.status === 'RECEIVED') {
-      const rdResult = await this.redispatchDestination(channelId, messageId, conn.metaDataId);
-      return rdResult.ok ? 'recovered' : 'error';
-    }
-
-    return 'skipped';
   }
 }

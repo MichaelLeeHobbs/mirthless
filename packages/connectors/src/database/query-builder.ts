@@ -13,6 +13,10 @@ export type PlaceholderStyle = 'numbered' | 'question';
 
 const PLACEHOLDER_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 
+export function parameterNames(template: string): readonly string[] {
+  return [...new Set(Array.from(template.matchAll(PLACEHOLDER_RE), (m) => m[1] ?? ''))];
+}
+
 export function prepare(
   template: string,
   context: Readonly<Record<string, unknown>>,

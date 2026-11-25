@@ -26,12 +26,19 @@ function makeStore(): MessageStore {
   };
 }
 
-async function run(queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS', send: SendToDestination, transformer = '$c("mrn", "MRN1");'): Promise<MessageStore> {
+async function run(
+  queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
+  send: SendToDestination,
+  transformer = '$c("mrn", "MRN1");',
+  variablesUsed?: PipelineConfig['variablesUsed'],
+  template?: string,
+): Promise<MessageStore> {
   const store = makeStore();
   const config: PipelineConfig = {
     channelId: CHANNEL, serverId: 'server-01', dataType: 'RAW',
     scripts: { sourceTransformer: { code: transformer } },
-    destinations: [{ metaDataId: 1, name: 'Partner', enabled: true, scripts: {}, queueMode }],
+    destinations: [{ metaDataId: 1, name: 'Partner', enabled: true, scripts: {}, queueMode, template }],
+    variablesUsed,
   };
   await new MessageProcessor(new VmSandboxExecutor(), store, send, config, DEFAULT_EXECUTION_OPTIONS)
     .processMessage({ rawContent: 'x', sourceMap: { remoteAddress: '10.0.0.1' } }, AbortSignal.timeout(5_000));
@@ -77,8 +84,19 @@ describe('the variables a destination sends with', () => {
     const sent = vi.fn().mockResolvedValue(ok({ status: 'SENT', content: '' }));
     const never = await run('NEVER', sent);
     const empty = await run('ALWAYS', vi.fn(), 'msg = msg;');
-    for (const store of [never, empty]) {
+    const unused = await run('ALWAYS', vi.fn(), 'msg = msg;', () => []);
+    const variablesUsed = vi.fn(() => ['mrn']);
+    const neverUsed = await run('NEVER', sent, 'msg = msg;', variablesUsed);
+    for (const store of [never, empty, unused, neverUsed]) {
       expect(store.storeContent).not.toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.CHANNEL_MAP, expect.anything(), 'JSON');
     }
+    expect(variablesUsed).not.toHaveBeenCalled();
+  });
+
+  it('are stored when there are none for a queued destination that uses some, so a later send can tell that from none kept', async () => {
+    const variablesUsed = vi.fn(() => ['mrn']);
+    const store = await run('ALWAYS', vi.fn(), 'msg = msg;', variablesUsed, 'what is sent');
+    expect(variablesUsed).toHaveBeenCalledExactlyOnceWith(1, 3, 'what is sent');
+    expect(store.storeContent).toHaveBeenCalledWith(CHANNEL, 3, 1, CONTENT_TYPE.CHANNEL_MAP, '{}', 'JSON');
   });
 });

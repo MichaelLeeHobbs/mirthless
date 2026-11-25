@@ -393,6 +393,8 @@ export class CaptureDestination implements DestinationConnectorRuntime {
   async onHalt(): Promise<Result<void>> { return ok(undefined); }
   async onUndeploy(): Promise<Result<void>> { return ok(undefined); }
 
+  variablesUsed(): readonly string[] { return []; }
+
   async send(message: ConnectorMessage, _signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     this.received.push(message);
     return ok<ConnectorResponse>({ status: 'SENT', content: this.reply(message) });

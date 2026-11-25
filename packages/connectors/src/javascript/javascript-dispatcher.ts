@@ -16,13 +16,20 @@ export class JavaScriptDispatcher implements DestinationConnectorRuntime {
   private readonly config: JavaScriptDispatcherConfig;
   private started = false;
   private scriptRunner: DestScriptRunner | null = null;
+  private reads: readonly string[] = [];
 
   constructor(config: JavaScriptDispatcherConfig) {
     this.config = config;
   }
 
-  setScriptRunner(runner: DestScriptRunner): void {
+  /** `reads` is what the script can read its message's variables by. Not given, it may read any. */
+  setScriptRunner(runner: DestScriptRunner, reads: readonly string[] = ['channelMap']): void {
     this.scriptRunner = runner;
+    this.reads = reads;
+  }
+
+  variablesUsed(): readonly string[] {
+    return this.reads;
   }
 
   async onDeploy(): Promise<Result<void>> {

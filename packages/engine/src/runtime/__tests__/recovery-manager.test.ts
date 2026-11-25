@@ -12,6 +12,10 @@ function fail(message: string): Result<never> {
   return { ok: false, value: null, error: new Error(message) } as unknown as Result<never>;
 }
 
+function row(messageId: number, metaDataId: number, status: string): ConnectorMessageRecord {
+  return { messageId, metaDataId, status, connectorName: metaDataId === 0 ? 'Source' : `Partner ${String(metaDataId)}` };
+}
+
 function makeStore(
   messages: readonly UnprocessedMessage[],
   connectorMap: ReadonlyMap<number, readonly ConnectorMessageRecord[]>,
@@ -38,7 +42,7 @@ describe('RecoveryManager', () => {
   it('returns zeros when no unprocessed messages', async () => {
     const store = makeStore([], new Map());
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
@@ -51,11 +55,11 @@ describe('RecoveryManager', () => {
   it('reprocesses source connector with RECEIVED status', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 1, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [1, [{ messageId: 1, metaDataId: 0, status: 'RECEIVED' }]],
+      [1, [row(1, 0, 'RECEIVED')]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
@@ -70,13 +74,13 @@ describe('RecoveryManager', () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 2, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
       [2, [
-        { messageId: 2, metaDataId: 0, status: 'SENT' },
-        { messageId: 2, metaDataId: 1, status: 'RECEIVED' },
+        row(2, 0, 'SENT'),
+        row(2, 1, 'RECEIVED'),
       ]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
@@ -84,40 +88,40 @@ describe('RecoveryManager', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.recovered).toBe(1);
-    expect(redispatch).toHaveBeenCalledWith(CHANNEL_ID, 2, 1);
+    expect(redispatch).toHaveBeenCalledWith(CHANNEL_ID, row(2, 1, 'RECEIVED'));
     expect(reprocess).not.toHaveBeenCalled();
   });
 
-  it('skips QUEUED messages (handled by QueueConsumer)', async () => {
+  it.each(['QUEUED', 'PENDING'])('leaves a %s destination to the queue and closes the message, as the pipeline does', async (status) => {
     const msgs: UnprocessedMessage[] = [{ messageId: 3, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [3, [{ messageId: 3, metaDataId: 1, status: 'QUEUED' }]],
+      [3, [row(3, 0, 'TRANSFORMED'), row(3, 1, status)]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.skipped).toBe(1);
-    expect(result.value.recovered).toBe(0);
+    expect(result.ok && result.value).toMatchObject({ recovered: 0, errors: 0, skipped: 2 });
+    expect(redispatch).not.toHaveBeenCalled();
+    expect(store.finishSource).toHaveBeenCalledWith(CHANNEL_ID, 3, 'SENT');
+    expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 3);
   });
 
   it('skips SENT/FILTERED/ERROR status connectors', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 4, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
       [4, [
-        { messageId: 4, metaDataId: 0, status: 'SENT' },
-        { messageId: 4, metaDataId: 1, status: 'FILTERED' },
-        { messageId: 4, metaDataId: 2, status: 'ERROR' },
+        row(4, 0, 'SENT'),
+        row(4, 1, 'FILTERED'),
+        row(4, 2, 'ERROR'),
       ]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
@@ -131,11 +135,11 @@ describe('RecoveryManager', () => {
   it('counts errors when reprocess fails', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 5, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [5, [{ messageId: 5, metaDataId: 0, status: 'RECEIVED' }]],
+      [5, [row(5, 0, 'RECEIVED')]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(fail('reprocess failed'));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
@@ -155,7 +159,7 @@ describe('RecoveryManager', () => {
       finishSource: vi.fn().mockResolvedValue(ok(undefined)),
     };
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
@@ -173,16 +177,16 @@ describe('RecoveryManager', () => {
     ];
     const conns = new Map<number, ConnectorMessageRecord[]>([
       [10, [
-        { messageId: 10, metaDataId: 0, status: 'RECEIVED' },
+        row(10, 0, 'RECEIVED'),
       ]],
       [11, [
-        { messageId: 11, metaDataId: 0, status: 'SENT' },
-        { messageId: 11, metaDataId: 1, status: 'QUEUED' },
+        row(11, 0, 'SENT'),
+        row(11, 1, 'QUEUED'),
       ]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     const result = await mgr.recover(CHANNEL_ID, RUNNING);
@@ -209,12 +213,47 @@ describe('RecoveryManager', () => {
     expect(result.ok).toBe(false);
   });
 
+  it.each([
+    ['SENT', { recovered: 1, errors: 0 }],
+    ['QUEUED', { recovered: 1, errors: 0 }],
+    ['ERROR', { recovered: 0, errors: 1 }],
+  ])('closes a message whose destination was recorded %s', async (outcome, counts) => {
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [8, [row(8, 0, 'TRANSFORMED'), row(8, 1, 'RECEIVED')]],
+    ]);
+    const store = makeStore([{ messageId: 8, channelId: CHANNEL_ID }], conns);
+    const redispatch = vi.fn(async () => {
+      conns.set(8, [row(8, 0, 'TRANSFORMED'), row(8, 1, outcome)]);
+      return ok(outcome as 'SENT');
+    });
+
+    const result = await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, RUNNING);
+
+    expect(result.ok && result.value).toMatchObject(counts);
+    expect(store.finishSource).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, 8, outcome === 'ERROR' ? 'ERROR' : 'SENT');
+    expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 8);
+  });
+
+  it('goes on with the other destinations after one it could not record, and leaves the message unprocessed', async () => {
+    const store = makeStore([{ messageId: 9, channelId: CHANNEL_ID }], new Map([[9, [
+      row(9, 0, 'TRANSFORMED'), row(9, 1, 'RECEIVED'), row(9, 2, 'RECEIVED'),
+    ]]]));
+    const redispatch = vi.fn().mockResolvedValueOnce(fail('db down')).mockResolvedValueOnce(ok('SENT'));
+
+    const result = await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, RUNNING);
+
+    expect(redispatch.mock.calls.map((c: unknown[]) => c[1])).toEqual([row(9, 1, 'RECEIVED'), row(9, 2, 'RECEIVED')]);
+    expect(result.ok && result.value).toMatchObject({ recovered: 1, errors: 1 });
+    expect(store.finishSource).not.toHaveBeenCalled();
+    expect(store.markProcessed).not.toHaveBeenCalled();
+  });
+
   it('handles redispatch failure as error count', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 7, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
       [7, [
-        { messageId: 7, metaDataId: 0, status: 'SENT' },
-        { messageId: 7, metaDataId: 1, status: 'RECEIVED' },
+        row(7, 0, 'SENT'),
+        row(7, 1, 'RECEIVED'),
       ]],
     ]);
     const store = makeStore(msgs, conns);
@@ -233,7 +272,7 @@ describe('RecoveryManager', () => {
   it('reprocesses a source left TRANSFORMED when the crash hit before routing', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 20, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [20, [{ messageId: 20, metaDataId: 0, status: 'TRANSFORMED' }]],
+      [20, [row(20, 0, 'TRANSFORMED')]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
@@ -247,31 +286,59 @@ describe('RecoveryManager', () => {
     expect(store.markProcessed).not.toHaveBeenCalled();
   });
 
+  it.each([['source first', false], ['source last', true]])('runs a message again once, and leaves its destinations to that, when it stopped after they were recorded and before routing: %s', async (_order, reversed) => {
+    const rows: ConnectorMessageRecord[] = [
+      row(25, 0, 'RECEIVED'), row(25, 1, 'RECEIVED'), row(25, 2, 'RECEIVED'),
+    ];
+    const store = makeStore([{ messageId: 25, channelId: CHANNEL_ID }], new Map([[25, reversed ? rows.reverse() : rows]]));
+    const reprocess = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('ERROR'));
+
+    const result = await new RecoveryManager(store, reprocess, redispatch).recover(CHANNEL_ID, RUNNING);
+
+    expect(reprocess).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, 25);
+    expect(redispatch).not.toHaveBeenCalled();
+    expect(result.ok && result.value).toMatchObject({ recovered: 1, errors: 0 });
+  });
+
+  it('does not run a message again once the channel has begun to stop', async () => {
+    const stop = new AbortController();
+    const store = makeStore([{ messageId: 26, channelId: CHANNEL_ID }], new Map([[26, [row(26, 0, 'RECEIVED')]]]));
+    const read = vi.mocked(store.getConnectorMessages).getMockImplementation()!;
+    vi.mocked(store.getConnectorMessages).mockImplementation(async (...args) => { stop.abort(); return read(...args); });
+    const reprocess = vi.fn();
+
+    const result = await new RecoveryManager(store, reprocess, vi.fn()).recover(CHANNEL_ID, stop.signal);
+
+    expect(reprocess).not.toHaveBeenCalled();
+    expect(result.ok && result.value).toEqual({ recovered: 0, errors: 0, skipped: 0, interrupted: true });
+  });
+
   it('does not reprocess a TRANSFORMED source once destinations exist (no duplicate sends)', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 21, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
       [21, [
-        { messageId: 21, metaDataId: 0, status: 'TRANSFORMED' },
-        { messageId: 21, metaDataId: 1, status: 'SENT' },
-        { messageId: 21, metaDataId: 2, status: 'RECEIVED' },
+        row(21, 0, 'TRANSFORMED'),
+        row(21, 1, 'SENT'),
+        row(21, 2, 'RECEIVED'),
       ]],
     ]);
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn();
-    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const redispatch = vi.fn().mockResolvedValue(ok('SENT'));
     const mgr = new RecoveryManager(store, reprocess, redispatch);
 
     await mgr.recover(CHANNEL_ID, RUNNING);
 
     expect(reprocess).not.toHaveBeenCalled();
-    expect(redispatch).toHaveBeenCalledWith(CHANNEL_ID, 21, 2);
+    expect(redispatch).toHaveBeenCalledWith(CHANNEL_ID, row(21, 2, 'RECEIVED'));
     expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 21);
   });
 
   it('marks a message processed when every connector is already final', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 22, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [22, [{ messageId: 22, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 22, metaDataId: 1, status: 'SENT' }]],
+      [22, [row(22, 0, 'TRANSFORMED'), row(22, 1, 'SENT')]],
     ]);
     const store = makeStore(msgs, conns);
     const mgr = new RecoveryManager(store, vi.fn(), vi.fn());
@@ -284,12 +351,12 @@ describe('RecoveryManager', () => {
   it('gives a routed source its final status: SENT when every destination delivered', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 30, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [30, [{ messageId: 30, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 30, metaDataId: 1, status: 'RECEIVED' }]],
+      [30, [row(30, 0, 'TRANSFORMED'), row(30, 1, 'RECEIVED')]],
     ]);
     const store = makeStore(msgs, conns);
     const redispatch = vi.fn().mockImplementation(async () => {
-      conns.set(30, [{ messageId: 30, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 30, metaDataId: 1, status: 'SENT' }]);
-      return ok(undefined);
+      conns.set(30, [row(30, 0, 'TRANSFORMED'), row(30, 1, 'SENT')]);
+      return ok('SENT');
     });
 
     await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, RUNNING);
@@ -301,7 +368,7 @@ describe('RecoveryManager', () => {
   it('gives a routed source ERROR when a destination ended in error', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 31, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [31, [{ messageId: 31, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 31, metaDataId: 1, status: 'SENT' }, { messageId: 31, metaDataId: 2, status: 'ERROR' }]],
+      [31, [row(31, 0, 'TRANSFORMED'), row(31, 1, 'SENT'), row(31, 2, 'ERROR')]],
     ]);
     const store = makeStore(msgs, conns);
 
@@ -313,7 +380,7 @@ describe('RecoveryManager', () => {
   it('does not touch a source that already has its final status', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 32, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [32, [{ messageId: 32, metaDataId: 0, status: 'SENT' }, { messageId: 32, metaDataId: 1, status: 'SENT' }]],
+      [32, [row(32, 0, 'SENT'), row(32, 1, 'SENT')]],
     ]);
     const store = makeStore(msgs, conns);
 
@@ -326,7 +393,7 @@ describe('RecoveryManager', () => {
   it('leaves the message unprocessed when the final source status cannot be saved', async () => {
     const msgs: UnprocessedMessage[] = [{ messageId: 33, channelId: CHANNEL_ID }];
     const conns = new Map<number, ConnectorMessageRecord[]>([
-      [33, [{ messageId: 33, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 33, metaDataId: 1, status: 'SENT' }]],
+      [33, [row(33, 0, 'TRANSFORMED'), row(33, 1, 'SENT')]],
     ]);
     const store = makeStore(msgs, conns);
     vi.mocked(store.finishSource).mockResolvedValue(fail('db down'));
@@ -337,26 +404,9 @@ describe('RecoveryManager', () => {
     expect(result.ok && result.value.errors).toBe(1);
   });
 
-  it('leaves a message unprocessed while a destination is still QUEUED or a step failed', async () => {
-    const msgs: UnprocessedMessage[] = [
-      { messageId: 23, channelId: CHANNEL_ID },
-      { messageId: 24, channelId: CHANNEL_ID },
-    ];
-    const conns = new Map<number, ConnectorMessageRecord[]>([
-      [23, [{ messageId: 23, metaDataId: 0, status: 'SENT' }, { messageId: 23, metaDataId: 1, status: 'QUEUED' }]],
-      [24, [{ messageId: 24, metaDataId: 0, status: 'SENT' }, { messageId: 24, metaDataId: 1, status: 'RECEIVED' }]],
-    ]);
-    const store = makeStore(msgs, conns);
-    const mgr = new RecoveryManager(store, vi.fn(), vi.fn().mockResolvedValue(fail('down')));
-
-    await mgr.recover(CHANNEL_ID, RUNNING);
-
-    expect(store.markProcessed).not.toHaveBeenCalled();
-  });
-
   it('reads unprocessed messages a page at a time and recovers them all', async () => {
     const msgs: UnprocessedMessage[] = Array.from({ length: 450 }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
-    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 0, status: 'RECEIVED' }]]));
+    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [row(m.messageId, 0, 'RECEIVED')]]));
     const store = makeStore(msgs, conns);
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
     const mgr = new RecoveryManager(store, reprocess, vi.fn());
@@ -370,7 +420,7 @@ describe('RecoveryManager', () => {
 
   it('does not loop forever on messages that keep failing', async () => {
     const msgs: UnprocessedMessage[] = Array.from({ length: 200 }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
-    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 0, status: 'RECEIVED' }]]));
+    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [row(m.messageId, 0, 'RECEIVED')]]));
     const store = makeStore(msgs, conns);
     const mgr = new RecoveryManager(store, vi.fn().mockResolvedValue(fail('still broken')), vi.fn());
 
@@ -383,7 +433,7 @@ describe('RecoveryManager', () => {
   describe('when the channel stops', () => {
     const received = (count: number): { readonly msgs: UnprocessedMessage[]; readonly conns: Map<number, ConnectorMessageRecord[]> } => {
       const msgs = Array.from({ length: count }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
-      return { msgs, conns: new Map(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 1, status: 'RECEIVED' }]])) };
+      return { msgs, conns: new Map(msgs.map((m) => [m.messageId, [row(m.messageId, 1, 'RECEIVED')]])) };
     };
 
     it('takes no message after it, and says it was interrupted', async () => {
@@ -391,10 +441,10 @@ describe('RecoveryManager', () => {
       const { msgs, conns } = received(12);
       const store = makeStore(msgs, conns);
       const redispatched: number[] = [];
-      const redispatch = vi.fn(async (_c: string, messageId: number) => {
+      const redispatch = vi.fn(async (_c: string, { messageId }: ConnectorMessageRecord) => {
         redispatched.push(messageId);
         if (messageId === 5) stop.abort();
-        return ok(undefined);
+        return ok('SENT' as const);
       });
 
       const result = await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, stop.signal);
@@ -408,9 +458,9 @@ describe('RecoveryManager', () => {
       const stop = new AbortController();
       const { msgs, conns } = received(450);
       const store = makeStore(msgs, conns);
-      const redispatch = vi.fn(async (_c: string, messageId: number) => {
+      const redispatch = vi.fn(async (_c: string, { messageId }: ConnectorMessageRecord) => {
         if (messageId === 200) stop.abort();
-        return ok(undefined);
+        return ok('SENT' as const);
       });
 
       await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, stop.signal);
@@ -421,9 +471,9 @@ describe('RecoveryManager', () => {
     it('leaves a message unprocessed when it came between two of its destinations', async () => {
       const stop = new AbortController();
       const store = makeStore([{ messageId: 1, channelId: CHANNEL_ID }], new Map([[1, [
-        { messageId: 1, metaDataId: 1, status: 'RECEIVED' }, { messageId: 1, metaDataId: 2, status: 'RECEIVED' },
+        row(1, 1, 'RECEIVED'), row(1, 2, 'RECEIVED'),
       ]]]));
-      const redispatch = vi.fn(async () => { stop.abort(); return ok(undefined); });
+      const redispatch = vi.fn(async () => { stop.abort(); return ok('SENT' as const); });
 
       const result = await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID, stop.signal);
 
@@ -435,7 +485,7 @@ describe('RecoveryManager', () => {
 
   it('recovers at most a few messages at once', async () => {
     const msgs: UnprocessedMessage[] = Array.from({ length: 40 }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
-    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 0, status: 'RECEIVED' }]]));
+    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [row(m.messageId, 0, 'RECEIVED')]]));
     let running = 0;
     let peak = 0;
     const reprocess = vi.fn().mockImplementation(async () => {

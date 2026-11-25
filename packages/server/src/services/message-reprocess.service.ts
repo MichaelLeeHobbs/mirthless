@@ -37,6 +37,19 @@ export interface ResendResult {
   readonly status: 'QUEUED';
 }
 
+async function hasStoredVariables(channelId: string, messageId: number, metaDataId: number): Promise<boolean> {
+  const rows = await db
+    .select({ contentType: messageContent.contentType })
+    .from(messageContent)
+    .where(and(
+      eq(messageContent.channelId, channelId),
+      eq(messageContent.messageId, messageId),
+      eq(messageContent.metaDataId, metaDataId),
+      eq(messageContent.contentType, CONTENT_TYPE.CHANNEL_MAP),
+    ));
+  return rows.length > 0;
+}
+
 export class MessageReprocessService {
   /** Re-injects the stored raw source as a new message. */
   static async reprocessMessage(
@@ -131,7 +144,8 @@ export class MessageReprocessService {
 
   /**
    * Re-queues one destination; no other is touched. A NEVER-queue destination has no
-   * consumer, so re-queuing would strand the message: refused.
+   * consumer, so re-queuing would strand the message: refused. So is one that uses variables
+   * of a message routed when it did not queue, because they were not kept (#390).
    */
   static async resendDestination(
     channelId: string,
@@ -180,6 +194,12 @@ export class MessageReprocessService {
         ));
       if (!content?.content) {
         throw new ServiceError('CONFLICT', `No stored sent content for message ${String(messageId)} destination ${String(metaDataId)}; cannot resend.`);
+      }
+      const decrypted = decryptIfEncrypted(content.content);
+      if (!decrypted.ok) throw decrypted.error;
+      const used = deployed.variablesUsed(metaDataId, messageId, decrypted.value ?? '');
+      if (used.length > 0 && !(await hasStoredVariables(channelId, messageId, metaDataId))) {
+        throw new ServiceError('CONFLICT', `Destination ${String(metaDataId)} uses the message's variables (${used.join(', ')}), and none are stored for message ${String(messageId)}; a resend would go without them. Reprocess the whole message instead.`);
       }
 
       // Re-enqueue with a fresh retry budget; the running consumer picks it up.

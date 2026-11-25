@@ -3,6 +3,7 @@ import {
   compileScript,
   compileErrorMessages,
   clearScriptCache,
+  globalsNamed,
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
   type FilterRuleInput,
@@ -232,6 +233,47 @@ const ADT = createHl7Proxy(Hl7Message.parse('MSH|^~\\&|LAB|FAC|EHR|FAC|20260101|
 function builder(condition: string, values: string[], field = 'MSH.9.1'): FilterRuleInput {
   return { enabled: true, operator: 'AND', type: 'RULE_BUILDER', script: null, field, condition, values };
 }
+
+describe('globalsNamed', () => {
+  const NAMES = ['channelMap', '$c', '$', 'connectorMessage', 'globalThis'];
+
+  async function named(source: string): Promise<readonly string[]> {
+    const compiled = await compileScript(source);
+    if (!compiled.ok) throw compiled.error;
+    const result = await globalsNamed(compiled.value, NAMES);
+    if (!result.ok) throw result.error;
+    return result.value;
+  }
+
+  it.each([
+    ['return $("mrn");', ['$']],
+    ['const get = $; return get("mrn");', ['$']],
+    ['return `${$c("mrn")}`;', ['$c']],
+    ['return channelMap["mrn"] + $("x");', ['channelMap', '$']],
+    ['const copy = { channelMap }; return copy;', ['channelMap']],
+    ['return typeof channelMap;', ['channelMap']],
+    ['return connectorMessage.variables.mrn;', ['connectorMessage']],
+    ['return globalThis["channel" + "Map"].mrn;', ['globalThis']],
+    ['if (false) { return $c("x"); } return 1;', ['$c']],
+    ['for (const x of []) { $c = x; }', ['$c']],
+    ['function f() { return $c("mrn"); }\nreturn f();', ['$c']],
+  ])('finds what is named in: %s', async (source, expected) => {
+    expect(await named(source)).toEqual(expected);
+  });
+
+  it.each([
+    'return /^ADT$/.test(msg.type) && "$(x) channelMap".replace(/[$,]/g, "");',
+    'logger.info(`sent ${msg.length} $c(1) channelMap`); return 1;',
+    'return $co("mrn") + $gc("x") + $cfg("y") + $g("z") + $s("a") + $r("b");',
+    '// reads channelMap\nreturn 1;',
+    'const channelMap = {}; return channelMap.x;',
+    'function f($: number): number { return $; } return f(1);',
+    'const total$ = 5; const $x = 2; return total$ + $x;',
+    'const o: { channelMap: string } = { channelMap: "x" }; return o.channelMap;',
+  ])('is not taken in by: %s', async (source) => {
+    expect(await named(source)).toEqual([]);
+  });
+});
 
 describe('compileFilterRulesToScript', () => {
   it('returns null for empty rules array', () => {

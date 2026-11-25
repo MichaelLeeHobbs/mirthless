@@ -82,6 +82,10 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     });
   }
 
+  variablesUsed(): readonly string[] {
+    return [];
+  }
+
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
       if (!this.started) {

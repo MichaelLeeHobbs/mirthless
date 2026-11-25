@@ -1,6 +1,8 @@
 import type { Result } from '@galvanigraph/core-util';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler } from '../pipeline/message-processor.js';
+import { sendFailureReason } from '../pipeline/send-failure.js';
+import { parseStoredVariables } from '../pipeline/stored-variables.js';
 
 export interface QueueConsumerConfig {
   readonly channelId: string;
@@ -30,16 +32,6 @@ export interface QueueConsumerConfig {
    * (a DICOM file it deletes or moves) acts on it here.
    */
   readonly onMessageDelivered?: ((messageId: number, rawContent: string) => Promise<void>) | undefined;
-}
-
-function parseVariables(stored: string | null): Record<string, unknown> | undefined | 'INVALID' {
-  if (stored === null) return undefined;
-  try {
-    const value: unknown = JSON.parse(stored);
-    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : 'INVALID';
-  } catch {
-    return 'INVALID';
-  }
 }
 
 interface QueuedMessage {
@@ -214,7 +206,7 @@ export class QueueConsumer {
       );
       return 'RETRY_LATER';
     }
-    const variables = parseVariables(variablesResult.value);
+    const variables = parseStoredVariables(variablesResult.value);
     if (variables === 'INVALID') {
       await this.giveUp(msg, 'Queued message has stored variables that are not a JSON object');
       return 'DONE';
@@ -236,9 +228,7 @@ export class QueueConsumer {
     }
 
     const attempts = (msg.sendAttempts ?? 0) + 1;
-    const reason = sendResult.ok
-      ? (sendResult.value.errorMessage ?? sendResult.value.content)
-      : sendResult.error.message;
+    const reason = sendFailureReason(sendResult);
     const retriesUsed = attempts - 1;
     if (this.config.retryCount > 0 && retriesUsed >= this.config.retryCount) {
       await this.giveUp(msg, `Delivery failed after ${String(attempts)} attempt(s): ${reason}`);
