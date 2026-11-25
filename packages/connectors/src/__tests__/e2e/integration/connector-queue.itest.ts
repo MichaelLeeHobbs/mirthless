@@ -12,7 +12,7 @@ import {
   type KafkaConnectionConfig,
   type AmqpConnectionConfig,
 } from '../../../index.js';
-import { createKafkaProducer } from '../../../kafka/kafka-client.js';
+import { createKafkaProducer, subscribeKafka } from '../../../kafka/kafka-client.js';
 import {
   deployChannel,
   teardownAll,
@@ -29,6 +29,8 @@ import { freePort } from '../../../__fixtures__/free-port.js';
 const RUN = randomUUID().slice(0, 8);
 const WAIT = { timeout: 30_000, interval: 100 };
 const TEST_TIMEOUT = 60_000;
+/** For a broker that has just started, on a loaded machine. */
+const BROKER_READY = { timeout: 90_000, interval: 500 };
 /** Short pause before rejoining or requeueing, so the suite is quick. */
 const RETRY_MS = 200;
 
@@ -68,6 +70,7 @@ describeKafka('Kafka connectors (real broker)', () => {
     redelivery: `e2e-redelivery-${RUN}`,
     sasl: `e2e-sasl-${RUN}`,
   };
+  const groups = { cascade: `g-cascade-${RUN}`, redelivery: `g-redelivery-${RUN}`, sasl: `g-sasl-${RUN}` };
 
   const connection = (): KafkaConnectionConfig => ({
     brokers: requireKafka().brokers, clientId: 'galvanigraph-e2e', saslMechanism: 'NONE', saslUsername: '', saslPassword: '',
@@ -80,14 +83,22 @@ describeKafka('Kafka connectors (real broker)', () => {
     } finally {
       await admin.close();
     }
-  });
+    // A new broker creates its offsets topic on the first join, and refuses to coordinate a group
+    // until that group's partition of it is loaded. A start gives up after four tries, a second apart.
+    for (const name of ['cascade', 'redelivery', 'sasl'] as const) {
+      await vi.waitFor(async () => {
+        const member = await subscribeKafka({ ...connection(), topic: topics[name], groupId: groups[name], startFrom: 'EARLIEST' });
+        await member.close(false);
+      }, BROKER_READY);
+    }
+  }, BROKER_READY.timeout + TEST_TIMEOUT);
 
   it('carries a message from a Kafka destination to a Kafka source, with topic, key and headers filled per message', async () => {
     const sink = new CaptureDestination();
     const consumer = await deployChannel({
       channelId: '00000000-0000-0000-0000-kafkae2e000b',
       dataType: 'RAW',
-      source: new KafkaReceiver({ ...connection(), topic: topics.cascade, groupId: `g-cascade-${RUN}`, startFrom: 'EARLIEST' }, undefined, undefined, RETRY_MS),
+      source: new KafkaReceiver({ ...connection(), topic: topics.cascade, groupId: groups.cascade, startFrom: 'EARLIEST' }, undefined, undefined, RETRY_MS),
       transformer: ECHO_SOURCE_MAP,
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
@@ -131,7 +142,7 @@ describeKafka('Kafka connectors (real broker)', () => {
         await p.close();
       }
     };
-    const group = `g-redelivery-${RUN}`;
+    const group = groups.redelivery;
     const sink = new CaptureDestination();
     const store = storeFailingFirst(1);
     const channel = await deployChannel({
@@ -170,7 +181,7 @@ describeKafka('Kafka connectors (real broker)', () => {
     deployed.push(await deployChannel({
       channelId: '00000000-0000-0000-0000-kafkae2e000e',
       dataType: 'RAW',
-      source: new KafkaReceiver({ ...sasl, topic: topics.sasl, groupId: `g-sasl-${RUN}`, startFrom: 'EARLIEST' }, undefined, undefined, RETRY_MS),
+      source: new KafkaReceiver({ ...sasl, topic: topics.sasl, groupId: groups.sasl, startFrom: 'EARLIEST' }, undefined, undefined, RETRY_MS),
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     }));
     const dispatcher = new KafkaDispatcher({ ...sasl, topic: topics.sasl, messageKey: '', headers: {} });
@@ -202,6 +213,7 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     deadExchange: `e2e-dlx-${RUN}`,
     deadQueue: `e2e-dead-${RUN}`,
     quorum: `e2e-quorum-${RUN}`,
+    dropped: `e2e-dropped-${RUN}`,
   };
   let admin: ChannelModel;
 
@@ -223,12 +235,13 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await ch.assertQueue(names.queue, { durable: true, deadLetterExchange: names.deadExchange });
     await ch.bindQueue(names.queue, names.exchange, 'adt.#');
     await ch.assertQueue(names.quorum, { durable: true, arguments: { 'x-queue-type': 'quorum' } });
+    await ch.assertQueue(names.dropped, { durable: true });
     await ch.close();
   });
 
   afterAll(async () => {
     const ch = await admin.createChannel();
-    for (const q of [names.queue, names.deadQueue, names.quorum]) await ch.deleteQueue(q);
+    for (const q of [names.queue, names.deadQueue, names.quorum, names.dropped]) await ch.deleteQueue(q);
     for (const e of [names.exchange, names.deadExchange]) await ch.deleteExchange(e);
     await admin.close();
   });
@@ -395,28 +408,38 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     deployed.push(await deployChannel({
       channelId: '00000000-0000-0000-0000-amqpe2e0000e',
       dataType: 'RAW',
-      source: source(),
+      source: new AmqpReceiver({ ...connection(), queue: names.dropped }, undefined, undefined, RETRY_MS),
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     }));
-    await publishDirect('before');
+    const publish = async (body: string): Promise<void> => {
+      const ch = await admin.createConfirmChannel();
+      ch.sendToQueue(names.dropped, Buffer.from(body));
+      await ch.waitForConfirms();
+      await ch.close();
+    };
+    await publish('before');
     await vi.waitFor(() => { expect(sink.received.map((m) => m.content)).toEqual(['before']); }, WAIT);
 
     const cfg = requireAmqp();
-    const api = `http://${cfg.host}:${String(cfg.managementPort)}/api/connections`;
+    const api = `http://${cfg.host}:${String(cfg.managementPort)}/api`;
     const auth = { Authorization: `Basic ${Buffer.from(`${cfg.username}:${cfg.password}`).toString('base64')}` };
-    const victims = await vi.waitFor(async () => {
-      const list = await (await fetch(api, { headers: auth })).json() as { name: string; client_properties?: { connection_name?: string } }[];
-      const ours = list.filter((c) => c.client_properties?.connection_name === 'galvanigraph');
-      expect(ours.length).toBeGreaterThan(0);
-      return ours;
-    }, WAIT);
-    for (const c of victims) {
-      const res = await fetch(`${api}/${encodeURIComponent(c.name)}`, { method: 'DELETE', headers: auth });
-      expect(res.ok).toBe(true);
-    }
+    // By the queue, which only this test consumes: other connections on a shared broker have the same name.
+    const consumers = async (): Promise<readonly string[]> => {
+      const queue = await (await fetch(`${api}/queues/%2F/${names.dropped}`, { headers: auth })).json() as { consumer_details?: { channel_details: { connection_name: string } }[] };
+      return (queue.consumer_details ?? []).map((c) => c.channel_details.connection_name);
+    };
+    const only = async (): Promise<string> => {
+      const now = await consumers();
+      expect(now).toHaveLength(1);
+      return now[0]!;
+    };
+    // The management API is some seconds behind.
+    const dropped = await vi.waitFor(only, WAIT);
+    expect((await fetch(`${api}/connections/${encodeURIComponent(dropped)}`, { method: 'DELETE', headers: auth })).ok).toBe(true);
 
-    await publishDirect('after');
+    await publish('after');
     await vi.waitFor(() => { expect(sink.received.map((m) => m.content)).toEqual(['before', 'after']); }, WAIT);
+    await vi.waitFor(async () => { expect(await only()).not.toBe(dropped); }, WAIT);
   }, TEST_TIMEOUT);
 
   it('connection test finds the queue and the exchange, and reports a missing queue', async () => {
