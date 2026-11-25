@@ -10,7 +10,7 @@ export interface JavaScriptReceiverConfig {
 
 /**
  * Callback provided by the engine to execute a user script in the sandbox.
- * Returns the script's return value as a string or array of strings.
+ * Returns the script's return value.
  */
 export type ScriptRunner = (script: string) => Promise<Result<unknown>>;
 
@@ -113,7 +113,15 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
       this.logger.error(errorInfo(result.error), 'JavaScript source script returned an error');
       return [];
     }
-    return normalizeScriptResult(result.value);
+    const messages = normalizeScriptResult(result.value);
+    const items = Array.isArray(result.value) ? result.value.length : messages.length;
+    if (items > messages.length) {
+      this.logger.warn(
+        { items, skipped: items - messages.length },
+        'JavaScript source script returned an array with empty, null or undefined items, which hold no message; skipped',
+      );
+    }
+    return messages;
   }
 
   /** Fallback: evaluate script directly (used when no sandbox runner is set). */
@@ -131,11 +139,18 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
 }
 
 export function normalizeScriptResult(value: unknown): readonly string[] {
-  if (value === null || value === undefined) return [];
-  if (typeof value === 'string') return value.length > 0 ? [value] : [];
-  if (Array.isArray(value)) {
-    return value
-      .filter((item): item is string => typeof item === 'string' && item.length > 0);
-  }
-  return [String(value)];
+  const items: readonly unknown[] = Array.isArray(value) ? value : [value];
+  return items.map(messageText).filter((text) => text !== '');
+}
+
+/** '' when the item holds no message. */
+function messageText(item: unknown): string {
+  if (item === null || item === undefined) return '';
+  if (typeof item !== 'object' || isMessageObject(item)) return String(item);
+  return JSON.stringify(item);
+}
+
+/** A result leaves the sandbox as JSON data, except a parsed message, whose text its own `toString` gives. */
+function isMessageObject(item: object): boolean {
+  return Object.hasOwn(item, 'toString') && typeof item.toString === 'function';
 }

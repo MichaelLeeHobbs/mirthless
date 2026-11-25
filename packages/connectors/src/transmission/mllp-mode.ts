@@ -43,7 +43,7 @@ export class MllpParser {
   /** The last bytes received, so end bytes split across chunks are seen. */
   private tail: Buffer = Buffer.alloc(0);
 
-  /** Past `maxFrameBytes` the parser resets and throws, so the caller can close the connection (DoS guard). */
+  /** A message longer than `maxFrameBytes` makes the parser reset and throw, so the caller can close the connection (DoS guard). */
   constructor(options?: { maxFrameBytes?: number; charset?: BufferEncoding; framing?: Framing }) {
     this.maxFrameBytes = options?.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
     this.charset = options?.charset ?? 'utf-8';
@@ -51,12 +51,6 @@ export class MllpParser {
   }
 
   parse(chunk: Buffer): readonly string[] {
-    if (this.buffer.length + this.pendingBytes + chunk.length > this.maxFrameBytes) {
-      this.reset();
-      throw new Error(
-        `MLLP frame exceeds maximum size of ${String(this.maxFrameBytes)} bytes`,
-      );
-    }
     // A frame can only end in a chunk that completes the end bytes. Set any
     // other chunk in the middle of a frame aside instead of joining it to the
     // buffer now: joining on every chunk copies the whole frame each time.
@@ -66,7 +60,10 @@ export class MllpParser {
     this.rememberTail(chunk);
     this.pending.push(chunk);
     this.pendingBytes += chunk.length;
-    if (!canComplete) return [];
+    if (!canComplete) {
+      this.limitUnfinishedFrame();
+      return [];
+    }
 
     this.buffer = Buffer.concat([this.buffer, ...this.pending]);
     this.pending = [];
@@ -93,14 +90,27 @@ export class MllpParser {
       const end = this.buffer.indexOf(this.framing.end, start);
       if (end === -1) break;
 
+      if (end - start > this.maxFrameBytes) this.refuseFrame();
       results.push(this.buffer.subarray(start, end).toString(this.charset));
       this.inFrame = false;
       start = end + this.framing.end.length;
     }
 
     this.buffer = start >= this.buffer.length ? Buffer.alloc(0) : Buffer.from(this.buffer.subarray(start));
+    this.limitUnfinishedFrame();
 
     return results;
+  }
+
+  private limitUnfinishedFrame(): void {
+    // Its last bytes may be the first of the end bytes, which are not the message's.
+    const limit = this.maxFrameBytes + this.framing.end.length - 1;
+    if (this.inFrame && this.buffer.length + this.pendingBytes > limit) this.refuseFrame();
+  }
+
+  private refuseFrame(): never {
+    this.reset();
+    throw new Error(`MLLP frame exceeds maximum size of ${String(this.maxFrameBytes)} bytes`);
   }
 
   private completesEnd(chunk: Buffer): boolean {

@@ -58,6 +58,34 @@ describe('JavaScript source connector (a polling script generates messages)', ()
     expect(sink.received.length).toBeGreaterThanOrEqual(1);
     expect(sink.lastContent()).toBe('HEARTBEAT|OK');
   });
+
+  it.each([
+    ['an array of text, objects and parsed messages', "const m = parseHL7('MSH|^~\\\\&|A|B'); return ['text', { id: 7 }, 42, m, null];", ['text', '{"id":7}', '42', 'MSH|^~\\&|A|B']],
+    ['a parsed message', "return parseHL7('MSH|^~\\\\&|A|B');", ['MSH|^~\\&|A|B']],
+    ['an object', 'return { id: 7 };', ['{"id":7}']],
+  ])('sends every item a real sandbox hands back: %s (#415)', async (_name, script, expected) => {
+    const compiled = await compile(script);
+    const source = new JavaScriptReceiver({ script: 'ignored', pollingIntervalMs: 100 });
+    let calls = 0;
+    source.setScriptRunner(async (): Promise<Result<unknown>> => {
+      calls += 1;
+      if (calls > 1) return { ok: true, value: null, error: null } as Result<unknown>;
+      const exec = await sandbox.execute(compiled, createSandboxContext('', ''), DEFAULT_EXECUTION_OPTIONS);
+      return exec.ok ? { ok: true, value: exec.value.returnValue, error: null } as Result<unknown> : exec;
+    });
+    const contents: string[] = [];
+    source.setDispatcher(async (raw) => {
+      contents.push(raw.content);
+      return { ok: true, value: { messageId: contents.length }, error: null };
+    });
+
+    await source.onStart();
+    try {
+      await expect.poll(() => contents, { timeout: 10_000 }).toEqual(expected);
+    } finally {
+      await source.onStop();
+    }
+  });
 });
 
 describe('JavaScript destination connector (a script transforms the message)', () => {

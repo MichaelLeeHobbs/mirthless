@@ -173,6 +173,39 @@ describe('MllpParser DoS guard', () => {
     const messages = parser.parse(wrapMllp('OK'));
     expect(messages).toEqual(['OK']);
   });
+
+  it('counts each frame on its own, so frames within the limit pass it together (#415)', () => {
+    const texts = ['A', 'B', 'C'].map((c) => c.repeat(449));
+    const stream = Buffer.concat(texts.map((t) => wrapMllp(t)));
+    expect(new MllpParser({ maxFrameBytes: 1_000 }).parse(stream)).toEqual(texts);
+  });
+
+  it('takes the frames that end in a chunk before it counts the one that goes on', () => {
+    const parser = new MllpParser({ maxFrameBytes: 100 });
+    const second = wrapMllp('B'.repeat(90));
+    expect(parser.parse(Buffer.concat([wrapMllp('A'.repeat(90)), second.subarray(0, 60)]))).toEqual(['A'.repeat(90)]);
+    expect(parser.parse(Buffer.concat([second.subarray(60), wrapMllp('C'.repeat(90))]))).toEqual(['B'.repeat(90), 'C'.repeat(90)]);
+  });
+
+  it('takes a frame of exactly the limit and refuses one byte more, wherever the stream is cut', () => {
+    const exact = wrapMllp('A'.repeat(20));
+    const over = wrapMllp('A'.repeat(21));
+    const parseIn = (stream: Buffer, size: number): string[] => {
+      const parser = new MllpParser({ maxFrameBytes: 20 });
+      const out: string[] = [];
+      for (let i = 0; i < stream.length; i += size) out.push(...parser.parse(stream.subarray(i, i + size)));
+      return out;
+    };
+    for (let size = 1; size <= over.length; size++) {
+      expect(parseIn(Buffer.concat([exact, exact]), size)).toEqual(['A'.repeat(20), 'A'.repeat(20)]);
+      expect(() => parseIn(over, size)).toThrow(/maximum size of 20 bytes/);
+    }
+  });
+
+  it('does not count bytes between frames, which it drops', () => {
+    const parser = new MllpParser({ maxFrameBytes: 10 });
+    expect(parser.parse(Buffer.concat([Buffer.alloc(200, 0x41), wrapMllp('OK')]))).toEqual(['OK']);
+  });
 });
 
 describe('MllpParser charset', () => {
