@@ -1,8 +1,8 @@
 // Serves MySQL and MariaDB.
 
 import mysql from 'mysql2/promise';
-import { tryCatch, type Result } from '@galvanigraph/core-util';
-import { withTimeout } from '../timeout.js';
+import { settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
+import { TimeoutError, withTimeout } from '../timeout.js';
 import type { DatabasePool, PoolConfig, QueryResult, TxQuery } from './connection-pool.js';
 
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
@@ -16,17 +16,18 @@ type Queryable = Pick<mysql.PoolConnection, 'execute' | 'query'>;
 
 /** What stops a connection's statement on the server. */
 interface Session {
-  readonly id: number;
+  /** Null when the server calls the connection otherwise than it did when it was opened: a proxy is in between, and a KILL is not for it. */
+  readonly id: number | null;
   readonly server: string;
 }
 
 interface Connection {
   readonly connection: mysql.PoolConnection;
   readonly session: Session;
-  /** A statement got no answer: the connection's state is unknown. */
+  /** A statement got no answer, or a stop that was sent did not: nothing more may be run on it. */
   lost: boolean;
-  /** A stop was sent, which could reach a later statement. */
-  stopSent: boolean;
+  /** A stop was sent. */
+  stopped: boolean;
 }
 
 /**
@@ -36,9 +37,8 @@ interface Connection {
 async function run(target: Queryable, sql: string, params: readonly unknown[], timeoutMs: number): Promise<QueryResult> {
   // mysql2 refuses undefined; pg sends it as NULL, and so do we.
   const values = params.map((p) => (p === undefined ? null : p)) as mysql.ExecuteValues & unknown[];
-  const [result] = values.length > 0
-    ? await target.execute({ sql, timeout: timeoutMs }, values)
-    : await target.query({ sql, timeout: timeoutMs });
+  // mysql2's own timeout does not cover preparing the statement.
+  const [result] = await withTimeout(values.length > 0 ? target.execute(sql, values) : target.query(sql), timeoutMs, 'MySQL statement');
   if (Array.isArray(result)) {
     const rows = result as Record<string, unknown>[];
     return { rows, rowCount: rows.length };
@@ -50,12 +50,13 @@ async function run(target: Queryable, sql: string, params: readonly unknown[], t
 /** A timeout or a lost connection, after which the connection's state is unknown. A plain SQL error (a duplicate key) is not. */
 function isBroken(err: unknown): boolean {
   const e = err as { fatal?: unknown; code?: unknown } | null;
-  return e?.fatal === true || e?.code === 'PROTOCOL_SEQUENCE_TIMEOUT';
+  return e?.fatal === true || err instanceof TimeoutError;
 }
 
-async function serverSession(target: Queryable, timeoutMs: number): Promise<Session> {
-  const { rows } = await run(target, SERVER_NAME_SQL, [], timeoutMs);
-  return { id: Number(rows[0]?.['id']), server: String(rows[0]?.['name']) };
+async function serverSession(connection: Queryable & Pick<mysql.Connection, 'threadId'>, timeoutMs: number): Promise<Session> {
+  const { rows } = await run(connection, SERVER_NAME_SQL, [], timeoutMs);
+  const id = Number(rows[0]?.['id']);
+  return { id: id === connection.threadId ? id : null, server: String(rows[0]?.['name']) };
 }
 
 export class MysqlPool implements DatabasePool {
@@ -64,7 +65,8 @@ export class MysqlPool implements DatabasePool {
   private timeoutMs = DEFAULT_STATEMENT_TIMEOUT_MS;
   /** Connections whose session limits are set, by their underlying connection. */
   private readonly sessions = new WeakMap<object, Session>();
-  private readonly inUse = new Set<Promise<unknown>>();
+  /** What runs on the pool. */
+  private inUse = new Set<Promise<unknown>>();
 
   async create(config: PoolConfig): Promise<Result<void>> {
     return tryCatch(async () => {
@@ -83,6 +85,7 @@ export class MysqlPool implements DatabasePool {
         decimalNumbers: false,
         dateStrings: true,
       };
+      this.inUse = new Set();
       this.pool = mysql.createPool({ ...this.options, connectionLimit: config.maxConnections, idleTimeout: config.idleTimeoutMs });
       this.finish(await this.connection());
     });
@@ -97,12 +100,12 @@ export class MysqlPool implements DatabasePool {
     const connection = await this.pool.getConnection();
     const underlying = (connection as unknown as { connection: object }).connection;
     const known = this.sessions.get(underlying);
-    if (known) return { connection, session: known, lost: false, stopSent: false };
+    if (known) return { connection, session: known, lost: false, stopped: false };
     try {
       await this.limit(connection);
       const session = await serverSession(connection, this.timeoutMs);
       this.sessions.set(underlying, session);
-      return { connection, session, lost: false, stopSent: false };
+      return { connection, session, lost: false, stopped: false };
     } catch (err) {
       connection.destroy();
       throw err;
@@ -112,24 +115,25 @@ export class MysqlPool implements DatabasePool {
   /** What the server stops by itself: waiting for a row, waiting for a table, and a long SELECT (on MariaDB any long statement). */
   private async limit(connection: mysql.PoolConnection): Promise<void> {
     const seconds = Math.ceil(this.serverMs / 1_000);
-    const set = (sql: string, values: readonly number[]): Promise<unknown> => connection.query({ sql, timeout: this.timeoutMs }, [...values]);
-    await set('SET SESSION innodb_lock_wait_timeout = ?, SESSION lock_wait_timeout = ?', [seconds, seconds]);
+    const set = (sql: string): Promise<QueryResult> => run(connection, sql, [], this.timeoutMs);
+    await set(`SET SESSION innodb_lock_wait_timeout = ${String(seconds)}, SESSION lock_wait_timeout = ${String(seconds)}`);
     try {
-      await set('SET SESSION max_execution_time = ?', [this.serverMs]);
+      await set(`SET SESSION max_execution_time = ${String(this.serverMs)}`);
     } catch (err) {
       if ((err as { errno?: unknown }).errno !== UNKNOWN_VARIABLE) throw err;
       // MariaDB's, in seconds.
-      await set('SET SESSION max_statement_time = ?', [this.serverMs / 1_000]);
+      await set(`SET SESSION max_statement_time = ${String(this.serverMs / 1_000)}`);
     }
   }
 
   /** Hand a connection back, or close it when it may be in mid-statement, or a stop may still reach it. */
-  private finish({ connection, lost, stopSent }: Connection): void {
-    if (lost || stopSent) connection.destroy();
+  private finish({ connection, lost, stopped }: Connection): void {
+    if (lost || stopped) connection.destroy();
     else connection.release();
   }
 
   private async answered(on: Connection, sql: string, params: readonly unknown[]): Promise<QueryResult> {
+    if (on.lost) throw new Error('The MySQL connection was lost');
     try {
       return await run(on.connection, sql, params, this.timeoutMs);
     } catch (err) {
@@ -146,36 +150,48 @@ export class MysqlPool implements DatabasePool {
    * answer, stopped or done, is the result. Without an answer the error says so.
    */
   private async statement(on: Connection, sql: string, params: readonly unknown[]): Promise<QueryResult> {
-    let stopping: Promise<void> | null = null;
+    let ended = false;
+    let stopping: Promise<void> = Promise.resolve();
     const timer = setTimeout(() => {
-      on.stopSent = true;
-      stopping = this.stop(on.session);
+      stopping = this.stop(on, () => ended);
     }, this.serverMs);
     try {
       return await this.answered(on, sql, params);
     } finally {
+      ended = true;
       clearTimeout(timer);
-      if (stopping !== null) await stopping;
+      // A stop still on its way could reach the next statement, or the COMMIT.
+      if (!(await settleWithin(stopping, SERVER_MARGIN_MS))) on.lost = true;
     }
   }
 
-  /** On a connection of its own: all of the pool's may be waiting. Never rejects: the statement's own answer, or none, is reported. */
-  private async stop({ id, server }: Session): Promise<void> {
-    const opening = mysql.createConnection({ ...this.options, connectTimeout: SERVER_MARGIN_MS });
-    const stopped = opening.then(async (connection) => {
+  /**
+   * On a connection of its own: all of the pool's may be waiting. Never rejects: the statement's own
+   * answer, or none, is reported.
+   */
+  private async stop(on: Connection, ended: () => boolean): Promise<void> {
+    const { id, server } = on.session;
+    if (id === null) return;
+    try {
+      const connection = await mysql.createConnection({ ...this.options, connectTimeout: SERVER_MARGIN_MS });
       try {
-        if ((await serverSession(connection, SERVER_MARGIN_MS)).server !== server) return;
-        await connection.query({ sql: 'KILL QUERY ?', timeout: SERVER_MARGIN_MS }, [id]);
+        const here = await serverSession(connection, SERVER_MARGIN_MS);
+        if (here.server !== server || ended()) return;
+        on.stopped = true;
+        await run(connection, `KILL QUERY ${String(id)}`, [], SERVER_MARGIN_MS);
       } finally {
         connection.destroy();
       }
-    });
-    await withTimeout(stopped, SERVER_MARGIN_MS, 'MySQL KILL QUERY').catch(() => undefined);
+    } catch {
+      // Not stopped, which the client timeout reports, or not yet.
+      if (on.stopped) on.lost = true;
+    }
   }
 
   private track<T>(work: Promise<T>): Promise<T> {
-    this.inUse.add(work);
-    const ended = (): void => { this.inUse.delete(work); };
+    const { inUse } = this;
+    inUse.add(work);
+    const ended = (): void => { inUse.delete(work); };
     work.then(ended, ended);
     return work;
   }
@@ -194,17 +210,21 @@ export class MysqlPool implements DatabasePool {
   }
 
   async transaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>> {
-    return tryCatch(() => this.track(this.runTransaction(fn)));
+    return tryCatch(() => this.track(this.runTransaction('START TRANSACTION', fn)));
+  }
+
+  async queryReadOnly(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>> {
+    return tryCatch(() => this.track(this.runTransaction('START TRANSACTION READ ONLY', (tx) => tx.query(sql, params))));
   }
 
   /**
    * COMMIT included, every statement has the client timeout: a connection that drops during COMMIT must fail
    * the poll, not hang it. COMMIT is not stopped: one that is may have been replicated already.
    */
-  private async runTransaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<T> {
+  private async runTransaction<T>(begin: string, fn: (tx: TxQuery) => Promise<T>): Promise<T> {
     const on = await this.connection();
     try {
-      await this.answered(on, 'START TRANSACTION', []);
+      await this.answered(on, begin, []);
       const value = await fn({ query: (sql, params) => this.statement(on, sql, params) });
       await this.answered(on, 'COMMIT', []);
       return value;
@@ -220,10 +240,10 @@ export class MysqlPool implements DatabasePool {
   /** As pg's pool does, waits for what is in use: mysql2's would close a connection in mid-transaction. */
   async destroy(): Promise<Result<void>> {
     return tryCatch(async () => {
-      const { pool } = this;
+      const { pool, inUse } = this;
       if (!pool) return;
       this.pool = null;
-      while (this.inUse.size > 0) await Promise.allSettled(this.inUse);
+      while (inUse.size > 0) await Promise.allSettled(inUse);
       await pool.end();
     });
   }

@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 
+export type Row = Readonly<Record<string, unknown>>;
+
 /** A row that a poll took. */
 export interface TakenRow {
-  readonly row: Readonly<Record<string, unknown>>;
+  readonly row: Row;
   readonly key: string;
   /** The pipeline has the message: from this poll, or from an earlier one that could not mark the row. */
   readonly recorded: boolean;
@@ -24,16 +26,18 @@ export function rowKey(content: string): string {
 export class UnmarkedRows {
   private readonly counts = new Map<string, number>();
 
-  /**
-   * Keeps what the poll's rows still hold, and gives a copy to count down. A row that the query
-   * no longer returns was marked or changed elsewhere; should it come back, it is new.
-   */
-  returned(keys: Iterable<string>): Map<string, number> {
-    const now = new Set(keys);
-    for (const key of this.counts.keys()) {
-      if (!now.has(key)) this.counts.delete(key);
-    }
+  keys(): ReadonlySet<string> {
+    return new Set(this.counts.keys());
+  }
+
+  /** A copy to count down. */
+  remaining(): Map<string, number> {
     return new Map(this.counts);
+  }
+
+  /** For rows that are gone: marked or changed elsewhere. Should one come back, it is new. */
+  forget(keys: ReadonlySet<string>): void {
+    for (const key of keys) this.counts.delete(key);
   }
 
   settle(taken: readonly TakenRow[]): void {
@@ -48,4 +52,14 @@ export class UnmarkedRows {
     if (count > 0) this.counts.set(key, count);
     else this.counts.delete(key);
   }
+}
+
+/** Which of the keys none of the rows has. */
+export function keysNotIn(rows: readonly Row[], keys: ReadonlySet<string>): ReadonlySet<string> {
+  const missing = new Set(keys);
+  for (const row of rows) {
+    if (missing.size === 0) break;
+    missing.delete(rowKey(JSON.stringify(row)));
+  }
+  return missing;
 }

@@ -4,18 +4,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const OK = [{ affectedRows: 0, insertId: 0 }, undefined];
 const INTERRUPTED = Object.assign(new Error('Query execution was interrupted'), { errno: 1317, code: 'ER_QUERY_INTERRUPTED' });
-const NO_ANSWER = Object.assign(new Error('Query inactivity timeout'), { code: 'PROTOCOL_SEQUENCE_TIMEOUT' });
+const LOST = Object.assign(new Error('Connection lost'), { fatal: true });
 
 /** Answers as a server of this name does; everything else is OK. */
-function answer(server: string): (options: { sql: string }) => Promise<unknown> {
-  return async ({ sql }) => (sql.includes('CONNECTION_ID()') ? [[{ name: server, id: 77 }], []] : OK);
+function answer(server: string): (sql: string) => Promise<unknown> {
+  return async (sql) => (sql.includes('CONNECTION_ID()') ? [[{ name: server, id: 77 }], []] : OK);
 }
 
 function makeConnection(): {
-  connection: object; execute: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn>;
+  threadId: number; connection: object; execute: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn>;
   release: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>;
 } {
-  return { connection: {}, execute: vi.fn(), query: vi.fn(answer('db1')), release: vi.fn(), destroy: vi.fn() };
+  return { threadId: 77, connection: {}, execute: vi.fn(), query: vi.fn(answer('db1')), release: vi.fn(), destroy: vi.fn() };
 }
 
 let connection = makeConnection();
@@ -56,7 +56,7 @@ async function created(): Promise<InstanceType<typeof MysqlPool>> {
 }
 
 function statements(): string[] {
-  return connection.query.mock.calls.map((call) => (call[0] as { sql: string }).sql);
+  return connection.query.mock.calls.map((call) => String(call[0]));
 }
 
 describe('MysqlPool', () => {
@@ -79,20 +79,19 @@ describe('MysqlPool', () => {
     await p.query('SELECT 1 WHERE ? = 1', [1]);
     await p.query('SELECT 1 WHERE ? = 1', [1]);
 
-    const limits = connection.query.mock.calls.filter((call) => (call[0] as { sql: string }).sql.startsWith('SET SESSION'));
-    expect(limits.map((call) => [(call[0] as { sql: string }).sql, call[1]])).toEqual([
-      ['SET SESSION innodb_lock_wait_timeout = ?, SESSION lock_wait_timeout = ?', [25, 25]],
-      ['SET SESSION max_execution_time = ?', [25_000]],
+    expect(statements().filter((sql) => sql.startsWith('SET SESSION'))).toEqual([
+      'SET SESSION innodb_lock_wait_timeout = 25, SESSION lock_wait_timeout = 25',
+      'SET SESSION max_execution_time = 25000',
     ]);
   });
 
   it('sets max_statement_time, in seconds, on a server that does not know max_execution_time', async () => {
-    connection.query.mockImplementation(async (options: { sql: string }) => {
-      if (options.sql.includes('max_execution_time')) throw Object.assign(new Error("Unknown system variable 'max_execution_time'"), { errno: 1193 });
-      return answer('mariadb')(options);
+    connection.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('max_execution_time')) throw Object.assign(new Error("Unknown system variable 'max_execution_time'"), { errno: 1193 });
+      return answer('mariadb')(sql);
     });
     await created();
-    expect(connection.query).toHaveBeenCalledWith({ sql: 'SET SESSION max_statement_time = ?', timeout: 30_000 }, [25]);
+    expect(statements()).toContain('SET SESSION max_statement_time = 25');
     expect(connection.destroy).not.toHaveBeenCalled();
   });
 
@@ -109,14 +108,14 @@ describe('MysqlPool', () => {
     expect(!result.ok && result.error.message).toContain('ECONNREFUSED');
   });
 
-  it('returns selected rows, sending undefined parameters as NULL with the statement timeout', async () => {
+  it('returns selected rows, sending undefined parameters as NULL', async () => {
     const p = await created();
     connection.execute.mockResolvedValue([[{ a: '1' }, { a: '2' }], []]);
 
     const result = await p.query('SELECT a FROM t WHERE b = ? AND c = ?', ['x', undefined]);
 
     expect(result.ok && result.value).toEqual({ rows: [{ a: '1' }, { a: '2' }], rowCount: 2 });
-    expect(connection.execute).toHaveBeenCalledWith({ sql: 'SELECT a FROM t WHERE b = ? AND c = ?', timeout: 30_000 }, ['x', null]);
+    expect(connection.execute).toHaveBeenCalledWith('SELECT a FROM t WHERE b = ? AND c = ?', ['x', null]);
   });
 
   it('returns a write as its affected rows and generated id', async () => {
@@ -135,7 +134,7 @@ describe('MysqlPool', () => {
     expect(connection.execute).not.toHaveBeenCalled();
   });
 
-  it('returns a connection after a SQL error, and closes one after a timeout', async () => {
+  it('returns a connection after a SQL error, and closes one that was lost', async () => {
     const p = await created();
     connection.release.mockClear();
     connection.execute.mockRejectedValueOnce(Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' }));
@@ -143,12 +142,12 @@ describe('MysqlPool', () => {
     expect(connection.release).toHaveBeenCalledTimes(1);
     expect(connection.destroy).not.toHaveBeenCalled();
 
-    connection.execute.mockRejectedValueOnce(Object.assign(new Error('Query inactivity timeout'), { code: 'PROTOCOL_SEQUENCE_TIMEOUT' }));
+    connection.execute.mockRejectedValueOnce(LOST);
     expect((await p.query('INSERT INTO t VALUES (?)', [1])).ok).toBe(false);
     expect(connection.destroy).toHaveBeenCalledTimes(1);
   });
 
-  it('commits a transaction whose callback resolves, every statement with the timeout', async () => {
+  it('commits a transaction whose callback resolves', async () => {
     const p = await created();
     connection.execute.mockResolvedValue([[{ id: 1 }], []]);
 
@@ -156,8 +155,6 @@ describe('MysqlPool', () => {
 
     expect(result.ok && result.value).toEqual([{ id: 1 }]);
     expect(statements().slice(-2)).toEqual(['START TRANSACTION', 'COMMIT']);
-    for (const call of connection.query.mock.calls) expect((call[0] as { timeout: number }).timeout).toBe(30_000);
-    expect(connection.execute.mock.calls[0]![0]).toMatchObject({ timeout: 30_000 });
     expect(connection.destroy).not.toHaveBeenCalled();
   });
 
@@ -173,16 +170,16 @@ describe('MysqlPool', () => {
 
   it('closes the connection when the rollback fails or the connection broke, reporting the first error', async () => {
     const p = await created();
-    connection.query.mockImplementation(async (opts: { sql: string }) => {
-      if (opts.sql === 'ROLLBACK') throw new Error('connection lost');
+    connection.query.mockImplementation(async (sql: string) => {
+      if (sql === 'ROLLBACK') throw new Error('connection lost');
       return OK;
     });
     const result = await p.transaction(async () => { throw new Error('duplicate key'); });
     expect(!result.ok && result.error.message).toContain('duplicate key');
     expect(connection.destroy).toHaveBeenCalledTimes(1);
 
-    connection.query.mockImplementation(async (opts: { sql: string }) => {
-      if (opts.sql === 'COMMIT') throw Object.assign(new Error('Connection lost'), { fatal: true });
+    connection.query.mockImplementation(async (sql: string) => {
+      if (sql === 'COMMIT') throw LOST;
       return OK;
     });
     const commitLost = await p.transaction(async () => 'done');
@@ -199,6 +196,14 @@ describe('MysqlPool', () => {
     await p.destroy();
     await p.destroy();
     expect(pool.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads in a transaction that cannot write', async () => {
+    const p = await created();
+    connection.execute.mockResolvedValue([[{ id: 1 }], []]);
+    const result = await p.queryReadOnly('SELECT id FROM t WHERE a = ?', [1]);
+    expect(result.ok && result.value.rows).toEqual([{ id: 1 }]);
+    expect(statements().slice(-2)).toEqual(['START TRANSACTION READ ONLY', 'COMMIT']);
   });
 
   it('ends the pool only when the transaction in flight has committed', async () => {
@@ -229,7 +234,7 @@ describe('MysqlPool when a statement is over its limit', () => {
   }
 
   function stops(): unknown[] {
-    return stopper.query.mock.calls.filter((call) => (call[0] as { sql: string }).sql.startsWith('KILL')).map((call) => [(call[0] as { sql: string }).sql, call[1]]);
+    return stopper.query.mock.calls.map((call) => String(call[0])).filter((sql) => sql.startsWith('KILL'));
   }
 
   it('stops it on the server 5 s before the client gives up, and reports the answer', async () => {
@@ -241,7 +246,7 @@ describe('MysqlPool when a statement is over its limit', () => {
     await vi.advanceTimersByTimeAsync(24_999);
     expect(createConnection).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(stops()).toEqual([['KILL QUERY ?', [77]]]);
+    expect(stops()).toEqual(['KILL QUERY 77']);
     statement.reject(INTERRUPTED);
 
     const failed = await result;
@@ -270,10 +275,22 @@ describe('MysqlPool when a statement is over its limit', () => {
     await vi.advanceTimersByTimeAsync(25_000);
     expect(stops()).toEqual([]);
     expect(stopper.destroy).toHaveBeenCalledTimes(1);
-    statement.reject(NO_ANSWER);
+    await vi.advanceTimersByTimeAsync(5_000);
 
     const failed = await result;
-    expect(!failed.ok && failed.error.message).toBe('Query inactivity timeout; the server gave no answer, so the statement may still take effect');
+    expect(!failed.ok && failed.error.message).toBe('MySQL statement timed out after 30000ms; the server gave no answer, so the statement may still take effect');
+    statement.reject(INTERRUPTED);
+  });
+
+  it('stops nothing when the server calls the connection otherwise than it did at its start, as behind a proxy', async () => {
+    connection.threadId = 5;
+    const p = await created();
+    pending();
+    const result = p.query('INSERT INTO t VALUES (?)', [1]);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(createConnection).not.toHaveBeenCalled();
+    const failed = await result;
+    expect(!failed.ok && failed.error.message).toContain('may still take effect');
   });
 
   it.each([
@@ -282,11 +299,9 @@ describe('MysqlPool when a statement is over its limit', () => {
   ])('reports no answer when the connection to stop it on %s', async (_what, prepare) => {
     prepare();
     const p = await created();
-    const statement = pending();
+    pending();
     const result = p.query('INSERT INTO t VALUES (?)', [1]);
-    await vi.advanceTimersByTimeAsync(25_000);
-    statement.reject(NO_ANSWER);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(35_000);
 
     const failed = await result;
     expect(!failed.ok && failed.error.message).toContain('may still take effect');
@@ -307,16 +322,54 @@ describe('MysqlPool when a statement is over its limit', () => {
 
   it('does not stop a COMMIT, and says one without an answer may still take effect', async () => {
     const p = await created();
-    const commit = deferred();
-    connection.query.mockImplementation((options: { sql: string }) => (options.sql === 'COMMIT' ? commit.promise : answer('db1')(options)));
+    connection.query.mockImplementation((sql: string) => (sql === 'COMMIT' ? new Promise<never>(() => {}) : answer('db1')(sql)));
     const result = p.transaction(async () => 'done');
-    await vi.advanceTimersByTimeAsync(29_999);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(createConnection).not.toHaveBeenCalled();
-    commit.reject(NO_ANSWER);
 
     const failed = await result;
     expect(!failed.ok && failed.error.message).toContain('may still take effect');
     expect(statements()).not.toContain('ROLLBACK');
+  });
+
+  it('sends no stop once the statement has ended', async () => {
+    const opening = deferred();
+    createConnection.mockReturnValueOnce(opening.promise as Promise<typeof stopper>);
+    const p = await created();
+    const statement = pending();
+    const result = p.query('INSERT INTO t VALUES (?)', [1]);
+    await vi.advanceTimersByTimeAsync(25_000);
+    statement.resolve(OK);
+    await vi.advanceTimersByTimeAsync(0);
+    opening.resolve(stopper);
+
+    expect((await result).ok).toBe(true);
+    expect(stops()).toEqual([]);
+    expect(stopper.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not go on with a transaction that a stop without an answer may still reach', async () => {
+    stopper.query.mockImplementation((sql: string) => (sql.startsWith('KILL') ? new Promise<never>(() => {}) : answer('db1')(sql)));
+    const p = await created();
+    const statement = pending();
+    const result = p.transaction((tx) => tx.query('INSERT INTO t VALUES (?)', [1]));
+    await vi.advanceTimersByTimeAsync(25_000);
+    statement.resolve(OK);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const failed = await result;
+    expect(!failed.ok && failed.error.message).toBe('The MySQL connection was lost');
+    expect(statements()).not.toContain('COMMIT');
+    expect(connection.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up on a statement that is never prepared', async () => {
+    const p = await created();
+    pending();
+    const result = p.query('INSERT INTO t VALUES (?)', [1]);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await result).ok).toBe(false);
+    expect((await p.destroy()).ok).toBe(true);
   });
 
   it('leaves a statement that ends in time alone', async () => {

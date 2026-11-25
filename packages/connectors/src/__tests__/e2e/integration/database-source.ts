@@ -48,9 +48,18 @@ export async function stopSource(source: RunningSource | null): Promise<void> {
   await source?.receiver.onUndeploy();
 }
 
+const gates = new Set<() => void>();
+
 /** A promise and what resolves it. */
 export function gate(): { readonly opened: Promise<void>; readonly open: () => void } {
   let open = (): void => {};
   const opened = new Promise<void>((resolve) => { open = resolve; });
+  gates.add(open);
   return { opened, open };
+}
+
+/** So that a test which failed before it opened its gate does not hang the stop. */
+export function openGates(): void {
+  for (const open of gates) open();
+  gates.clear();
 }

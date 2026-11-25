@@ -525,7 +525,7 @@ A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans an
 
 ## Database values, timeouts and marked rows (#411)
 
-**PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-358). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
+**PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-359). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
 
 | Column | Before | Now |
 |---|---|---|
@@ -534,14 +534,14 @@ A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans an
 | `timestamptz` | `2026-01-15T08:30:00.123Z` | the same, with the digits after the third: `2026-01-15T08:30:00.123456Z`. A value without any is as before |
 | `numeric[]` | numbers, with digits lost | text, as a `numeric` was and is |
 | a number in `json` or `jsonb` | a number, with digits lost where JavaScript cannot hold it | text where JavaScript cannot hold it; every other number as before |
-| `NaN`, `Infinity` in a `real` or `double precision`, `infinity` in a date or an interval | `null` (an interval: `{}`) | the database's text |
+| `NaN`, `Infinity` in a `real`, `double precision`, `point` or `circle`, `infinity` in a date or an interval | `null` (an interval: `{}`, a coordinate: `null`) | the database's text |
 | a date, time or interval from a database whose `DateStyle` or `IntervalStyle` is not the default | `null` or `{}` | the database's text |
 
 Arrays of these hold the same. `rowData` in the source map held Date objects while a message was processed and holds the text above. A script that calls `new Date(...)` on a `timestamp` now reads it in the server's time zone, as the database has it, where it read a UTC time. A script that cuts the `Z` off by position, or compares such a value with one stored before the upgrade, needs a look. An `updateQuery` that finds its row by a time now finds one with microseconds, where it found none.
 
-**A row whose `updateQuery` fails is sent once**, and each poll tries the update again. Before, every poll sent it again. If a channel has been sending the same rows for a while, its log has `Database mark-as-processed UPDATE failed`; correct the query or the rights it needs.
+**A row whose `updateQuery` fails is no longer sent at every poll**: each poll tries the update again instead ([limits](../user/connector-reference.md#database-limits)). If a channel has been sending the same rows for a while, its log has `Database mark-as-processed UPDATE failed`; correct the query or the rights it needs.
 
-**A DATABASE source's `FOR SHARE` is sent as `FOR UPDATE`** when the source has an update mode, so two sources no longer take the same row. The database user needs the right to update the table, as it did for PostgreSQL's `FOR SHARE`. A comment at the end of the query, which hid the lock, is left off.
+**A DATABASE source's `FOR SHARE` is sent as `FOR UPDATE`** when the source has an update mode, so two sources no longer take the same row. That includes a `FOR SHARE` inside a `WITH` query or a subquery in `FROM`. The database user needs the right to update the table, as it did for PostgreSQL's `FOR SHARE`. A comment at the end of the query, which hid the lock, is left off.
 
 **MySQL statements are stopped on the server** when they take more than 25 seconds, with `KILL QUERY` on a second connection of the same user: leave that user one connection more than the channels use when it has a limit (`max_user_connections`). Before, an INSERT, UPDATE or DELETE failed at 30 seconds and could take effect later, so a queue's retry wrote it twice; rows written twice before the upgrade stay. An error that ends in `may still take effect` means that the server never answered. A PostgreSQL statement still has 30 seconds, and its error now says `canceling statement due to statement timeout`, where it usually said `Query read timeout`.
 

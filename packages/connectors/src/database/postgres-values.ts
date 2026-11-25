@@ -1,4 +1,4 @@
-// What a PostgreSQL value is in a row (D-358). A row becomes JSON, so a value pg would turn into
+// What a PostgreSQL value is in a row (D-359). A row becomes JSON, so a value pg would turn into
 // a Date (shifted into UTC, cut to milliseconds) or into a number that cannot hold it is text here.
 
 import pg from 'pg';
@@ -8,8 +8,11 @@ type ParseText = (text: string) => unknown;
 const OID = {
   JSON: 114,
   JSON_ARRAY: 199,
+  POINT: 600,
   FLOAT4: 700,
   FLOAT8: 701,
+  CIRCLE: 718,
+  POINT_ARRAY: 1017,
   FLOAT4_ARRAY: 1021,
   FLOAT8_ARRAY: 1022,
   DATE: 1082,
@@ -57,7 +60,8 @@ function parseTimestamptz(text: string): string {
   const [, date, time, digits, sign, hours, minutes, seconds] = match;
   const offsetMs = (Number(hours) * 3_600 + Number(minutes ?? 0) * 60 + Number(seconds ?? 0)) * 1_000;
   const utc = new Date(Date.parse(`${date}T${time}Z`) - (sign === '-' ? -offsetMs : offsetMs)).toISOString();
-  return utc.length === ISO_LENGTH ? `${utc.slice(0, -'000Z'.length)}${fraction(digits)}Z` : text;
+  // PostgreSQL has no year 0.
+  return utc.length === ISO_LENGTH && !utc.startsWith('0000') ? `${utc.slice(0, -'000Z'.length)}${fraction(digits)}Z` : text;
 }
 
 /** JSON has no NaN and no Infinity: both would be null. */
@@ -84,17 +88,43 @@ function canonical(decimal: string): string | null {
   return `${decimal.startsWith('-') ? '-' : ''}${significant}e${String(Number(match[3] ?? 0) - places.length + digits.length - end)}`;
 }
 
-/** The reviver's third argument (JSON.parse source text access) is not in the ES2022 library. */
-const parseJsonWithSource = JSON.parse as (
-  text: string,
-  reviver: (key: string, value: unknown, context: { readonly source?: string }) => unknown,
-) => unknown;
+/** Where a JSON string that opens at `open` closes. */
+function closingQuote(json: string, open: number): number {
+  let at = open;
+  let escaped = true;
+  while (escaped) {
+    at = json.indexOf('"', at + 1);
+    let backslashes = 0;
+    while (json[at - 1 - backslashes] === '\\') backslashes += 1;
+    escaped = backslashes % 2 === 1;
+  }
+  return at;
+}
 
-/** A number a double cannot hold is its digits as text, as mysql2 gives an integer in a JSON column. */
+/**
+ * A number a double cannot hold is its digits as text, as mysql2 gives a whole number in a JSON column.
+ * The numbers are quoted in the text, because a JSON.parse reviver overflows the stack on deep JSON.
+ */
 function parseJson(text: string): unknown {
   if (!MAY_BE_INEXACT.test(text)) return JSON.parse(text);
-  return parseJsonWithSource(text, (_key, value, { source }) =>
-    typeof value === 'number' && source !== undefined && canonical(source) !== canonical(String(value)) ? source : value);
+  const quoteOrNumber = /"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+  let exact = '';
+  let copied = 0;
+  for (let found = quoteOrNumber.exec(text); found !== null; found = quoteOrNumber.exec(text)) {
+    const [token] = found;
+    if (token === '"') {
+      quoteOrNumber.lastIndex = closingQuote(text, found.index) + 1;
+    } else if (canonical(token) !== canonical(String(Number(token)))) {
+      exact += `${text.slice(copied, found.index)}"${token}"`;
+      copied = quoteOrNumber.lastIndex;
+    }
+  }
+  return JSON.parse(exact + text.slice(copied));
+}
+
+/** pg's own parser, unless the text holds a coordinate that JSON has no number for. */
+function finiteOnly(type: number): ParseText {
+  return (text) => (/NaN|Infinity/.test(text) ? text : pg.types.getTypeParser(type)(text));
 }
 
 /** Each element of an array of any depth. */
@@ -114,6 +144,9 @@ const PARSERS: ReadonlyMap<number, ParseText> = new Map<number, ParseText>([
   [OID.TIMESTAMPTZ_ARRAY, arrayOf(parseTimestamptz)],
   [OID.INTERVAL, parseInterval],
   [OID.INTERVAL_ARRAY, arrayOf(parseInterval)],
+  [OID.POINT, finiteOnly(OID.POINT)],
+  [OID.POINT_ARRAY, arrayOf(finiteOnly(OID.POINT))],
+  [OID.CIRCLE, finiteOnly(OID.CIRCLE)],
   [OID.FLOAT4, parseFloatValue],
   [OID.FLOAT8, parseFloatValue],
   [OID.FLOAT4_ARRAY, arrayOf(parseFloatValue)],

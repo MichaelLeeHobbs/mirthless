@@ -714,24 +714,34 @@ describe('DatabaseReceiver row limit', () => {
 });
 
 describe('DatabaseReceiver when a row cannot be marked', () => {
-  /** A table behind a pool: `fails` says which ids the mark statement refuses, `broken` fails whole transactions at COMMIT. */
+  /** A table behind a pool: `held` ids are locked by others, `fails` says which ids the mark statement refuses, `broken` fails whole transactions at COMMIT. */
   function makeTable(rows: Array<Record<string, unknown>>): {
-    readonly pool: ConnectionPool; rows: Array<Record<string, unknown>>; readonly fails: Set<unknown>; broken: boolean;
+    readonly pool: ConnectionPool; rows: Array<Record<string, unknown>>; readonly held: Set<unknown>; readOnlyFails: boolean; readonly fails: Set<unknown>; broken: boolean;
   } {
     const table = {
       rows,
+      held: new Set<unknown>(),
+      readOnlyFails: false,
       fails: new Set<unknown>(),
       broken: false,
       pool: {
         create: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
         destroy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
         query: vi.fn(),
+        queryReadOnly: async (sql: string) => {
+          if (table.readOnlyFails) return { ok: false, value: null, error: new Error('cannot execute UPDATE in a read-only transaction') };
+          expect(sql).not.toContain('FOR UPDATE');
+          return { ok: true, value: { rows: [...table.rows], rowCount: table.rows.length }, error: null };
+        },
         transaction: async (fn: (tx: { query: (sql: string, params: readonly unknown[]) => Promise<unknown> }) => Promise<unknown>) => {
           const marks: unknown[] = [];
           try {
             const value = await fn({
               query: async (sql, params) => {
-                if (sql.startsWith('SELECT')) return { rows: [...table.rows], rowCount: table.rows.length };
+                if (sql.startsWith('SELECT')) {
+                  const free = table.rows.filter((row) => !table.held.has(row['id']));
+                  return { rows: free, rowCount: free.length };
+                }
                 if (!sql.startsWith('UPDATE')) return { rows: [], rowCount: 0 };
                 if (table.fails.has(params[0])) throw new Error('constraint');
                 marks.push(params[0]);
@@ -794,6 +804,36 @@ describe('DatabaseReceiver when a row cannot be marked', () => {
     await poll();
 
     expect(dispatched).toEqual([{ id: 1, v: 'a' }, { id: 1, v: 'b' }, { id: 1, v: 'b' }]);
+  });
+
+  it('does not dispatch it again after a poll that skipped it because another transaction held it', async () => {
+    const table = makeTable([{ id: 1 }]);
+    table.fails.add(1);
+    const dispatched = await run(table.pool);
+    await poll();
+    table.held.add(1);
+    await poll();
+    table.held.clear();
+    await poll();
+    table.fails.clear();
+    await poll();
+
+    expect(dispatched).toEqual([{ id: 1 }]);
+    expect(table.rows).toEqual([]);
+  });
+
+  it('counts it as gone when the query is one that cannot be read again without writing', async () => {
+    const table = makeTable([{ id: 1 }]);
+    table.fails.add(1);
+    table.readOnlyFails = true;
+    const dispatched = await run(table.pool);
+    await poll();
+    table.held.add(1);
+    await poll();
+    table.held.clear();
+    await poll();
+
+    expect(dispatched).toHaveLength(2);
   });
 
   it('dispatches another row that reads the same', async () => {

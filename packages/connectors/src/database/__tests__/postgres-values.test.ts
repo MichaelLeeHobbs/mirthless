@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { POSTGRES_TYPES } from '../postgres-values.js';
 
 const OID = {
-  BOOL: 16, INT8: 20, INT4: 23, JSON: 114, JSONB: 3802, FLOAT8: 701, DATE: 1082, TIMESTAMP: 1114, TIMESTAMPTZ: 1184, INTERVAL: 1186,
+  BOOL: 16, POINT: 600, CIRCLE: 718, POINT_ARRAY: 1017, INT8: 20, INT4: 23, JSON: 114, JSONB: 3802, FLOAT8: 701, DATE: 1082, TIMESTAMP: 1114, TIMESTAMPTZ: 1184, INTERVAL: 1186,
   JSON_ARRAY: 199, FLOAT8_ARRAY: 1022, TIMESTAMP_ARRAY: 1115, DATE_ARRAY: 1182, TIMESTAMPTZ_ARRAY: 1185, INTERVAL_ARRAY: 1187, NUMERIC_ARRAY: 1231,
 } as const;
 
@@ -44,6 +44,10 @@ describe('PostgreSQL values', () => {
     ['INTERVAL', '00:00:00', {}],
     ['INTERVAL', 'infinity', 'infinity'],
     ['INTERVAL', 'P1DT2H', 'P1DT2H'],
+    ['TIMESTAMPTZ', '0001-01-01 00:00:00+05', '0001-01-01 00:00:00+05'],
+    ['POINT', '(1.5,2)', { x: 1.5, y: 2 }],
+    ['POINT', '(NaN,1)', '(NaN,1)'],
+    ['CIRCLE', '<(1,2),Infinity>', '<(1,2),Infinity>'],
     ['BOOL', 't', true],
     ['INT4', '7', 7],
     ['INT8', '9007199254740993', '9007199254740993'],
@@ -59,6 +63,7 @@ describe('PostgreSQL values', () => {
     ['FLOAT8_ARRAY', '{1.5,NaN}', [1.5, 'NaN']],
     ['INTERVAL_ARRAY', '{"1 day",infinity}', [{ days: 1 }, 'infinity']],
     ['JSON_ARRAY', '{"{\\"n\\":12345678901234567890,\\"s\\":\\"x\\"}","null"}', [{ n: '12345678901234567890', s: 'x' }, null]],
+    ['POINT_ARRAY', '{"(1,2)","(NaN,1)"}', [{ x: 1, y: 2 }, '(NaN,1)']],
     ['DATE_ARRAY', '{}', []],
   ] as const)('%s %s', (type, text, value) => {
     expect(sent(type, text)).toEqual(value);
@@ -83,6 +88,13 @@ describe('PostgreSQL values', () => {
     ['-0', -0], ['0.0000000000000000000', 0], ['0.30000000000000004', 0.30000000000000004],
   ])('a JSON number that a double holds stays a number: %s', (json, value) => {
     expect(read('JSON', `[${json}]`)).toEqual([value]);
+  });
+
+  it('reads JSON too deep for a reviver, and long escaped text', () => {
+    const deep = `${'['.repeat(20_000)}12345678901234567890${']'.repeat(20_000)}`;
+    expect(JSON.stringify(read('JSON', deep))).toBe(deep.replace('12345678901234567890', '"12345678901234567890"'));
+    const long = JSON.stringify({ text: '\n"\\'.repeat(500_000), end: '\\' });
+    expect(read('JSONB', `[${long}, 12345678901234567890]`)).toEqual([JSON.parse(long), '12345678901234567890']);
   });
 
   it('keeps text, keys and nesting in JSON as they are', () => {

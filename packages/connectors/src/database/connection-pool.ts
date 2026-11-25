@@ -58,6 +58,8 @@ export interface TxQuery {
 export interface DatabasePool {
   create(config: PoolConfig): Promise<Result<void>>;
   query(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>>;
+  /** One statement in a transaction that cannot write. */
+  queryReadOnly(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>>;
   /** Run `fn` in one transaction: committed when it resolves, rolled back when it throws. */
   transaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>>;
   destroy(): Promise<Result<void>>;

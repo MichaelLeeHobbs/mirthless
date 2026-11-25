@@ -2,10 +2,10 @@ import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { toPoolConfig, type DatabasePool, type TxQuery } from './connection-pool.js';
-import { appendLockClause } from './lock-clause.js';
+import { appendLockClause, withSkippedRows } from './lock-clause.js';
 import { prepare } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
-import { UnmarkedRows, rowKey, type TakenRow } from './unmarked-rows.js';
+import { UnmarkedRows, keysNotIn, rowKey, type Row, type TakenRow } from './unmarked-rows.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 const UPDATE_MODE = {
@@ -43,8 +43,6 @@ export type { UpdateMode, RowFormat };
 
 const STATEMENT_TIMEOUT_MS = 30_000;
 
-type Row = Readonly<Record<string, unknown>>;
-
 /** One start of the source. A cycle that outlives a halt keeps its own pool, not a later start's. */
 interface Session {
   readonly pool: DatabasePool;
@@ -68,10 +66,12 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
   /** The poll cycle in flight, of this session or of one that was halted; there is never a second. */
   private cycle: { readonly session: Session; readonly ended: Promise<void> } | null = null;
   private readonly unmarked = new UnmarkedRows();
+  private readonly claimQuery: string;
 
   constructor(config: DatabaseReceiverConfig, pool?: DatabasePool, logger?: ConnectorLogger) {
     this.config = config;
     this.openPool = (): DatabasePool => pool ?? createPool(this.vendor);
+    this.claimQuery = appendLockClause(config.selectQuery, this.vendor);
     this.logger = logger ?? createConnectorLogger('DATABASE');
   }
 
@@ -157,7 +157,11 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
 
   private poll(session: Session): void {
     if (this.cycle !== null) return;
-    this.cycle = { session, ended: this.pollCycle(session).finally(() => { this.cycle = null; }) };
+    const ended = this.pollCycle(session).finally(async () => {
+      this.cycle = null;
+      if (!session.live) await this.drainPool(session);
+    });
+    this.cycle = { session, ended };
   }
 
   private async pollCycle(session: Session): Promise<void> {
@@ -173,7 +177,6 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
         'Database poll cycle failed',
       );
     }
-    if (!session.live) await this.drainPool(session);
   }
 
   /** Nothing to lock or ack: the query's own WHERE must exclude processed rows. */
@@ -199,10 +202,10 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
    * double-process. At-least-once: a crash after dispatch but before COMMIT delivers the row again.
    */
   private async pollWithClaim(session: Session): Promise<void> {
-    const lockedSelect = appendLockClause(this.config.selectQuery, this.vendor);
     const taken: TakenRow[] = [];
     const txResult = await session.pool.transaction(async (tx) => {
-      const { rows } = await tx.query(lockedSelect, []);
+      const { rows } = await tx.query(this.claimQuery, []);
+      await this.forgetGone(session, rows);
       await this.takeRows(session, tx, rows, taken);
     });
     if (!txResult.ok) {
@@ -217,14 +220,24 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     this.unmarked.settle(taken);
   }
 
+  /**
+   * A row that another transaction holds is missing too, and is not gone. Read-only, because the
+   * query may be one that writes; that one fails here, and what it misses counts as gone.
+   */
+  private async forgetGone(session: Session, rows: readonly Row[]): Promise<void> {
+    const missing = keysNotIn(rows, this.unmarked.keys());
+    if (missing.size === 0) return;
+    const all = withSkippedRows(this.claimQuery, this.vendor);
+    const held = all === this.claimQuery ? null : await session.pool.queryReadOnly(all, []);
+    this.unmarked.forget(held?.ok === true ? keysNotIn(held.value.rows, missing) : missing);
+  }
+
   private async takeRows(session: Session, tx: TxQuery, rows: readonly Row[], taken: TakenRow[]): Promise<void> {
-    const polled = rows.map((row) => {
-      const content = JSON.stringify(row);
-      return { row, content, key: rowKey(content) };
-    });
-    const unmarked = this.unmarked.returned(polled.map(({ key }) => key));
-    for (const { row, content, key } of this.capRows(polled)) {
+    const unmarked = this.unmarked.remaining();
+    for (const row of this.capRows(rows)) {
       if (!session.live) return;
+      const content = JSON.stringify(row);
+      const key = rowKey(content);
       const left = unmarked.get(key) ?? 0;
       const known = left > 0;
       if (known) unmarked.set(key, left - 1);

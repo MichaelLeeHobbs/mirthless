@@ -1,6 +1,6 @@
 import { it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { ConnectionPool } from '../../../index.js';
-import { gate, startSource, stopSource, type RunningSource } from './database-source.js';
+import { gate, openGates, startSource, stopSource, type RunningSource } from './database-source.js';
 import { describeDb, requireDb } from './gates.js';
 
 const TABLE = 'itest_db_source';
@@ -36,6 +36,7 @@ describeDb('DATABASE source (real PostgreSQL)', () => {
   });
 
   afterEach(async () => {
+    openGates();
     for (const source of sources) await stopSource(source);
     sources = [];
     if (zone === undefined) delete process.env['TZ'];
@@ -111,6 +112,32 @@ describeDb('DATABASE source (real PostgreSQL)', () => {
     await sql(`ALTER TABLE ${TABLE} DROP CONSTRAINT two_waits`);
     await expect.poll(doneIds).toEqual([1, 2, 3]);
     expect(source.rows.map((row) => row['id'])).toEqual([1, 2, 3]);
+  });
+
+  it('does not dispatch an unmarked row again after another transaction held it', async () => {
+    await sql(`CREATE TABLE ${TABLE} (id int PRIMARY KEY, done boolean NOT NULL DEFAULT false, CONSTRAINT two_waits CHECK (id <> 2 OR NOT done))`);
+    await sql(`INSERT INTO ${TABLE} (id) VALUES (2), (3)`);
+    const source = await start({
+      selectQuery: `SELECT id FROM ${TABLE} WHERE NOT done ORDER BY id`,
+      updateQuery: `UPDATE ${TABLE} SET done = true WHERE id = \${id}`,
+    });
+    await expect.poll(doneIds).toEqual([3]);
+    const failures = (): number => source.log.errors.filter((e) => e.msg.includes('UPDATE failed')).length;
+
+    const held = await pool.transaction(async (tx) => {
+      await tx.query(`SELECT id FROM ${TABLE} WHERE id = 2 FOR UPDATE`, []);
+      // No poll that began before the lock still runs, and one that began after it has ended: both take row 3.
+      for (const round of [1, 2]) {
+        await sql(`UPDATE ${TABLE} SET done = false WHERE id = 3`);
+        await expect.poll(() => source.rows.filter((row) => row['id'] === 3).length).toBe(round + 1);
+        await expect.poll(doneIds).toEqual([3]);
+      }
+    });
+    expect(held.ok).toBe(true);
+
+    const before = failures();
+    await expect.poll(failures).toBeGreaterThan(before + 1);
+    expect(source.rows.filter((row) => row['id'] === 2)).toHaveLength(1);
   });
 
   it('claims the rows of a query that asks for a share lock', async () => {
