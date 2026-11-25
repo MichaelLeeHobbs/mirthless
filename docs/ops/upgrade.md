@@ -476,6 +476,18 @@ The migration builds the index of waiting messages again, which reads the whole 
 
 A DICOM Sender took a refused C-STORE, a rejected presentation context, an aborted association and a closed connection as sent, and a DICOM Listener in front of it deleted its file. Each is now an ERROR that names the status or the reason, and a destination with a queue retries it. Nothing in the database is rewritten: a message that reads SENT from before the upgrade is no proof that the archive has the image, so compare with the archive where that matters. Expect errors on channels whose archive has been refusing images unnoticed.
 
+## Windows-1252 text is read the same on every Node (#391)
+
+Some Node versions, 24.13.0 among them, decode Windows-1252 as Latin-1 without an error. On those, the bytes 0x80 to 0x9F (curly quotes, dashes, the euro sign) were stored as the control characters U+0080 to U+009F. That concerns Kafka and AMQP sources with `charset` `windows-1252`, HTTP sources with `bodyCharset` `windows-1252`, and HTTP bodies that declare Windows-1252, ISO-8859-1 or US-ASCII. The server now decodes Windows-1252 itself, so nothing needs to be changed (D-351). DICOM text under `ISO_IR 100` and a few rarer charsets that an HTTP sender can declare still depend on the Node version (#427).
+
+To see whether the Node you run the server with was affected, run this with it. `false` means that it was:
+
+```bash
+node -p "new TextDecoder('windows-1252').decode(Uint8Array.of(0x80)).charCodeAt(0) === 0x20ac"
+```
+
+Messages stored that way stay as they are. Their text has characters from U+0080 to U+009F, which real text does not use, and nothing is lost: each is the byte of that number, to be read as Windows-1252. Where partners got such text, correct it with them: sending the messages again can duplicate them there.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

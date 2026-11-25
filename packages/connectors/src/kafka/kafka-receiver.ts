@@ -9,7 +9,7 @@ import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, Raw
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
-import { assertCharsetAvailable, decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
+import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
 import {
   subscribeKafka,
@@ -80,9 +80,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   private onFatal: SourceFatalHandler | null = null;
   private readonly failures = new Map<string, number>();
 
-  /** Throws when the configured charset cannot be decoded here, so the deploy fails. */
   constructor(config: KafkaReceiverConfig, subscribe?: KafkaSubscribe, logger?: ConnectorLogger, retryDelayMs?: number) {
-    assertCharsetAvailable(config.charset);
     this.config = config;
     this.subscribe = subscribe ?? subscribeKafka;
     this.logger = logger ?? createConnectorLogger('KAFKA');

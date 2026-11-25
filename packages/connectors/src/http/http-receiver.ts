@@ -7,7 +7,6 @@ import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../b
 import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
-import { assertCharsetAvailable } from '../encoding.js';
 import { Decompressor } from './decompression.js';
 import { HttpListener, type Exchange } from './http-listener.js';
 import { RefusedBodyError, stopping } from './refused-body.js';
@@ -105,7 +104,6 @@ export class HttpReceiver implements SourceConnectorRuntime {
       }
       const authError = missingCredential(this.config.auth);
       if (authError) throw new Error(authError);
-      assertCharsetAvailable(this.config.bodyCharset);
     });
   }
 
