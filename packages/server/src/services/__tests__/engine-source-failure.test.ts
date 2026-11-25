@@ -53,6 +53,7 @@ vi.mock('../../config/index.js', () => ({ config: { LOG_LEVEL: 'info', NODE_ENV:
 
 // Must import after mocks
 const { EngineManager } = await import('../../engine.js');
+const { createDestinationConnector } = await import('@galvanigraph/connectors');
 
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -72,6 +73,13 @@ const CHANNEL = {
   transformers: [],
 } as never;
 const BUNDLE = bundleOf(CHANNEL);
+
+const QUEUED_BUNDLE = bundleOf({
+  ...(CHANNEL as object),
+  destinations: [{
+    id: 'dest-1', metaDataId: 1, name: 'Queued', enabled: true, connectorType: 'TCP_MLLP', properties: {}, queueMode: 'ALWAYS',
+  }],
+} as never);
 
 function alertOnSourceErrors(): void {
   const detail = {
@@ -120,6 +128,31 @@ describe('EngineManager source failure', () => {
     expect(events.emitToAll).toHaveBeenCalledWith(CHANNEL_ID, 'channel:state', { channelId: CHANNEL_ID, state: 'STOPPED' });
     await vi.waitFor(() => { expect(alerts.sendMail).toHaveBeenCalledTimes(1); }, WAIT);
     expect(alerts.sendMail.mock.calls[0]?.[2]).toContain('offset 7');
+    await engine.dispose();
+  });
+
+  it('stops the source before the queued sends, which may take minutes (#413)', async () => {
+    const order: string[] = [];
+    const destination = Object.fromEntries(['onDeploy', 'onStart', 'onStop', 'onUndeploy'].map((name) => [name, vi.fn().mockResolvedValue(OK_RESULT)]));
+    vi.mocked(createDestinationConnector).mockReturnValueOnce(destination as never);
+    sourceMock.onStop.mockImplementation(async () => { order.push('source'); return OK_RESULT; });
+    const engine = new EngineManager('test-server');
+    await engine.deploy(QUEUED_BUNDLE);
+    const { runtime, queueConsumers } = engine.getRuntime(CHANNEL_ID)!;
+    await runtime.start();
+    let sendEnds = (): void => undefined;
+    vi.spyOn(queueConsumers[0]!, 'stop').mockImplementation(() => new Promise((resolve) => {
+      order.push('queue');
+      sendEnds = resolve;
+    }));
+
+    source.fatal?.(new Error('Kafka source stopped'));
+
+    await vi.waitFor(() => { expect(order).toEqual(['source', 'queue']); }, WAIT);
+    expect(destination['onStop']).not.toHaveBeenCalled();
+    sendEnds();
+    await vi.waitFor(() => { expect(runtime.getState()).toBe('STOPPED'); }, WAIT);
+    expect(destination['onStop']).toHaveBeenCalledOnce();
     await engine.dispose();
   });
 

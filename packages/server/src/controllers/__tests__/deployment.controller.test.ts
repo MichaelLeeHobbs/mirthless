@@ -36,7 +36,7 @@ function makeReq(): Request {
 
 /** Through the engine's private runtimes map. */
 function deploy(state: string, processMessage: ReturnType<typeof vi.fn>): void {
-  const deployed = { channelId: CHANNEL_ID, config: { name: 'Target' }, runtime: { getState: () => state }, processMessage } as unknown as DeployedChannel;
+  const deployed = { channelId: CHANNEL_ID, config: { name: 'Target' }, runtime: { getState: () => state, runSignal: new AbortController().signal }, processMessage } as unknown as DeployedChannel;
   (engine as unknown as { runtimes: Map<string, DeployedChannel> }).runtimes.set(CHANNEL_ID, deployed);
 }
 
