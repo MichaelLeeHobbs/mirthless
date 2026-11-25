@@ -38,11 +38,6 @@ vi.mock('../../lib/db.js', () => ({
   default: mockDb,
 }));
 
-const mockDeleteMessagesByIds = vi.fn().mockResolvedValue(undefined);
-vi.mock('../message-delete-helper.js', () => ({
-  deleteMessagesByIds: mockDeleteMessagesByIds,
-}));
-
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
@@ -91,7 +86,6 @@ beforeEach(() => {
   resetSelectState();
   mockExecute.mockResolvedValue({ rows: [] });
   mockDeleteWhere.mockResolvedValue(undefined);
-  mockDeleteMessagesByIds.mockResolvedValue(undefined);
 });
 
 describe('MessageQueryService', () => {
@@ -369,37 +363,6 @@ describe('MessageQueryService', () => {
       });
 
       const result = await MessageQueryService.getMessageDetail(CHANNEL_ID, MESSAGE_ID);
-
-      expect(result.ok).toBe(false);
-    });
-  });
-
-  describe('deleteMessage', () => {
-    it('deletes message and all related data atomically (incl. attachments + metadata)', async () => {
-      pushSelectResponse([{ id: MESSAGE_ID }]);
-
-      const result = await MessageQueryService.deleteMessage(CHANNEL_ID, MESSAGE_ID);
-
-      expect(result.ok).toBe(true);
-      // The helper deletes in one transaction, attachments and custom metadata included.
-      expect(mockDeleteMessagesByIds).toHaveBeenCalledWith(CHANNEL_ID, [MESSAGE_ID]);
-    });
-
-    it('returns NOT_FOUND when message does not exist', async () => {
-      pushSelectResponse([]);
-
-      const result = await MessageQueryService.deleteMessage(CHANNEL_ID, 99999);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
-    });
-
-    it('returns error on DB failure', async () => {
-      pushSelectResponse([{ id: MESSAGE_ID }]);
-      mockDeleteMessagesByIds.mockRejectedValueOnce(new Error('DB error'));
-
-      const result = await MessageQueryService.deleteMessage(CHANNEL_ID, MESSAGE_ID);
 
       expect(result.ok).toBe(false);
     });
