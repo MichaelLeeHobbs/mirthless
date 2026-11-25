@@ -3,6 +3,7 @@
 // start and end bytes can be set.
 
 import { DEFAULT_MAX_FRAME_BYTES } from '@galvanigraph/core-models';
+import { encodeText } from '../encoding.js';
 
 export interface Framing {
   /** Bytes before each message; may be empty (the message starts right after the previous end). */
@@ -28,8 +29,13 @@ export function framingFromHex(startHex: string | undefined, endHex: string | un
 
 export { DEFAULT_MAX_FRAME_BYTES };
 
+/** Throws when the charset cannot hold the message. */
 export function wrapMllp(message: string, charset: BufferEncoding = 'utf-8', framing: Framing = MLLP_FRAMING): Buffer {
-  return Buffer.concat([framing.start, Buffer.from(message, charset), framing.end]);
+  return frameBytes(encodeText(message, charset), framing);
+}
+
+export function frameBytes(payload: Buffer, framing: Framing = MLLP_FRAMING): Buffer {
+  return Buffer.concat([framing.start, payload, framing.end]);
 }
 
 export class MllpParser {
@@ -43,7 +49,7 @@ export class MllpParser {
   /** The last bytes received, so end bytes split across chunks are seen. */
   private tail: Buffer = Buffer.alloc(0);
 
-  /** Past `maxFrameBytes` the parser resets and throws, so the caller can close the connection (DoS guard). */
+  /** A message longer than `maxFrameBytes` makes the parser reset and throw, so the caller can close the connection (DoS guard). */
   constructor(options?: { maxFrameBytes?: number; charset?: BufferEncoding; framing?: Framing }) {
     this.maxFrameBytes = options?.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
     this.charset = options?.charset ?? 'utf-8';
@@ -51,12 +57,6 @@ export class MllpParser {
   }
 
   parse(chunk: Buffer): readonly string[] {
-    if (this.buffer.length + this.pendingBytes + chunk.length > this.maxFrameBytes) {
-      this.reset();
-      throw new Error(
-        `MLLP frame exceeds maximum size of ${String(this.maxFrameBytes)} bytes`,
-      );
-    }
     // A frame can only end in a chunk that completes the end bytes. Set any
     // other chunk in the middle of a frame aside instead of joining it to the
     // buffer now: joining on every chunk copies the whole frame each time.
@@ -66,7 +66,10 @@ export class MllpParser {
     this.rememberTail(chunk);
     this.pending.push(chunk);
     this.pendingBytes += chunk.length;
-    if (!canComplete) return [];
+    if (!canComplete) {
+      this.limitUnfinishedFrame();
+      return [];
+    }
 
     this.buffer = Buffer.concat([this.buffer, ...this.pending]);
     this.pending = [];
@@ -93,14 +96,27 @@ export class MllpParser {
       const end = this.buffer.indexOf(this.framing.end, start);
       if (end === -1) break;
 
+      if (end - start > this.maxFrameBytes) this.refuseFrame();
       results.push(this.buffer.subarray(start, end).toString(this.charset));
       this.inFrame = false;
       start = end + this.framing.end.length;
     }
 
     this.buffer = start >= this.buffer.length ? Buffer.alloc(0) : Buffer.from(this.buffer.subarray(start));
+    this.limitUnfinishedFrame();
 
     return results;
+  }
+
+  private limitUnfinishedFrame(): void {
+    // Its last bytes may be the first of the end bytes, which are not the message's.
+    const limit = this.maxFrameBytes + this.framing.end.length - 1;
+    if (this.inFrame && this.buffer.length + this.pendingBytes > limit) this.refuseFrame();
+  }
+
+  private refuseFrame(): never {
+    this.reset();
+    throw new Error(`MLLP frame exceeds maximum size of ${String(this.maxFrameBytes)} bytes`);
   }
 
   private completesEnd(chunk: Buffer): boolean {
@@ -115,7 +131,7 @@ export class MllpParser {
     const keep = this.framing.end.length - 1;
     if (keep === 0) return;
     const joined = chunk.length >= keep ? chunk : Buffer.concat([this.tail, chunk]);
-    this.tail = Buffer.from(joined.subarray(joined.length - keep));
+    this.tail = Buffer.from(joined.subarray(Math.max(0, joined.length - keep)));
   }
 
   /** The index after the start bytes (where the payload begins), not of the start bytes. */
