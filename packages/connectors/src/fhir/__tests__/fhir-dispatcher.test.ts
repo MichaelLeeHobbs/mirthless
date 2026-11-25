@@ -160,6 +160,12 @@ describe('FhirDispatcher.onDeploy', () => {
     expect(result.ok).toBe(false);
   });
 
+  it.each(['https://svc:hunter2@fhir.example.com/r4', 'https://svc:hunter2/@fhir.example.com/r4'])('refuses %s without quoting it', async (baseUrl) => {
+    const result = await new FhirDispatcher(makeConfig({ baseUrl })).onDeploy();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).not.toContain('hunter2');
+  });
+
   it('fails when resourceType is empty', async () => {
     const dispatcher = new FhirDispatcher(makeConfig({ resourceType: '' }));
     const result = await dispatcher.onDeploy();
@@ -260,6 +266,16 @@ describe('FhirDispatcher.send', () => {
     const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://fhir.test.com/r4/Observation');
     expect(opts.method).toBe('POST');
+  });
+
+  it('does not quote a URL that holds a password when it was started without a deploy', async () => {
+    const dispatcher = new FhirDispatcher(makeConfig({ baseUrl: 'https://svc:hunter2@fhir.test.com/r4' }));
+    await dispatcher.onStart();
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).not.toContain('hunter2');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('returns ERROR on non-OK response', async () => {

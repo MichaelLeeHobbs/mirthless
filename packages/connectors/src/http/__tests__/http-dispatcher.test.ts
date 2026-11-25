@@ -398,6 +398,60 @@ describe('HttpDispatcher per-message values, parameters and Basic auth', () => {
   });
 });
 
+describe('HttpDispatcher URL credentials', () => {
+  const withCredentials = (scheme: string, port: number): string => `${scheme}://svc:hunter2@127.0.0.1:${String(port)}/receive`;
+
+  it('refuses them at deploy, without quoting the URL', async () => {
+    dispatcher = new HttpDispatcher(makeConfig({ url: withCredentials('http', DEST_PORT) }));
+    const result = await dispatcher.onDeploy();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('user name or password');
+    expect(result.error.message).not.toContain('hunter2');
+  });
+
+  it('does not quote a URL that is not one', async () => {
+    dispatcher = new HttpDispatcher(makeConfig({ url: 'https://svc:hun/ter2@host.example/' }));
+    const result = await dispatcher.onDeploy();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).not.toMatch(/hun|ter2/);
+  });
+
+  it('fails a send whose message variables make the URL hold them, without quoting it', async () => {
+    mockServer = createMockServer(DEST_PORT);
+    dispatcher = new HttpDispatcher(makeConfig({ url: `http://\${login}@127.0.0.1:${String(DEST_PORT)}/receive` }));
+    expect((await dispatcher.onDeploy()).ok).toBe(true);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage({ variables: { login: 'svc:hunter2' } }), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).not.toContain('hunter2');
+    expect(mockServer.requests).toEqual([]);
+  });
+
+  it('still sends them over node:https, which signs in with them', async () => {
+    let authorization: string | undefined;
+    const server = https.createServer({ cert: TEST_CERT_PEM, key: TEST_KEY_PEM }, (req, res) => {
+      authorization = req.headers.authorization;
+      res.writeHead(200);
+      res.end('OK');
+    });
+    server.listen(DEST_HTTPS_PORT, '127.0.0.1');
+    mockHttpsServer = { server, close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }) };
+    dispatcher = new HttpDispatcher(makeConfig({ url: withCredentials('https', DEST_HTTPS_PORT), scheme: 'HTTPS', tls: { rejectUnauthorized: false } }));
+    expect((await dispatcher.onDeploy()).ok).toBe(true);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('SENT');
+    expect(authorization).toBe(`Basic ${Buffer.from('svc:hunter2').toString('base64')}`);
+  });
+});
+
 describe('HttpDispatcher redirects', () => {
   function createRedirectingServer(port: number, status: number): MockServer {
     const requests: MockServer['requests'] = [];

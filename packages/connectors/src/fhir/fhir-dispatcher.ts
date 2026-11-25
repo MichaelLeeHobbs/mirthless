@@ -1,6 +1,7 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { redirectMessage } from '../redirect.js';
+import { refuseUrlCredentials } from '../url-credentials.js';
 
 const FHIR_AUTH_TYPE = {
   NONE: 'NONE',
@@ -43,11 +44,9 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
   async onDeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (!this.config.baseUrl) throw new Error('FHIR base URL is required');
-      try {
-        new URL(this.config.baseUrl);
-      } catch {
-        throw new Error(`Invalid base URL: ${this.config.baseUrl}`);
-      }
+      // Not quoted in the error: it may hold credentials.
+      if (!URL.canParse(this.config.baseUrl)) throw new Error('Invalid base URL');
+      refuseUrlCredentials(new URL(this.config.baseUrl));
       if (!this.config.resourceType) throw new Error('FHIR resource type is required');
       validateAuth(this.config.authType, this.config.authConfig);
     });
@@ -76,6 +75,7 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
         throw new Error('FHIR PUT requires a resource id in the message body');
       }
       const url = buildFhirUrl(this.config.baseUrl, this.config.resourceType, resourceId);
+      refuseUrlCredentials(new URL(url));
       const headers = buildHeaders(this.config);
 
       const timeoutSignal = AbortSignal.timeout(this.config.timeout);

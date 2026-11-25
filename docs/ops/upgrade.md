@@ -445,7 +445,9 @@ Before, a server that stopped again while crash recovery was running a message l
 
 ## More connector credentials are masked (D-346)
 
-Reads without `channels:write` on the channel, exports and backups now also mask the user name and password in a URL, a URL's query parameters named like a secret, the lines so named in headers saved as text, and settings whose name ends in `PW` or `pwd`. `PATCH /channels/:id/enabled` answers with credentials masked for everyone, and someone who may change other channels but only read this one sees them masked. Before, whoever could read a channel could read those credentials, and so could whoever was given an export or a backup file: replace the ones that matter.
+Reads without `channels:write` on the channel, exports and backups now also mask the user name and password in a URL, a URL's query parameters named like a secret, the lines so named in headers saved as text, and settings whose name ends in `PW` or `pwd`. Someone who may change other channels but only read this one sees credentials masked. The answers to creating, saving, cloning, enabling and disabling a channel have them masked for everyone: a script that read them from there must read the channel. Saving a channel that still holds the mask is refused. Before, whoever could read a channel could read those credentials, and so could whoever was given an export or a backup file: replace the ones that matter.
+
+An HTTP or FHIR destination no longer deploys with a user name or password in its URL, except an HTTP destination that sends with scheme HTTPS or its own TLS settings, which signs in with them. The others never worked: each send failed, and the error kept with the message quoted the URL. Enter the credentials as the destination's authentication. Messages that failed that way still show the password in their errors, to whoever may read messages.
 
 An import with `OVERWRITE` keeps a credential in a URL or in text headers when the file changes nothing else in that setting ([Credentials](api-automation.md#credentials)). Otherwise, and for a new channel, a masked URL is left out and the connector does not deploy until you enter it.
 

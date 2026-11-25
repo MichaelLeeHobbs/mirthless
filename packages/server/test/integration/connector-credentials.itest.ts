@@ -133,6 +133,46 @@ describeIntegration('who reads connector credentials (real Postgres)', () => {
     }
   });
 
+  it('shows none of them in the answer to a save, a new channel or a clone', async () => {
+    const writer = await user('developer', null);
+    const { json } = await apiCall<{ revision: number; sourceConnectorProperties: unknown }>(base, writer.token, 'GET', `/channels/${id}`);
+    const saved = await apiCall<{ revision: number }>(base, writer.token, 'PUT', `/channels/${id}`, { revision: json.data!.revision, description: 'again' });
+    expect(saved.status).toBe(200);
+    const made = await apiCall<{ id: string }>(base, writer.token, 'POST', '/channels', {
+      name: `itest-credentials-${randomUUID()}`, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'NONE',
+      sourceConnectorType: 'HTTP', sourceConnectorProperties: json.data!.sourceConnectorProperties,
+    });
+    expect(made.status).toBe(201);
+    channels.push(made.json.data!.id);
+    const clone = await apiCall<{ id: string }>(base, writer.token, 'POST', `/channels/${id}/clone`, { name: `itest-credentials-${randomUUID()}` });
+    expect(clone.status).toBe(201);
+    channels.push(clone.json.data!.id);
+    for (const answer of [saved, made, clone]) {
+      expect(SECRETS.filter((secret) => JSON.stringify(answer.json).includes(secret))).toEqual([]);
+    }
+    expect(await shown(writer.token, `/channels/${clone.json.data!.id}`)).toEqual(SECRETS);
+  });
+
+  it('refuses a save or a new channel that would store the mask, and changes nothing', async () => {
+    interface Detail { readonly name: string; readonly revision: number; readonly sourceConnectorProperties: unknown; readonly destinations: unknown }
+    const reader = await user('viewer', null);
+    const writer = await user('developer', null);
+    const masked = (await apiCall<Detail>(base, reader.token, 'GET', `/channels/${id}`)).json.data!;
+    const put = async (changes: Record<string, unknown>): Promise<void> => {
+      const answer = await apiCall(base, writer.token, 'PUT', `/channels/${id}`, { revision: masked.revision, ...changes });
+      expect(answer.status).toBe(400);
+      expect(answer.json.error?.message).toContain('__REDACTED__');
+    };
+    await put({ sourceConnectorProperties: masked.sourceConnectorProperties });
+    await put({ destinations: masked.destinations });
+    const made = await apiCall(base, writer.token, 'POST', '/channels', {
+      name: `itest-credentials-${randomUUID()}`, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'NONE',
+      sourceConnectorType: 'HTTP', sourceConnectorProperties: masked.sourceConnectorProperties,
+    });
+    expect(made.status).toBe(400);
+    expect(await shown(writer.token, `/channels/${id}`)).toEqual(SECRETS);
+  });
+
   it('records an unmasked read, and no masked one', async () => {
     const writer = await user('channel-developer', [here]);
     const reader = await user('channel-viewer', [here]);

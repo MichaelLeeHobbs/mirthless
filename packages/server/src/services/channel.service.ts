@@ -13,6 +13,7 @@ import {
   isSourceConnectorType,
   isDestinationConnectorType,
 } from '@galvanigraph/core-models';
+import { holdsRedacted, REDACTED } from '../lib/secret-redaction.js';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
@@ -403,6 +404,16 @@ function assembleDetail(
   };
 }
 
+/** A channel read with its credentials masked, then sent back, would lose them. */
+function refuseMaskedCredentials(input: Pick<UpdateChannelInput, 'sourceConnectorProperties' | 'destinations'>): void {
+  const masked = [
+    ...(holdsRedacted(input.sourceConnectorProperties ?? {}) ? ['The source'] : []),
+    ...(input.destinations ?? []).filter((d) => holdsRedacted(d.properties)).map((d) => `Destination "${d.name}"`),
+  ];
+  if (masked[0] === undefined) return;
+  throw new ServiceError('INVALID_INPUT', `${masked[0]} holds a masked credential (${REDACTED}). Reload the channel, or enter the credential.`);
+}
+
 function buildCloneScripts(source: ChannelDetail): CreateChannelInput['scripts'] {
   const find = (type: string): ChannelScript | undefined => source.scripts.find((s) => s.scriptType === type);
   const language = (type: string): ScriptLanguageCode => toScriptLanguage(find(type)?.language);
@@ -708,6 +719,7 @@ export class ChannelService {
   /** `cloneOf`: the channel this one copies; the new channel joins its code template libraries. */
   static async create(input: CreateChannelInput, context?: AuditContext, cloneOf?: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
+      refuseMaskedCredentials(input);
       const [existing] = await db
         .select({ id: channels.id })
         .from(channels)
@@ -842,6 +854,7 @@ export class ChannelService {
 
   static async update(id: string, input: UpdateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
+      refuseMaskedCredentials(input);
       const existing = await findChannel(id);
 
       if (existing.revision !== input.revision) {

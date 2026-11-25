@@ -8,7 +8,7 @@ import type {
 } from '@galvanigraph/core-models';
 import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { deny, DENY_REASON } from '../middleware/permission.middleware.js';
-import { ChannelService } from '../services/channel.service.js';
+import { ChannelService, type ChannelDetail } from '../services/channel.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { recordReadBestEffort } from '../lib/audited-read.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';
@@ -21,6 +21,11 @@ import { db } from '../lib/db.js';
 import { tryCatch } from 'stderr-lib';
 import { isServiceError } from '../lib/service-error.js';
 import { errorInfo } from '@galvanigraph/core-util';
+
+/** Never unmasked: no answer to a write records a credential read. */
+function writeAnswer(detail: ChannelDetail): Record<string, unknown> {
+  return redactChannelDetail(detail as unknown as Record<string, unknown>);
+}
 
 /**
  * Refuses a save that changes the enabled flag from a caller without
@@ -126,7 +131,7 @@ export class ChannelController {
     }
 
     logger.info({ channelId: result.value.id }, 'Channel created');
-    res.status(201).json({ success: true, data: result.value });
+    res.status(201).json({ success: true, data: writeAnswer(result.value) });
   }
 
   static async update(req: Request, res: Response): Promise<void> {
@@ -145,7 +150,7 @@ export class ChannelController {
     }
 
     logger.info({ channelId: id }, 'Channel updated');
-    res.json({ success: true, data: result.value });
+    res.json({ success: true, data: writeAnswer(result.value) });
   }
 
   static async delete(req: Request, res: Response): Promise<void> {
@@ -184,7 +189,7 @@ export class ChannelController {
     }
 
     logger.info({ channelId: result.value.id, clonedFrom: id }, 'Channel cloned');
-    res.status(201).json({ success: true, data: result.value });
+    res.status(201).json({ success: true, data: writeAnswer(result.value) });
   }
 
   static async setEnabled(req: Request, res: Response): Promise<void> {
@@ -200,7 +205,6 @@ export class ChannelController {
     }
 
     logger.info({ channelId: id, enabled }, 'Channel enabled toggled');
-    // Needs no channels:write, and records no credential read.
-    res.json({ success: true, data: redactChannelDetail(result.value as unknown as Record<string, unknown>) });
+    res.json({ success: true, data: writeAnswer(result.value) });
   }
 }

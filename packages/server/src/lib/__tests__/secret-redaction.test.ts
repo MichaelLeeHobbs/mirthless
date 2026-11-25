@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } from '@galvanigraph/core-models';
 import {
   redactChannelDetail,
+  holdsRedacted,
   REDACTED,
   isSecretPropertyKey,
   redactSettingValue,
@@ -105,11 +106,16 @@ describe('secret-redaction — connector properties', () => {
 describe('secret-redaction: credentials under a key that names none', () => {
   it('masks the secret lines of headers saved as text and keeps the rest', () => {
     const out = redactConnectorProperties({
-      headers: 'Accept: application/json\r\n Authorization :  Bearer a:b\r\n\r\nX-Api-Key:k\nCookie:\nnot a header\nkey: k',
+      headers: 'Accept: application/json\r\n Authorization :  Bearer a:b\r\n\r\nX-Api-Key:k\nCookie:\nkey: k',
     });
     expect(out['headers']).toBe(
-      `Accept: application/json\r\n Authorization :  ${REDACTED}\r\n\r\nX-Api-Key:${REDACTED}\nCookie:\nnot a header\nkey: ${REDACTED}`,
+      `Accept: application/json\r\n Authorization :  ${REDACTED}\r\n\r\nX-Api-Key:${REDACTED}\nCookie:\nkey: ${REDACTED}`,
     );
+  });
+
+  it('masks whole a header line the connector would ignore, which may be the rest of a credential', () => {
+    expect(redactConnectorProperties({ headers: 'Authorization Bearer x\r\n: y\n  z\nAccept: a' }))
+      .toEqual({ headers: `${REDACTED}\r\n${REDACTED}\n  ${REDACTED}\nAccept: a` });
   });
 
   it.each([
@@ -122,11 +128,16 @@ describe('secret-redaction: credentials under a key that names none', () => {
     ['no slashes, as the URL parser allows for http', 'https:svc:hunter2@host.example/', `https:${REDACTED}@host.example/`],
     ['backslashes for slashes', 'https:\\\\svc:hunter2@host.example\\in', `https:\\\\${REDACTED}@host.example\\in`],
     ['a message variable in the host', 'https://svc:hunter2@${site}.example/', `https://${REDACTED}@\${site}.example/`],
+    ['a message variable for its scheme', '${scheme}://svc:hunter2@host.example/', `${'${scheme}'}://${REDACTED}@host.example/`],
+    ['no scheme', '//svc:hunter2@host.example/', `//${REDACTED}@host.example/`],
+    ['a message variable for its start', '${base}/in?token=hunter2', `${'${base}'}/in?token=${REDACTED}`],
+    ['a tab and line ends, which the URL parser drops', 'ht\ttps:\n//svc:hunter2@host.example/?to\r\nken=x', `https://${REDACTED}@host.example/?token=${REDACTED}`],
+    ['a control character before it', '\u0000\u001fhttps:svc:hunter2@host.example/', `\u0000\u001fhttps:${REDACTED}@host.example/`],
     ['a secret query parameter', 'https://host.example/in?site=lab&apiKey=hunter2&token=&key=a=b#f', `https://host.example/in?site=lab&apiKey=${REDACTED}&token=&key=${REDACTED}#f`],
     ['a percent-encoded parameter name', 'https://host.example/?api%4Bey=hunter2', `https://host.example/?api%4Bey=${REDACTED}`],
     ['both', 'https://svc:hunter2@host.example?access_token=x', `https://${REDACTED}@host.example?access_token=${REDACTED}`],
   ])('masks the credentials in a URL with %s', (_what, url, masked) => {
-    expect(redactConnectorProperties({ url, nested: { baseUrl: url }, list: [url] })).toEqual({ url: masked, nested: { baseUrl: masked }, list: [masked] });
+    expect(redactConnectorProperties({ url, nested: { baseUrl: url } })).toEqual({ url: masked, nested: { baseUrl: masked } });
   });
 
   it.each([
@@ -134,20 +145,22 @@ describe('secret-redaction: credentials under a key that names none', () => {
     'https://host.example/%zz?%zz=1',
     'bob@example.org',
     'Alert: contact bob@example.org',
-    'SELECT * FROM t WHERE token = :token',
-    "return httpFetch('https://svc:hunter2@host.example/');",
+    'https://${cfg.user}:${cfg.pw}@host.example/in?token=${cfg.token}',
+    'https://host.example/in\n?site=lab',
     '',
   ])('leaves %s as it is', (text) => {
     expect(redactConnectorProperties({ url: text })).toEqual({ url: text });
   });
 
-  it('masks a URL in a header, as text or in a map', () => {
-    const masked = `https://${REDACTED}@h/`;
-    expect(redactConnectorProperties({ headers: 'Referer: https://u:p@h/' })).toEqual({ headers: `Referer: ${masked}` });
-    expect(redactConnectorProperties({ headers: { Referer: 'https://u:p@h/' } })).toEqual({ headers: { Referer: masked } });
+  // An import drops what is masked: without its body an SMTP destination would send the raw message.
+  it.each(['bodyTemplate', 'template', 'subject', 'script', 'query', 'fileFilter'])('leaves a URL in %s as it is', (key) => {
+    for (const text of ['https://svc:p@host.example/r?id=${id}&token=${tok}\n\nResults are ready.', 'HTTP: send failed. Contact ops@hospital.example', `see ${REDACTED}`]) {
+      expect(redactConnectorProperties({ [key]: text })).toEqual({ [key]: text });
+      expect(stripRedactedProperties({ [key]: text }, { [key]: 'other' })).toEqual({ [key]: text });
+    }
   });
 
-  it.each(['keyStorePW', 'trustStorePW', 'keyStorePw', 'pw', 'db_pw', 'X-Pwd', 'userPwd'])('masks %s', (key) => {
+  it.each(['keyStorePW', 'trustStorePW', 'keyStorePw', 'pw', 'db_pw', 'X-Pwd', 'userPwd', 'dbpwd', 'DBPWD'])('masks %s', (key) => {
     expect(redactConnectorProperties({ [key]: 'hunter2' })).toEqual({ [key]: REDACTED });
   });
 
@@ -254,7 +267,6 @@ describe('stripRedactedProperties with stored properties', () => {
     ['something that is not text stored', masked('url', URL), { url: URL }],
   ])('drops a masked URL with %s, so that the deploy fails instead of sending the mask', (_what, file, stored) => {
     expect(stripRedactedProperties({ url: file, port: 1 }, { url: stored })).toEqual({ port: 1 });
-    expect(stripRedactedProperties({ urls: [file, 'x'] }, { urls: [stored, 'x'] })).toEqual({ urls: ['x'] });
   });
 
   it.each([
@@ -271,6 +283,12 @@ describe('stripRedactedProperties with stored properties', () => {
     expect(stripRedactedProperties({ script }, { script: 'old' })).toEqual({ script });
   });
 
+  it('puts back a header line that is masked whole', () => {
+    const stored = 'Authorization Bearer x';
+    expect(stripRedactedProperties({ headers: REDACTED }, { headers: stored })).toEqual({ headers: stored });
+    expect(stripRedactedProperties({ headers: REDACTED }, {})).toEqual({ headers: '' });
+  });
+
   it('follows deeply nested properties without recursion', () => {
     const DEPTH = 20_000;
     const nested = (password: string): Record<string, unknown> => {
@@ -281,5 +299,26 @@ describe('stripRedactedProperties with stored properties', () => {
     let found: unknown = stripRedactedProperties(nested(REDACTED), nested('p'));
     for (let i = 0; i < DEPTH; i++) found = (found as { a: unknown }).a;
     expect(found).toEqual({ password: 'p' });
+  });
+});
+
+describe('holdsRedacted', () => {
+  it.each([
+    { password: REDACTED },
+    { auth: { basic: { token: REDACTED } } },
+    { headers: `Accept: a\nAuthorization: ${REDACTED}` },
+    { url: `https://${REDACTED}@h/` },
+    { attachments: [{ apiToken: REDACTED }] },
+  ])('is true of %j', (properties) => {
+    expect(holdsRedacted(properties)).toBe(true);
+  });
+
+  it.each([
+    {},
+    { password: 'p', port: 1, tls: { key: '' }, list: ['a', { b: null }], on: true },
+    { headers: 'Accept: a\r\n\nAuthorization: Bearer b', url: 'https://u:p@h/?token=t' },
+    { script: `return msg === '${REDACTED}';` },
+  ])('is false of %j', (properties) => {
+    expect(holdsRedacted(properties)).toBe(false);
   });
 });

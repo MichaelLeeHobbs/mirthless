@@ -5,6 +5,7 @@ import * as https from 'node:https';
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import { fillVariables, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { redirectMessage } from '../redirect.js';
+import { refuseUrlCredentials } from '../url-credentials.js';
 import type { TlsClientOptions } from '../tls.js';
 
 export interface HttpDispatcherConfig {
@@ -45,11 +46,12 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
       if (!this.config.url) {
         throw new Error('URL is required');
       }
-      try {
-        // A URL that names message variables is checked per message instead.
-        if (!this.config.url.includes('${')) new URL(this.config.url);
-      } catch {
-        throw new Error(`Invalid URL: ${this.config.url}`);
+      // A URL that names message variables is checked per message instead.
+      if (!this.config.url.includes('${')) {
+        // Not quoted in the error: it may hold credentials.
+        if (!URL.canParse(this.config.url)) throw new Error('Invalid URL');
+        const url = new URL(this.config.url);
+        if (!this.usesNodeHttps(url)) refuseUrlCredentials(url);
       }
       const validMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
       if (!validMethods.includes(this.config.method.toUpperCase())) {
@@ -66,6 +68,12 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
 
   variablesUsed(): readonly string[] {
     return variableNames([this.config.url, ...Object.values(this.config.parameters ?? {}), ...Object.values(this.config.headers)]);
+  }
+
+  /** With no scheme, an https URL takes node:https only when it has custom TLS material. */
+  private usesNodeHttps(url: URL): boolean {
+    const schemeHttps = this.config.scheme === 'HTTPS';
+    return schemeHttps || (url.protocol === 'https:' && hasActiveTlsOptions(this.config.tls));
   }
 
   /** Holds the credentials: never log it. */
@@ -97,13 +105,9 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
       const methodUpper = this.config.method.toUpperCase();
       const bodyAllowed = methodUpper !== 'GET' && methodUpper !== 'HEAD';
 
-      // With no scheme, an https URL takes node:https only when it has custom TLS material.
       const request = this.requestFor(message);
-      const schemeHttps = this.config.scheme === 'HTTPS';
-      const isHttps = schemeHttps || request.url.protocol === 'https:';
-      if (isHttps && (schemeHttps || hasActiveTlsOptions(this.config.tls))) {
-        return this.sendViaHttps(message, request, combinedSignal, bodyAllowed);
-      }
+      if (this.usesNodeHttps(request.url)) return this.sendViaHttps(message, request, combinedSignal, bodyAllowed);
+      refuseUrlCredentials(request.url);
 
       const response = await fetch(request.url, {
         method: this.config.method,
