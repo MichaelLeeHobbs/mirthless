@@ -8,6 +8,7 @@ import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import { deleteMessagesByIds, DELETE_BATCH_SIZE, type DeleteRules } from './message-delete-helper.js';
 import { SWEEP_BUDGET_MS, sweepLeftoverRows } from './leftover-rows.js';
+import { pruneExpiredRecords } from './expired-records.js';
 
 const DEFAULT_MAX_AGE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -25,6 +26,11 @@ export interface PruneAllResult {
   readonly leftoverRowsDeleted: number;
   /** False when some are for the next run to look at. */
   readonly leftoverRowsComplete: boolean;
+  /** Collection records past their life, those deleted before a failure too. */
+  readonly expiredRecordsDeleted: number;
+  /** False when the time was up first, or it failed. */
+  readonly expiredRecordsComplete: boolean;
+  readonly expiredRecordsFailed: boolean;
 }
 
 export interface PrunableChannelStats {
@@ -105,7 +111,8 @@ export class DataPrunerService {
 
   static async pruneAll(
     context?: AuditContext,
-    sweepBudgetMs: number = SWEEP_BUDGET_MS.SCHEDULED,
+    /** For left-over rows and expired records, half each. */
+    budgetMs: number = SWEEP_BUDGET_MS.SCHEDULED,
   ): Promise<Result<PruneAllResult>> {
     return tryCatch(async () => {
       const prunableChannels = await db
@@ -141,13 +148,18 @@ export class DataPrunerService {
         }
       }
 
-      const swept = await tryCatch(sweepLeftoverRows(sweepBudgetMs));
+      const swept = await tryCatch(sweepLeftoverRows(budgetMs / 2));
       if (!swept.ok) logger.error({ errMsg: swept.error.message }, 'Data pruner could not look for rows that deleted messages left behind');
-      const leftoverRowsDeleted = swept.ok ? swept.value.rowsDeleted : 0;
       const leftoverRowsComplete = swept.ok && swept.value.complete;
       if (!leftoverRowsComplete) logger.info('Data pruner did not get to every row that deleted messages may have left behind; the next run goes on');
-      const failed = failedChannelIds.length > 0 || !swept.ok || swept.value.failed;
+      const expired = await pruneExpiredRecords(budgetMs / 2);
 
+      const result: PruneAllResult = {
+        channelsPruned, totalDeleted, failedChannelIds,
+        leftoverRowsDeleted: swept.ok ? swept.value.rowsDeleted : 0, leftoverRowsComplete,
+        expiredRecordsDeleted: expired.deleted, expiredRecordsComplete: expired.complete, expiredRecordsFailed: expired.failed,
+      };
+      const failed = failedChannelIds.length > 0 || !swept.ok || swept.value.failed || expired.failed;
       emitEvent({
         level: failed ? 'ERROR' : 'INFO',
         name: 'DATA_PRUNER_RAN',
@@ -156,10 +168,10 @@ export class DataPrunerService {
         channelId: null,
         serverId: null,
         ipAddress: context?.ipAddress ?? null,
-        attributes: { channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete },
+        attributes: { ...result, expiredRecordsByCollection: expired.byCollection },
       });
 
-      return { channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete };
+      return result;
     });
   }
 

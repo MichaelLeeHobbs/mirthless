@@ -9,7 +9,32 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Chip from '@mui/material/Chip';
+import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { usePrunerStatus, useUpdatePrunerSchedule, useRunPrunerNow } from '../../hooks/use-pruner.js';
+
+interface PrunedCounts {
+  readonly channelsPruned: number;
+  readonly totalDeleted: number;
+  readonly expiredRecordsDeleted: number;
+}
+
+function countsText({ channelsPruned, totalDeleted, expiredRecordsDeleted }: PrunedCounts): string {
+  return `${String(channelsPruned)} channels pruned, ${String(totalDeleted)} messages and ${String(expiredRecordsDeleted)} expired collection records deleted`;
+}
+
+type RunResult = NonNullable<ReturnType<typeof useRunPrunerNow>['data']>;
+
+function leftText({ failedChannelIds, expiredRecordsFailed, expiredRecordsComplete }: RunResult): string {
+  const sentences: string[] = [];
+  if (failedChannelIds.length > 0) sentences.push(`Pruning failed for ${String(failedChannelIds.length)} channels; see the server log.`);
+  if (expiredRecordsFailed) sentences.push('Not every expired collection record could be deleted; see the server log.');
+  else if (!expiredRecordsComplete) sentences.push('There were more expired collection records than it had time for. The next run goes on with the rest.');
+  return sentences.length === 0 ? '' : `. ${sentences.join(' ')}`;
+}
+
+function isFailed(run: RunResult & { readonly failed?: boolean }): boolean {
+  return run.failed === true || run.failedChannelIds.length > 0 || run.expiredRecordsFailed;
+}
 
 export function PrunerSection(): ReactNode {
   const { data: status, isLoading } = usePrunerStatus();
@@ -30,7 +55,9 @@ export function PrunerSection(): ReactNode {
     updateMutation.mutate({ enabled, cronExpression });
   };
 
+  const [confirming, setConfirming] = useState(false);
   const handleRunNow = (): void => {
+    setConfirming(false);
     runNowMutation.mutate(undefined);
   };
 
@@ -77,7 +104,7 @@ export function PrunerSection(): ReactNode {
         </Button>
         <Button
           variant="outlined"
-          onClick={handleRunNow}
+          onClick={() => { setConfirming(true); }}
           disabled={runNowMutation.isPending}
         >
           {runNowMutation.isPending ? <CircularProgress size={16} sx={{ mr: 1 }} /> : null}
@@ -98,11 +125,8 @@ export function PrunerSection(): ReactNode {
       )}
 
       {runNowMutation.isSuccess && (
-        <Alert severity={runNowMutation.data.failedChannelIds.length > 0 ? 'error' : 'info'} sx={{ mb: 2 }}>
-          Pruning complete: {runNowMutation.data.channelsPruned} channels pruned, {runNowMutation.data.totalDeleted} messages deleted
-          {runNowMutation.data.failedChannelIds.length > 0
-            ? `. Pruning failed for ${String(runNowMutation.data.failedChannelIds.length)} channels; see the server log.`
-            : ''}
+        <Alert severity={isFailed(runNowMutation.data) ? 'error' : 'info'} sx={{ mb: 2 }}>
+          Pruner run: {countsText(runNowMutation.data)}{leftText(runNowMutation.data)}
         </Alert>
       )}
 
@@ -119,13 +143,21 @@ export function PrunerSection(): ReactNode {
           }}>
             Last run: {new Date(status.lastRunResult.completedAt).toLocaleString()}
           </Typography>
-          <Typography variant="body2" sx={{
-            color: 'text.secondary'
-          }}>
-            {status.lastRunResult.channelsPruned} channels pruned, {status.lastRunResult.totalDeleted} messages deleted
+          <Typography variant="body2" sx={{ color: isFailed(status.lastRunResult) ? 'error.main' : 'text.secondary' }}>
+            {status.lastRunResult.failed ? 'The run failed. See the server log.' : `${countsText(status.lastRunResult)}${leftText(status.lastRunResult)}`}
           </Typography>
         </Box>
       )}
+
+      <ConfirmDialog
+        open={confirming}
+        title="Run the data pruner now?"
+        message="It deletes the old messages of every channel that has pruning on, and the records of every collection that have expired. This cannot be undone."
+        confirmLabel="Run pruner"
+        severity="error"
+        onConfirm={handleRunNow}
+        onCancel={() => { setConfirming(false); }}
+      />
     </Paper>
   );
 }

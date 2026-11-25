@@ -21,7 +21,7 @@
 
 ## Run Now
 - [ ] POST /api/v1/admin/prune triggers immediate pruning
-- [ ] Returns pruning result (channelsPruned, totalDeleted)
+- [ ] Returns pruning result (channelsPruned, totalDeleted, expiredRecordsDeleted)
 - [ ] Works regardless of schedule enabled/disabled state
 
 ## UI - Pruner Section
@@ -30,7 +30,7 @@
 - [ ] Cron expression text field editable
 - [ ] Save Schedule button persists changes
 - [ ] Success alert shown after save
-- [ ] Run Now button triggers immediate pruning
+- [ ] Run Now button says what it deletes, and prunes once that is confirmed *(automated: PrunerSection.test.tsx)*
 - [ ] Run result shown in info alert
 - [ ] Last run info displayed when available
 - [ ] Loading spinner during operations

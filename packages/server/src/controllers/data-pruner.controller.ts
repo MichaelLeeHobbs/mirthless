@@ -25,10 +25,11 @@ export class DataPrunerController {
       return;
     }
 
-    logger.info(
-      { channelsPruned: result.value.channelsPruned, totalDeleted: result.value.totalDeleted },
-      'Data pruner completed',
-    );
+    if (result.value.failedChannelIds.length > 0 || result.value.expiredRecordsFailed) {
+      logger.error({ result: result.value }, 'Data pruner completed, but not everything could be pruned');
+    } else {
+      logger.info({ result: result.value }, 'Data pruner completed');
+    }
     res.json({ success: true, data: result.value });
   }
 

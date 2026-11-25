@@ -1,7 +1,7 @@
 // Design: docs/design/10-collections.md.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { and, eq, asc, desc, gt, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, asc, desc, gt, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type {
   CreateCollectionInput,
   UpdateCollectionInput,
@@ -252,16 +252,6 @@ export class CollectionService {
   /** False when it was already gone. */
   static async removeByName(name: string, recordId: string): Promise<Result<boolean>> {
     return tryCatch(async () => removeRecord((await requireByName(name)).id, recordId));
-  }
-
-  static async pruneExpired(): Promise<Result<number>> {
-    return tryCatch(async () => {
-      const deleted = await db
-        .delete(collectionRecords)
-        .where(lt(collectionRecords.expireAt, new Date()))
-        .returning({ id: collectionRecords.id });
-      return deleted.length;
-    });
   }
 }
 

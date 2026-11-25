@@ -81,7 +81,7 @@ export const PERMISSION_CATALOG: Readonly<Record<Permission, PermissionInfo>> = 
   'users:write': info('Users', 'Change users', 'Create and edit users, reset passwords and unlock accounts.', IDENTITY, { adminEquivalent: true }),
   'users:delete': info('Users', 'Delete users', 'Delete users.', IDENTITY),
   'settings:read': info('Settings', 'Read settings', 'See server settings, certificates, tags and extensions. Secrets are masked.', SYSTEM_READ),
-  'settings:write': info('Settings', 'Change settings', 'Change server settings, certificates, tags, the pruner, and purge events.', TRUST),
+  'settings:write': info('Settings', 'Change settings', 'Change server settings, certificates and tags, run and schedule the pruner, which deletes old messages and expired collection records, and purge events.', TRUST),
   'events:read': info('Events', 'Read events', 'See and export the events table: configuration changes and engine events.', CHANNEL),
   'resources:read': info('Resources', 'Read resources', 'See resources, which every channel\'s scripts read by name.', SYSTEM_READ),
   'resources:write': info('Resources', 'Change resources', 'Change resources that every channel\'s scripts read.', TRUST, CODE),
