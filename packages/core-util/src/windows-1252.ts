@@ -15,7 +15,7 @@ const CHUNK_BYTES = 8192;
 
 /**
  * Not `new TextDecoder('windows-1252')`: Node 22.20 and 24.13 decode it as
- * Latin-1 without an error, and a Node without full ICU does not have it (D-350).
+ * Latin-1 without an error, and a Node without full ICU does not have it (D-351).
  */
 export function decodeWindows1252(bytes: Uint8Array): string {
   const chunks: string[] = [];
