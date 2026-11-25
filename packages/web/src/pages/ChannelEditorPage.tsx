@@ -206,6 +206,8 @@ export function ChannelEditorPage(): ReactNode {
         const dTransformer = channel.transformers.find((t) => t.connectorId === d.id);
 
         return {
+          id: d.id,
+          metaDataId: d.metaDataId,
           name: d.name,
           enabled: d.enabled,
           connectorType: d.connectorType,
@@ -345,6 +347,7 @@ export function ChannelEditorPage(): ReactNode {
   }, []);
 
   const buildDestinationsPayload = (): Array<{
+    id: string;
     name: string;
     enabled: boolean;
     connectorType: 'TCP_MLLP';
@@ -359,6 +362,7 @@ export function ChannelEditorPage(): ReactNode {
     responseTransformerLanguage: ScriptLanguageCode;
   }> => {
     return destinations.map((d) => ({
+      id: d.id,
       name: d.name,
       enabled: d.enabled,
       connectorType: d.connectorType as 'TCP_MLLP',
@@ -442,17 +446,14 @@ export function ChannelEditorPage(): ReactNode {
     if (sourceFilter.rules.length > 0) {
       result.push({
         connectorId: null,
-        metaDataId: null,
         rules: mapRulesToPayload(sourceFilter.rules),
       });
     }
 
-    for (let i = 0; i < destinations.length; i++) {
-      const dest = destinations[i]!;
+    for (const dest of destinations) {
       if (dest.filter.rules.length > 0) {
         result.push({
-          connectorId: null,
-          metaDataId: i + 1,
+          connectorId: dest.id,
           rules: mapRulesToPayload(dest.filter.rules),
         });
       }
@@ -467,7 +468,6 @@ export function ChannelEditorPage(): ReactNode {
     if (transformerHasContent(sourceTransformer)) {
       result.push({
         connectorId: null,
-        metaDataId: null,
         inboundDataType: sourceTransformer.inboundDataType,
         outboundDataType: sourceTransformer.outboundDataType,
         inboundProperties: sourceTransformer.inboundProperties,
@@ -478,13 +478,11 @@ export function ChannelEditorPage(): ReactNode {
       });
     }
 
-    for (let i = 0; i < destinations.length; i++) {
-      const dest = destinations[i]!;
+    for (const dest of destinations) {
       const t = dest.transformer;
       if (transformerHasContent(t)) {
         result.push({
-          connectorId: null,
-          metaDataId: i + 1,
+          connectorId: dest.id,
           inboundDataType: t.inboundDataType,
           outboundDataType: t.outboundDataType,
           inboundProperties: t.inboundProperties,

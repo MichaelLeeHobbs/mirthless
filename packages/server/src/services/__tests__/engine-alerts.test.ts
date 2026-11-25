@@ -35,6 +35,7 @@ const ms = vi.hoisted(() => ({
   incrementStats: vi.fn(),
   markProcessed: vi.fn(),
   resetPending: vi.fn(),
+  waitingByDestination: vi.fn(),
   initializeMessage: vi.fn(),
   finalizeMessage: vi.fn(),
   createConnectorMessage: vi.fn(),
@@ -124,6 +125,7 @@ beforeEach(() => {
   mockSend.mockResolvedValue(ok({ status: 'SENT', content: 'ACK' }));
   for (const fn of Object.values(ms)) fn.mockResolvedValue(OK);
   ms.getLatestMessageId.mockResolvedValue(ok(0));
+  ms.waitingByDestination.mockResolvedValue(ok([]));
   ms.initializeMessage.mockResolvedValue(ok({ messageId: 99, correlationId: '00000000-0000-0000-0000-000000000099' }));
   alerts.sendMail.mockResolvedValue(OK);
 });

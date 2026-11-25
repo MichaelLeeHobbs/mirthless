@@ -156,7 +156,7 @@ async function loadCtx(channelName: string): Promise<WriteCtx | null> {
     .select({ metaDataId: schema.channelConnectors.metaDataId, name: schema.channelConnectors.name })
     .from(schema.channelConnectors)
     .where(and(eq(schema.channelConnectors.channelId, channel.id), eq(schema.channelConnectors.enabled, true)))
-    .orderBy(asc(schema.channelConnectors.metaDataId));
+    .orderBy(asc(schema.channelConnectors.position));
   return { channelId: channel.id, inbound: channel.inbound, outbound: channel.outbound, connectors };
 }
 

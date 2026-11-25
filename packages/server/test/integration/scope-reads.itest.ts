@@ -125,16 +125,16 @@ describeIntegration('system reads and Test Connection under a scope (real Postgr
 
   it('lets a group-scoped writer save, export, import, clone and test a database connector with TLS on', async () => {
     const database = { vendor: 'postgresql', host: '169.254.169.254', port: 5432, database: 'lab', username: 'svc', password: 'p', tls: true, query: 'SELECT 1' };
-    const made = await call<{ id: string; revision: number; name: string }>('POST', '/channels', {
+    const made = await call<{ id: string; revision: number; name: string; destinations: Array<{ id: string; enabled: boolean }> }>('POST', '/channels', {
       name: `itest-dbtls-${randomUUID().slice(0, 8)}`, inboundDataType: 'RAW', outboundDataType: 'RAW',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
       destinations: [{ name: 'Archive', connectorType: 'DATABASE', properties: database }],
     });
     expect(made.status, JSON.stringify(made.json.error)).toBe(201);
-    const { id, revision, name } = made.json.data!;
+    const { id, revision, name, destinations } = made.json.data!;
     newChannels.push(id);
 
-    const saved = await call('PUT', `/channels/${id}`, { revision, destinations: [{ name: 'Archive', connectorType: 'DATABASE', properties: { ...database, query: 'SELECT 2' } }] });
+    const saved = await call('PUT', `/channels/${id}`, { revision, destinations: [{ ...destinations[0], properties: { ...database, query: 'SELECT 2' } }] });
     expect(saved.status, JSON.stringify(saved.json.error)).toBe(200);
 
     const exported = await call<{ channels: unknown[] }>('GET', `/channels/${id}/export`);

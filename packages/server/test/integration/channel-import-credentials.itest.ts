@@ -64,12 +64,12 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
   // The same stored channel for each test: creating one makes its message partitions, which is slow.
   beforeEach(async () => {
     const { db, eq, schema } = mods;
-    await db.update(schema.channels).set({ sourceConnectorType: 'HTTP', sourceConnectorProperties: SOURCE, scriptTimeoutSeconds: 240, deletedAt: null })
+    await db.update(schema.channels).set({ sourceConnectorType: 'HTTP', sourceConnectorProperties: SOURCE, scriptTimeoutSeconds: 240, nextMetaDataId: 3, deletedAt: null })
       .where(eq(schema.channels.id, channelId));
     await db.delete(schema.channelConnectors).where(eq(schema.channelConnectors.channelId, channelId));
     await db.insert(schema.channelConnectors).values([
-      { channelId, metaDataId: 1, name: 'Archive', connectorType: 'DATABASE', properties: DATABASE },
-      { channelId, metaDataId: 2, name: 'To API', connectorType: 'HTTP', properties: HTTP },
+      { channelId, metaDataId: 1, position: 1, name: 'Archive', connectorType: 'DATABASE', properties: DATABASE },
+      { channelId, metaDataId: 2, position: 2, name: 'To API', connectorType: 'HTTP', properties: HTTP },
     ]);
     file = await exportedFile();
     for (const secret of SECRETS) expect(JSON.stringify(file)).not.toContain(secret);
@@ -180,18 +180,24 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
     expect(destinations).toEqual(UNCHANGED.destinations);
   });
 
+  const withoutIds = (entry: ChannelExportEntry): ChannelExportEntry => ({ ...entry, destinations: entry.destinations.map(({ id: _id, ...d }) => d) });
+
   it.each([
     ['metaDataId', { metaDataId: 3 }],
     ['name', { name: 'Archive 2' }],
-  ])('drops a destination\'s credential when its %s changed', async (_what, changes) => {
-    await importFile({ ...file, destinations: file.destinations.map((d) => (d.metaDataId === 1 ? { ...d, ...changes } : d)) });
+  ])('keeps a destination\'s credential when its %s changed in a file that has its id, and drops it when the file has none', async (_what, changes) => {
+    const changed = { ...file, destinations: file.destinations.map((d) => (d.metaDataId === 1 ? { ...d, ...changes } : d)) };
+    expect(await importFile(changed)).toMatchObject({ updated: 1, errors: [] });
+    expect((await stored()).destinations).toEqual(UNCHANGED.destinations);
+
+    await importFile(file);
+    expect(await importFile(withoutIds(changed))).toMatchObject({ updated: 1, errors: [] });
     const { destinations } = await stored();
-    expect(destinations.get('metaDataId' in changes ? changes.metaDataId : 1)).toEqual(omit(DATABASE, 'password'));
+    expect([...destinations.keys()].sort()).toEqual([2, 3]);
+    expect(destinations.get(3)).toEqual(omit(DATABASE, 'password'));
     expect(destinations.get(2)).toEqual(HTTP);
   });
 
-  // Every save from the editor numbers the destinations 1 to n by position, so
-  // an older file's metaDataId can name another destination.
   describe.each([
     ['an HTTP header key', 'HTTP', { url: HTTP.url }, (secret: string): Properties => ({ headers: { 'X-API-Key': secret } })],
     ['an HTTP query key', 'HTTP', { url: HTTP.url }, (secret: string): Properties => ({ parameters: { apiKey: secret } })],
@@ -206,9 +212,19 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
     const a: Named = { name: 'A', connectorType, properties: { ...shared, ...withSecret('key-of-a') } };
     const b: Named = { name: 'B', connectorType, properties: { ...shared, ...withSecret('key-of-b') } };
 
+    const keyOf = (d: Named): string => JSON.stringify(d.properties).match(/key-of-\w/)![0];
+
+    /** Each is the stored one with its key, or new. */
     async function save(...destinations: readonly Named[]): Promise<void> {
-      const { revision } = unwrap(await mods.ChannelService.getById(channelId));
-      unwrap(await mods.ChannelService.update(channelId, updateChannelSchema.parse({ revision, destinations }), actor));
+      const { revision, destinations: now } = unwrap(await mods.ChannelService.getById(channelId));
+      const idOf = (d: Named): string => now.find((s) => JSON.stringify(s.properties).includes(keyOf(d)))?.id ?? `new-${keyOf(d)}`;
+      unwrap(await mods.ChannelService.update(channelId, updateChannelSchema.parse({
+        revision, destinations: destinations.map((d) => ({ ...d, enabled: true, id: idOf(d) })),
+      }), actor));
+    }
+
+    async function expectOwnKeys(...destinations: readonly Named[]): Promise<void> {
+      expect(await storedByName()).toEqual(destinations.map((d) => [d.name, expect.stringContaining(keyOf(d))]));
     }
 
     async function storedByName(): Promise<ReadonlyArray<readonly [string, string]>> {
@@ -220,54 +236,52 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
       for (const [name, properties] of await storedByName()) expect(properties, name).not.toMatch(/key-of-|__REDACTED__/);
     }
 
-    it('keeps each one its own key when nothing moved', async () => {
-      await save(a, b);
-      expect(await importFile(await exportedFile())).toMatchObject({ updated: 1, errors: [] });
-      expect(await storedByName()).toEqual([a, b].map((d) => [d.name, expect.stringContaining(`key-of-${d.name.toLowerCase()}`)]));
-    });
-
-    it('gives neither the other\'s key when they were reordered since the export', async () => {
+    it('keeps each one its own key, also when they were reordered since the export', async () => {
       await save(a, b);
       const older = await exportedFile();
-      await save(b, a);
-      expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
-      await expectNoKeys();
+      for (const file of [older, withoutIds(older)]) {
+        await save(b, a);
+        expect(await importFile(file)).toMatchObject({ updated: 1, errors: [] });
+        await expectOwnKeys(a, b);
+      }
     });
 
-    it('gives a deleted one no key when an older file brings it back', async () => {
+    it('gives a deleted one no key when an older file brings it back, and the other one keeps its own', async () => {
       await save(a, b);
       const older = await exportedFile();
       await save(b);
       expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
-      await expectNoKeys();
+      expect(await storedByName()).toEqual([['A', expect.not.stringMatching(/key-of-|__REDACTED__/)], ['B', expect.stringContaining('key-of-b')]]);
     });
 
-    it('gives neither the other\'s key when a save closed the gaps in their ids', async () => {
+    it('keeps each one its own key when their numbers have gaps', async () => {
       const { db, eq, schema } = mods;
       await db.delete(schema.channelConnectors).where(eq(schema.channelConnectors.channelId, channelId));
-      await db.insert(schema.channelConnectors).values([{ channelId, metaDataId: 2, ...a }, { channelId, metaDataId: 5, ...b }]);
+      await db.insert(schema.channelConnectors).values([{ channelId, metaDataId: 2, position: 1, ...a }, { channelId, metaDataId: 5, position: 2, ...b }]);
       const older = await exportedFile();
-      await save(a, b);
+      await save(b, a);
       expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
-      await expectNoKeys();
+      await expectOwnKeys(a, b);
     });
 
-    it('gives neither any key when both have one name, in the target or only in the file', async () => {
+    it('tells two with one name apart by their ids, and gives neither a key when the file has none', async () => {
       const twin = { ...b, name: a.name };
       await save(a, twin);
-      const older = await exportedFile();
-      await save(twin, a);
-      expect(await importFile(older)).toMatchObject({ updated: 1, errors: [] });
-      await expectNoKeys();
-
-      await save(a, twin);
       const both = await exportedFile();
-      await save(twin);
+      await save(twin, a);
       expect(await importFile(both)).toMatchObject({ updated: 1, errors: [] });
+      await expectOwnKeys(a, twin);
+
+      expect(await importFile(withoutIds(both))).toMatchObject({ updated: 1, errors: [] });
       await expectNoKeys();
 
       await save(a, twin);
-      await importFile({ ...both, destinations: both.destinations.slice(0, 1) });
+      await save(twin);
+      expect(await importFile(withoutIds(both))).toMatchObject({ updated: 1, errors: [] });
+      await expectNoKeys();
+
+      await save(a, twin);
+      await importFile(withoutIds({ ...both, destinations: both.destinations.slice(0, 1) }));
       await expectNoKeys();
     });
   });

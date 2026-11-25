@@ -110,6 +110,7 @@ vi.mock('../message.service.js', () => ({
     deleteContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    waitingByDestination: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     getLatestMessageId: vi.fn().mockResolvedValue({ ok: true, value: 0, error: null }),
     getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
@@ -235,13 +236,9 @@ describe('QueueConsumer wiring', () => {
       expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toHaveLength(1);
     });
 
-    it('does NOT create queue consumers for queueMode NEVER', async () => {
-      const channel = makeChannel({
-        destinations: [makeDest({ queueMode: 'NEVER' })],
-      });
-
+    it.each([['whose queue is off', { queueMode: 'NEVER' }], ['that is switched off', { enabled: false }]])('creates none for a destination %s, so its queue is held', async (_what, change) => {
       const engine = new EngineManager('test-server');
-      await engine.deploy(bundleOf(channel as never));
+      await engine.deploy(bundleOf(makeChannel({ destinations: [makeDest(change)] }) as never));
 
       expect(MockQueueConsumerCtor).not.toHaveBeenCalled();
       expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toHaveLength(0);
@@ -310,15 +307,11 @@ describe('QueueConsumer wiring', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(bundleOf(channel as never));
 
-      // Only 2 consumers: dest-1 (ON_FAILURE) and dest-2 (ALWAYS), not dest-3 (NEVER)
-      expect(MockQueueConsumerCtor).toHaveBeenCalledTimes(2);
-      expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toHaveLength(2);
-
       const configs = MockQueueConsumerCtor.mock.calls.map(
         (call) => (call[0] as Record<string, unknown>).metaDataId,
       );
-      expect(configs).toContain(1);
-      expect(configs).toContain(2);
+      expect(configs).toEqual([1, 2]);
+      expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toHaveLength(2);
     });
 
     it('stores empty array when no destinations are queued', async () => {

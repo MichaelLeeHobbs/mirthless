@@ -35,6 +35,8 @@ export interface RedispatchConfig {
   readonly send: SendToDestination;
   /** As deployed now. */
   readonly destinations: readonly DestinationConfig[];
+  /** Whether a message stored for a number is for the destination that has it now; false when that is not known. */
+  readonly isForItsNumber: (messageId: number, metaDataId: number) => Promise<Result<boolean>>;
   readonly variablesUsed: VariablesUsed;
   /** Nothing is sent or queued once it is aborted. */
   readonly runSignal: AbortSignal;
@@ -54,9 +56,9 @@ export class DestinationRedispatcher {
   }
 
   /** Not ok when the destination was left as it was, for a later recovery. */
-  async redispatch({ messageId, metaDataId, connectorName }: ConnectorMessageRecord): Promise<Result<RedispatchOutcome>> {
+  async redispatch({ messageId, metaDataId }: ConnectorMessageRecord): Promise<Result<RedispatchOutcome>> {
     return tryCatch(async () => {
-      const destination = this.destinationFor(metaDataId, connectorName);
+      const destination = await this.destinationFor(messageId, metaDataId);
       if (typeof destination === 'string') return this.refuse(messageId, metaDataId, destination);
 
       const content = await this.load(messageId, metaDataId, CONTENT_TYPE.SENT);
@@ -72,17 +74,14 @@ export class DestinationRedispatcher {
     });
   }
 
-  /** Or why there is none to send to. A save numbers the destinations anew, so another can have its number. Names need not differ. */
-  private destinationFor(metaDataId: number, preparedFor: string | null): DestinationConfig | string {
+  /** Or why there is none to send to. */
+  private async destinationFor(messageId: number, metaDataId: number): Promise<DestinationConfig | string> {
     const now = this.config.destinations.find((d) => d.metaDataId === metaDataId);
     if (!now) return `the channel no longer has the destination it was prepared for. ${MAY_BE_DELIVERED}`;
-    if (preparedFor !== null && preparedFor !== now.name) {
-      return `it was prepared for the destination "${preparedFor}", and this is now "${now.name}". ${MAY_BE_DELIVERED}`;
-    }
-    if (preparedFor !== null && this.config.destinations.filter((d) => d.name === preparedFor).length > 1) {
-      return `the channel has more than one destination named "${preparedFor}", so which one it was prepared for is not known. ${MAY_BE_DELIVERED}`;
-    }
-    return now.enabled ? now : `this destination is switched off. ${MAY_BE_DELIVERED}`;
+    if (!now.enabled) return `this destination is switched off. ${MAY_BE_DELIVERED}`;
+    const its = await this.config.isForItsNumber(messageId, metaDataId);
+    if (!its.ok) throw its.error;
+    return its.value ? now : `it is from before destinations kept their numbers, and it is not known to be for this one. ${MAY_BE_DELIVERED}`;
   }
 
   private async deliver(

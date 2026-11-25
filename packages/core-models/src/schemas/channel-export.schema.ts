@@ -62,6 +62,8 @@ const channelExportTransformerSchema = z.object({
 });
 
 const channelExportDestinationSchema = z.object({
+  /** Which destination it is, wherever the channel goes. Absent in files exported before #395. */
+  id: idSchema.optional(),
   metaDataId: z.number(),
   name: z.string(),
   enabled: z.boolean(),

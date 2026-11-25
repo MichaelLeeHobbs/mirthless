@@ -527,9 +527,8 @@ describe('ChannelService.clone', () => {
   });
 
   it('copies the source filter, a destination transformer and a response transformer onto the clone', async () => {
-    // The source's destinations have metaDataIds 1 and 3 (2 was deleted). The
-    // clone renumbers them 1 and 2, so the transformer on the second
-    // destination must land on the clone's second destination row.
+    // The source's destinations have metaDataIds 1 and 3 (2 was deleted), which scripts may
+    // use, so the clone's have the same.
     const destinations = [
       { ...DESTINATIONS[0]!, id: 'd1', metaDataId: 1, responseTransformer: null },
       { ...DESTINATIONS[1]!, id: 'd3', metaDataId: 3, responseTransformer: 'responseStatus = SENT;' },
@@ -554,7 +553,6 @@ describe('ChannelService.clone', () => {
     const inserted = new Map<unknown, unknown[]>();
     const returnedRows = new Map<unknown, unknown[]>([
       [channels, [makeClonedChannel()]],
-      [channelConnectors, [{ id: 'new-d1', metaDataId: 1 }, { id: 'new-d2', metaDataId: 2 }]],
       [channelFilters, [{ id: 'new-f1' }]],
       [channelTransformers, [{ id: 'new-t1' }]],
     ]);
@@ -579,11 +577,13 @@ describe('ChannelService.clone', () => {
       { filterId: 'new-f1', sequenceNumber: 0, ...RULE },
       { filterId: 'new-f1', sequenceNumber: 1, ...SCRIPT_RULE },
     ]]);
-    // Destination transformer: on the clone's second destination, not the source's d3.
-    expect(inserted.get(channelTransformers)).toEqual([{ channelId: CLONED_ID, connectorId: 'new-d2', ...TRANSFORMER }]);
-    expect(inserted.get(transformerSteps)).toEqual([[{ transformerId: 'new-t1', sequenceNumber: 0, ...STEP }]]);
     const destValues = inserted.get(channelConnectors)?.[0] as readonly Record<string, unknown>[];
-    expect(destValues[1]).toEqual(expect.objectContaining({ metaDataId: 2, responseTransformer: 'responseStatus = SENT;' }));
+    expect(destValues.map((d) => [d['metaDataId'], d['position'], d['responseTransformer']])).toEqual([[1, 1, null], [3, 2, 'responseStatus = SENT;']]);
+    expect(inserted.get(channels)).toEqual([expect.objectContaining({ nextMetaDataId: 4 })]);
+    // Destination transformer: on the clone's second destination, not the source's d3.
+    expect(destValues[1]!['id']).not.toBe('d3');
+    expect(inserted.get(channelTransformers)).toEqual([{ channelId: CLONED_ID, connectorId: destValues[1]!['id'], ...TRANSFORMER }]);
+    expect(inserted.get(transformerSteps)).toEqual([[{ transformerId: 'new-t1', sequenceNumber: 0, ...STEP }]]);
   });
 
   it('fails without creating a clone when a filter names a connector the channel does not have', async () => {

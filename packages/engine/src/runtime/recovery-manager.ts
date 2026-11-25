@@ -10,8 +10,6 @@ export interface ConnectorMessageRecord {
   readonly messageId: number;
   readonly metaDataId: number;
   readonly status: string;
-  /** Its name when the message was routed. */
-  readonly connectorName: string | null;
 }
 
 export interface RecoveryStore {

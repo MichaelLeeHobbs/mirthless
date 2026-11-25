@@ -1,6 +1,5 @@
 import { z } from 'zod/v4';
 import { scriptLanguageSchema } from './script-language.schema.js';
-import { idSchema } from './id.schema.js';
 
 export const FILTER_RULE_TYPES = ['JAVASCRIPT', 'RULE_BUILDER'] as const;
 export const FILTER_OPERATORS = ['AND', 'OR'] as const;
@@ -21,10 +20,19 @@ export const filterRuleInputSchema = z.object({
 
 export type FilterRuleInput = z.infer<typeof filterRuleInputSchema>;
 
-export const filterInputSchema = z.object({
-  connectorId: idSchema.nullable().default(null),
-  // null: the source's filter; a number: destination array index + 1, resolving connectorId when destinations are reinserted.
+/** An `id` a channel request gives a destination. Lower case, as the stored ids it is compared with. */
+export const destinationRefSchema = z.string().min(1).max(64).toLowerCase();
+
+/** Which connector a filter or transformer is for. Both null: the source. */
+export const connectorRefFields = {
+  /** The `id` that a destination has in the same request. */
+  connectorId: destinationRefSchema.nullable().default(null),
+  /** Create only: the destination's place in the request's list, from 1. */
   metaDataId: z.number().int().positive().nullable().default(null),
+} as const;
+
+export const filterInputSchema = z.object({
+  ...connectorRefFields,
   rules: z.array(filterRuleInputSchema).default([]),
 });
 

@@ -31,6 +31,7 @@ const store = {
 } satisfies MessageStore;
 const send = vi.fn();
 const variablesUsed = vi.fn();
+const isForItsNumber = vi.fn();
 const onError = vi.fn();
 const onFailed = vi.fn();
 const onStoreFailure = vi.fn();
@@ -45,6 +46,7 @@ beforeEach(() => {
   store.loadContent.mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) => ok(contents.get(contentType) ?? null));
   send.mockResolvedValue(ok({ status: 'SENT', content: 'ACK' }));
   variablesUsed.mockReturnValue([]);
+  isForItsNumber.mockResolvedValue(ok(true));
   run = new AbortController();
   halt = new AbortController();
 });
@@ -56,12 +58,11 @@ function partner(overrides: Partial<DestinationConfig> = {}): DestinationConfig 
 function redispatch(
   queueMode: DestinationConfig['queueMode'] = 'NEVER',
   overrides: Partial<RedispatchConfig> = {},
-  connectorName: string | null = 'Lab',
 ): ReturnType<DestinationRedispatcher['redispatch']> {
   return new DestinationRedispatcher({
-    channelId: CHANNEL_ID, serverId: 'server-01', store, send, destinations: [partner({ metaDataId: 1, name: 'Other' }), partner({ queueMode })], variablesUsed,
+    channelId: CHANNEL_ID, serverId: 'server-01', store, send, destinations: [partner({ metaDataId: 1, name: 'Other' }), partner({ queueMode })], isForItsNumber, variablesUsed,
     runSignal: run.signal, haltSignal: halt.signal, onError, onFailed, onStoreFailure, ...overrides,
-  }).redispatch({ messageId: 7, metaDataId: DESTINATION, status: 'RECEIVED', connectorName });
+  }).redispatch({ messageId: 7, metaDataId: DESTINATION, status: 'RECEIVED' });
 }
 
 const statuses = (): unknown[] => store.updateConnectorMessageStatus.mock.calls.map((c: unknown[]) => c.slice(1, 4));
@@ -98,8 +99,6 @@ describe('DestinationRedispatcher', () => {
 
   describe('the destination it was prepared for', () => {
     it.each([
-      ['is another one now', [partner({ name: 'Clinic' })], 'it was prepared for the destination "Lab", and this is now "Clinic"'],
-      ['may be one of two with its name', [partner(), partner({ metaDataId: 3 })], 'more than one destination named "Lab"'],
       ['is gone', [partner({ metaDataId: 1 })], 'no longer has the destination'],
       ['is switched off', [partner({ enabled: false })], 'switched off'],
     ])('%s: nothing is sent or queued, and it says why', async (_what, destinations, why) => {
@@ -115,8 +114,28 @@ describe('DestinationRedispatcher', () => {
       }
     });
 
-    it('has no name on record: it goes by the number', async () => {
-      expect(await redispatch('NEVER', {}, null)).toMatchObject({ ok: true, value: 'SENT' });
+    it('is the one with its number, whatever it is called now', async () => {
+      const destinations = [partner({ name: 'Clinic' }), partner({ metaDataId: 3 })];
+      expect(await redispatch('NEVER', { destinations })).toMatchObject({ ok: true, value: 'SENT' });
+      expect(isForItsNumber).toHaveBeenCalledExactlyOnceWith(7, DESTINATION);
+    });
+
+    it('is not known, for a message from when a save renumbered them: nothing is sent, and it says why', async () => {
+      isForItsNumber.mockResolvedValue(ok(false));
+
+      expect(await redispatch()).toMatchObject({ ok: true, value: 'ERROR' });
+
+      expect(send).not.toHaveBeenCalled();
+      expect(kept()).toEqual([[CONTENT_TYPE.PROCESSING_ERROR, expect.stringMatching(/not known to be for this one\. It may have been delivered/)]]);
+    });
+
+    it('cannot be told: it is left for a later recovery', async () => {
+      isForItsNumber.mockResolvedValue(fail('db down'));
+
+      expect(await redispatch()).toMatchObject({ ok: false, error: { message: 'db down' } });
+
+      expect(send).not.toHaveBeenCalled();
+      expect(statuses()).toEqual([]);
     });
   });
 

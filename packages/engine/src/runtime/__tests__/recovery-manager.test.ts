@@ -13,7 +13,7 @@ function fail(message: string): Result<never> {
 }
 
 function row(messageId: number, metaDataId: number, status: string): ConnectorMessageRecord {
-  return { messageId, metaDataId, status, connectorName: metaDataId === 0 ? 'Source' : `Partner ${String(metaDataId)}` };
+  return { messageId, metaDataId, status };
 }
 
 function makeStore(

@@ -44,7 +44,13 @@ When the server stops while a destination is sending, the next start sends the m
 
 A message the server stopped on before it was routed to its destinations is run again as the same message, from its stored raw content. The source's scripts run again, and what they do outside the message (a database write, a message routed to another channel) happens again too. The source map is kept only in Development storage, so in Production and Raw storage those scripts see it empty. A message whose raw content is not stored, or cannot be read, stays RECEIVED, with an error in the log at each deploy.
 
-A message is not sent again either, and ends in ERROR, when the destination it was prepared for is gone, is switched off or has another name since the channel was deployed again, or when the channel has two destinations with that name.
+A message is not sent again either, and ends in ERROR, when the destination it was prepared for is gone or switched off since the channel was deployed again.
+
+A destination has a number: `#1` in the channel editor, `metaDataId` in the API and in an export. It keeps the number when you rename it, move it, change it or switch it off, and after you remove it no other destination of the channel gets that number. Queues, Resend, crash recovery and the statistics go by it, so a message reaches the destination it was prepared for or none. If you change where a destination sends, what waits on its queue goes there too. `destinationSet` in a script takes the number or the name.
+
+Messages that wait on the queue of a destination stay there, unsent, while that destination is switched off or has its queue off, and after you remove it. The data pruner does not delete them. Each deploy that is started, and each restart, says how many wait: an error in the server log, an alert and a `QUEUE_HELD` event. To send them, switch the destination or its queue on again and redeploy. Those of a removed destination cannot be given to another. Reprocess each, which sends it to every destination the channel has now, and then delete it, or only delete it: it stays on the queue, and is reported, until it is deleted. Resend is refused for a destination that is switched off or has its queue off.
+
+A message stored before the server kept the numbers also needs the name its destination had then ([upgrade](../ops/upgrade.md#destinations-keep-their-numbers-395)).
 
 ## TCP_MLLP
 

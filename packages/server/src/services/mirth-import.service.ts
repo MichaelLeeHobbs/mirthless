@@ -827,7 +827,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       break;
     case 'CHANNEL': {
       // Channel Writer: the target is the Mirth channel id, which the import
-      // keeps as the channel's id (in lower case, D-348). "none" is Mirth's "no channel selected".
+      // keeps as the channel's id (in lower case, D-349). "none" is Mirth's "no channel selected".
       const target = getString(propsNode, 'channelId');
       if (target !== null) result['targetChannelId'] = target === 'none' ? '' : idSchema.safeParse(target).data ?? target;
       Object.assign(result, sendTemplate(propsNode, 'channelTemplate'));

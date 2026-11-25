@@ -93,6 +93,7 @@ async function insertChannel(
       await db.insert(schema.channelConnectors).values({
         channelId,
         metaDataId: i + 1,
+        position: i + 1,
         name: dest.name,
         enabled: true,
         connectorType: dest.connectorType,

@@ -64,6 +64,9 @@ vi.mock('@galvanigraph/engine', () => ({
   },
   GlobalChannelMap: MockGlobalChannelMap,
   GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn(), set: vi.fn(), delete: vi.fn(), clear: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
+  QueueConsumer: vi.fn().mockImplementation(function () {
+    return { start: vi.fn(), stop: vi.fn().mockResolvedValue(undefined), halt: vi.fn().mockResolvedValue(undefined) };
+  }),
   compileScript: mockCompileScript,
   globalsNamed: mockGlobalsNamed,
   compileFilterRulesToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
@@ -161,6 +164,7 @@ vi.mock('../message.service.js', () => ({
     deleteContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    waitingByDestination: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     getLatestMessageId: vi.fn().mockResolvedValue({ ok: true, value: 0, error: null }),
     getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),

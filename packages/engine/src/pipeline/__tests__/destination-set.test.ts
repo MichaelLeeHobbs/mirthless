@@ -31,6 +31,24 @@ describe('DestinationSet', () => {
     expect([...ds.getActiveMetaDataIds()]).toEqual([2]);
   });
 
+  it('a metaDataId is one destination, also when another has its name, and a name is all that have it', () => {
+    const twins = new DestinationSet([{ name: 'Lab', metaDataId: 1 }, { name: 'Lab', metaDataId: 2 }, { name: 'Billing', metaDataId: 3 }]);
+    twins.removeAllExcept(2);
+    expect([...twins.getActiveMetaDataIds()]).toEqual([2]);
+    expect([twins.contains(1), twins.contains(2), twins.contains('Lab')]).toEqual([false, true, false]);
+    twins.add(['Lab', 3]);
+    expect([...twins.getActiveMetaDataIds()]).toEqual([1, 2, 3]);
+    expect(twins.getConnectorNames()).toEqual(['Lab', 'Billing']);
+    twins.remove('Lab');
+    expect([...twins.getActiveMetaDataIds()]).toEqual([3]);
+  });
+
+  it('removeAllExcept does not bring back one that was removed', () => {
+    ds.remove('Lab');
+    ds.removeAllExcept(['Lab', 'Billing']);
+    expect(ds.getConnectorNames()).toEqual(['Billing']);
+  });
+
   it('removeAllExcept with no known destination removes them all', () => {
     ds.removeAllExcept(['Nowhere']);
     expect(ds.getConnectorNames()).toEqual([]);

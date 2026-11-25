@@ -142,11 +142,12 @@ describe('transformerInputSchema', () => {
     expect(result.data.connectorId).toBe('550e8400-e29b-41d4-a716-446655440000');
   });
 
-  it('rejects invalid connectorId format', () => {
-    const result = transformerInputSchema.safeParse({
-      connectorId: 'not-a-uuid',
-    });
-    expect(result.success).toBe(false);
+  it('accepts the id a request gives a destination that is not saved yet', () => {
+    expect(transformerInputSchema.parse({ connectorId: 'new-1' }).connectorId).toBe('new-1');
+  });
+
+  it('rejects an empty connectorId', () => {
+    expect(transformerInputSchema.safeParse({ connectorId: '' }).success).toBe(false);
   });
 
   it('accepts custom properties', () => {

@@ -2,20 +2,13 @@
 // came from users.role through a table in code, then applies the remaining
 // migrations: each user must hold exactly the permissions they held before (#265).
 
-import { randomUUID } from 'node:crypto';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import pg from 'pg';
+import type pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { describeIntegration } from './_setup.js';
+import { MIGRATION_DB_TIMEOUT_MS, migratedFrom, type MigrationDb } from './_migration-db.js';
 
-const MIGRATIONS = fileURLToPath(new URL('../../src/db/migrations', import.meta.url));
 const LAST_BEFORE_ROLES = 17;
-const DB_NAME = `gf_rolemig_${randomUUID().replace(/-/g, '').slice(0, 12)}_test`;
 
 /** What each role granted before roles were rows (lib/role-permissions.ts at 0017). Unknown roles granted nothing. */
 const BEFORE: Readonly<Record<string, readonly string[] | 'all'>> = {
@@ -41,57 +34,27 @@ const BEFORE: Readonly<Record<string, readonly string[] | 'all'>> = {
   wizard: [],
 };
 
-function urlFor(database: string): string {
-  const url = new URL(process.env.DATABASE_URL ?? '');
-  url.pathname = `/${database}`;
-  return url.toString();
-}
-
-function migrationsUpTo(last: number): string {
-  const dir = mkdtempSync(path.join(tmpdir(), 'gf-rolemig-'));
-  mkdirSync(path.join(dir, 'meta'));
-  const journal = JSON.parse(readFileSync(path.join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as { entries: { idx: number; tag: string }[] };
-  const entries = journal.entries.filter((e) => e.idx <= last);
-  for (const e of entries) cpSync(path.join(MIGRATIONS, `${e.tag}.sql`), path.join(dir, `${e.tag}.sql`));
-  writeFileSync(path.join(dir, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
-  return dir;
-}
-
 describeIntegration('role migration (real Postgres)', () => {
-  let admin: pg.Client;
+  let migrated: MigrationDb;
   let client: pg.Client;
-  let partial: string;
   const userIds = new Map<string, string>();
 
   beforeAll(async () => {
-    admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
-    await admin.connect();
-    await admin.query(`CREATE DATABASE "${DB_NAME}"`);
-    client = new pg.Client({ connectionString: urlFor(DB_NAME) });
-    await client.connect();
+    migrated = await migratedFrom(LAST_BEFORE_ROLES, async (before) => {
+      for (const role of Object.keys(BEFORE)) {
+        const { rows } = await before.query<{ id: string }>(
+          `INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, 'not-a-hash', $3) RETURNING id`,
+          [`mig-${role}`, `mig-${role}@example.test`, role],
+        );
+        userIds.set(role, rows[0]!.id);
+      }
+    });
+    client = migrated.client;
+  }, MIGRATION_DB_TIMEOUT_MS);
 
-    partial = migrationsUpTo(LAST_BEFORE_ROLES);
-    await migrate(drizzle(client), { migrationsFolder: partial });
-    for (const role of Object.keys(BEFORE)) {
-      const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, 'not-a-hash', $3) RETURNING id`,
-        [`mig-${role}`, `mig-${role}@example.test`, role],
-      );
-      userIds.set(role, rows[0]!.id);
-    }
-    await migrate(drizzle(client), { migrationsFolder: MIGRATIONS });
-  }, 120_000);
-
-  // Dropping a migrated database is server work a loaded machine slows down: the
-  // teardown gets the setup's budget, not the 30 s default (#294).
   afterAll(async () => {
-    await client?.end();
-    if (admin) {
-      await admin.query(`DROP DATABASE IF EXISTS "${DB_NAME}" WITH (FORCE)`);
-      await admin.end();
-    }
-    if (partial) rmSync(partial, { recursive: true, force: true });
-  }, 120_000);
+    await migrated?.drop();
+  }, MIGRATION_DB_TIMEOUT_MS);
 
   it('leaves every user holding exactly the permissions their role gave them', async () => {
     const { queryUserStanding } = await import('../../src/lib/principal.js');

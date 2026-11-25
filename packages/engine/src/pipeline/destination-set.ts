@@ -5,11 +5,11 @@ interface DestinationInfo {
 
 export class DestinationSet {
   private readonly allDestinations: ReadonlyArray<DestinationInfo>;
-  private readonly active: Set<string>;
+  private readonly active: Set<number>;
 
   constructor(destinations: ReadonlyArray<DestinationInfo>) {
     this.allDestinations = destinations;
-    this.active = new Set(destinations.map((d) => d.name));
+    this.active = new Set(destinations.map((d) => d.metaDataId));
   }
 
   removeAll(): void {
@@ -18,48 +18,39 @@ export class DestinationSet {
 
   /** Takes what Mirth's does: a name, a metaDataId, or a list of either. */
   remove(target: unknown): void {
-    for (const name of this.resolve(target)) this.active.delete(name);
+    for (const id of this.resolve(target)) this.active.delete(id);
   }
 
   removeAllExcept(target: unknown): void {
-    const keep = this.resolve(target).filter((name) => this.active.has(name));
+    const keep = this.resolve(target).filter((id) => this.active.has(id));
     this.active.clear();
-    for (const name of keep) this.active.add(name);
+    for (const id of keep) this.active.add(id);
   }
 
   add(target: unknown): void {
-    for (const name of this.resolve(target)) this.active.add(name);
+    for (const id of this.resolve(target)) this.active.add(id);
   }
 
   contains(target: unknown): boolean {
-    const names = this.resolve(target);
-    return names.length > 0 && names.every((name) => this.active.has(name));
+    const ids = this.resolve(target);
+    return ids.length > 0 && ids.every((id) => this.active.has(id));
   }
 
-  /** Unknown names and ids are ignored. */
-  private resolve(target: unknown): string[] {
+  /** Unknown names and ids are ignored. A name stands for every destination that has it. */
+  private resolve(target: unknown): number[] {
     const items: readonly unknown[] = Array.isArray(target) ? target : [target];
-    const names: string[] = [];
-    for (const item of items) {
-      const dest = this.allDestinations.find((d) =>
-        typeof item === 'number' ? d.metaDataId === item : d.name === String(item));
-      if (dest) names.push(dest.name);
-    }
-    return names;
+    return items.flatMap((item) => this.allDestinations
+      .filter((d) => (typeof item === 'number' ? d.metaDataId === item : d.name === String(item)))
+      .map((d) => d.metaDataId));
   }
 
   getConnectorNames(): ReadonlyArray<string> {
-    return [...this.active];
+    const names = [...this.active].map((id) => this.allDestinations.find((d) => d.metaDataId === id)!.name);
+    return [...new Set(names)];
   }
 
   getActiveMetaDataIds(): ReadonlySet<number> {
-    const ids = new Set<number>();
-    for (const dest of this.allDestinations) {
-      if (this.active.has(dest.name)) {
-        ids.add(dest.metaDataId);
-      }
-    }
-    return ids;
+    return new Set(this.allDestinations.map((d) => d.metaDataId).filter((id) => this.active.has(id)));
   }
 }
 

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, uuid, varchar, timestamp, integer, bigint, primaryKey, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, boolean, integer, bigint, primaryKey, index } from 'drizzle-orm/pg-core';
 
 export const MESSAGE_STATUS = {
   RECEIVED: 'RECEIVED',
@@ -26,11 +26,13 @@ export const connectorMessages = pgTable('connector_messages', {
   chainId: integer('chain_id').notNull().default(0),
   orderId: integer('order_id').notNull().default(0),
   receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  /** False for what was stored while a save still gave a destination's number to another; see `channels.oldNumbers`. */
+  numberKept: boolean('number_kept').notNull().default(true),
 }, (table) => [
   primaryKey({ columns: [table.channelId, table.messageId, table.metaDataId] }),
   index('connector_messages_status_idx').on(table.channelId, table.metaDataId, table.status),
   index('connector_messages_queued_idx')
-    .on(table.channelId, table.metaDataId, table.status)
+    .on(table.channelId, table.metaDataId, table.messageId)
     .where(sql`status = 'QUEUED'`),
 ]);
 

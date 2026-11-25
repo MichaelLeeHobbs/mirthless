@@ -13,7 +13,7 @@ function renderSection(queueMode: string): ReturnType<typeof vi.fn> {
   const onChange = vi.fn();
   render(
     <ThemeProvider theme={darkTheme}>
-      <QueueSettingsSection destination={{ ...createDefaultDestination(1), queueMode }} onChange={onChange} />
+      <QueueSettingsSection destination={{ ...createDefaultDestination([]), queueMode }} onChange={onChange} />
     </ThemeProvider>,
   );
   return onChange;

@@ -6,7 +6,7 @@
 // recorded so that a restart brings back exactly that (#225, D-328).
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db, type DbReader, type DbTransaction } from '../lib/db.js';
 import { channelDeploymentAdoptions, channelDeployments, channels, type ChannelDeploymentRow } from '../db/schema/index.js';
 import { ServiceError } from '../lib/service-error.js';
@@ -217,4 +217,8 @@ async function writeRecord(tx: DbTransaction, bundle: DeploymentBundle, deployed
     .where(and(eq(channels.id, bundle.channel.id), isNull(channels.deletedAt)))
     .returning({ id: channels.id });
   if (updated.length === 0) throw new ServiceError('NOT_FOUND', `Channel not found: ${bundle.channel.id}`);
+  // With the record, or a restart could bring back the old numbers without the names they need (D-348).
+  await tx.update(channels)
+    .set({ oldNumbers: sql`jsonb_build_object('names', old_numbers -> 'namesOnceDeployed', 'upTo', (SELECT COALESCE(max(m.id), 0) FROM messages m WHERE m.channel_id = ${bundle.channel.id}))` })
+    .where(and(eq(channels.id, bundle.channel.id), sql`old_numbers -> 'namesOnceDeployed' IS NOT NULL`));
 }

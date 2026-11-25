@@ -20,7 +20,7 @@ export function DestinationsTab({ destinations, onChange }: DestinationsTabProps
   const { keys, remove: removeKey, swap: swapKeys } = useListKeys(destinations.length);
 
   const handleAdd = useCallback((): void => {
-    const newDest = createDefaultDestination(destinations.length);
+    const newDest = createDefaultDestination(destinations);
     const updated = [...destinations, newDest];
     onChange(updated);
     setSelectedIndex(updated.length - 1);

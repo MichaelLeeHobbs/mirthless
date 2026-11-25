@@ -45,6 +45,7 @@ vi.mock('../message.service.js', () => ({
     deleteContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    waitingByDestination: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     getLatestMessageId: vi.fn().mockResolvedValue({ ok: true, value: 0, error: null }),
     getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),

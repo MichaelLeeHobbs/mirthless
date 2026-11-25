@@ -7,6 +7,7 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { messageContent, messages, connectorMessages } from '../db/schema/index.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { deleteMessagesByIds } from './message-delete-helper.js';
+import { MessageService } from './message.service.js';
 import { getEngine } from '../engine.js';
 
 export interface ReprocessResult {
@@ -171,6 +172,10 @@ export class MessageReprocessService {
         throw new ServiceError('CONFLICT', `Destination ${String(metaDataId)} is not queue-enabled; isolated resend requires queuing. Reprocess the whole message instead.`);
       }
 
+      if (!dest.enabled) {
+        throw new ServiceError('CONFLICT', `Destination "${dest.name}" is switched off.`);
+      }
+
       const [cm] = await db
         .select({ status: connectorMessages.status })
         .from(connectorMessages)
@@ -181,6 +186,11 @@ export class MessageReprocessService {
         ));
       if (!cm) {
         throw new ServiceError('NOT_FOUND', `No connector message for message ${String(messageId)} destination ${String(metaDataId)}.`);
+      }
+      const its = await MessageService.isForItsNumber(channelId, messageId, metaDataId);
+      if (!its.ok) throw its.error;
+      if (!its.value) {
+        throw new ServiceError('CONFLICT', `Message ${String(messageId)} cannot be resent: it is from before destinations kept their numbers, and it is not known to be for "${dest.name}". Reprocess the whole message instead.`);
       }
 
       const [content] = await db

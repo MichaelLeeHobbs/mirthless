@@ -28,6 +28,7 @@ vi.mock('@galvanigraph/connectors', () => ({
 const ms = vi.hoisted(() => ({
   getLatestMessageId: vi.fn(),
   resetPending: vi.fn(),
+  waitingByDestination: vi.fn(),
 }));
 vi.mock('../message.service.js', () => ({ MessageService: ms }));
 
@@ -92,6 +93,7 @@ beforeEach(() => {
   sourceMock.setFatalHandler.mockImplementation((handler: (error: Error) => void) => { source.fatal = handler; });
   ms.getLatestMessageId.mockResolvedValue(ok(0));
   ms.resetPending.mockResolvedValue(OK_RESULT);
+  ms.waitingByDestination.mockResolvedValue(ok([]));
   alerts.sendMail.mockResolvedValue(OK_RESULT);
   alertOnSourceErrors();
 });
