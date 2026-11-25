@@ -121,7 +121,7 @@ The source keeps a body whole or refuses it, and a refused body is never stored 
 
 - A body with `Content-Encoding` `gzip` (or `x-gzip`), `deflate` (the zlib format) or `br` is decompressed. Any other coding, or two codings, gets 415. A body that does not decompress, or has bytes after the compressed data, gets 400. A `Transfer-Encoding` other than `chunked` gets 501.
 - A few bytes can decompress to a large body, so the source decompresses at most two at once, the rest waiting in order. When the decompressed bytes of the requests not answered yet reach four times `maxBodyBytes`, or 64 MiB if that is more, a compressed body gets 503 with `Retry-After: 1`. Uncompressed bodies are not affected, and there is no setting for either limit.
-- Text is read in the charset the Content-Type declares, or in `bodyCharset` when it declares none. A body that is not valid in that charset, and a declared charset the server cannot decode, get 415. The response names the charset, and the server logs a warning with the sender's address and Content-Type, never the body. ISO-8859-1 and Windows-1252 have a character for every byte, so a body read in them is never refused for its charset.
+- Text is read in the charset the Content-Type declares, or in `bodyCharset` when it declares none. A body that is not valid in that charset, and a declared charset the server cannot decode, get 415. The response names the charset, and the server logs a warning with the sender's address and Content-Type, never the body. ISO-8859-1 and Windows-1252 have a character for every byte, so a body read in them is never refused for its charset. As in browsers, a body that declares ISO-8859-1 or US-ASCII is read as Windows-1252, which differs from ISO-8859-1 only in the bytes 0x80 to 0x9F; `bodyCharset` `latin1` reads those as control characters.
 - A binary body (a PDF, an image, a form with a file in it) is not valid UTF-8, so it gets 415. PostgreSQL cannot store text that holds U+0000 in plain either, so a channel that stores its content without encryption answers `errorStatusCode` to such text in any charset, and the sender may send it again. Set `bodyCharset` to `base64` to keep a binary body: the message is then the base64 of the decompressed bytes, which a File destination with `binary` on writes back as they were.
 - A body over `maxBodyBytes` gets its 413 at its end, or after 10 more seconds if it is still arriving, and the connection is then closed.
 - A sender that closes its connection before its compressed body is handled is not dispatched: it got no answer, so it sends the message again.
@@ -152,7 +152,7 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 | `responseStatusCode` | No | Status for an accepted message, 100 to 599; `200` by default. |
 | `errorStatusCode` | No | Status when the pipeline fails or the request cannot be handled, 100 to 599; `500` by default. |
 | `maxBodyBytes` | No | Largest request body, both as received and once decompressed; a larger one gets 413. |
-| `bodyCharset` | No | How a body is read when its Content-Type declares no charset: `utf-8` (default), `latin1` (ISO-8859-1) or `windows-1252`. A declared charset wins over these. `base64` keeps the bytes of every body, text included, whatever its Content-Type says. `windows-1252` needs a Node with full ICU (the official builds have it); without it the deploy fails. The `charset` key older editors saved is still ignored. |
+| `bodyCharset` | No | How a body is read when its Content-Type declares no charset: `utf-8` (default), `latin1` (ISO-8859-1) or `windows-1252`. A declared charset wins over these. `base64` keeps the bytes of every body, text included, whatever its Content-Type says. The `charset` key older editors saved is still ignored. |
 | `auth.type` | No | `BASIC` or `TOKEN`. With no `auth` object, anyone who can reach the port can post. API only. |
 | `auth.username` | No | Expected Basic username. Required with `BASIC`: a guard without it refuses to deploy. |
 | `auth.password` | No | Expected Basic password. Required with `BASIC`: a guard without it refuses to deploy. |
@@ -428,7 +428,7 @@ No network is involved, so there is nothing to encrypt. The message stays inside
 
 The source is a DICOM storage SCP. It accepts C-STORE associations, writes each instance to `storageDir` as `<SOPInstanceUID>.dcm` (a copy that arrives while an earlier one is still there is written as `<SOPInstanceUID>_2.dcm`, `_3` and so on, never over it), and sends a message whose content is the file path, with the dataset's attributes and the AE titles in the source map. In `PER_ASSOCIATION` mode it sends one message per association whose content is a JSON list of file paths.
 
-The destination is a storage SCU. The message content must be the absolute path of a DICOM file under `FILE_CONNECTOR_ROOTS`, which it sends with C-STORE.
+The destination is a storage SCU. The message content must be the absolute path of a DICOM file under `FILE_CONNECTOR_ROOTS`, which it sends with C-STORE. The message reads SENT only when the remote AE answers that it stored the image: success (0x0000), or a warning (0xB000 to 0xBFFF, such as elements coerced or left out), which the response shows as `warning=0xB000`. Any other status, a rejected association or presentation context, an abort, and a connection closed or timed out before the answer are an ERROR that says which, and are retried as `maxRetries` and the destination's queue say (D-350). 0x0111 (duplicate SOP instance) is an ERROR too: the archive did not take this copy, and may have the image from an earlier attempt whose answer was lost, so check there before you remove the message from its queue.
 
 ### DICOM security
 
@@ -456,7 +456,7 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 | `port` | Yes | Remote SCP port. |
 | `calledAETitle` | No | The remote AE title, at most 16 characters, `PACS` by default. |
 | `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIGRAPH` by default. |
-| `maxRetries` | No | Retries of a failed send. |
+| `maxRetries` | No | Retries of a failed send, 3 by default. A refusal is retried like a lost connection. |
 | `retryDelayMs` | No | Milliseconds between retries. |
 | `timeoutMs` | No | Milliseconds before the send fails. |
 
@@ -602,7 +602,7 @@ Set `useTls` to connect over TLS. The broker's certificate is verified against `
 | `topic` | Yes | Topic to read. |
 | `groupId` | Yes | Consumer group. |
 | `startFrom` | No | `EARLIEST` (default) or `LATEST`: where a group with no committed offset starts. The default reads the whole topic the first time a new group connects. |
-| `charset` | No | How the record value becomes message text: `utf-8` (default), `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode invalid bytes are replaced with U+FFFD, the message is flagged with `charsetError` in the source map, and a warning is logged. `windows-1252` needs a Node with full ICU (the official builds have it); without it the deploy fails. The key and header values are always read as UTF-8. |
+| `charset` | No | How the record value becomes message text: `utf-8` (default), `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode invalid bytes are replaced with U+FFFD, the message is flagged with `charsetError` in the source map, and a warning is logged. The key and header values are always read as UTF-8. |
 | `maxStoreAttempts` | No | Failures in a row to store the same record before the source stops the channel, 1 to 1000, 5 by default. A record that cannot be converted counts as a failure. |
 
 ### KAFKA as a destination

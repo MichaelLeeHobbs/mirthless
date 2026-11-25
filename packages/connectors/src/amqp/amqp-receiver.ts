@@ -6,7 +6,7 @@ import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, Raw
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
-import { assertCharsetAvailable, decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
+import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
 import { consumeAmqp, headersToRecord, type AmqpConnectionConfig, type AmqpConsume, type AmqpConsumer, type AmqpDelivery } from './amqp-client.js';
 
@@ -60,9 +60,7 @@ export class AmqpReceiver implements SourceConnectorRuntime {
    */
   private readonly failures = new Map<string, number>();
 
-  /** Throws when the configured charset cannot be decoded here, so the deploy fails. */
   constructor(config: AmqpReceiverConfig, consume?: AmqpConsume, logger?: ConnectorLogger, retryDelayMs?: number) {
-    assertCharsetAvailable(config.charset);
     this.config = config;
     this.consume = consume ?? consumeAmqp;
     this.logger = logger ?? createConnectorLogger('AMQP');

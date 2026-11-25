@@ -38,7 +38,7 @@
 |---|---|---|---|---|
 | 15 | Disable user | Click disable button on enabled user | User status changes to disabled | |
 | 16 | Enable user | Click enable button on disabled user | User status changes to enabled | |
-| 17 | Cannot disable self | Try to disable own admin account | Action prevented (self-protection) | |
+| 17 | Cannot disable self | Click the Enabled switch on your own row and confirm | An error says you cannot delete your own account; the account stays enabled and you stay signed in | |
 
 ## Unlock
 
