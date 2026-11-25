@@ -160,8 +160,8 @@ describe('FhirDispatcher.onDeploy', () => {
     expect(result.ok).toBe(false);
   });
 
-  it.each(['https://svc:hunter2@fhir.example.com/r4', 'https://svc:hunter2/@fhir.example.com/r4'])('refuses %s without quoting it', async (baseUrl) => {
-    const result = await new FhirDispatcher(makeConfig({ baseUrl })).onDeploy();
+  it('does not quote a URL that is not one', async () => {
+    const result = await new FhirDispatcher(makeConfig({ baseUrl: 'https://svc:hunter2/@fhir.example.com/r4' })).onDeploy();
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).not.toContain('hunter2');
   });
@@ -268,8 +268,12 @@ describe('FhirDispatcher.send', () => {
     expect(opts.method).toBe('POST');
   });
 
-  it('does not quote a URL that holds a password when it was started without a deploy', async () => {
-    const dispatcher = new FhirDispatcher(makeConfig({ baseUrl: 'https://svc:hunter2@fhir.test.com/r4' }));
+  it.each([
+    ['a URL that holds a password', { baseUrl: 'https://svc:hunter2@fhir.test.com/r4' }],
+    ['a token that holds a line break', { authType: 'BEARER' as const, authConfig: { token: 'hunter2\nline2' } }],
+  ])('deploys, and fails each send without quoting %s', async (_what, config) => {
+    const dispatcher = new FhirDispatcher(makeConfig(config));
+    expect((await dispatcher.onDeploy()).ok).toBe(true);
     await dispatcher.onStart();
     const result = await dispatcher.send(makeMessage(), makeSignal());
 

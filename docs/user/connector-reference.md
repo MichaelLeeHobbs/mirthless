@@ -160,7 +160,7 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 
 | Property | Required | Notes |
 |---|---|---|
-| `url` | Yes | Target URL. May use `${name}` message variables. No user name or password in it: use `basicAuth`. |
+| `url` | Yes | Target URL. May use `${name}` message variables. Use `basicAuth` for a user name and password: in the URL, they work only with `scheme` HTTPS or custom TLS material, and every other send fails. |
 | `method` | No | `GET`, `POST` (default), `PUT`, `PATCH` or `DELETE`, in any case. |
 | `headers` | No | Name and value pairs; values may use `${name}`. Text saved by older editors is read as `Name: value` lines. |
 | `parameters` | No | Query parameters added to the URL; values may use `${name}`. API or Mirth import only. |

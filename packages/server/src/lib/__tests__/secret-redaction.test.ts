@@ -130,6 +130,8 @@ describe('secret-redaction: credentials under a key that names none', () => {
     ['a message variable in the host', 'https://svc:hunter2@${site}.example/', `https://${REDACTED}@\${site}.example/`],
     ['a message variable for its scheme', '${scheme}://svc:hunter2@host.example/', `${'${scheme}'}://${REDACTED}@host.example/`],
     ['no scheme', '//svc:hunter2@host.example/', `//${REDACTED}@host.example/`],
+    ['no scheme or slashes', 'svc:hunter2@host.example/in', `${REDACTED}@host.example/in`],
+    ['a message variable in its scheme and no slashes', '${scheme}:svc:hunter2@host.example/', `${REDACTED}@host.example/`],
     ['a message variable for its start', '${base}/in?token=hunter2', `${'${base}'}/in?token=${REDACTED}`],
     ['a tab and line ends, which the URL parser drops', 'ht\ttps:\n//svc:hunter2@host.example/?to\r\nken=x', `https://${REDACTED}@host.example/?token=${REDACTED}`],
     ['a control character before it', '\u0000\u001fhttps:svc:hunter2@host.example/', `\u0000\u001fhttps:${REDACTED}@host.example/`],
@@ -137,14 +139,12 @@ describe('secret-redaction: credentials under a key that names none', () => {
     ['a percent-encoded parameter name', 'https://host.example/?api%4Bey=hunter2', `https://host.example/?api%4Bey=${REDACTED}`],
     ['both', 'https://svc:hunter2@host.example?access_token=x', `https://${REDACTED}@host.example?access_token=${REDACTED}`],
   ])('masks the credentials in a URL with %s', (_what, url, masked) => {
-    expect(redactConnectorProperties({ url, nested: { baseUrl: url } })).toEqual({ url: masked, nested: { baseUrl: masked } });
+    expect(redactConnectorProperties({ url, baseUrl: url })).toEqual({ url: masked, baseUrl: masked });
   });
 
   it.each([
     'https://host.example/users/bob@example.org?mail=bob@example.org',
     'https://host.example/%zz?%zz=1',
-    'bob@example.org',
-    'Alert: contact bob@example.org',
     'https://${cfg.user}:${cfg.pw}@host.example/in?token=${cfg.token}',
     'https://host.example/in\n?site=lab',
     '',
@@ -158,6 +158,15 @@ describe('secret-redaction: credentials under a key that names none', () => {
       expect(redactConnectorProperties({ [key]: text })).toEqual({ [key]: text });
       expect(stripRedactedProperties({ [key]: text }, { [key]: 'other' })).toEqual({ [key]: text });
     }
+  });
+
+  it('leaves a parameter or a header named like a URL or headers as it is', () => {
+    const properties = {
+      parameters: { headers: 'a,b', redirect_uri: 'https://h/cb?token=t&x=1' },
+      headers: { headers: 'plain value', 'X-Callback-Url': 'https://h?key=mrn' },
+    };
+    expect(redactConnectorProperties(properties)).toEqual(properties);
+    expect(stripRedactedProperties(properties)).toEqual(properties);
   });
 
   it.each(['keyStorePW', 'trustStorePW', 'keyStorePw', 'pw', 'db_pw', 'X-Pwd', 'userPwd', 'dbpwd', 'DBPWD'])('masks %s', (key) => {

@@ -47,7 +47,7 @@ function maskQuery(query: string): string {
 function maskUrl(text: string): string {
   const plain = text.replace(/[\t\n\r]/g, '');
   const start = BEFORE_AUTHORITY.exec(plain)?.[0] ?? '';
-  const authority = start === '' ? '' : /^[^/?#]*/.exec(plain.slice(start.length))?.[0] ?? '';
+  const authority = /^[^/?#]*/.exec(plain.slice(start.length))?.[0] ?? '';
   const at = authority.lastIndexOf('@');
   const host = at < 0 || PLACEHOLDERS_ONLY.test(authority.slice(0, at)) ? authority : REDACTED + authority.slice(at);
   const tail = plain.slice(start.length + authority.length)
@@ -68,18 +68,22 @@ function maskHeaderLine(line: string): string {
 
 const maskHeaderLines = (text: string): string => text.split('\n').map(maskHeaderLine).join('\n');
 
-/** HTTP and FHIR headers may be saved as text. Never other text: a template or a script that an export masked would be lost on import. */
-function textMask(key: string): ((text: string) => string) | undefined {
+/**
+ * For a connector's own settings: HTTP and FHIR headers may be saved as text.
+ * Never other text, nor a parameter or a header that happens to have the name:
+ * an import loses what an export masked.
+ */
+function textMask(key: string, ownSetting: boolean): ((text: string) => string) | undefined {
+  if (!ownSetting) return undefined;
   if (key === 'headers') return maskHeaderLines;
   return /ur[li]$/i.test(key) ? maskUrl : undefined;
 }
 
 /** What an import keeps of text an export may have masked: the stored text when only the masks differ from it. */
-function unmaskText(key: string, text: string, stored: unknown): string | undefined {
-  const mask = textMask(key);
-  if (mask === undefined || !text.includes(REDACTED)) return text;
+function unmaskText(mask: (text: string) => string, text: string, stored: unknown): string | undefined {
+  if (!text.includes(REDACTED)) return text;
   if (typeof stored === 'string' && stored !== text && mask(stored) === text) return stored;
-  return key === 'headers' ? text.split('\n').filter((line) => !line.includes(REDACTED)).join('\n') : undefined;
+  return mask === maskHeaderLines ? text.split('\n').filter((line) => !line.includes(REDACTED)).join('\n') : undefined;
 }
 
 export function redactSettingValue(key: string, type: string | null | undefined, value: string | null): string | null {
@@ -109,7 +113,7 @@ export function redactConnectorProperties(
         dst[key] = items;
         value.forEach((item, i) => { if (isPlainObject(item)) stack.push([item, items[i] as Record<string, unknown>]); });
       } else if (typeof value === 'string') {
-        dst[key] = textMask(key)?.(value) ?? value;
+        dst[key] = textMask(key, src === properties)?.(value) ?? value;
       } else {
         dst[key] = value;
       }
@@ -145,7 +149,8 @@ export function stripRedactedProperties(props: unknown, stored?: unknown): Recor
     const [src, dst, storedHere] = stack.pop()!;
     for (const [key, value] of Object.entries(src)) {
       const storedValue = ownProperty(storedHere, key);
-      if (value === REDACTED && key !== 'headers') {
+      const mask = textMask(key, src === props);
+      if (value === REDACTED && mask !== maskHeaderLines) {
         if (isRestorableSecret(key, storedValue)) dst[key] = storedValue;
       } else if (isPlainObject(value)) {
         const copy: Record<string, unknown> = {};
@@ -158,8 +163,8 @@ export function stripRedactedProperties(props: unknown, stored?: unknown): Recor
         kept.forEach((item, i) => {
           if (isPlainObject(item)) stack.push([item, items[i] as Record<string, unknown>, undefined]);
         });
-      } else if (typeof value === 'string') {
-        const kept = unmaskText(key, value, storedValue);
+      } else if (typeof value === 'string' && mask !== undefined) {
+        const kept = unmaskText(mask, value, storedValue);
         if (kept !== undefined) dst[key] = kept;
       } else {
         dst[key] = value;

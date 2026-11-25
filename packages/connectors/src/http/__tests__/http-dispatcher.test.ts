@@ -401,14 +401,41 @@ describe('HttpDispatcher per-message values, parameters and Basic auth', () => {
 describe('HttpDispatcher URL credentials', () => {
   const withCredentials = (scheme: string, port: number): string => `${scheme}://svc:hunter2@127.0.0.1:${String(port)}/receive`;
 
-  it('refuses them at deploy, without quoting the URL', async () => {
+  it('deploys, and fails each send without quoting the URL', async () => {
+    mockServer = createMockServer(DEST_PORT);
     dispatcher = new HttpDispatcher(makeConfig({ url: withCredentials('http', DEST_PORT) }));
-    const result = await dispatcher.onDeploy();
+    expect((await dispatcher.onDeploy()).ok).toBe(true);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toContain('user name or password');
     expect(result.error.message).not.toContain('hunter2');
+    expect(mockServer.requests).toEqual([]);
+  });
+
+  it('names a header whose value holds a line break, and not its value', async () => {
+    mockServer = createMockServer(DEST_PORT);
+    dispatcher = new HttpDispatcher(makeConfig({ headers: { Authorization: 'Bearer hunter2\nline2' } }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toMatch(/^(?!.*hunter2).*Authorization/s);
+  });
+
+  it('sends a header value that ends in a line break, which fetch trims', async () => {
+    mockServer = createMockServer(DEST_PORT);
+    dispatcher = new HttpDispatcher(makeConfig({ headers: { 'X-Token': 'abc\n' } }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('SENT');
+    expect(mockServer.requests[0]!.headers['x-token']).toBe('abc');
   });
 
   it('does not quote a URL that is not one', async () => {
