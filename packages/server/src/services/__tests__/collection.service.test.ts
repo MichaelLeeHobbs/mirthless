@@ -1,4 +1,4 @@
-// The happy paths for store/find/pruneExpired need a real jsonb column and are
+// The happy paths for store and find need a real jsonb column and are
 // covered by collection.itest.ts against Postgres.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

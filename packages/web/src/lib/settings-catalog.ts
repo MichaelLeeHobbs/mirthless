@@ -56,7 +56,7 @@ export const SETTING_SECTIONS: readonly SettingSection[] = [
   {
     id: 'pruner',
     label: 'Data pruning',
-    intro: "Deletes old messages on a schedule. Each channel's own pruning settings decide what counts as old.",
+    intro: "Deletes old messages and expired collection records on a schedule. Each channel's own pruning settings decide which messages are old.",
     fields: [
       { key: 'pruner.enabled', label: 'Prune on a schedule', help: 'Run the data pruner automatically.' },
       {

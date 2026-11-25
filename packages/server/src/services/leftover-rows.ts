@@ -10,7 +10,7 @@ import { MESSAGE_CHILD_TABLES } from './message-delete-helper.js';
 // so a statement that sees one of those and not the message sees a message that was deleted.
 
 const PAGE_ROWS = 2_000;
-/** "Run now" is a request that waits for it; pg-boss ends a job after 15 minutes. What is left is for the next run. */
+/** For this and for expired records. "Run now" is a request that waits for them; pg-boss ends a job after 15 minutes. What is left is for the next run. */
 export const SWEEP_BUDGET_MS = { REQUEST: 30_000, SCHEDULED: 300_000 } as const;
 
 export interface SweepResult {

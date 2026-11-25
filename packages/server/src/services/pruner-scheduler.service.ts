@@ -1,7 +1,7 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { getBoss } from '../lib/queue.js';
 import { SettingsService } from './settings.service.js';
-import { DataPrunerService } from './data-pruner.service.js';
+import { DataPrunerService, type PruneAllResult } from './data-pruner.service.js';
 import { emitEvent } from '../lib/event-emitter.js';
 import { foundOrThrow } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
@@ -16,11 +16,16 @@ export interface PrunerScheduleStatus {
   readonly lastRunResult: PrunerLastRunResult | null;
 }
 
-export interface PrunerLastRunResult {
-  readonly channelsPruned: number;
-  readonly totalDeleted: number;
+export interface PrunerLastRunResult extends Pick<
+  PruneAllResult,
+  'channelsPruned' | 'totalDeleted' | 'failedChannelIds' | 'expiredRecordsDeleted' | 'expiredRecordsComplete' | 'expiredRecordsFailed'
+> {
+  /** The run as a whole: nothing is known of what it did. */
+  readonly failed: boolean;
   readonly completedAt: string;
 }
+
+const NOTHING_PRUNED = { channelsPruned: 0, totalDeleted: 0, failedChannelIds: [], expiredRecordsDeleted: 0, expiredRecordsComplete: true, expiredRecordsFailed: false };
 
 export interface UpdatePrunerScheduleInput {
   readonly enabled: boolean;
@@ -56,18 +61,15 @@ export class PrunerSchedulerService {
           lastRunAt = now;
 
           if (result.ok) {
-            lastRunResult = {
-              channelsPruned: result.value.channelsPruned,
-              totalDeleted: result.value.totalDeleted,
-              completedAt: now,
-            };
-            if (result.value.failedChannelIds.length > 0) {
-              logger.error({ result: result.value }, 'Auto data pruner completed, but some channels could not be pruned');
+            const { channelsPruned, totalDeleted, failedChannelIds, expiredRecordsDeleted, expiredRecordsComplete, expiredRecordsFailed } = result.value;
+            lastRunResult = { channelsPruned, totalDeleted, failedChannelIds, expiredRecordsDeleted, expiredRecordsComplete, expiredRecordsFailed, failed: false, completedAt: now };
+            if (result.value.failedChannelIds.length > 0 || result.value.expiredRecordsFailed) {
+              logger.error({ result: result.value }, 'Auto data pruner completed, but not everything could be pruned');
             } else {
               logger.info({ result: result.value }, 'Auto data pruner completed');
             }
           } else {
-            lastRunResult = { channelsPruned: 0, totalDeleted: 0, completedAt: now };
+            lastRunResult = { ...NOTHING_PRUNED, failed: true, completedAt: now };
             logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Auto data pruner failed');
           }
         });
