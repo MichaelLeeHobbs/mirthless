@@ -1,3 +1,4 @@
+import type { Socket } from 'node:net';
 import type { NextFunction, Request, Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { FailureLimit, type Refusal } from '../lib/failure-limit.js';
@@ -12,44 +13,46 @@ const loginFailures = new FailureLimit({
   max: isProduction ? 5 : 1000, // E2E runs ~60 logins
   maxWaiting: 50,
   maxWaitMs: 15_000,
+  maxUnderWayMs: 30_000,
 });
 
-/** Aborted when the client's connection closes. The response alone does not tell: one waiting its turn on a pipelined connection never closes. */
-function whenGone(req: Request, res: Response): AbortSignal {
+const onClose = new WeakMap<Socket, Set<() => void>>();
+
+/** One listener per connection, however many requests it carries at once. Returns how to take `left` out again. */
+function whenClosed(socket: Socket, left: () => void): () => void {
+  const all = onClose.get(socket) ?? new Set();
+  if (!onClose.has(socket)) {
+    onClose.set(socket, all);
+    socket.once('close', () => { for (const each of all) each(); });
+  }
+  all.add(left);
+  return () => { all.delete(left); };
+}
+
+/** Aborted when the client's connection closes. Until Node 26, a response waiting its turn on a pipelined connection does not say so. */
+function goneSignal(req: Request, res: Response): AbortSignal {
   const gone = new AbortController();
-  const left = (): void => { gone.abort(); };
-  const done = (): void => { req.socket.off('close', left); };
-  if (req.socket.destroyed || res.closed) left();
-  req.socket.once('close', left);
-  res.once('close', left);
-  gone.signal.addEventListener('abort', done);
-  res.once('finish', done);
+  if (req.socket.destroyed) gone.abort();
+  else res.once('finish', whenClosed(req.socket, () => { gone.abort(); }));
   return gone.signal;
 }
 
 function refuseLogin(res: Response, refusal: Refusal): void {
   if (refusal.why === 'GONE') return;
   const [seconds, message] = refusal.why === 'FAILURES'
-    ? [Math.ceil(refusal.retryAfterMs / 1000), 'Too many login attempts. Please try again in 15 minutes.']
+    ? [Math.max(1, Math.ceil(refusal.retryAfterMs / 1000)), 'Too many login attempts. Please try again in 15 minutes.']
     : [5, 'Too many logins at once. Please try again in a few seconds.'];
   res.set('Retry-After', String(seconds));
   res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message } });
 }
 
 export async function authRateLimiter(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const gone = whenGone(req, res);
-  const admission = await loginFailures.admit(ipKeyGenerator(req.ip ?? ''), gone);
+  const admission = await loginFailures.admit(ipKeyGenerator(req.ip ?? ''), goneSignal(req, res));
   if (!admission.admitted) {
     refuseLogin(res, admission);
     return;
   }
   res.once('finish', () => { admission.settle(res.statusCode < 400); });
-  gone.addEventListener('abort', () => { admission.settle(false); });
-  // It left as it got its place, and nothing of its login has run.
-  if (gone.aborted) {
-    admission.settle(true);
-    return;
-  }
   next();
 }
 
