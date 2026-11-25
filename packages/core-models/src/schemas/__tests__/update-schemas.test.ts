@@ -1,4 +1,4 @@
-// An update keeps what the request leaves out, so its schema fills nothing in (#400, D-358).
+// An update keeps what the request leaves out, so its schema fills nothing in (#400, D-359).
 
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';

@@ -6,7 +6,7 @@ type WithoutDefaults<Shape extends z.ZodRawShape> = { [Key in keyof Shape]: With
 
 /**
  * For the schema of an update: `.partial()` keeps the defaults, and Zod fills one in for each field the
- * request leaves out, which the server then writes over what is stored (#400, D-358).
+ * request leaves out, which the server then writes over what is stored (#400, D-359).
  */
 export function withoutDefaults<Shape extends z.ZodRawShape>(schema: z.ZodObject<Shape>): z.ZodObject<WithoutDefaults<Shape>> {
   const fields = Object.entries(schema.shape).map(([key, field]) =>

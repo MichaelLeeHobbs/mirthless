@@ -535,7 +535,7 @@ A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans an
 
 ## Updates keep what the request leaves out (#400)
 
-`PUT` on a channel, an alert or a setting put each field the request left out back to its default, without a word. What is left out now stays as it is (D-358). The web UI sends every field, so this concerns scripts that call the API. Check what such a script saved:
+`PUT` on a channel, an alert or a setting put each field the request left out back to its default, without a word. What is left out now stays as it is (D-359). The web UI sends every field, so this concerns scripts that call the API. Check what such a script saved:
 
 - A channel: `enabled`, `description` and `responseMode`; with `properties` in the request, all of them, such as `encryptData` (off), `messageStorageMode` (`DEVELOPMENT`) and `pruningEnabled` (off); with `scripts`, the scripts that were left out (emptied); with `destinations`, `filters` or `transformers`, what was left out of each, such as the queue settings and the `enabled` of a rule or step (on). **History** in the channel editor compares one save with another, but has nothing from before a channel's first save. This lists the channels that are not encrypted at rest:
 
