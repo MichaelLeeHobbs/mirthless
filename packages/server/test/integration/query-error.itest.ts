@@ -1,6 +1,6 @@
 // What the server logs when a statement fails (D-347). It logged the statement's
-// parameters: connector passwords and message content. The last test also covers
-// what becomes of a message whose answer cannot be stored (#404).
+// parameters: connector passwords and message content. The last tests also cover
+// what becomes of a message whose answer cannot be stored, or holds U+0000 (#404).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -81,33 +81,72 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     expect(logged).not.toContain('S-timeout');
   });
 
-  it.each([
-    ['refused it', '/refuse', 'NEVER', 'ERROR', 'the response of a failed destination'],
-    ['took it', '/accept', 'NEVER', 'SENT', 'the response of a delivered destination'],
-    ['took it from the queue', '/accept', 'ALWAYS', 'SENT', 'the response of a delivered destination'],
-  ] as const)('says that the answer of a partner that %s cannot be stored, without the answer, and the message keeps its status', async (_what, path, queueMode, status, what) => {
+  /** Sends one message to the partner and runs the checks while the channel is deployed. */
+  async function withMessageTo(path: string, settings: { queueMode: string; encryptData?: boolean }, check: (channelId: string) => Promise<void>): Promise<void> {
     const channel = unwrap(await mods.ChannelService.create(createChannelSchema.parse({
       name: `itest-query-error-${randomUUID()}`, enabled: true, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'AUTO_AFTER_DESTINATIONS',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 },
-      destinations: [{ name: 'H', connectorType: 'HTTP', queueMode, properties: { url: `${partnerUrl}${path}` } }],
+      properties: { encryptData: settings.encryptData ?? false },
+      destinations: [{ name: 'H', connectorType: 'HTTP', queueMode: settings.queueMode, properties: { url: `${partnerUrl}${path}` } }],
     }), actor));
     channels.push(channel.id);
     unwrap(await deployment.DeploymentService.deploy(channel.id, actor));
     if (engineMod.getEngine().getRuntime(channel.id)!.runtime.getState() !== 'STARTED') unwrap(await deployment.DeploymentService.start(channel.id, actor));
     try {
       expect((await apiCall(base, token, 'POST', `/channels/${channel.id}/send-message`, { content: 'hello' })).status).toBeLessThan(300);
-      await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, WAIT);
-      expect(logged).toContain('Message store write failed');
-      const destination = async (): Promise<unknown> => (await mods.pool.query(
-        'SELECT status FROM connector_messages WHERE channel_id = $1 AND meta_data_id = 1', [channel.id])).rows;
-      await vi.waitFor(async () => { expect(await destination()).toEqual([{ status }]); }, WAIT);
-      const stored = await mods.pool.query('SELECT content_type FROM message_content WHERE channel_id = $1 AND meta_data_id = 1', [channel.id]);
-      expect(stored.rows).not.toContainEqual({ content_type: CONTENT_TYPE.RESPONSE });
-      expect(logged).toContain('Failed query (22021): insert into');
-      expect(logged).not.toContain('MRN-8675309');
+      await check(channel.id);
     } finally {
       await deployment.DeploymentService.stop(channel.id, actor);
       await deployment.DeploymentService.undeploy(channel.id, actor);
     }
+  }
+
+  const destinationStatus = async (channelId: string): Promise<unknown> => (await mods.pool.query(
+    'SELECT status FROM connector_messages WHERE channel_id = $1 AND meta_data_id = 1', [channelId])).rows;
+
+  const PARTNERS = [
+    ['refused it', '/refuse', 'NEVER', 'ERROR', 'the response of a failed destination'],
+    ['took it', '/accept', 'NEVER', 'SENT', 'the response of a delivered destination'],
+    ['took it from the queue', '/accept', 'ALWAYS', 'SENT', 'the response of a delivered destination'],
+  ] as const;
+
+  it.each(PARTNERS)('says that the answer of a partner that %s cannot be stored, without the answer, and the message keeps its status', async (_what, path, queueMode, status, what) => {
+    // Postgres quotes the whole row it refuses for a CHECK constraint.
+    await mods.pool.query(`ALTER TABLE message_content DROP CONSTRAINT IF EXISTS itest_no_answer,
+      ADD CONSTRAINT itest_no_answer CHECK (content_type <> ${String(CONTENT_TYPE.RESPONSE)} OR content NOT LIKE '%MRN-8675309%') NOT VALID`);
+    try {
+      await withMessageTo(path, { queueMode }, async (channelId) => {
+        await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, WAIT);
+        expect(logged).toContain('Message store write failed');
+        await vi.waitFor(async () => { expect(await destinationStatus(channelId)).toEqual([{ status }]); }, WAIT);
+        const stored = await mods.pool.query('SELECT content_type FROM message_content WHERE channel_id = $1 AND meta_data_id = 1', [channelId]);
+        expect(stored.rows).not.toContainEqual({ content_type: CONTENT_TYPE.RESPONSE });
+        expect(logged).toContain('Failed query (23514');
+        expect(logged).not.toContain('MRN-8675309');
+      });
+    } finally {
+      await mods.pool.query('ALTER TABLE message_content DROP CONSTRAINT itest_no_answer');
+    }
+  });
+
+  it.each(PARTNERS)('keeps the answer of a partner that %s when it holds U+0000, as U+2400, and the log has no answer', async (_what, path, queueMode, status) => {
+    await withMessageTo(path, { queueMode }, async (channelId) => {
+      await vi.waitFor(async () => { expect(await destinationStatus(channelId)).toEqual([{ status }]); }, WAIT);
+      const stored = await mods.pool.query('SELECT content FROM message_content WHERE channel_id = $1 AND meta_data_id = 1 AND content_type = $2', [channelId, CONTENT_TYPE.RESPONSE]);
+      expect(stored.rows).toEqual([{ content: 'MRN-8675309\u2400' }]);
+      expect(logged).toContain('U+0000');
+      expect(logged).not.toContain('Message store write failed');
+      expect(logged).not.toContain('MRN-8675309');
+    });
+  });
+
+  it('keeps an answer that holds U+0000 exactly on a channel that encrypts its content', async () => {
+    const { decryptContent } = await import('../../src/lib/content-crypto.js');
+    await withMessageTo('/accept', { queueMode: 'NEVER', encryptData: true }, async (channelId) => {
+      await vi.waitFor(async () => { expect(await destinationStatus(channelId)).toEqual([{ status: 'SENT' }]); }, WAIT);
+      const stored = await mods.pool.query('SELECT content FROM message_content WHERE channel_id = $1 AND meta_data_id = 1 AND content_type = $2', [channelId, CONTENT_TYPE.RESPONSE]);
+      expect(unwrap(decryptContent((stored.rows[0] as { content: string }).content))).toBe(`MRN-8675309${NUL}`);
+      expect(logged).not.toContain('U+0000');
+    });
   });
 });

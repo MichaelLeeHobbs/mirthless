@@ -278,6 +278,11 @@ const ERROR_CONTENT_TYPES: ReadonlySet<number> = new Set([
   CONTENT_TYPE.ERROR, CONTENT_TYPE.RESPONSE_ERROR, CONTENT_TYPE.PROCESSING_ERROR,
 ]);
 
+/** Kept for people to read. Nothing sends or runs it again, so it may differ from the original where the original cannot be stored. */
+const READ_ONLY_CONTENT_TYPES: ReadonlySet<number> = new Set([
+  CONTENT_TYPE.RESPONSE, CONTENT_TYPE.RESPONSE_TRANSFORMED, ...ERROR_CONTENT_TYPES,
+]);
+
 /**
  * PRODUCTION stores everything needed to deliver, view, recover, and reprocess a
  * message — RAW (reprocess), SENT (queued delivery + crash recovery), the
@@ -344,6 +349,9 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
         // Fail loud: never fall back to storing plaintext when encryption is on.
         if (!enc.ok) return Promise.resolve(fail<void>(enc.error));
         toStore = enc.value;
+      } else if (READ_ONLY_CONTENT_TYPES.has(contentType) && content.includes('\u0000')) {
+        logger.warn({ channelId, messageId, metaDataId, contentType }, 'A response or error holds U+0000, which PostgreSQL cannot store as text: each one is kept as U+2400');
+        toStore = content.replaceAll('\u0000', '\u2400');
       }
       return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
     },

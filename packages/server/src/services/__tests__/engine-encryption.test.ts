@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { bundleOf } from '../../../test/deployment-bundle.js';
 
 const cfg: { CONTENT_ENCRYPTION_KEY: string | undefined } = {
@@ -36,6 +37,7 @@ vi.mock('@galvanigraph/connectors', () => ({
 
 const mockStoreContent = vi.fn();
 const mockInitializeMessage = vi.fn();
+const mockWarn = vi.fn();
 
 vi.mock('../message.service.js', () => ({
   MessageService: {
@@ -66,7 +68,7 @@ vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn() }
 vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds: vi.fn() } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/db.js', () => ({ db: { select: vi.fn(), execute: vi.fn() }, default: {} }));
-vi.mock('../../lib/logger.js', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn(), level: 'info' } }));
+vi.mock('../../lib/logger.js', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: mockWarn, debug: vi.fn(), level: 'info' } }));
 vi.mock('../../lib/socket.js', () => ({ emitToRoom: vi.fn(), emitToRoomCoalesced: vi.fn(), emitToAll: vi.fn() }));
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn(),
@@ -183,6 +185,63 @@ describe('message store adapter — encryptData disabled', () => {
     const args = mockStoreContent.mock.calls[0]!;
     expect(args[4]).toBe(PHI);
     expect(args[6]).toBe(false);
+  });
+});
+
+describe('message store adapter — text with U+0000, which Postgres refuses (#404)', () => {
+  const NUL = String.fromCharCode(0);
+  const ANSWER = `MSA|AA|MRN-8675309${NUL}${NUL}end`;
+  const adapter = (encryptData: boolean): ReturnType<typeof createMessageStoreAdapter> => createMessageStoreAdapter({
+    messageStorageMode: 'DEVELOPMENT', removeContentOnCompletion: false, removeAttachmentsOnCompletion: false, encryptData,
+  });
+  const storedText = (): string => mockStoreContent.mock.calls[0]![4] as string;
+
+  it.each([
+    ['a response', CONTENT_TYPE.RESPONSE],
+    ['a transformed response', CONTENT_TYPE.RESPONSE_TRANSFORMED],
+    ['why a destination failed', CONTENT_TYPE.ERROR],
+    ['why a script failed', CONTENT_TYPE.PROCESSING_ERROR],
+  ])('is kept for %s with each U+0000 as U+2400, and the log says so without the text', async (_what, contentType) => {
+    const stored = await adapter(false).storeContent('ch1', 7, 2, contentType, ANSWER, 'TEXT');
+
+    expect(stored.ok).toBe(true);
+    expect(storedText()).toBe('MSA|AA|MRN-8675309\u2400\u2400end');
+    expect(mockWarn).toHaveBeenCalledExactlyOnceWith({ channelId: 'ch1', messageId: 7, metaDataId: 2, contentType }, expect.stringContaining('U+0000'));
+    expect(JSON.stringify(mockWarn.mock.calls)).not.toContain('8675309');
+  });
+
+  it.each([
+    ['RAW', CONTENT_TYPE.RAW],
+    ['TRANSFORMED', CONTENT_TYPE.TRANSFORMED],
+    ['SENT', CONTENT_TYPE.SENT],
+    ['CHANNEL_MAP', CONTENT_TYPE.CHANNEL_MAP],
+  ])('is not changed in %s, which can be sent or run again', async (_what, contentType) => {
+    await adapter(false).storeContent('ch1', 7, 2, contentType, ANSWER, 'TEXT');
+
+    expect(storedText()).toBe(ANSWER);
+    expect(mockWarn).not.toHaveBeenCalled();
+  });
+
+  it('is kept exactly when the channel encrypts its content', async () => {
+    await adapter(true).storeContent('ch1', 7, 2, CONTENT_TYPE.RESPONSE, ANSWER, 'TEXT');
+
+    expect(decryptContent(storedText())).toMatchObject({ ok: true, value: ANSWER });
+    expect(mockWarn).not.toHaveBeenCalled();
+  });
+
+  it('is not looked for in text that has none: it is kept as it is, without a log line', async () => {
+    await adapter(false).storeContent('ch1', 7, 2, CONTENT_TYPE.RESPONSE, 'MSA|AA|1\r\u2400', 'TEXT');
+
+    expect(storedText()).toBe('MSA|AA|1\r\u2400');
+    expect(mockWarn).not.toHaveBeenCalled();
+  });
+
+  it('is not kept at all when the storage mode keeps no response', async () => {
+    const store = createMessageStoreAdapter({ messageStorageMode: 'RAW', removeContentOnCompletion: false, removeAttachmentsOnCompletion: false, encryptData: false });
+    await store.storeContent('ch1', 7, 2, CONTENT_TYPE.RESPONSE, ANSWER, 'TEXT');
+
+    expect(mockStoreContent).not.toHaveBeenCalled();
+    expect(mockWarn).not.toHaveBeenCalled();
   });
 });
 
