@@ -242,6 +242,20 @@ describe('UserService', () => {
     });
   });
 
+  describe('updateUser: your own account', () => {
+    it('returns SELF_ACTION when disabling self, and writes nothing', async () => {
+      pushAccessLock();
+
+      const result = await UserService.updateUser(ADMIN_ID, { enabled: false }, ADMIN_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'SELF_ACTION');
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateUser: the target rule', () => {
     it('refuses a change to a user who holds more than the actor, and writes nothing', async () => {
       pushAccessLock();

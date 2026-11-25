@@ -63,15 +63,15 @@ Issuing, disabling, enabling and revoking a key are recorded in the audit log, i
 
 | Action | How | REST API | Open Socket.IO connections |
 |---|---|---|---|
-| Disable the user | Users page, or `PUT /api/v1/users/:id` with `enabled: false` (`users:write`) | All of the user's sessions are deleted. The next request fails, and refresh fails. | Disconnected at the next re-check |
+| Disable another user | Users page, or `PUT /api/v1/users/:id` with `enabled: false` (`users:write`) | All of the user's sessions are deleted. The next request fails, and refresh fails. | Disconnected at the next re-check |
 | Reset another user's password | Users page, editing the user, or `POST /api/v1/users/:id/password` (`users:write`) | All of the user's sessions are deleted. The account stays enabled, and the user can sign in with the new password without being made to change it. | Disconnected at the next re-check |
-| Delete the user | `DELETE /api/v1/users/:id` (`users:delete`) | Same as disabling: the account is disabled and its sessions deleted. The row stays, so the audit log keeps the identity. | Disconnected at the next re-check |
+| Delete another user | `DELETE /api/v1/users/:id` (`users:delete`) | Same as disabling: the account is disabled and its sessions deleted. The row stays, so the audit log keeps the identity. | Disconnected at the next re-check |
 | Disable or revoke an API key | `PATCH /api/v1/api-keys/:id/enabled` with `enabled: false`, or `POST /api/v1/api-keys/:id/revoke` with a reason (`api_keys:manage`) | The key's next request fails. A revoked or ended key can never be enabled again. Disabling or deleting a user disables the keys they issued, except any an admin takes over with a new token; taking away what their keys hold disables those keys. | Keys do not use Socket.IO |
 | Change the access | Users page, editing the user, or `PUT /api/v1/users/:id/assignments` (`users:write`) | Sessions are kept. The new access applies from the next request. An open web UI shows the new role's pages and buttons at the first request after its access token expires, which refreshes the session (at most `JWT_ACCESS_EXPIRES_IN`, default 15 minutes). Reloading the page does not refresh it sooner. | Leaves any room the new role may not join, at the next re-check |
 
 The server re-checks every open Socket.IO connection against the database every 60 seconds, and again whenever the connection asks to join a room. So a cut-off user can keep receiving live updates for up to a minute.
 
-You cannot disable, demote or delete the last enabled admin, and you cannot delete your own account, reset your own password, or change your own role or access.
+You cannot disable, demote or delete the last enabled admin, and you cannot disable or delete your own account, reset your own password, or change your own role or access.
 
 None of these actions changes a secret the person knew. Rotate them yourself: database and API passwords in connector settings, data source passwords, values in the configuration map and global map, the SMTP password, and, if the person had access to the server, `JWT_SECRET` and `CONTENT_ENCRYPTION_KEY`. Changing `JWT_SECRET` signs everyone out. Message exports and backups the person downloaded stay with them, and channel scripts and code templates they wrote keep running until someone changes them.
 
