@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const CODE_TEMPLATE_CONTEXTS = [
   'GLOBAL_DEPLOY',
@@ -32,7 +33,7 @@ export const codeTemplateLanguageSchema = z.enum(CODE_TEMPLATE_LANGUAGES);
 export type CodeTemplateLanguage = (typeof CODE_TEMPLATE_LANGUAGES)[number];
 
 /** null: every channel. */
-const libraryChannelIdsSchema = z.array(z.string().uuid()).max(10_000).nullable();
+const libraryChannelIdsSchema = z.array(idSchema).max(10_000).nullable();
 
 export const createCodeTemplateLibrarySchema = z.object({
   name: z.string().min(1).max(255),
@@ -52,7 +53,7 @@ export const updateCodeTemplateLibrarySchema = z.object({
 export type UpdateCodeTemplateLibraryInput = z.infer<typeof updateCodeTemplateLibrarySchema>;
 
 export const createCodeTemplateSchema = z.object({
-  libraryId: z.string().uuid(),
+  libraryId: idSchema,
   name: z.string().min(1).max(255),
   description: z.string().default(''),
   type: codeTemplateTypeSchema,
@@ -76,11 +77,11 @@ export const updateCodeTemplateSchema = z.object({
 export type UpdateCodeTemplateInput = z.infer<typeof updateCodeTemplateSchema>;
 
 export const codeTemplateListQuerySchema = z.object({
-  libraryId: z.string().uuid().optional(),
+  libraryId: idSchema.optional(),
 });
 
 export type CodeTemplateListQuery = z.infer<typeof codeTemplateListQuerySchema>;
 
 export const codeTemplateUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });

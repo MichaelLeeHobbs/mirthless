@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
-import { ALL_CHANNELS, PERMISSIONS, holdsPermission, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, PERMISSIONS, holdsPermission, idSchema, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
 import { createThrottle, errorInfo, type Throttle } from '@galvanigraph/core-util';
 import { config } from '../config/index.js';
 import { loadUserStanding } from './principal.js';
@@ -139,10 +139,9 @@ function registerConnectionHandlers(server: SocketIOServer): void {
     const user = socket.data['user'] as SocketUserData | undefined;
     if (user) for (const room of audienceRooms(user.grants)) void socket.join(room);
 
-    socket.on('join:channel', async (channelId: unknown) => {
-      if (typeof channelId !== 'string' || channelId.length === 0) {
-        return;
-      }
+    socket.on('join:channel', async (id: unknown) => {
+      const channelId = idSchema.safeParse(id).data;
+      if (channelId === undefined) return;
       if (!(await revalidateSocket(socket))) return;
       const joiner = socket.data['user'] as SocketUserData | undefined;
       const allowed = joiner !== undefined && await holdsOnChannel(joiner.grants, ROOM_PERMISSIONS.channel, channelId).catch(() => false);
@@ -157,10 +156,9 @@ function registerConnectionHandlers(server: SocketIOServer): void {
       logger.debug({ socketId: socket.id, room }, 'Joined room');
     });
 
-    socket.on('leave:channel', (channelId: unknown) => {
-      if (typeof channelId !== 'string' || channelId.length === 0) {
-        return;
-      }
+    socket.on('leave:channel', (id: unknown) => {
+      const channelId = idSchema.safeParse(id).data;
+      if (channelId === undefined) return;
       const room = `channel:${channelId}`;
       void socket.leave(room);
       logger.debug({ socketId: socket.id, room }, 'Left room');

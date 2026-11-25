@@ -31,6 +31,11 @@ function convertBackup(libraries: string): MirthConvertResult {
 }
 
 describe('code template libraries in a Mirth server backup', () => {
+  it('scopes a library to its channels\' ids as stored, when the file has them in capitals', () => {
+    const result = convertBackup(library('Globals', '', [CHANNEL_ID.toUpperCase()]));
+    expect(result.codeTemplateLibraries.map((l) => l.channelIds)).toEqual([[CHANNEL_ID]]);
+  });
+
   it('converts each library and template with decoded code and its contexts', () => {
     const result = convertBackup(library('Globals', template('stampSite', 'FUNCTION', 'function stampSite(m) { return m &amp;&amp; m; }', ['SOURCE_FILTER_TRANSFORMER', 'CHANNEL_POSTPROCESSOR'])));
     expect(result.codeTemplateLibraries).toEqual([{

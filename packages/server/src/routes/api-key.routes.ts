@@ -3,12 +3,12 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { createApiKeySchema, replaceApiKeySchema, revokeApiKeySchema, setApiKeyEnabledSchema } from '@galvanigraph/core-models';
+import { createApiKeySchema, replaceApiKeySchema, revokeApiKeySchema, setApiKeyEnabledSchema, idSchema } from '@galvanigraph/core-models';
 import { ApiKeyController } from '../controllers/api-key.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
-const idParams = z.object({ id: z.string().uuid() });
+const idParams = z.object({ id: idSchema });
 
 const router: IRouter = Router();
 

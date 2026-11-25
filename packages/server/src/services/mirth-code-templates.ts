@@ -70,7 +70,7 @@ function convertTemplate(node: Record<string, unknown>, xml: XmlReaders): MirthC
 /**
  * Which channels get a library: Mirth's "include new channels" means every
  * channel (an exclusion list is not kept, so the import warns about one);
- * otherwise the channels it was enabled for.
+ * otherwise the channels it was enabled for, in lower case as ids are stored (D-349).
  */
 function libraryScope(lib: Record<string, unknown>, name: string, xml: XmlReaders, warnings: string[]): readonly string[] | null {
   if (xml.getString(lib, 'includeNewChannels') === 'true') {
@@ -79,7 +79,7 @@ function libraryScope(lib: Record<string, unknown>, name: string, xml: XmlReader
     }
     return null;
   }
-  return xml.stringList(lib['enabledChannelIds']);
+  return xml.stringList(lib['enabledChannelIds']).map((id) => id.toLowerCase());
 }
 
 export function extractCodeTemplateLibraries(

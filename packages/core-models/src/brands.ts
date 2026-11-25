@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { idSchema } from './schemas/id.schema.js';
 
 declare const __brand: unique symbol;
 type Brand<T, TBrand extends string> = T & { readonly [__brand]: TBrand };
@@ -37,13 +38,13 @@ interface BrandFactory<T> {
 function makeStringFactory<TBrand extends string>(
   _name: TBrand
 ): BrandFactory<BrandedString<TBrand>> {
-  const schema = z.string().uuid() as unknown as z.ZodType<BrandedString<TBrand>>;
+  const schema = idSchema as unknown as z.ZodType<BrandedString<TBrand>>;
 
   const factory = (value: string): BrandedString<TBrand> => {
     if (!UUID_REGEX.test(value)) {
       throw new Error(`Invalid ${_name}: not a valid UUID`);
     }
-    return value as BrandedString<TBrand>;
+    return value.toLowerCase() as BrandedString<TBrand>;
   };
 
   factory.schema = schema;

@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const EVENT_NAME = {
   // Sign-ins, sign-outs, refusals and purges go to audit_log: AUDIT_ACTION in audit.schema.ts.
@@ -50,8 +51,8 @@ export const eventListQuerySchema = z.object({
   level: z.string().optional(),
   name: z.string().optional(),
   outcome: z.string().optional(),
-  userId: z.string().uuid().optional(),
-  channelId: z.string().uuid().optional(),
+  userId: idSchema.optional(),
+  channelId: idSchema.optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });
@@ -69,8 +70,8 @@ export const createEventInputSchema = z.object({
   level: z.enum(['INFO', 'WARN', 'ERROR']),
   name: z.string().min(1).max(100),
   outcome: z.enum(['SUCCESS', 'FAILURE']),
-  userId: z.string().uuid().nullable().default(null),
-  channelId: z.string().uuid().nullable().default(null),
+  userId: idSchema.nullable().default(null),
+  channelId: idSchema.nullable().default(null),
   serverId: z.string().max(36).nullable().default(null),
   ipAddress: z.string().max(45).nullable().default(null),
   attributes: z.record(z.string(), z.unknown()).nullable().default(null),

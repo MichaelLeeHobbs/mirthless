@@ -3,6 +3,7 @@ import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } 
 import { destinationRefSchema, filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
 import { scriptLanguageSchema } from './script-language.schema.js';
+import { idSchema } from './id.schema.js';
 
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
 
@@ -99,7 +100,7 @@ export const createChannelSchema = z.object({
   filters: z.array(filterInputSchema).optional(),
   transformers: z.array(transformerInputSchema).optional(),
   /** The group the new channel joins; see GrantService.placeNewChannel (D-310). */
-  groupId: z.string().uuid().optional(),
+  groupId: idSchema.optional(),
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
