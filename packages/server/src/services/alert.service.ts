@@ -1,5 +1,5 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, count, asc, inArray, type SQL } from 'drizzle-orm';
+import { eq, count, asc, inArray, sql, type SQL } from 'drizzle-orm';
 import type { AlertTriggerInput, CreateAlertInput, UpdateAlertInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -193,6 +193,9 @@ async function fetchAlertDetailsBatch(reader: DbReader, where: SQL): Promise<Ale
   });
 }
 
+/** The engine gives a read up after as long, and the read must not then keep its connection. */
+const READ_TIMEOUT_MS = 30_000;
+
 let changeListener: (() => void) | null = null;
 
 /** Also when the write fails: one whose connection was lost may have been committed. */
@@ -206,7 +209,10 @@ async function notifying<T>(write: Promise<T>): Promise<T> {
 
 /** In one snapshot: an alert read without its channels would be about every channel. */
 function readAlerts(where: SQL): Promise<AlertDetail[]> {
-  return db.transaction((tx) => fetchAlertDetailsBatch(tx, where), { isolationLevel: 'repeatable read', accessMode: 'read only' });
+  return db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(READ_TIMEOUT_MS)}`));
+    return fetchAlertDetailsBatch(tx, where);
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
 }
 
 export class AlertService {

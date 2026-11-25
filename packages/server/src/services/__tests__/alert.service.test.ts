@@ -74,6 +74,7 @@ const mockTransaction = vi.fn().mockImplementation(async (fn: (tx: unknown) => P
     update: txUpdate,
     delete: txDelete,
     select: mockSelect,
+    execute: vi.fn(),
   });
 });
 
@@ -95,7 +96,7 @@ vi.mock('drizzle-orm', () => ({
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
   inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
-  sql: vi.fn(),
+  sql: { raw: (text: string) => text },
 }));
 
 vi.mock('../../lib/event-emitter.js', () => ({
@@ -457,7 +458,8 @@ describe('AlertService', () => {
       ['getByIds', () => AlertService.getByIds([ALERT_ID])],
     ])('%s', async (_name, read) => {
       const select = vi.fn().mockReturnValue({ from: mockSelectFrom });
-      mockTransaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn({ select }));
+      const execute = vi.fn();
+      mockTransaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn({ select, execute }));
       mockSelect.mockClear();
       pushResponse([makeAlertRow()]);
       pushResponse([makeChannelRow()]);
@@ -467,6 +469,9 @@ describe('AlertService', () => {
 
       expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), { isolationLevel: 'repeatable read', accessMode: 'read only' });
       expect(mockSelect).not.toHaveBeenCalled();
+      // Before the first read: one that waits for a lock must not keep its connection once the engine gave it up.
+      expect(execute).toHaveBeenCalledExactlyOnceWith('SET LOCAL statement_timeout = 30000');
+      expect(execute.mock.invocationCallOrder[0]).toBeLessThan(select.mock.invocationCallOrder[0]!);
     });
   });
 

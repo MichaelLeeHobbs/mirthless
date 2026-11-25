@@ -107,7 +107,7 @@ describe('AlertManager.loadAlerts on a channel that is running', () => {
       expect(sent).toEqual(['first@test.com']);
     });
 
-    it('does not send one as it was before it changed, nor take that for the new one', async () => {
+    it('sends one that changed meanwhile as it is now, once', async () => {
       const sent = reloadingDuringTheFirstSend(() => { manager.loadAlerts([{ ...first }, { ...second, ...to('new@test.com') }]); });
       manager.loadAlerts([first, second]);
 
@@ -194,6 +194,31 @@ describe('AlertManager.loadAlerts on a channel that is running', () => {
     manager.loadAlerts([bad]);
 
     expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('an alert that changed while another was being sent, and its event', () => {
+  const alert = (id: string, regex: string | null): LoadedAlert => makeAlert({
+    id, trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex }, actions: [{ id, actionType: 'EMAIL', recipients: [`${id}@test.com`], properties: null }],
+  });
+
+  it.each([
+    ['is sent when the alert still matches it', 'refused', ['a@test.com', 'b@test.com']],
+    ['is not sent when the alert no longer matches it', 'timeout', ['a@test.com']],
+  ])('%s', async (_what, regex, expected) => {
+    const sent: string[] = [];
+    manager = new AlertManager({
+      ...deps,
+      emailSender: async (recipients) => {
+        sent.push(...recipients);
+        if (sent.length === 1) manager.loadAlerts([alert('a', null), alert('b', regex)]);
+      },
+    });
+    manager.loadAlerts([alert('a', null), alert('b', null)]);
+
+    await manager.handleEvent(makeEvent());
+
+    expect(sent).toEqual(expected);
   });
 });
 

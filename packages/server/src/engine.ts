@@ -351,7 +351,7 @@ export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
   return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
 }
 
-/** For the server's own text, never for what a channel receives from a partner (D-367). */
+/** Never for what is sent on, or run again, from the store (D-367). */
 function shownNul(text: string): string {
   return text.replaceAll('\u0000', '\u2400');
 }

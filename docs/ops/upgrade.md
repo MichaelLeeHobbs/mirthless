@@ -614,7 +614,7 @@ Arrays of these hold the same. `rowData` in the source map held Date objects whi
 
 ## Changed alerts are in force at once (#417)
 
-An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-368). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
+An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-371). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
 
 ## Standard upgrade (Docker)
 

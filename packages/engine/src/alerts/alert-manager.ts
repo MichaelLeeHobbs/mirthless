@@ -27,7 +27,7 @@ export class AlertManager {
    */
   loadAlerts(alerts: readonly LoadedAlert[]): void {
     const before = new Map(this.alerts.map((alert) => [alert.id, alert]));
-    // An unchanged alert stays the same object, which is how one being sent finds out whether it still is in force.
+    // An unchanged alert stays the same object: a check under way then finds that it is still in force.
     this.alerts = alerts.map((alert) => {
       const known = before.get(alert.id);
       return known && JSON.stringify(known) === JSON.stringify(alert) ? known : alert;
@@ -56,11 +56,10 @@ export class AlertManager {
   }
 
   async handleEvent(event: ChannelErrorEvent): Promise<void> {
-    const matched = evaluateAlerts(event, this.alerts);
-
-    for (const alert of matched) {
-      if (!this.isInForce(alert)) continue;
-      if (this.isThrottled(alert, event.timestamp)) continue;
+    for (const { id } of evaluateAlerts(event, this.alerts)) {
+      // As it is now: alerts can be loaded again while one before it is being sent.
+      const [alert] = evaluateAlerts(event, this.alerts.filter((a) => a.id === id));
+      if (!alert || this.isThrottled(alert, event.timestamp)) continue;
       if (this.isMaxedOut(alert)) continue;
 
       // Record before sending: errors arrive in bursts, and the ones that
@@ -77,7 +76,8 @@ export class AlertManager {
       if (!alert.enabled || alert.trigger.type !== 'NO_MESSAGES' || !windowMinutes) continue;
       if (alert.channelIds.length > 0 && !alert.channelIds.includes(channelId)) continue;
       if (now - lastActivityAt < windowMinutes * 60_000) continue;
-      if (!this.isInForce(alert) || !this.shouldRealertSilence(alert, lastActivityAt, now)) continue;
+      // Changed or removed while one before it was being sent: the next check takes it as it is now.
+      if (!this.alerts.includes(alert) || !this.shouldRealertSilence(alert, lastActivityAt, now)) continue;
 
       this.recordAlert(alert.id, now);
       this.silenceAlertedFor.set(alert.id, lastActivityAt);
@@ -88,11 +88,6 @@ export class AlertManager {
         timestamp: now,
       }, this.deps);
     }
-  }
-
-  /** Alerts can be loaded again while one before it is being sent. */
-  private isInForce(alert: LoadedAlert): boolean {
-    return this.alerts.includes(alert);
   }
 
   private shouldRealertSilence(alert: LoadedAlert, lastActivityAt: number, now: number): boolean {
