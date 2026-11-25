@@ -15,12 +15,16 @@ export const MAX_SERVER_LOG_CHARS = 1_000;
 
 let on = false;
 
+const turnedOff: (() => void)[] = [];
+
 export function setScriptLogging(enabled: boolean): void {
   on = enabled;
+  if (!enabled) for (const forget of turnedOff) forget();
 }
 
-export function scriptsAreLogged(): boolean {
-  return on;
+/** What keeps lines of scripts drops them when they are no longer logged. */
+export function onScriptLoggingOff(forget: () => void): void {
+  turnedOff.push(forget);
 }
 
 /** Where it is from, in words: it is not the server's own. On one line, so that it cannot pass for two. */

@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
-import { SCRIPT_LOG_COMPONENT, scriptsAreLogged } from '../lib/script-log.js';
+import { onScriptLoggingOff, SCRIPT_LOG_COMPONENT } from '../lib/script-log.js';
 import { emitToRoom } from '../lib/socket.js';
 
 const MAX_ENTRIES = 10_000;
@@ -47,15 +47,16 @@ let holdsScripts = false;
 
 /** What scripts wrote can hold PHI, and is kept no longer than it is logged (D-387). */
 function forgetScripts(): void {
-  if (!holdsScripts || scriptsAreLogged()) return;
+  if (!holdsScripts) return;
   const kept = getEntries().filter((e) => !e.ofScript);
   buffer.splice(0, buffer.length, ...kept);
   writeIndex = kept.length % MAX_ENTRIES;
   holdsScripts = false;
 }
 
+onScriptLoggingOff(forgetScripts);
+
 function addEntry(entry: KeptEntry): void {
-  forgetScripts();
   holdsScripts ||= entry.ofScript;
   if (buffer.length < MAX_ENTRIES) {
     buffer.push(entry);
@@ -74,7 +75,6 @@ export class LogStreamService {
   static query(params: LogQueryParams = {}): LogQueryResult {
     const { level, search, offset = 0, limit = 100 } = params;
 
-    forgetScripts();
     let entries = [...getEntries()];
 
     if (level !== undefined) {

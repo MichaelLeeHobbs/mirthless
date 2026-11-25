@@ -12,7 +12,7 @@ export const MAX_SCRIPT_LOG_LINE_CHARS = 10_000;
 export const MAX_SCRIPT_LOG_RUN_CHARS = 100_000;
 export const MAX_SCRIPT_LOG_LATER_LINE_CHARS = 100;
 
-/** A connector keeps its first runs, which are those before a send, and its last ones: a queue can run a destination's script without end. */
+/** A connector keeps its first runs, its filter's and transformer's among them, and its last ones: a queue can run a destination's script without end. */
 export const MAX_SCRIPT_LOG_RUNS = 20;
 export const MAX_SCRIPT_LOG_FIRST_RUNS = 5;
 

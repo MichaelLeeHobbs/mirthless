@@ -60,10 +60,10 @@ describe('what channel scripts wrote (#164)', () => {
     setScriptLogging(true);
     write({ msg: 'server up' }, { msg: '[Deploy, channel c] MRN 1', component: 'channel-script' });
     setScriptLogging(false);
-    write({ msg: 'off' });
     setScriptLogging(true);
+    write({ msg: 'on again' });
     write({ msg: '[Deploy, channel c] MRN 2', component: 'channel-script' });
-    expect(messages()).toEqual(['[Deploy, channel c] MRN 2', 'off', 'server up']);
+    expect(messages()).toEqual(['[Deploy, channel c] MRN 2', 'on again', 'server up']);
   });
 
   it('leaves the buffer in order, full or not', () => {
