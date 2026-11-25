@@ -6,7 +6,9 @@ import {
   EMAIL_PROTOCOL,
   EMAIL_POST_ACTION,
   DISPATCHED_KEYWORD,
+  ERROR_KEYWORD,
   hasDispatchedKeyword,
+  hasErrorKeyword,
   type EmailReceiverConfig,
   type ImapClient,
   type ImapClientFactory,
@@ -34,6 +36,7 @@ function makeConfig(overrides?: Partial<EmailReceiverConfig>): EmailReceiverConf
 function makeMessage(overrides?: Partial<EmailMessage>): EmailMessage {
   return {
     uid: 1,
+    uidValidity: '1',
     subject: 'Lab Results',
     from: 'sender@hospital.org',
     to: 'receiver@clinic.org',
@@ -41,6 +44,7 @@ function makeMessage(overrides?: Partial<EmailMessage>): EmailMessage {
     body: 'MSH|^~\\&|SENDER|HOSPITAL',
     attachmentCount: 0,
     dispatched: false,
+    held: false,
     ...overrides,
   };
 }
@@ -50,10 +54,11 @@ function makeMockClient(messages: readonly EmailMessage[] = []): ImapClient {
     connect: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     fetchUnread: vi.fn<(folder: string) => Promise<readonly EmailMessage[]>>().mockResolvedValue(messages),
     markRead: vi.fn<(uid: number) => Promise<void>>().mockResolvedValue(undefined),
-    markDispatched: vi.fn<(uid: number) => Promise<boolean>>().mockResolvedValue(true),
+    mark: vi.fn<(uid: number, keyword: string) => Promise<boolean>>().mockResolvedValue(true),
     moveMessage: vi.fn<(uid: number, folder: string) => Promise<void>>().mockResolvedValue(undefined),
     deleteMessage: vi.fn<(uid: number) => Promise<void>>().mockResolvedValue(undefined),
     disconnect: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    destroy: vi.fn<() => void>(),
   };
 }
 
@@ -587,24 +592,115 @@ describe('EmailReceiver', () => {
       expect(pending.calls()).toBe(1);
     });
 
-    it('halt during a dispatch keeps the email awaiting its post-action, so resume retries only the post-action', async () => {
-      const client = makeMockClient([makeMessage({ uid: 8 })]);
+    it('a stop waits for the dispatch however long it takes, and takes no email after it (#413)', async () => {
+      const client = makeMockClient([makeMessage({ uid: 7 }), makeMessage({ uid: 8 })]);
       const pending = pendingDispatcher();
       receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
       receiver.setDispatcher(pending.dispatcher);
       await receiver.onStart();
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect((await receiver.onHalt()).ok).toBe(true);
+      let stopped = false;
+      const stopping = receiver.onStop().then(() => { stopped = true; });
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(stopped).toBe(false);
       pending.release();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(client.markRead).not.toHaveBeenCalled();
+      await stopping;
+      await vi.advanceTimersByTimeAsync(60_000);
 
-      // Still unread on the server (no post-action ran), so resume sees it again.
+      expect(pending.calls()).toBe(1);
+      expect(client.markRead).toHaveBeenCalledExactlyOnceWith(7);
+      expect(client.disconnect).toHaveBeenCalledOnce();
+    });
+
+    it('a stop during a fetch dispatches nothing of what it brings (#413)', async () => {
+      const client = makeMockClient();
+      let fetched = (emails: readonly EmailMessage[]): void => { void emails; };
+      vi.mocked(client.fetchUnread).mockReturnValue(new Promise((resolve) => { fetched = resolve; }));
+      const pending = pendingDispatcher();
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
+      receiver.setDispatcher(pending.dispatcher);
       await receiver.onStart();
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(pending.calls()).toBe(1);
-      expect(client.markRead).toHaveBeenCalledWith(8);
+
+      expect((await receiver.onStop()).ok).toBe(true);
+      fetched([makeMessage()]);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(pending.calls()).toBe(0);
+      expect(client.disconnect).toHaveBeenCalledOnce();
+    });
+
+    it('a halt does not wait, takes no email after it, and the one in hand is marked and closed when its message has ended', async () => {
+      const client = makeMockClient([makeMessage({ uid: 8 }), makeMessage({ uid: 9 })]);
+      const resumed = makeMockClient([makeMessage({ uid: 9 })]);
+      const clients = [client, resumed];
+      const pending = pendingDispatcher();
+      receiver = new EmailReceiver(makeConfig(), () => clients.shift()!);
+      receiver.setDispatcher(pending.dispatcher);
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect((await receiver.onHalt()).ok).toBe(true);
+      expect(client.destroy).not.toHaveBeenCalled();
+      await receiver.onStart();
+      pending.release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.mark).toHaveBeenCalledExactlyOnceWith(8, DISPATCHED_KEYWORD);
+      expect(client.markRead).toHaveBeenCalledExactlyOnceWith(8);
+      expect(client.disconnect).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(pending.calls()).toBe(2);
+      expect(resumed.markRead).toHaveBeenCalledExactlyOnceWith(9);
+    });
+
+    it('a stop waits for an email that an earlier halt left in hand, and a halt ends that too', async () => {
+      const client = makeMockClient([makeMessage()]);
+      const pending = pendingDispatcher();
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
+      receiver.setDispatcher(pending.dispatcher);
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await receiver.onHalt();
+      await receiver.onStart();
+
+      let stopped = false;
+      const stopping = receiver.onStop().then(() => { stopped = true; });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(stopped).toBe(false);
+      await receiver.onHalt();
+      await stopping;
+      pending.release();
+    });
+
+    it('a halt ends a stop that waits', async () => {
+      const client = makeMockClient([makeMessage()]);
+      const pending = pendingDispatcher();
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
+      receiver.setDispatcher(pending.dispatcher);
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      const stopping = receiver.onStop();
+      await receiver.onHalt();
+      expect((await stopping).ok).toBe(true);
+      pending.release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.disconnect).toHaveBeenCalledOnce();
+    });
+
+    it('a halt closes an idle connection without asking a server that may not answer (#413)', async () => {
+      const client = makeMockClient();
+      vi.mocked(client.disconnect).mockReturnValue(new Promise(() => { /* never */ }));
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      expect((await receiver.onHalt()).ok).toBe(true);
+
+      expect(client.destroy).toHaveBeenCalledOnce();
+      receiver = null;
     });
   });
 
@@ -621,19 +717,6 @@ describe('EmailReceiver', () => {
 
       const undeployResult = await receiver.onUndeploy();
       expect(undeployResult.ok).toBe(true);
-
-      receiver = null;
-    });
-
-    it('halt disconnects client', async () => {
-      const client = makeMockClient();
-      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
-      receiver.setDispatcher(makeDispatcher());
-      await receiver.onStart();
-
-      const haltResult = await receiver.onHalt();
-      expect(haltResult.ok).toBe(true);
-      expect(client.disconnect).toHaveBeenCalledOnce();
 
       receiver = null;
     });
@@ -713,7 +796,7 @@ describe('EmailReceiver', () => {
       // Poll fails, then the hung disconnect must give up after the 30s op timeout.
       await vi.advanceTimersByTimeAsync(1_000);
       await vi.advanceTimersByTimeAsync(30_000);
-      const warning = warnings.find((w) => w.msg === 'Error disconnecting IMAP client during reconnect');
+      const warning = warnings.find((w) => w.msg === 'Error disconnecting IMAP client');
       expect(warning?.obj['errMsg']).toBe('IMAP disconnect timed out after 30000ms');
 
       await vi.advanceTimersByTimeAsync(1_000);
@@ -740,6 +823,13 @@ describe('EmailReceiver', () => {
       expect(hasDispatchedKeyword(undefined)).toBe(false);
     });
 
+    it('reads a keyword in whatever case the server answers with', () => {
+      expect(hasDispatchedKeyword(new Set(['$galvanigraphdispatched']))).toBe(true);
+      expect(hasErrorKeyword(new Set(['$GALVANIGRAPHERROR']))).toBe(true);
+      expect(hasErrorKeyword(new Set([DISPATCHED_KEYWORD]))).toBe(false);
+      expect(hasErrorKeyword(undefined)).toBe(false);
+    });
+
     async function startWith(client: ImapClient, dispatched: RawMessage[], logger = makeMockLogger().logger): Promise<void> {
       receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.MARK_READ }), makeClientFactory(client), logger);
       receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
@@ -752,8 +842,8 @@ describe('EmailReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(client.markDispatched).toHaveBeenCalledWith(3);
-      const markOrder = vi.mocked(client.markDispatched).mock.invocationCallOrder[0]!;
+      expect(client.mark).toHaveBeenCalledWith(3, DISPATCHED_KEYWORD);
+      const markOrder = vi.mocked(client.mark).mock.invocationCallOrder[0]!;
       const readOrder = vi.mocked(client.markRead).mock.invocationCallOrder[0]!;
       expect(markOrder).toBeLessThan(readOrder);
     });
@@ -766,7 +856,7 @@ describe('EmailReceiver', () => {
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(dispatched).toHaveLength(0);
-      expect(client.markDispatched).not.toHaveBeenCalled();
+      expect(client.mark).not.toHaveBeenCalled();
       expect(client.markRead).toHaveBeenCalledWith(4);
     });
 
@@ -778,12 +868,12 @@ describe('EmailReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(client.markDispatched).not.toHaveBeenCalled();
+      expect(client.mark).not.toHaveBeenCalled();
     });
 
     it('warns once when the mailbox does not accept custom keywords, and still finishes each email', async () => {
       const client = makeMockClient([makeMessage({ uid: 1 }), makeMessage({ uid: 2 })]);
-      vi.mocked(client.markDispatched).mockResolvedValue(false);
+      vi.mocked(client.mark).mockResolvedValue(false);
       const { logger, warnings } = makeMockLogger();
       const dispatched: RawMessage[] = [];
       await startWith(client, dispatched, logger);
@@ -798,32 +888,31 @@ describe('EmailReceiver', () => {
 
     it('logs an error and still runs the post-action when setting the keyword fails', async () => {
       const client = makeMockClient([makeMessage({ uid: 6 })]);
-      vi.mocked(client.markDispatched).mockRejectedValue(new Error('IMAP STORE failed'));
+      vi.mocked(client.mark).mockRejectedValue(new Error('IMAP STORE failed'));
       const { logger, errors } = makeMockLogger();
       await startWith(client, [], logger);
 
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(errors.some((e) => e.msg.includes('Could not mark email as dispatched'))).toBe(true);
+      expect(errors.some((e) => e.msg.includes('Could not mark the email on the server'))).toBe(true);
       expect(client.markRead).toHaveBeenCalledWith(6);
     });
   });
 });
 
 describe('EmailReceiver when the pipeline recorded an error', () => {
-  it('leaves the email untouched and does not dispatch it again', async () => {
-    const msg = makeMessage({ uid: 77 });
-    const client = makeMockClient([msg]);
-    let dispatches = 0;
-
-    receiver = new EmailReceiver(
-      makeConfig({ postAction: EMAIL_POST_ACTION.DELETE }),
-      makeClientFactory(client),
-    );
-    receiver.setDispatcher(async () => {
-      dispatches += 1;
+  function errorDispatcher(dispatched: string[]): (raw: RawMessage) => Promise<Result<DispatchResult>> {
+    return async (raw) => {
+      dispatched.push(raw.content);
       return { ok: true as const, value: { messageId: 5, status: 'ERROR' as const }, error: null };
-    });
+    };
+  }
+
+  it('leaves the email in the mailbox, marks it and does not dispatch it again', async () => {
+    const client = makeMockClient([makeMessage({ uid: 77 })]);
+    const dispatched: string[] = [];
+    receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.DELETE }), makeClientFactory(client));
+    receiver.setDispatcher(errorDispatcher(dispatched));
     await receiver.onStart();
 
     await vi.advanceTimersByTimeAsync(15_000);
@@ -831,6 +920,56 @@ describe('EmailReceiver when the pipeline recorded an error', () => {
     expect(client.deleteMessage).not.toHaveBeenCalled();
     expect(client.markRead).not.toHaveBeenCalled();
     expect(client.moveMessage).not.toHaveBeenCalled();
-    expect(dispatches).toBe(1);
+    expect(client.mark).toHaveBeenCalledExactlyOnceWith(77, ERROR_KEYWORD);
+    expect(dispatched).toHaveLength(1);
+  });
+
+  it('a new instance, as after a redeploy, leaves an email that carries the mark alone (#413)', async () => {
+    const client = makeMockClient([makeMessage({ uid: 77, held: true })]);
+    const dispatched: string[] = [];
+    receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.DELETE }), makeClientFactory(client));
+    receiver.setDispatcher(errorDispatcher(dispatched));
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(dispatched).toEqual([]);
+    expect(client.deleteMessage).not.toHaveBeenCalled();
+    expect(client.mark).not.toHaveBeenCalled();
+  });
+});
+
+describe('EmailReceiver when the mailbox was made anew (#413)', () => {
+  // A UID means nothing under another UIDVALIDITY.
+  it('does not take a new email for the one whose post-action failed', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1, body: 'old' })]);
+    vi.mocked(client.deleteMessage).mockRejectedValueOnce(new Error('refused'));
+    const dispatched: string[] = [];
+    receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.DELETE }), makeClientFactory(client), makeMockLogger().logger);
+    receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw.content); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    vi.mocked(client.fetchUnread).mockResolvedValueOnce([makeMessage({ uid: 1, uidValidity: '2', body: 'new' })]).mockResolvedValue([]);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(dispatched).toEqual(['old', 'new']);
+  });
+
+  it('does not take a new email for the one that was recorded with an error', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1, body: 'old' })]);
+    const dispatched: string[] = [];
+    receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), makeMockLogger().logger);
+    receiver.setDispatcher(makeDispatcher((raw) => {
+      dispatched.push(raw.content);
+      return { messageId: 1, status: raw.content === 'old' ? 'ERROR' : 'PROCESSED' };
+    }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    vi.mocked(client.fetchUnread).mockResolvedValueOnce([makeMessage({ uid: 1, uidValidity: '2', body: 'new' })]).mockResolvedValue([]);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(dispatched).toEqual(['old', 'new']);
   });
 });

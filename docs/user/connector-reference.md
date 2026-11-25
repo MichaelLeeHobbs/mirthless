@@ -503,6 +503,10 @@ EMAIL can only receive; it cannot send messages. Use [SMTP](#smtp) to send email
 
 It polls an IMAP mailbox folder for unread messages and sends each one as the mail server holds it: the raw email, headers and MIME parts and attachments included, read as UTF-8. The subject, from, to and date are in the source map. Afterwards it marks the email read, deletes it or moves it.
 
+It keeps track of what it has done with IMAP keywords, which stay on the email through restarts and redeploys: `$GalvaniGraphDispatched` once the pipeline took it, so that only the marking, deleting or moving is tried again, and `$GalvaniGraphError` when its message was recorded with an error. Such an email is left in the folder and not read again, by any channel, until you remove the keyword; reprocess its message from the message browser. A mailbox that does not accept custom keywords is reported once in the log; there, a restart or a redeploy sends an email that was left in the folder again.
+
+A stop or a pause waits for the email in hand, marks, deletes or moves it, and takes no more. A halt does not wait; the email in hand is dealt with when its message ends.
+
 ### EMAIL security
 
 `secure` is on by default and connects with IMAP over TLS (port 993). Turning it off sends the mailbox password and the PHI in plaintext.
