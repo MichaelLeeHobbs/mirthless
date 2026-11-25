@@ -1,6 +1,6 @@
 // What the DICOM Listener takes, and how it starts and stops (#410), over real associations.
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -236,7 +236,10 @@ describe('stopping the listener', () => {
 
   it('does not wait for a sender that hung up on an image it had taken', async () => {
     let storeIt = (): void => undefined;
+    let taken = (): void => undefined;
+    const isTaken = new Promise<void>((resolve) => { taken = resolve; });
     const receiver = await start(async (raw) => {
+      taken();
       await new Promise<void>((resolve) => { storeIt = resolve; });
       raw.onStored?.({ recoverable: true });
       return PROCESSED;
@@ -246,18 +249,15 @@ describe('stopping the listener', () => {
     client.on('networkError', () => undefined);
     const closed = new Promise<void>((resolve) => { client.on('closed', () => { resolve(); }); });
     client.send('127.0.0.1', port, 'SCU', 'LISTENER', TIMEOUTS);
-    await vi.waitFor(async () => { expect((await fs.readdir(dir)).length).toBe(1); }, 15_000);
-    let stopped = false;
-    const stopping = receiver.onStop().then(() => { stopped = true; });
+    await isTaken;
+    const stopping = receiver.onStop();
     client.abort(AbortSource.ServiceUser, AbortReason.NotSpecified);
     await closed;
     await new Promise((resolve) => { setTimeout(resolve, 200); });
     const began = Date.now();
 
     storeIt();
-    await stopping;
-
-    expect(stopped).toBe(true);
+    expect((await stopping).ok).toBe(true);
     // Well under the 5 s a stop waits at most.
     expect(Date.now() - began).toBeLessThan(3_000);
   });
