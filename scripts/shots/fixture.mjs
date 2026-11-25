@@ -182,7 +182,7 @@ const messages = Array.from({ length: 14 }, (_, i) => ({
 }));
 
 const SCRIPT_LOG = JSON.stringify({
-  earlierRuns: 0,
+  runsLeftOut: 0,
   runs: [
     { script: 'Source filter', leftOut: 0, lines: [{ level: 'INFO', time: ago(3), text: 'ADT^A08 for MRN 4821193 accepted' }] },
     {

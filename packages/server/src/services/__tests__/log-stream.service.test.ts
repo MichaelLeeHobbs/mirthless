@@ -56,6 +56,30 @@ describe('what channel scripts wrote (#164)', () => {
     expect(LogStreamService.query({ limit: 2 }).entries.map((e) => e.message)).toEqual(['line 10009', 'line 10007']);
   });
 
+  it('does not come back when it is logged again', () => {
+    setScriptLogging(true);
+    write({ msg: 'server up' }, { msg: '[Deploy, channel c] MRN 1', component: 'channel-script' });
+    setScriptLogging(false);
+    write({ msg: 'off' });
+    setScriptLogging(true);
+    write({ msg: '[Deploy, channel c] MRN 2', component: 'channel-script' });
+    expect(messages()).toEqual(['[Deploy, channel c] MRN 2', 'off', 'server up']);
+  });
+
+  it('leaves the buffer in order, full or not', () => {
+    setScriptLogging(true);
+    write(...Array.from({ length: 10_003 }, (_, i) => ({ msg: String(i), ...(i % 3 === 0 ? { component: 'channel-script' } : {}) })));
+    setScriptLogging(false);
+    write(...Array.from({ length: 4_000 }, (_, i) => ({ msg: `then ${String(i)}` })));
+
+    const { entries, total } = LogStreamService.query({ limit: 20_000 });
+    expect(total).toBe(10_000);
+    expect(entries[0]?.message).toBe('then 3999');
+    expect(entries[4_000]?.message).toBe('10001');
+    expect(entries.map((e) => e.seq)).toEqual([...entries.map((e) => e.seq)].sort((a, b) => b - a));
+    expect(new Set(entries.map((e) => e.seq)).size).toBe(10_000);
+  });
+
   it('has a number for each line, so that two of the same text are two', () => {
     write({ msg: 'same' }, { msg: 'same' });
     const { entries } = LogStreamService.query();

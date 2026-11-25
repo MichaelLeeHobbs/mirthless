@@ -8,14 +8,16 @@ export const MAX_SCRIPT_LOG_LINES = 200;
 /** A line keeps its first characters: a script may log whole messages. */
 export const MAX_SCRIPT_LOG_LINE_CHARS = 10_000;
 
-/** And a run no more than this, in however many lines. */
+/** Once the lines of a run hold this many, each line after them keeps fewer. */
 export const MAX_SCRIPT_LOG_RUN_CHARS = 100_000;
+export const MAX_SCRIPT_LOG_LATER_LINE_CHARS = 100;
 
-/** A connector keeps its last runs: a queue can run a destination's script without end. */
+/** A connector keeps its first runs, which are those before a send, and its last ones: a queue can run a destination's script without end. */
 export const MAX_SCRIPT_LOG_RUNS = 20;
+export const MAX_SCRIPT_LOG_FIRST_RUNS = 5;
 
-/** And fewer when they hold more than this: each run reads and writes them all. */
-export const MAX_SCRIPT_LOG_CHARS = 500_000;
+/** And fewer of the last when they hold more than this: each run reads and writes them all. */
+export const MAX_SCRIPT_LOG_CHARS = 1_000_000;
 
 export const SCRIPT_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const;
 export type ScriptLogLevel = (typeof SCRIPT_LOG_LEVELS)[number];
@@ -29,8 +31,8 @@ const scriptLogRunSchema = z.object({
 
 const scriptLogSchema = z.object({
   runs: z.array(scriptLogRunSchema),
-  /** Runs that are not kept any more. */
-  earlierRuns: z.number().int().min(0),
+  /** Runs between the first and the last ones. */
+  runsLeftOut: z.number().int().min(0),
 });
 
 export type ScriptLogRun = z.infer<typeof scriptLogRunSchema>;
@@ -51,12 +53,12 @@ function charsOf({ lines }: ScriptLogRun): number {
 }
 
 /** The last of them that fit, and the last one in any case. */
-function lastRuns(runs: readonly ScriptLogRun[]): readonly ScriptLogRun[] {
+function lastRuns(runs: readonly ScriptLogRun[], room: number): readonly ScriptLogRun[] {
   const kept: ScriptLogRun[] = [];
   let chars = 0;
-  for (const run of runs.slice(-MAX_SCRIPT_LOG_RUNS).reverse()) {
+  for (const run of runs.slice(MAX_SCRIPT_LOG_FIRST_RUNS - MAX_SCRIPT_LOG_RUNS).reverse()) {
     chars += charsOf(run);
-    if (kept.length > 0 && chars > MAX_SCRIPT_LOG_CHARS) break;
+    if (kept.length > 0 && chars > room) break;
     kept.unshift(run);
   }
   return kept;
@@ -64,8 +66,10 @@ function lastRuns(runs: readonly ScriptLogRun[]): readonly ScriptLogRun[] {
 
 /** The text to store for a connector after another run. `stored` is what is there now. */
 export function withScriptLogRun(stored: string | null, run: ScriptLogRun): string {
-  const log = (stored === null ? null : readScriptLog(stored)) ?? { runs: [], earlierRuns: 0 };
+  const log = (stored === null ? null : readScriptLog(stored)) ?? { runs: [], runsLeftOut: 0 };
   const runs = [...log.runs, run];
-  const kept = lastRuns(runs);
-  return JSON.stringify({ runs: [...kept], earlierRuns: log.earlierRuns + runs.length - kept.length } satisfies ScriptLog);
+  const first = runs.slice(0, MAX_SCRIPT_LOG_FIRST_RUNS);
+  const room = MAX_SCRIPT_LOG_CHARS - first.reduce((sum, r) => sum + charsOf(r), 0);
+  const kept = [...first, ...lastRuns(runs.slice(MAX_SCRIPT_LOG_FIRST_RUNS), room)];
+  return JSON.stringify({ runs: kept, runsLeftOut: log.runsLeftOut + runs.length - kept.length } satisfies ScriptLog);
 }

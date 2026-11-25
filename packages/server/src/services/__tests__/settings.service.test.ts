@@ -290,6 +290,12 @@ describe('SettingsService', () => {
       expect(vi.mocked(emitEvent)).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { keys: ['general.server_name', SCRIPT_LOG_SETTING], [SCRIPT_LOG_SETTING]: value } }));
     });
 
+    it('says what is stored of a setting that is given twice: the last', async () => {
+      mockReturning.mockResolvedValue([makeSettingRow({ key: SCRIPT_LOG_SETTING, value: 'true', type: 'boolean' })]);
+      await SettingsService.bulkUpsert([save('false'), save('true')]);
+      expect(vi.mocked(emitEvent)).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { keys: [SCRIPT_LOG_SETTING, SCRIPT_LOG_SETTING], [SCRIPT_LOG_SETTING]: 'true' } }));
+    });
+
     it('holds the value of no other setting', async () => {
       mockReturning.mockResolvedValue([makeSettingRow()]);
       await SettingsService.upsert({ key: 'general.server_name', value: 'x', type: 'string' });

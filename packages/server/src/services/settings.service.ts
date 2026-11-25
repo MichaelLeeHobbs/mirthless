@@ -114,9 +114,9 @@ function clearedAttribute(cleared: boolean): { readonly cleared?: string } {
   return cleared ? { cleared: SMTP_PASSWORD } : {};
 }
 
-/** Who can read what scripts write depends on it, so the record says which way it was set. */
+/** Who can read what scripts write depends on it, so the record says which way it was set: the last one is stored. */
 function scriptLogAttribute(inputs: readonly UpsertSettingInput[]): Record<string, unknown> {
-  const set = inputs.find(({ key }) => key === SCRIPT_LOG_SETTING);
+  const set = inputs.filter(({ key }) => key === SCRIPT_LOG_SETTING).at(-1);
   return set === undefined ? {} : { [SCRIPT_LOG_SETTING]: set.value };
 }
 

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { Writable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONTENT_TYPE, MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_RUNS, createChannelSchema, readScriptLog, type ScriptLog } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, MAX_SCRIPT_LOG_FIRST_RUNS, MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_RUNS, createChannelSchema, readScriptLog, type ScriptLog } from '@galvanigraph/core-models';
 import {
   adminActor, apiCall, closeServer, describeIntegration, listen, loadServerModules, unwrap, userWithRole, WAIT,
   type ServerModules, type TestActor,
@@ -152,13 +152,14 @@ describeIntegration('what scripts log (real Postgres)', () => {
         await vi.waitFor(async () => { expect((await logOf(channelId, messageId, 1))?.runs.length).toBeGreaterThan(0); }, WAIT);
         // As after many tries: it tries once a second.
         const runs = Array.from({ length: MAX_SCRIPT_LOG_RUNS }, (_, i) => ({ script: `try ${String(i)}`, lines: [], leftOut: 0 }));
-        await mods.pool.query('UPDATE message_content SET content = $3 WHERE channel_id = $1 AND message_id = $2 AND meta_data_id = 1 AND content_type = 14', [channelId, messageId, JSON.stringify({ runs, earlierRuns: 0 })]);
+        await mods.pool.query('UPDATE message_content SET content = $3 WHERE channel_id = $1 AND message_id = $2 AND meta_data_id = 1 AND content_type = 14', [channelId, messageId, JSON.stringify({ runs, runsLeftOut: 0 })]);
 
-        await vi.waitFor(async () => { expect((await logOf(channelId, messageId, 1))?.earlierRuns).toBeGreaterThan(0); }, WAIT);
+        await vi.waitFor(async () => { expect((await logOf(channelId, messageId, 1))?.runsLeftOut).toBeGreaterThan(0); }, WAIT);
         const log = await logOf(channelId, messageId, 1);
         expect(log?.runs).toHaveLength(MAX_SCRIPT_LOG_RUNS);
         expect(log?.runs.at(-1)?.script).toBe('JavaScript destination');
-        expect(log?.runs[0]?.script).not.toBe('try 0');
+        expect(log?.runs.slice(0, MAX_SCRIPT_LOG_FIRST_RUNS + 1).map((r) => r.script)).not.toContain('try 5');
+        expect(log?.runs[0]?.script).toBe('try 0');
       });
     });
 
@@ -218,6 +219,7 @@ describeIntegration('what scripts log (real Postgres)', () => {
 
       const at = { channelId, messageId: String(messageId) };
       const of = `channel ${channelId}, message ${String(messageId)}`;
+      const destination = `${of}, destination 1`;
       const firstPoll = serverLines().findIndex((l) => l['script'] === 'JavaScript source');
       // It polls every second.
       const lines = serverLines().filter((l, i) => l['script'] !== 'JavaScript source' || i === firstPoll);
@@ -225,7 +227,7 @@ describeIntegration('what scripts log (real Postgres)', () => {
         { level: 30, msg: `[Deploy, channel ${channelId}] deploying MRN-1`, channelId, messageId: undefined, metaDataId: undefined, script: 'Deploy' },
         { level: 30, msg: `[JavaScript source, channel ${channelId}] polling MRN-2`, channelId, messageId: undefined, metaDataId: undefined, script: 'JavaScript source' },
         { level: 40, msg: `[Source filter, ${of}] filtering MRN-3`, ...at, metaDataId: 0, script: 'Source filter' },
-        { level: 50, msg: `[JavaScript destination, ${of}] writing MRN-4`, ...at, metaDataId: 1, script: 'JavaScript destination' },
+        { level: 50, msg: `[JavaScript destination, ${destination}] writing MRN-4`, ...at, metaDataId: 1, script: 'JavaScript destination' },
         { level: 30, msg: `[Undeploy, channel ${channelId}] undeploying MRN-9`, channelId, messageId: undefined, metaDataId: undefined, script: 'Undeploy' },
       ]);
     });

@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { readScriptLog, type ScriptLogLevel, type ScriptLogRun } from '@galvanigraph/core-models';
+import { MAX_SCRIPT_LOG_FIRST_RUNS, readScriptLog, type ScriptLogLevel, type ScriptLogRun } from '@galvanigraph/core-models';
 import { formatClockTime, formatTimestamp } from '../../lib/format.js';
 import { eventLevelLevel } from '../../lib/status.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
@@ -34,7 +34,7 @@ function Run({ run }: { readonly run: ScriptLogRun }): ReactNode {
       </Box>
       <Box
         component="pre"
-        role="region"
+        role="group"
         tabIndex={0}
         aria-label={`Log of ${run.script}`}
         sx={{
@@ -59,8 +59,12 @@ export function ScriptLogView({ content }: { readonly content: string }): ReactN
   if (log === null) return <ContentViewer content={content} />;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-      {log.earlierRuns > 0 ? <Note>{more(log.earlierRuns, 'earlier script run is not kept', 'earlier script runs are not kept')}</Note> : null}
-      {log.runs.map((run, i) => <Run key={i} run={run} />)}
+      {log.runs.map((run, i) => (
+        <Fragment key={i}>
+          {i === MAX_SCRIPT_LOG_FIRST_RUNS && log.runsLeftOut > 0 ? <Note>{more(log.runsLeftOut, 'script run between these is not kept', 'script runs between these are not kept')}</Note> : null}
+          <Run run={run} />
+        </Fragment>
+      ))}
     </Box>
   );
 }

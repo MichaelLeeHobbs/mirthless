@@ -65,6 +65,15 @@ describe('runStartupSteps', () => {
     expect(h.deps.redeployChannels).toHaveBeenCalledOnce();
   });
 
+  it('still redeploys channels when the settings could not be put into force, and logs that', async () => {
+    const h = harness({ applySettings: vi.fn(async () => { throw new Error('connection terminated'); }) });
+
+    await runStartupSteps(h.deps);
+
+    expect(h.deps.redeployChannels).toHaveBeenCalledOnce();
+    expect(h.logError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errMsg: 'connection terminated' }), 'Settings could not be put into force');
+  });
+
   it('still redeploys channels when the queue fails, and reports the queue and the pruner as failed', async () => {
     const h = harness({ startQueue: vi.fn(async () => failed('permission denied for database')) });
 

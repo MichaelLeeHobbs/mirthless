@@ -7,7 +7,7 @@ import * as vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
-import { MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS, MAX_SCRIPT_LOG_RUN_CHARS, type ScriptLogLevel } from '@galvanigraph/core-models';
+import { MAX_SCRIPT_LOG_LATER_LINE_CHARS, MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS, MAX_SCRIPT_LOG_RUN_CHARS, type ScriptLogLevel } from '@galvanigraph/core-models';
 import type { SandboxContext } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
@@ -224,22 +224,21 @@ function makeNonThrowingDispatch(
 }
 
 /** A copy of its own: a part of a string keeps all of that in memory. */
-function firstChars(text: string): string {
-  const first = Buffer.from(text.slice(0, MAX_SCRIPT_LOG_LINE_CHARS), 'utf16le').toString('utf16le');
+function firstChars(text: string, max: number): string {
+  const first = Buffer.from(text.slice(0, max), 'utf16le').toString('utf16le');
   const cut = text.length - first.length;
   return cut > 0 ? `${first}... (${String(cut)} more characters)` : first;
 }
 
 function writeLog(state: HostBridgeState, level: ScriptLogLevel, text: string): void {
-  const kept = Math.min(text.length, MAX_SCRIPT_LOG_LINE_CHARS);
-  // Of a run that is full no later line is kept, however short.
-  if (state.leftOut > 0 || state.logged === MAX_SCRIPT_LOG_LINES || state.loggedChars + kept > MAX_SCRIPT_LOG_RUN_CHARS) {
+  if (state.logged === MAX_SCRIPT_LOG_LINES) {
     state.leftOut += 1;
     return;
   }
+  const max = state.loggedChars < MAX_SCRIPT_LOG_RUN_CHARS ? MAX_SCRIPT_LOG_LINE_CHARS : MAX_SCRIPT_LOG_LATER_LINE_CHARS;
   state.logged += 1;
-  state.loggedChars += kept;
-  state.log?.line({ level, time: new Date().toISOString(), text: firstChars(text) });
+  state.loggedChars += Math.min(text.length, max);
+  state.log?.line({ level, time: new Date().toISOString(), text: firstChars(text, max) });
 }
 
 function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown[]) => unknown {

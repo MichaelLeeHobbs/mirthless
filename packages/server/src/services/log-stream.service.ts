@@ -43,8 +43,20 @@ const LEVEL_LABELS: Record<number, string> = {
 const buffer: KeptEntry[] = [];
 let writeIndex = 0;
 let totalWritten = 0;
+let holdsScripts = false;
+
+/** What scripts wrote can hold PHI, and is kept no longer than it is logged (D-387). */
+function forgetScripts(): void {
+  if (!holdsScripts || scriptsAreLogged()) return;
+  const kept = getEntries().filter((e) => !e.ofScript);
+  buffer.splice(0, buffer.length, ...kept);
+  writeIndex = kept.length % MAX_ENTRIES;
+  holdsScripts = false;
+}
 
 function addEntry(entry: KeptEntry): void {
+  forgetScripts();
+  holdsScripts ||= entry.ofScript;
   if (buffer.length < MAX_ENTRIES) {
     buffer.push(entry);
   } else {
@@ -55,15 +67,14 @@ function addEntry(entry: KeptEntry): void {
 }
 
 function getEntries(): readonly KeptEntry[] {
-  const entries = totalWritten <= MAX_ENTRIES ? buffer : [...buffer.slice(writeIndex), ...buffer.slice(0, writeIndex)];
-  // What scripts wrote can hold PHI, and is shown no longer than it is logged (D-387).
-  return scriptsAreLogged() ? entries : entries.filter((e) => !e.ofScript);
+  return [...buffer.slice(writeIndex), ...buffer.slice(0, writeIndex)];
 }
 
 export class LogStreamService {
   static query(params: LogQueryParams = {}): LogQueryResult {
     const { level, search, offset = 0, limit = 100 } = params;
 
+    forgetScripts();
     let entries = [...getEntries()];
 
     if (level !== undefined) {
@@ -134,6 +145,7 @@ export class LogStreamService {
     buffer.length = 0;
     writeIndex = 0;
     totalWritten = 0;
+    holdsScripts = false;
   }
 
   /** Tests only. */

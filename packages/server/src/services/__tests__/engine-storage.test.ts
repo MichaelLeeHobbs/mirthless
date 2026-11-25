@@ -140,10 +140,10 @@ describe('what a script logged (#164)', () => {
   const RUN = { script: 'Source filter', lines: [{ level: 'INFO' as const, time: 't', text: 'x' }], leftOut: 0 };
 
   it('is added to what is stored', async () => {
-    mockLoadContent.mockResolvedValue(ok(JSON.stringify({ runs: [RUN], earlierRuns: 2 })));
+    mockLoadContent.mockResolvedValue(ok(JSON.stringify({ runs: [RUN], runsLeftOut: 2 })));
     expect(await createMessageStoreAdapter().storeScriptLog!('ch', 1, 0, RUN)).toEqual(ok(undefined));
     expect(mockLoadContent).toHaveBeenCalledExactlyOnceWith('ch', 1, 0, 14);
-    expect(mockStoreContent).toHaveBeenCalledExactlyOnceWith('ch', 1, 0, 14, JSON.stringify({ runs: [RUN, RUN], earlierRuns: 2 }), 'JSON', false);
+    expect(mockStoreContent).toHaveBeenCalledExactlyOnceWith('ch', 1, 0, 14, JSON.stringify({ runs: [RUN, RUN], runsLeftOut: 2 }), 'JSON', false);
   });
 
   it('is not stored, and that is said, when what is stored cannot be read: it would be overwritten', async () => {

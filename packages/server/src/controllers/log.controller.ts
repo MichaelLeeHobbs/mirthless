@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { LogStreamService } from '../services/log-stream.service.js';
@@ -18,7 +17,7 @@ export class LogController {
     recordReadBestEffort(req, {
       action: AUDIT_ACTION.SERVER_LOG_READ, attributes: { query },
       // New lines on a polled page record again; the lines themselves stay out of the record.
-      dedupe: { key: `server-log|${JSON.stringify(query)}`, ids: result.entries.map((e) => createHash('sha256').update(`${e.timestamp}|${String(e.seq)}|${e.message}`).digest('base64')), idsOnlyForDedupe: true },
+      dedupe: { key: `server-log|${JSON.stringify(query)}`, ids: result.entries.map((e) => `${e.timestamp}|${String(e.seq)}`), idsOnlyForDedupe: true },
     });
     res.json({ success: true, data: result });
   }

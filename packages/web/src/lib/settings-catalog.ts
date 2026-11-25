@@ -75,7 +75,7 @@ export const SETTING_SECTIONS: readonly SettingSection[] = [
       {
         key: 'logging.script_output',
         label: 'Log what channel scripts write',
-        help: "Also write what scripts send to logger to the server log, at most 200 lines for each script run, from LOG_LEVEL on (logger.debug shows only at debug). The text is the script's and can hold patient data, for everyone who reads the server log or the place it is collected in. The message browser shows it on the message either way.",
+        help: "Also write what scripts send to logger to the server log, at most 200 lines for each script run and 1,000 characters of a line, from LOG_LEVEL on (logger.debug shows only at debug). The text is the script's and can hold patient data, for everyone who reads the server log or the place it is collected in. The message browser shows it on the message either way.",
       },
     ],
   },

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
-import { withScriptLogRun, type ScriptLog, type ScriptLogRun } from '@galvanigraph/core-models';
+import { MAX_SCRIPT_LOG_FIRST_RUNS, withScriptLogRun, type ScriptLog, type ScriptLogRun } from '@galvanigraph/core-models';
 import { darkTheme } from '../../../styles/theme.js';
 import { formatClockTime, formatTimestamp } from '../../../lib/format.js';
 import { ScriptLogView } from '../ScriptLogView.js';
@@ -41,7 +41,7 @@ describe('ScriptLogView', () => {
     show(withScriptLogRun(null, run('Source filter', { lines: [{ level: 'INFO', time: TIME, text: 'MSH|^~\\&\rPID|1\r\nOBX|1' }] })));
 
     expect(screen.getByText(formatTimestamp(TIME))).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Log of Source filter' }).textContent).toContain('MSH|^~\\&\nPID|1\nOBX|1');
+    expect(screen.getByRole('group', { name: 'Log of Source filter' }).textContent).toContain('MSH|^~\\&\nPID|1\nOBX|1');
   });
 
   it.each([
@@ -53,11 +53,17 @@ describe('ScriptLogView', () => {
   });
 
   it.each([
-    [1, '1 earlier script run is not kept'],
-    [3, '3 earlier script runs are not kept'],
-  ])('says how many earlier runs are not kept: %i', (earlierRuns, said) => {
-    show(text({ runs: [run('JavaScript destination')], earlierRuns }));
-    expect(screen.getByText(said)).toBeTruthy();
+    [1, '1 script run between these is not kept'],
+    [3, '3 script runs between these are not kept'],
+  ])('says between the first and the last runs how many are not kept: %i', (runsLeftOut, said) => {
+    const runs = Array.from({ length: MAX_SCRIPT_LOG_FIRST_RUNS + 1 }, (_, i) => run(`run ${String(i)}`));
+    show(text({ runs, runsLeftOut }));
+
+    const note = screen.getByText(said);
+    const last = screen.getByRole('heading', { name: `run ${String(MAX_SCRIPT_LOG_FIRST_RUNS)}` });
+    const before = screen.getByRole('heading', { name: `run ${String(MAX_SCRIPT_LOG_FIRST_RUNS - 1)}` });
+    expect(before.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(last.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 
   it('shows what is stored as it is when it is not a script log', () => {

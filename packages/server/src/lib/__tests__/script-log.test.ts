@@ -7,7 +7,7 @@ const { MAX_SERVER_LOG_CHARS, serverScriptLog, setScriptLogging } = await import
 
 const AT = { channelId: 'ch', messageId: 7, metaDataId: 1, script: 'Destination filter' };
 const FIELDS = { component: 'channel-script', ...AT };
-const FROM = '[Destination filter, channel ch, message 7]';
+const FROM = '[Destination filter, channel ch, message 7, destination 1]';
 const line = (level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', text: string): Parameters<ReturnType<typeof serverScriptLog>['line']>[0] => ({ level, time: 't', text });
 
 beforeEach(() => { vi.clearAllMocks(); });
@@ -35,6 +35,12 @@ describe('what scripts log, in the server log', () => {
     expect(log.warn.mock.calls).toEqual([[FIELDS, `${FROM} c`], [FIELDS, `${FROM} 3 more lines of this script run are left out`]]);
   });
 
+  it('names no destination for the source', () => {
+    setScriptLogging(true);
+    serverScriptLog({ ...AT, metaDataId: 0, script: 'Source filter' }).line(line('INFO', 'x'));
+    expect(log.info.mock.calls[0]?.[1]).toBe('[Source filter, channel ch, message 7] x');
+  });
+
   it('names no message for a script that runs for none', () => {
     setScriptLogging(true);
     serverScriptLog({ channelId: 'ch', script: 'Deploy' }).line(line('INFO', 'up'));
@@ -48,7 +54,7 @@ describe('what scripts log, in the server log', () => {
     sink.line(line('INFO', 'x'.repeat(MAX_SERVER_LOG_CHARS)));
     sink.line(line('INFO', 'x'.repeat(MAX_SERVER_LOG_CHARS + 5)));
     expect(log.info.mock.calls.map(([, text]) => String(text).slice(FROM.length + 1))).toEqual([
-      'MSH|^~\\&\\rPID\\r\\nOBX', 'x'.repeat(MAX_SERVER_LOG_CHARS), `${'x'.repeat(MAX_SERVER_LOG_CHARS)}... (5 more characters)`,
+      'MSH|^~\\&\\rPID\\r\\nOBX', 'x'.repeat(MAX_SERVER_LOG_CHARS), `${'x'.repeat(MAX_SERVER_LOG_CHARS)}... (cut)`,
     ]);
   });
 

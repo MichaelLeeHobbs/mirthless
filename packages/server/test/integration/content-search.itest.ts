@@ -40,7 +40,7 @@ describeIntegration('Message content search (real Postgres)', () => {
 
   it('does not look in what scripts logged, whose own words would match', async () => {
     const { messageId } = unwrap(await mods.MessageService.createMessage(channelId, 'itest'));
-    unwrap(await mods.MessageService.storeContent(channelId, messageId, 0, 14, '{"runs":[{"script":"Source filter","lines":[]}],"earlierRuns":0}', 'JSON', false));
+    unwrap(await mods.MessageService.storeContent(channelId, messageId, 0, 14, '{"runs":[{"script":"Source filter","lines":[]}],"runsLeftOut":0}', 'JSON', false));
     expect(await search('Source filter')).toEqual([]);
   });
 

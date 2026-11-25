@@ -46,7 +46,7 @@ export interface StartupDeps {
   readonly status: StartupStatus;
   readonly startQueue: () => Promise<Result<void>>;
   readonly startPrunerScheduler: () => Promise<Result<void>>;
-  /** Before a channel runs a script. Never rejects. */
+  /** Before a channel runs a script. */
   readonly applySettings: () => Promise<void>;
   readonly redeployChannels: () => Promise<Result<void>>;
   readonly ensureAuditPartitions: () => Promise<Result<void>>;
@@ -74,7 +74,8 @@ export async function runStartupSteps(deps: StartupDeps): Promise<void> {
   await Promise.all([
     queueThenPruner(),
     runStep(deps, STARTUP_STEP.CHANNEL_REDEPLOY, async () => {
-      await deps.applySettings();
+      const applied = await tryCatch(deps.applySettings);
+      if (!applied.ok) deps.logger.error({ phase: 'startup', errMsg: applied.error.message }, 'Settings could not be put into force');
       return deps.redeployChannels();
     }),
     runStep(deps, STARTUP_STEP.AUDIT_PARTITIONS, deps.ensureAuditPartitions),
