@@ -592,6 +592,10 @@ A script saved on a channel that was imported without that script is now stored.
 
 An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.
 
+## What scripts log is stored with the message (#164)
+
+What a channel script writes with `logger` was dropped. It is now stored with the message it ran for and shown in the message browser, as content of the message (D-387): a channel that stores no content stores none of it. Look at scripts that log on every message, imported ones among them: what they write is stored from the upgrade on, at most 200 lines for each script run, and each run that logs costs two more statements. Remove what nobody reads. The server log has none of it unless an administrator turns on **Log what channel scripts write**. That appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/logging.script_output`.
+
 ## Expired collection records are no longer found, and the data pruner deletes them (#417)
 
 A collection record's expiry was stored and shown, and nothing asked about it: a script's `find` returned an expired record like any other. From this version on it does not match, and a script's `update` of it answers `null` unless it gives the record a new life (D-377). **The data pruner's next run deletes it** (D-390): at the pruner's next scheduled time if it is on, or when someone presses Run Now. The event `DATA_PRUNER_RAN` then has how many were deleted of which collection. With the pruner off, nothing is deleted. A first run over many records stops after 2.5 minutes of them and the next one goes on; Run Now stops after 15 s of them. **Look at your collections before upgrading**, because a channel may rely on records whose life was over without anyone noticing:

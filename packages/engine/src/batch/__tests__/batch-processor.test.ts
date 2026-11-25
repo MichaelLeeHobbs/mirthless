@@ -11,7 +11,6 @@ function makeSandbox(returnValue: unknown): SandboxExecutor {
         returnValue,
         msg: undefined,
         mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {}, globalMap: {}, responseMap: {} },
-        logs: [],
       } satisfies ExecutionResult,
       error: null,
     } satisfies Result<ExecutionResult>),

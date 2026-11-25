@@ -78,6 +78,7 @@ const CONTENT_TYPE_NAMES: Readonly<Record<number, string>> = {
   [CONTENT_TYPE.ERROR]: 'error',
   [CONTENT_TYPE.RESPONSE_ERROR]: 'responseError',
   [CONTENT_TYPE.PROCESSING_ERROR]: 'processingError',
+  [CONTENT_TYPE.SCRIPT_LOG]: 'scriptLog',
 } satisfies Record<ContentType, string>;
 
 export class MessageQueryService {

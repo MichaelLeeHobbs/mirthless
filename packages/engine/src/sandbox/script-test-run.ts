@@ -7,11 +7,11 @@ import { CODE_TEMPLATE_CONTEXT, templateDeclarations, type ScriptSurface, type S
 import { compileScript, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
 import { VmSandboxExecutor } from './sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from './sandbox-context.js';
+import { ScriptRunLog } from './script-run-log.js';
 import type { BridgeDependencies, CollectionBridge } from './bridge-functions.js';
 import { parseForSandbox, serializeFromSandbox } from '../pipeline/data-type-handler.js';
 import { DestinationSet, createDestinationSetProxy } from '../pipeline/destination-set.js';
 
-export const MAX_TEST_LOG_LINES = 200;
 /** Also caps the returned value. */
 export const MAX_TEST_OUTPUT_CHARS = 256 * 1024;
 
@@ -85,6 +85,14 @@ function scriptBody(input: ScriptTestInput): Result<string> {
   return { ok: true, value: input.script, error: null };
 }
 
+/** A loop that logs must not send megabytes back to the browser. */
+function loggedLines(log: ScriptRunLog): { level: string; message: string }[] {
+  const run = log.run();
+  if (run === null) return [];
+  const lines = run.lines.map(({ level, text }) => ({ level: level as string, message: text }));
+  return run.leftOut === 0 ? lines : [...lines, { level: 'INFO', message: `${String(run.leftOut)} more logger lines not shown` }];
+}
+
 function errorResult(error: string, started: number, logs: ScriptTestResult['logs'] = [], skipped: readonly string[] = []): ScriptTestResult {
   return {
     outcome: 'error', output: null, returned: null, logs, maps: {}, destinations: null,
@@ -120,21 +128,19 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
     const skipped: string[] = [];
     const sandbox = new VmSandboxExecutor(dryBridges(input.readers, skipped));
     input.onCompiled?.();
-    const result = await sandbox.execute(compiled.value, context, { timeout: input.timeoutMs });
-    if (!result.ok) return errorResult(result.error.message, started, [], skipped);
+    const log = new ScriptRunLog('Test run');
+    const result = await sandbox.execute(compiled.value, context, { timeout: input.timeoutMs, log });
+    const logLines = loggedLines(log);
+    if (!result.ok) return errorResult(result.error.message, started, logLines, skipped);
 
-    const { returnValue, msg, logs, mapUpdates } = result.value;
-    // A loop that logs or builds a huge message must not send megabytes back to the browser.
-    const logLines = logs.slice(0, MAX_TEST_LOG_LINES).map((l) => ({ level: l.level, message: l.message }));
-    if (logs.length > MAX_TEST_LOG_LINES) {
-      logLines.push({ level: 'INFO', message: `${String(logs.length - MAX_TEST_LOG_LINES)} more logger lines not shown` });
-    }
+    const { returnValue, msg, mapUpdates } = result.value;
     const filter = input.kind === 'filter';
     let output: string | null = null;
     if (!filter && dataType !== undefined) {
       const value = replacement(returnValue, msg);
       output = value == null ? null : serializeFromSandbox(value, dataType, input.sample);
     }
+    // A script can build a huge message.
     if (output !== null && output.length > MAX_TEST_OUTPUT_CHARS) {
       output = output.slice(0, MAX_TEST_OUTPUT_CHARS);
       logLines.push({ level: 'INFO', message: `Output cut to the first ${String(MAX_TEST_OUTPUT_CHARS)} characters` });

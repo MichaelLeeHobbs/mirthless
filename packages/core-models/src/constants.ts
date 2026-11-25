@@ -127,6 +127,8 @@ export const CONTENT_TYPE = {
   ERROR: 11,
   RESPONSE_ERROR: 12,
   PROCESSING_ERROR: 13,
+  /** Of the connector's scripts (scripting/script-log.ts). */
+  SCRIPT_LOG: 14,
 } as const;
 export type ContentType = (typeof CONTENT_TYPE)[keyof typeof CONTENT_TYPE];
 

@@ -7,12 +7,14 @@ import * as vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
-import type { SandboxContext, LogEntry } from './sandbox-context.js';
+import { MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS, type ScriptLogLevel } from '@galvanigraph/core-models';
+import type { SandboxContext } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
 import { ESCAPED_IMPORT, withoutDynamicImport } from './dynamic-import.js';
 import { ownString, thrownText } from './sandbox-value.js';
 import { watchScript } from './script-watch.js';
+import type { ScriptLogSink } from './script-run-log.js';
 
 export interface CompiledScript {
   readonly code: string;
@@ -25,6 +27,8 @@ export interface ExecutionOptions {
   readonly signal?: AbortSignal | undefined;
   /** Whose script it is, for the watchdog (D-340). */
   readonly channelId?: string | undefined;
+  /** Without one, what the script logs is dropped. */
+  readonly log?: ScriptLogSink | undefined;
 }
 
 export interface ExecutionResult {
@@ -37,7 +41,6 @@ export interface ExecutionResult {
     readonly globalMap: Readonly<Record<string, unknown>>;
     readonly responseMap: Readonly<Record<string, unknown>>;
   };
-  readonly logs: readonly LogEntry[];
 }
 
 export const DEFAULT_EXECUTION_OPTIONS: ExecutionOptions = {
@@ -55,7 +58,9 @@ export interface SandboxExecutor {
 }
 
 interface HostBridgeState {
-  readonly logs: LogEntry[];
+  readonly log: ScriptLogSink | undefined;
+  /** Lines the script has written. */
+  logged: number;
   readonly bridges: BridgeFunctions;
   readonly hl7Handles: Map<number, Hl7MessageProxy>;
   readonly x12Handles: Map<number, X12MessageProxy>;
@@ -215,6 +220,17 @@ function makeNonThrowingDispatch(
   };
 }
 
+function writeLog(state: HostBridgeState, level: ScriptLogLevel, text: string): void {
+  state.logged += 1;
+  if (state.logged > MAX_SCRIPT_LOG_LINES) return;
+  const cut = text.length - MAX_SCRIPT_LOG_LINE_CHARS;
+  state.log?.line({
+    level,
+    time: new Date().toISOString(),
+    text: cut > 0 ? `${text.slice(0, MAX_SCRIPT_LOG_LINE_CHARS)}... (${String(cut)} more characters)` : text,
+  });
+}
+
 function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown[]) => unknown {
   const { bridges } = state;
   return (op: string, ...args: unknown[]): unknown => {
@@ -223,7 +239,7 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
     if (op.startsWith('ds.')) return dsOp(state, op, args);
     switch (op) {
       case 'log':
-        state.logs.push({ level: args[0] as LogEntry['level'], message: String(args[1] ?? ''), timestamp: new Date() });
+        writeLog(state, args[0] as ScriptLogLevel, String(args[1] ?? ''));
         return undefined;
       case 'fail': state.failure = String(args[0] ?? ''); return undefined;
       case 'parseHL7': return registerHl7(state, bridges.parseHL7(args[0] as string));
@@ -800,7 +816,8 @@ export class VmSandboxExecutor implements SandboxExecutor {
       }
 
       const state: HostBridgeState = {
-        logs: [],
+        log: options.log,
+        logged: 0,
         bridges: createBridgeFunctions(this.deps),
         hl7Handles: new Map(),
         x12Handles: new Map(),
@@ -838,22 +855,25 @@ export class VmSandboxExecutor implements SandboxExecutor {
         : `'use strict'; __run(function() {\n${code}\n});`;
 
       try {
-        runTimed(wrappedCode, contextObj, limit);
-        if (state.failure !== undefined) throw new Error(state.failure);
-        if (hasAsyncBridges) {
-          await awaitWithSignal(run.done, signal, () => (expiry.aborted ? timedOut(limit) : new Error('Script execution timed out')));
+        try {
+          runTimed(wrappedCode, contextObj, limit);
+          if (state.failure !== undefined) throw new Error(state.failure);
+          if (hasAsyncBridges) {
+            await awaitWithSignal(run.done, signal, () => (expiry.aborted ? timedOut(limit) : new Error('Script execution timed out')));
+          }
+        } finally {
+          run.finish(undefined, true);
         }
-      } finally {
-        run.finish(undefined, true);
-      }
 
-      const collected = collect(contextObj, options);
-      return {
-        returnValue: restore(state, collected.r),
-        msg: restore(state, collected.m),
-        mapUpdates: collected.maps,
-        logs: state.logs,
-      };
+        const collected = collect(contextObj, options);
+        return {
+          returnValue: restore(state, collected.r),
+          msg: restore(state, collected.m),
+          mapUpdates: collected.maps,
+        };
+      } finally {
+        if (state.logged > MAX_SCRIPT_LOG_LINES) state.log?.leftOut(state.logged - MAX_SCRIPT_LOG_LINES);
+      }
     });
   }
 

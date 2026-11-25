@@ -30,7 +30,7 @@ const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return moc
 
 const mockSandboxExecute = vi.fn().mockResolvedValue({
   ok: true,
-  value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
+  value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }},
   error: null,
 });
 const mockSandboxDispose = vi.fn();
@@ -67,6 +67,7 @@ vi.mock('@galvanigraph/engine', () => ({
   QueueConsumer: vi.fn().mockImplementation(function () {
     return { start: vi.fn(), stop: vi.fn().mockResolvedValue(undefined), halt: vi.fn().mockResolvedValue(undefined) };
   }),
+  ScriptRunLog: vi.fn().mockImplementation(function () { return { run: () => null }; }),
   compileScript: mockCompileScript,
   globalsNamed: mockGlobalsNamed,
   compileFilterRulesToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),

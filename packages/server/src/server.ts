@@ -9,6 +9,7 @@ import { setLogCaptureStream } from './lib/logger.js';
 import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
 import { DeploymentService } from './services/deployment.service.js';
+import { SettingsService } from './services/settings.service.js';
 import { createShutdownHandler, undeployAll } from './lib/shutdown.js';
 import { dataSourcePoolManager } from './services/data-source-pool-manager.js';
 import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
@@ -49,7 +50,11 @@ const startupDeps = {
   status: startupStatus,
   startQueue: () => tryCatch(async () => { await startQueue(); }),
   startPrunerScheduler: () => PrunerSchedulerService.start(),
-  redeployChannels: () => DeploymentService.autoDeployChannels(),
+  redeployChannels: async () => {
+    // Before a deploy script runs.
+    await SettingsService.applied();
+    return DeploymentService.autoDeployChannels();
+  },
   ensureAuditPartitions,
 };
 // Before any channel can run a script.

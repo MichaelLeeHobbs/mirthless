@@ -112,7 +112,9 @@ These match Mirth Connect's shortcuts, so ported scripts read the same maps. Bef
 
 ## Logging
 
-`logger` is available to every script, but its output is not shown or stored anywhere yet: the entries are collected and then discarded ([#164](https://github.com/MichaelLeeHobbs/mirthless/issues/164)). To see a value while debugging, put it in the channel map or in the message content.
+`logger` is available to every script. The message browser shows what a script wrote on the message it ran for, on the connector it ran for, under **Script Log**: the script, and the time, level and text of each line. A run keeps its first 200 lines, a line its first 10,000 characters, and a connector its last 20 runs; what was left out is said. It is content of the message: the same people may read it, it is encrypted, pruned and removed with the rest, and a channel whose storage mode keeps no content keeps none of it. A script that fails or runs out of time keeps what it wrote before.
+
+An administrator can have it written to the server log too, with the channel, message, connector and script (Settings, **Server log**). That is off unless turned on: the text is yours, and what you log of a message is PHI in the log. Deploy, undeploy and JavaScript source scripts run for no message, so theirs shows only there.
 
 ```js
 logger.info('message');

@@ -13,7 +13,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { useHistoricalLogs, useLogStream, type LogEntry } from '../../hooks/use-logs.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
-import { formatTimestampWith } from '../../lib/format.js';
+import { formatClockTime } from '../../lib/format.js';
 import { saveFile } from '../../lib/download.js';
 
 const LEVELS = [
@@ -28,18 +28,6 @@ function getLevelColor(level: number): string {
   if (level >= 40) return 'status.warning';
   if (level <= 20) return 'text.disabled';
   return 'text.primary';
-}
-
-function clockTime(d: Date): string {
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  return `${hh}:${mm}:${ss}.${ms}`;
-}
-
-export function formatClockTime(iso: string | null | undefined): string {
-  return formatTimestampWith(iso, clockTime);
 }
 
 function formatLogLine(entry: LogEntry): string {

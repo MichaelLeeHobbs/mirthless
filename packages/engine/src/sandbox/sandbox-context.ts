@@ -1,9 +1,3 @@
-export interface LogEntry {
-  readonly level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
-  readonly message: string;
-  readonly timestamp: Date;
-}
-
 export interface SandboxLogger {
   info(message: string): void;
   warn(message: string): void;

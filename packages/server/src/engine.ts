@@ -38,6 +38,8 @@ import {
   type ResponseSource,
   parseForSandbox,
   reportUnsaved,
+  ScriptRunLog,
+  type ScriptLogSink,
   type DataTypeOptions,
 } from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -54,7 +56,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvanigraph/connectors';
-import { AUDIT_ACTION, EVENT_NAME, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, EVENT_NAME, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate, withScriptLogRun } from '@galvanigraph/core-models';
 import { MessageService } from './services/message.service.js';
 import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
@@ -71,6 +73,7 @@ import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
+import { serverScriptLog } from './lib/script-log.js';
 import { messagesProcessedTotal } from './lib/metrics.js';
 import { emitAuditEvent, emitEvent } from './lib/event-emitter.js';
 import { emitToChannelAudience } from './lib/socket.js';
@@ -326,13 +329,13 @@ const READ_ONLY_CONTENT_TYPES: ReadonlySet<number> = new Set([
 const PRODUCTION_CONTENT_TYPES: ReadonlySet<number> = new Set([
   CONTENT_TYPE.RAW, CONTENT_TYPE.TRANSFORMED, CONTENT_TYPE.ENCODED,
   CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE, CONTENT_TYPE.RESPONSE_TRANSFORMED,
-  CONTENT_TYPE.RESPONSE_SENT, CONTENT_TYPE.CHANNEL_MAP,
+  CONTENT_TYPE.RESPONSE_SENT, CONTENT_TYPE.CHANNEL_MAP, CONTENT_TYPE.SCRIPT_LOG,
   ...ERROR_CONTENT_TYPES,
 ]);
 
-/** RAW mode keeps only the raw inbound content (enough to reprocess) plus errors. */
+/** RAW mode keeps only the raw inbound content (enough to reprocess), plus errors and what scripts logged. */
 const RAW_CONTENT_TYPES: ReadonlySet<number> = new Set([
-  CONTENT_TYPE.RAW, ...ERROR_CONTENT_TYPES,
+  CONTENT_TYPE.RAW, CONTENT_TYPE.SCRIPT_LOG, ...ERROR_CONTENT_TYPES,
 ]);
 
 export function shouldStoreContent(mode: MessageStorageMode, contentType: number): boolean {
@@ -372,6 +375,24 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
     const results = await Promise.all(deletes);
     return results.find((r) => !r.ok) ?? OK_VOID;
   };
+  const storeContent: MessageStore['storeContent'] = (channelId, messageId, metaDataId, contentType, content, dataType) => {
+    if (!shouldStoreContent(mode, contentType)) {
+      return Promise.resolve(OK_VOID);
+    }
+    let toStore = content;
+    if (encrypt) {
+      const enc = encryptContent(content);
+      // Fail loud: never fall back to storing plaintext when encryption is on.
+      if (!enc.ok) return Promise.resolve(fail<void>(enc.error));
+      toStore = enc.value;
+    } else if (READ_ONLY_CONTENT_TYPES.has(contentType) && content.includes('\u0000')) {
+      logger.warn({ channelId, messageId, metaDataId, contentType }, 'A response or error holds U+0000, which PostgreSQL cannot store as text: U+2400 is stored for each');
+      toStore = shownNul(content);
+    }
+    return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
+  };
+  const loadContent: MessageStore['loadContent'] = (channelId, messageId, metaDataId, contentType) =>
+    MessageService.loadContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.loadContent>[3]);
   return {
     createMessage: (channelId, serverId, correlationId) =>
       MessageService.createMessage(channelId, serverId, correlationId),
@@ -379,21 +400,13 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       MessageService.createConnectorMessage(channelId, messageId, metaDataId, name, status as Parameters<typeof MessageService.createConnectorMessage>[4]),
     updateConnectorMessageStatus: (channelId, messageId, metaDataId, status, errorCode) =>
       MessageService.updateConnectorMessageStatus(channelId, messageId, metaDataId, status as Parameters<typeof MessageService.updateConnectorMessageStatus>[3], errorCode),
-    storeContent: (channelId, messageId, metaDataId, contentType, content, dataType) => {
-      if (!shouldStoreContent(mode, contentType)) {
-        return Promise.resolve(OK_VOID);
-      }
-      let toStore = content;
-      if (encrypt) {
-        const enc = encryptContent(content);
-        // Fail loud: never fall back to storing plaintext when encryption is on.
-        if (!enc.ok) return Promise.resolve(fail<void>(enc.error));
-        toStore = enc.value;
-      } else if (READ_ONLY_CONTENT_TYPES.has(contentType) && content.includes('\u0000')) {
-        logger.warn({ channelId, messageId, metaDataId, contentType }, 'A response or error holds U+0000, which PostgreSQL cannot store as text: U+2400 is stored for each');
-        toStore = shownNul(content);
-      }
-      return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
+    storeContent,
+    // One script of a connector's message runs at a time, so nothing is added between the read and the write.
+    storeScriptLog: async (channelId, messageId, metaDataId, run) => {
+      if (!shouldStoreContent(mode, CONTENT_TYPE.SCRIPT_LOG)) return OK_VOID;
+      const stored = await loadContent(channelId, messageId, metaDataId, CONTENT_TYPE.SCRIPT_LOG);
+      if (!stored.ok) return fail<void>(stored.error);
+      return storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.SCRIPT_LOG, withScriptLogRun(stored.value, run), 'JSON');
     },
     // markProcessed runs on success and on error/recovery paths, so it must NOT
     // delete content: error content is needed for investigation, and a still-queued
@@ -413,8 +426,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
     isFullyDelivered: (channelId, messageId) => MessageService.isFullyDelivered(channelId, messageId),
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),
-    loadContent: (channelId, messageId, metaDataId, contentType) =>
-      MessageService.loadContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.loadContent>[3]),
+    loadContent,
     incrementStats: (channelId, metaDataId, serverId, field) =>
       MessageService.incrementStats(channelId, metaDataId, serverId, field),
     dequeue: (channelId, metaDataId, batchSize, rotate) =>
@@ -806,15 +818,15 @@ export class EngineManager {
     // JavaScript connectors run their scripts with the same code templates and
     // maps as the rest of the channel (compiled once, here).
     await this.wireJavaScriptSource(channel, source, templates, maps);
-    await this.wireJavaScriptDestinations(channel, destinations, templates, maps);
+    await this.wireJavaScriptDestinations(channel, destinations, templates, maps, store);
 
     // Deploy scripts set the channel up (lookup tables, counters), so a channel
     // whose deploy script failed must not start half-configured: fail the deploy.
     if (scripts.globalDeploy) {
-      await this.runDeployScript(scripts.globalDeploy, channel, maps, 'global deploy');
+      await this.runDeployScript(scripts.globalDeploy, channel, maps, 'Global deploy');
     }
     if (scripts.deploy) {
-      await this.runDeployScript(scripts.deploy, channel, maps, 'deploy');
+      await this.runDeployScript(scripts.deploy, channel, maps, 'Deploy');
     }
 
     const messageFor = (metaDataId: number, messageId: number, content: string): ConnectorMessage => ({
@@ -841,6 +853,7 @@ export class EngineManager {
       onError: raiseAlert,
       onStoreFailure: logStoreFailure,
       onReadFailure: logReadFailure,
+      scriptLog: serverScriptLog,
       onTiming: logger.level === 'debug' || logger.level === 'trace'
         ? (messageId, totalMs, stages) => {
             logger.debug(
@@ -1211,7 +1224,7 @@ export class EngineManager {
     // A failing undeploy script is logged and the teardown carries on: refusing
     // to undeploy would leave a channel nobody can stop.
     const maps: ChannelMaps = { gcm: deployed.globalChannelMap, globalMap: deployed.globalMapProxy, configMap: deployed.configMap };
-    for (const [script, name] of [[deployed.scripts.undeploy, 'undeploy'], [deployed.scripts.globalUndeploy, 'global undeploy']] as const) {
+    for (const [script, name] of [[deployed.scripts.undeploy, 'Undeploy'], [deployed.scripts.globalUndeploy, 'Global undeploy']] as const) {
       if (!script) continue;
       try {
         await this.runDeployScript(script, deployed.config, maps, name);
@@ -1522,7 +1535,7 @@ export class EngineManager {
     const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
     const cachedScript = await this.compileWithTemplates(sourceScript, 'sourceReceiver', templates, `${channel.name}/js-source.js`);
     jsReceiver.setScriptRunner(async (_script) => {
-      const execResult = await this.runChannelScript(cachedScript, channel, maps, { content: '' }, {});
+      const execResult = await this.runChannelScript(cachedScript, channel, maps, { content: '' }, {}, serverScriptLog({ channelId: channel.id, script: 'JavaScript source' }));
       if (!execResult.ok) return execResult;
       return { ok: true as const, value: execResult.value.returnValue, error: null };
     });
@@ -1533,6 +1546,7 @@ export class EngineManager {
     destinations: Map<number, DestinationConnectorRuntime>,
     templates: ReadonlyArray<CodeTemplateData>,
     maps: ChannelMaps,
+    store: MessageStore,
   ): Promise<void> {
     const dataTypeOptions = dataTypeOptionsFor(channel);
     for (const dest of channel.destinations) {
@@ -1549,11 +1563,18 @@ export class EngineManager {
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
         // The script sees the message as every other stage does: parsed for its
         // data type, with what earlier stages put in the channel map.
+        const { messageId, metaDataId } = connectorMessage;
+        const script = 'JavaScript destination';
+        const log = new ScriptRunLog(script, serverScriptLog({ channelId: channel.id, messageId, metaDataId, script }));
         const execResult = await this.runChannelScript(cachedScript, channel, maps, {
           content,
           msg: parsedOrRaw(content, connectorMessage.dataType, dataTypeOptions),
           channelMap: connectorMessage.variables ?? {},
-        }, { connectorMessage });
+        }, { connectorMessage }, log);
+        const run = log.run();
+        if (run !== null && store.storeScriptLog) {
+          await reportUnsaved([store.storeScriptLog(channel.id, messageId, metaDataId, run)], { channelId: channel.id, messageId, metaDataId, what: 'what a script logged' }, logStoreFailure);
+        }
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       }, reads.value);
@@ -1582,6 +1603,7 @@ export class EngineManager {
     maps: ChannelMaps,
     input: ChannelScriptInput,
     extras: Readonly<Record<string, unknown>>,
+    log: ScriptLogSink,
   ): Promise<Result<ExecutionResult>> {
     const gcmBefore = maps.gcm.toRecord();
     const globalBefore = maps.globalMap.toRecord();
@@ -1592,7 +1614,7 @@ export class EngineManager {
       globalChannelMap: gcmBefore, globalMap: globalBefore, configMap: maps.configMap,
       extras: { channelId: channel.id, channelName: channel.name, ...extras },
     };
-    const result = await this.sandbox.execute(script, context, { timeout: channel.scriptTimeoutSeconds * 1_000, channelId: channel.id });
+    const result = await this.sandbox.execute(script, context, { timeout: channel.scriptTimeoutSeconds * 1_000, channelId: channel.id, log });
     if (result.ok) {
       maps.gcm.applyChanges(gcmBefore, result.value.mapUpdates.globalChannelMap);
       maps.globalMap.applyChanges(globalBefore, result.value.mapUpdates.globalMap);
@@ -1601,9 +1623,9 @@ export class EngineManager {
   }
 
   private async runDeployScript(script: CompiledScript, channel: ChannelDetail, maps: ChannelMaps, name: string): Promise<void> {
-    const result = await this.runChannelScript(script, channel, maps, { content: '' }, {});
+    const result = await this.runChannelScript(script, channel, maps, { content: '' }, {}, serverScriptLog({ channelId: channel.id, script: name }));
     if (!result.ok) {
-      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: the ${name} script failed: ${result.error.message}`);
+      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: the ${name.toLowerCase()} script failed: ${result.error.message}`);
     }
   }
 

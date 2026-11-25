@@ -22,6 +22,18 @@ export function formatTimestamp(value: string | null | undefined, options: Times
   return formatTimestampWith(value, render, options.empty);
 }
 
+function clockTime(d: Date): string {
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
+export function formatClockTime(iso: string | null | undefined): string {
+  return formatTimestampWith(iso, clockTime);
+}
+
 export function humanize(value: string): string {
   const words = value.trim().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
