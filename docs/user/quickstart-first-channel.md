@@ -26,7 +26,8 @@ The source is the inbound side — where messages arrive.
 2. Set the key fields:
    - **Port** — the TCP port to listen on, e.g. `6661`.
    - **Host** — leave `0.0.0.0` to listen on all interfaces.
-3. Use **Test Connection** to sanity-check the binding, then save.
+3. Use **Test Connection** to check the settings, then save. The port is opened when the channel
+   starts.
 
 See the [connector matrix](./connector-reference.md#connectors-at-a-glance) for every source type, and the connector reference for its settings.
 

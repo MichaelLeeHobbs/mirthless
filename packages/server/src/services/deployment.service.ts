@@ -7,7 +7,7 @@ import { ChannelService, type ChannelDetail, type ChannelDeployEntry } from './c
 import { ChannelDependencyService, orderByDependencies } from './channel-dependency.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { ConfigMapService } from './config-map.service.js';
-import { configLookup, resolveConfigReferences } from '../lib/config-references.js';
+import { resolveConfigReferences } from '../lib/config-references.js';
 import { getEngine } from '../engine.js';
 import type { DeployedChannel, SourceDispatchOutcome } from '../engine.js';
 import logger from '../lib/logger.js';
@@ -58,14 +58,13 @@ function notRunning(action: 'deployed' | 'redeployed', channelId: string, cause:
  * server settings read at every deploy.
  */
 async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDetail> {
-  const entries = await ConfigMapService.list();
-  if (!entries.ok) throw new ServiceError('INTERNAL', `Could not load the configuration map: ${entries.error.message}`);
-  const lookup = configLookup(entries.value);
-  const sourceProps = resolveConfigReferences(channel.sourceConnectorProperties, lookup);
+  const references = await ConfigMapService.references();
+  if (!references.ok) throw new ServiceError('INTERNAL', `Could not load the configuration map: ${references.error.message}`);
+  const sourceProps = resolveConfigReferences(channel.sourceConnectorProperties, references.value);
   return {
     ...channel,
     sourceConnectorProperties: channel.sourceConnectorType === 'CHANNEL' ? { ...sourceProps, channelId: channel.id } : sourceProps,
-    destinations: channel.destinations.map((d) => ({ ...d, properties: resolveConfigReferences(d.properties, lookup) })),
+    destinations: channel.destinations.map((d) => ({ ...d, properties: resolveConfigReferences(d.properties, references.value) })),
   };
 }
 

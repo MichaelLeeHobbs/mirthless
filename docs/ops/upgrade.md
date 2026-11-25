@@ -592,6 +592,10 @@ A script that counted on the defaults must send them. These now get a 400:
 
 A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
 
+## Test Connection checks the settings as a deploy does (#133)
+
+Test Connection refuses whatever a deploy would refuse of a connector, with the deploy's text, before it connects ([what it tests](../user/connector-reference.md#test-connection), D-380). A script that calls `POST /connectors/test` with only part of a connector's settings gets 400 and has to send them all. References to the configuration map are filled, for someone who holds `config_map:read` or `channels:write` on the channel, and the read is recorded; anyone else gets 403 for settings that hold one. The test of a TCP/MLLP, HTTP or DICOM source checks the settings and connects to nothing; before, it failed unless the source was bound to an address of its own or took certificates. A redirect fails the test of an HTTPS destination too.
+
 ## Changed alerts are in force at once (#417)
 
 An alert you create, change, enable, disable or delete used to reach a running channel only when the channel was deployed again, so a channel could go on with alerts that the Alerts page no longer showed. Every change is now in force as soon as it is saved (D-376). An alert that changed starts its repeat interval and its maximum count again. A channel also takes every enabled alert; only the first 1,000 by name, disabled ones included, were looked at before.

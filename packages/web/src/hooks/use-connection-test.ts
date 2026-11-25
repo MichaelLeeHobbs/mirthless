@@ -24,5 +24,7 @@ export function useTestConnection(): ReturnType<typeof useMutation<ConnectionTes
       }
       return result.data;
     },
+    // The button shows it.
+    onError: () => undefined,
   });
 }
