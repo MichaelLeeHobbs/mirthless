@@ -1,4 +1,14 @@
-# Review packet
+# Review packet: the first GalvaniGraph SRS draft
+
+Temporary. Delete this file, and its line in [README.md](README.md), once the decisions are applied.
+
+## Summary
+
+1. **Rows**: 789 Proposed rows in 16 areas and one interface (675 drafted from the sources, 114 added by the debate): Authentication 90, Access control 37, Audit 37, Security 31, Connectors 121, Connector plugin contract 82, Data types 34, Mirth migration 39, Pipeline 45, Scripting 43, Messages 36, Channels 41, Shared data 25, Monitoring and alerts 39, Operations 39, REST API and live updates 23, Admin console 27. Recommendations: 606 Accept, 58 Rewrite (need your number or choice, Appendix B), 55 Defer, 12 Reject, 58 already rewritten by the debate.
+2. **Debate** on Authentication and Connectors (with [interfaces/connector.md](interfaces/connector.md)): 72 findings, all applied as new Proposed rows, and 16 decisions with defaults (Appendix A). The biggest: an HL7 refusal should end in error instead of holding the queue behind it (D-C1), and a lockout, reset or cut-off must not stop live feeds.
+3. **Provisional verification** of the P1 rows of Authentication and Connectors ([trace.md](trace.md)): 14 Met, 67 Partial, 30 Not met, 0 Cannot verify. Many Partials hold in a probe and lack only a repository test; the worst Not met is the DICOM sender reading SENT for a refused image ([#410](https://github.com/MichaelLeeHobbs/mirthless/issues/410)).
+4. **Failed or skipped**: no Playwright scenario or browser check was run; no MariaDB or multi-broker Kafka was available; one Kafka integration test failed once and passed on rerun, and one route-walk test failed twice ([#421](https://github.com/MichaelLeeHobbs/mirthless/issues/421)); 7 of the 118 P1 verdicts are not published (decision 8)
+5. **Where to start**: Appendix A's decisions, then batch 2. `srs-lint` exits 0; `pnpm gate`: pending; fresh-context review: pending.
 
 | Area | Rows | P1 | P2 | P3 |
 |---|---|---|---|---|
@@ -21,6 +31,22 @@
 | Admin console | 27 | 11 | 13 | 3 |
 | **Total** | 789 | 548 | 197 | 44 |
 
+## Decisions I made
+
+1. **Nothing is Accepted.** Every row is Proposed. Replaced rows keep their text, because the format allows `Superseded by` only once the replacement is Accepted: the new row's source note says "Replaces X", and accepting it supersedes X. Replaced rows are marked "already rewritten" below and need no answer.
+2. **Debate rewrites got new IDs**, as you asked, instead of editing in place. The one exception is Pri: seven Proposed rows changed priority in place (AUTH-MFA-02, -03, -04, -05, -06, CONN-NEW-05, CONN-FILE-05), because a new ID for a priority would be noise.
+3. **Areas**: 16, grouped by what a user would recognise, plus the connector interface with its own code `CPI`. You were not asked to confirm them first, as the skill would.
+4. **Guide of 15 to 35 rows per area**; several went over (Authentication and Connectors by design, then Pipeline, Scripting, Channels, Operations). P1 is heavy (548 of 789, replaced rows counted) because message safety, PHI and access rules were all written P1. If that is too many to mean anything, say "P1 only for safety, PHI and access; demote the rest".
+5. **Conflicts between sources** were settled as Appendix C lists: the later decision or the safer rule, always named in the row's source note.
+6. **Only "won't" lines that a source states** went into Out of scope. More candidates are in Appendix D; the README was not changed for them.
+7. **trace.md against srs-lint.** The format check refuses a verdict on a row that is not Accepted, so trace.md keeps its official table empty and puts the pass under "Provisional verdicts" in a table headed "Proposed ID". Neither script counts it, so the README's completeness summary shows 0 of everything; the provisional totals are in the summary above.
+8. **118 P1 rows were in scope** for the provisional pass: replaced rows and rows recommended Reject were skipped in favour of their replacements. 111 have a verdict in trace.md; the other 7 are not published in this pass. Authentication rows show no verdict in the tables below: read them in trace.md.
+9. **Verifiers** were five agents that had built nothing, each with its own database, running the project's own tests and probes against the built packages with real PostgreSQL, MySQL, Kafka, RabbitMQ, SFTP and mail servers. No Playwright, no browser.
+10. **Issues**: the defects they confirmed are filed as 12 grouped issues ([#410](https://github.com/MichaelLeeHobbs/mirthless/issues/410) to [#421](https://github.com/MichaelLeeHobbs/mirthless/issues/421)), each marked ran or read. Anything with a security side was not filed publicly and is not in this folder.
+11. **This table's column headings** use a bold **ID** so the format check does not read the packet as requirement tables, and the README names `REVIEW.md` without a link, so deleting it breaks nothing.
+12. **AGENTS.md, DECISIONS.md and ROADMAP.md are unchanged.** Until a row is Accepted the SRS decides nothing. When you accept the first rows, I suggest a decision (next free number) saying that docs/srs defines the end state, capabilities.md stays the status page (D-279) and DECISIONS.md the reasons, and this line for AGENTS.md under Progress Tracking: "`docs/srs/` is the contract: build to Accepted rows, put the row's ID in the name of the test that proves it, and add a Proposed row, never an Accepted one, for a requirement you discover."
+13. **Dates** are 2026-11-24. The branch is based on 29a13266, the head of `main` when the run began. [#408](https://github.com/MichaelLeeHobbs/mirthless/pull/408) (crash recovery runs a message again as the same message, D-345) merged to `main` during the run; PIPE-REC-02, PIPE-REC-04 and PIPE-STG-07 say so, and no verdict here covers it.
+
 ## Batch 1: who gets in and what they may do
 
 195 rows: 150 Accept, 11 Rewrite (needs your number or choice), 9 Defer, 2 Reject, 23 already rewritten by the debate (no answer needed). To take them all, reply "accept all recommendations in batch 1"; to change some, add "except <ID> <your words>".
@@ -33,51 +59,51 @@
 
 | **ID** | Requirement | Recommendation | Reason |
 |---|---|---|---|
-| AUTH-USR-01 (P1) | Apart from the first administrator of a new install, the system shall create an account for a person only when a signed-in user with permission to manage users creates it, or through single sign-on after an administrator has turned that on, and shall offer no self-registration. | **Accept** | Provisional: Met. An account anyone can make for themselves ends accountability for PHI reads; the single sign-on exception is #148's opt-in. |
-| AUTH-USR-02 (P1) | When an account is deleted, the system shall disable it, keep its username and email address, and refuse to give either to another account, so that every audit record made under it always names the same person. | **Accept** | Provisional: Partial. A reused username would make years of audit records name the wrong person (HIPAA unique user identification). |
-| AUTH-USR-03 (P1) | The system shall refuse a new password shorter than the minimum length an administrator sets, which is 15 characters on a new install and cannot be set below 8, at account creation, at a reset by another user and at a user's own change. | **Accept** | Provisional: Partial. #210 settles 15 and configurable; today a fixed 8. The floor of 8 is the drafter's and cheap to change. |
+| AUTH-USR-01 (P1) | Apart from the first administrator of a new install, the system shall create an account for a person only when a signed-in user with permission to manage users creates it, or through single sign-on after an administrator has turned that on, and shall offer no self-registration. | **Accept** | An account anyone can make for themselves ends accountability for PHI reads; the single sign-on exception is #148's opt-in. |
+| AUTH-USR-02 (P1) | When an account is deleted, the system shall disable it, keep its username and email address, and refuse to give either to another account, so that every audit record made under it always names the same person. | **Accept** | A reused username would make years of audit records name the wrong person (HIPAA unique user identification). |
+| AUTH-USR-03 (P1) | The system shall refuse a new password shorter than the minimum length an administrator sets, which is 15 characters on a new install and cannot be set below 8, at account creation, at a reset by another user and at a user's own change. | **Accept** | #210 settles 15 and configurable; today a fixed 8. The floor of 8 is the drafter's and cheap to change. |
 | AUTH-USR-04 (P1) | The system shall accept a password of up to 128 characters and shall refuse a sign-in whose password differs from the stored one in any single character, at any position. | **Accept** | The documented 128-character limit must be true. |
 | AUTH-USR-05 (P1) | After a new install creates its first administrator, or someone other than the user sets a user's password, the system shall refuse every request and live connection of that user except signing out and changing the password, until the user changes it to a different one. | **Rewrite** | Partly built. Already rewritten as AUTH-USR-08 (debate A1); accepting AUTH-USR-08 supersedes this row. No answer needed. |
 | AUTH-USR-06 (P1) | The system shall change a user's own password only when the user gives the current one, and shall refuse a reset aimed at the caller's own account, whatever the letter case of the identifier in the request. | **Rewrite** | Built. Already rewritten as AUTH-USR-11 (debate A3); accepting AUTH-USR-11 supersedes this row. No answer needed. |
 | AUTH-USR-07 (P1) | The system shall store passwords, credentials that renew a session, and API key secrets only as one-way hashes, with passwords salted and no cheaper to check than bcrypt at cost 12. | **Rewrite** | Built. Already rewritten as AUTH-USR-09 (debate A2); accepting AUTH-USR-09 supersedes this row. No answer needed. |
-| AUTH-USR-08 (P1) | After a new install creates its first administrator, or someone other than the user sets a user's password, the system shall refuse everything in that user's sessions except signing out and changing the password, until the user changes it to a different one, while API keys that user issued keep working. | **Accept** | Provisional: Partial. #362 asks for the forced change; a reset must not stop the feeds that use the person's keys. |
-| AUTH-USR-09 (P1) | The system shall store passwords only salted and one-way, by a method and cost accepted by the edition of the OWASP password storage guidance that the documentation names. | **Accept** | Provisional: Partial. States the strength without naming an algorithm; a named edition cannot lapse unnoticed. |
-| AUTH-USR-10 (P1) | The system shall store session-renewal credentials, recovery codes and API key secrets only as one-way hashes. | **Accept** | Provisional: Partial. A copied database must not hand over working credentials. Recovery codes come with second factors. |
-| AUTH-USR-11 (P1) | The system shall change a user's own password only when the user gives the current one, and shall refuse a reset aimed at the caller's own account. | **Accept** | Provisional: Partial. D-344 settles it; the letter case rule is held once, in API-CHG-03. |
+| AUTH-USR-08 (P1) | After a new install creates its first administrator, or someone other than the user sets a user's password, the system shall refuse everything in that user's sessions except signing out and changing the password, until the user changes it to a different one, while API keys that user issued keep working. | **Accept** | #362 asks for the forced change; a reset must not stop the feeds that use the person's keys. |
+| AUTH-USR-09 (P1) | The system shall store passwords only salted and one-way, by a method and cost accepted by the edition of the OWASP password storage guidance that the documentation names. | **Accept** | States the strength without naming an algorithm; a named edition cannot lapse unnoticed. |
+| AUTH-USR-10 (P1) | The system shall store session-renewal credentials, recovery codes and API key secrets only as one-way hashes. | **Accept** | A copied database must not hand over working credentials. Recovery codes come with second factors. |
+| AUTH-USR-11 (P1) | The system shall change a user's own password only when the user gives the current one, and shall refuse a reset aimed at the caller's own account. | **Accept** | D-344 settles it; the letter case rule is held once, in API-CHG-03. |
 | AUTH-LOG-01 (P1) | After 5 failed sign-ins to one account, counted since its last successful sign-in or its last lock, the system shall refuse every sign-in to that account, the correct password included, for 15 minutes or until a user with permission to manage that account unlocks it. | **Rewrite** | Built. Already rewritten as AUTH-LOG-06 (debate A4); accepting AUTH-LOG-06 supersedes this row. No answer needed. |
-| AUTH-LOG-02 (P1) | The system shall hold the lock against sign-ins sent at the same time: each failed one shall count, and a sign-in whose password was still being checked when the lock was set shall be refused and shall not clear the lock. | **Accept** | Provisional: Met. #396 shows the lock is worthless without it; proven with concurrent sign-ins against real Postgres. |
+| AUTH-LOG-02 (P1) | The system shall hold the lock against sign-ins sent at the same time: each failed one shall count, and a sign-in whose password was still being checked when the lock was set shall be refused and shall not clear the lock. | **Accept** | #396 shows the lock is worthless without it; proven with concurrent sign-ins against real Postgres. |
 | AUTH-LOG-03 (P1) | The system shall count a wrong password, second-factor code or recovery code toward the account's lock at every prompt that asks for one (sign-in, second-factor step, own password change, re-authentication), and shall refuse answers at those prompts while the account is locked. | **Accept** | #142 asks for it at the second factor; one count for every prompt keeps the lock meaningful. |
 | AUTH-LOG-04 (P1) | In a production install, the system shall refuse further sign-in attempts from a client address for the rest of a 15-minute window in which 5 attempts from it failed, taking the address only from proxies the operator has declared, and counting neither successful sign-ins nor session renewals. | **Rewrite** | Built. Already rewritten as AUTH-LOG-08 (debate A5); accepting AUTH-LOG-08 supersedes this row. No answer needed. |
 | AUTH-LOG-05 (P1) | The system shall answer a sign-in with an unknown username exactly as it answers a wrong password for an enabled, unlocked account, after doing the same password-checking work. | **Rewrite** | Built. Already rewritten as AUTH-LOG-09 (debate A6); accepting AUTH-LOG-09 supersedes this row. No answer needed. |
-| AUTH-LOG-06 (P1) | After 5 failed answers for one account, counted since its last sign-in that completed every required step or its last lock, the system shall refuse every sign-in to that account, the correct password included, for 15 minutes or until a user with permission to manage that account unlocks it. | **Accept** | Provisional: Partial. The only brake on guessing one account's credentials, now well defined with second factors. |
-| AUTH-LOG-07 (P1) | The system shall keep an account's failure count and lock across server restarts. | **Accept** | Provisional: Partial. A count held in memory is cleared by a restart, which no row forbade. |
-| AUTH-LOG-08 (P1) | In a production install, the system shall refuse further sign-in attempts from a client address for the rest of a 15-minute window in which a number of attempts from it that the operator sets (20 to 200, 50 by default) failed, counting neither successful sign-ins nor session renewals. | **Accept** | Provisional: Partial. Five failures behind one hospital address locks out the on-call team. Number is decision D-A2. |
+| AUTH-LOG-06 (P1) | After 5 failed answers for one account, counted since its last sign-in that completed every required step or its last lock, the system shall refuse every sign-in to that account, the correct password included, for 15 minutes or until a user with permission to manage that account unlocks it. | **Accept** | The only brake on guessing one account's credentials, now well defined with second factors. |
+| AUTH-LOG-07 (P1) | The system shall keep an account's failure count and lock across server restarts. | **Accept** | A count held in memory is cleared by a restart, which no row forbade. |
+| AUTH-LOG-08 (P1) | In a production install, the system shall refuse further sign-in attempts from a client address for the rest of a 15-minute window in which a number of attempts from it that the operator sets (20 to 200, 50 by default) failed, counting neither successful sign-ins nor session renewals. | **Accept** | Five failures behind one hospital address locks out the on-call team. Number is decision D-A2. |
 | AUTH-LOG-09 (P1) | The system shall give every failed sign-in the same answer, which says the account may be locked, whether its username is unknown or its account is enabled, disabled or locked. | **Accept** | Finishes the rule against username harvesting. A locked user is told by the same words and by an administrator. |
 | AUTH-LOG-10 (P2) | Despite AUTH-LOG-06, failed answers sent without a device credential issued at that user's own completed sign-in in the last 30 days, and since their last password change, shall not lock sign-ins that carry it; failures with it count separately. | **Defer** | Not built. Answers "anyone can lock my team out", at the price of a device credential. Contested: decision D-A1. |
-| AUTH-LOG-11 (P1) | The system shall do the same password-checking work for a sign-in with an unknown username as for one with a wrong password for an enabled, unlocked account. | **Accept** | Provisional: Met. Answer time must not tell a real username from an unknown one; inspection proves it without a flaky timer. |
-| AUTH-LOG-12 (P1) | An account lock shall not end that person's open sessions or stop API keys they issued. | **Accept** | Provisional: Partial. Otherwise anyone who knows a username can stop feeds by failing five sign-ins. |
+| AUTH-LOG-11 (P1) | The system shall do the same password-checking work for a sign-in with an unknown username as for one with a wrong password for an enabled, unlocked account. | **Accept** | Answer time must not tell a real username from an unknown one; inspection proves it without a flaky timer. |
+| AUTH-LOG-12 (P1) | An account lock shall not end that person's open sessions or stop API keys they issued. | **Accept** | Otherwise anyone who knows a username can stop feeds by failing five sign-ins. |
 | AUTH-SES-01 (P1) | The system shall refuse every API request and live connection, other than those documented as public, unless it carries an unaltered credential issued by this install for a session or API key that is open, and whose owner is enabled, at the time of the request. | **Rewrite** | Built. Already rewritten as AUTH-SES-12 (debate A11); accepting AUTH-SES-12 supersedes this row. No answer needed. |
 | AUTH-SES-02 (P1) | The system shall end a session on the server after it has received no user action for a period an administrator sets, 15 minutes by default; requests the console makes by itself (live updates, polling, session renewals) shall not count as user action. | **Rewrite** | Not built. Already rewritten as AUTH-SES-08 (debate A9); accepting AUTH-SES-08 supersedes this row. No answer needed. |
 | AUTH-SES-03 (P1) | The system shall end a session no later than a period after its sign-in that an administrator sets, 12 hours by default, however often the session is renewed. | **Rewrite** | Partly built. Already rewritten as AUTH-SES-09 (debate A9); accepting AUTH-SES-09 supersedes this row. No answer needed. |
 | AUTH-SES-04 (P1) | When a user signs out, in the console or through the API, the system shall end the session on the server before it confirms, so that neither the access credential nor the renewal credential works again, and shall show an error instead of confirming if it cannot. | **Accept** | On a shared workstation sign-out must be real; access-control.md promises it ends the session. |
-| AUTH-SES-05 (P1) | The system shall accept a credential that renews a session at most once, also when several renewals with it arrive at the same time. | **Accept** | Provisional: Met. A reusable renewal credential lets a copy live beside the real session unnoticed; #174 and #396 checked it. |
-| AUTH-SES-06 (P1) | In a production install, the system shall give the browser the renewal credential only in a form that page scripts cannot read and that the browser sends only over TLS, only to the sign-in service, and never in a request another site started. | **Accept** | Provisional: Partial. Keeps the long-lived credential from page scripts, other sites and plain HTTP. |
+| AUTH-SES-05 (P1) | The system shall accept a credential that renews a session at most once, also when several renewals with it arrive at the same time. | **Accept** | A reusable renewal credential lets a copy live beside the real session unnoticed; #174 and #396 checked it. |
+| AUTH-SES-06 (P1) | In a production install, the system shall give the browser the renewal credential only in a form that page scripts cannot read and that the browser sends only over TLS, only to the sign-in service, and never in a request another site started. | **Accept** | Keeps the long-lived credential from page scripts, other sites and plain HTTP. |
 | AUTH-SES-07 (P2) | The system shall not keep a credential that gives access to the API in browser storage that page scripts can read. | **Rewrite** | Not built. Already rewritten as AUTH-SES-13 (debate A12); accepting AUTH-SES-13 supersedes this row. No answer needed. |
-| AUTH-SES-08 (P1) | The system shall end a session on the server within 60 seconds after a period without user action that an administrator sets from 1 to 60 minutes, 15 by default; only key, pointer or touch input in the console and API requests the console did not send shall count as user action. | **Accept** | Provisional: Not met. HIPAA automatic logoff. Bounds, tolerance and activity now defined; the default of 15 is the owner's to change. |
-| AUTH-SES-09 (P1) | The system shall end a session no later than a period after its sign-in that an administrator sets, at most 24 hours and 12 hours by default, however often the session is renewed. | **Accept** | Provisional: Not met. #172: a session must end. The 24-hour ceiling stops "never"; default is the owner's number. |
+| AUTH-SES-08 (P1) | The system shall end a session on the server within 60 seconds after a period without user action that an administrator sets from 1 to 60 minutes, 15 by default; only key, pointer or touch input in the console and API requests the console did not send shall count as user action. | **Accept** | HIPAA automatic logoff. Bounds, tolerance and activity now defined; the default of 15 is the owner's to change. |
+| AUTH-SES-09 (P1) | The system shall end a session no later than a period after its sign-in that an administrator sets, at most 24 hours and 12 hours by default, however often the session is renewed. | **Accept** | #172: a session must end. The 24-hour ceiling stops "never"; default is the owner's number. |
 | AUTH-SES-10 (P2) | The console shall warn the user at least 60 seconds before inactivity ends the session and let one action keep it open. | **Accept** | Not built. Follows AUTH-SES-08; WCAG 2.2.1 asks for it too. |
-| AUTH-SES-11 (P1) | The console shall remove message content from the screen within 60 seconds after its session ends. | **Accept** | Provisional: Partial. Ending the session on the server leaves PHI on an unattended screen otherwise (164.312(a)(2)(iii)). |
-| AUTH-SES-12 (P1) | The system shall treat a caller as signed in only on an unaltered credential issued by this install for a session or API key that is open, and whose user or issuer is enabled, at the time of the request. | **Accept** | Provisional: Partial. Everything else rests on it; the refusal itself is held once, in ACC-ENF-01. |
+| AUTH-SES-11 (P1) | The console shall remove message content from the screen within 60 seconds after its session ends. | **Accept** | Ending the session on the server leaves PHI on an unattended screen otherwise (164.312(a)(2)(iii)). |
+| AUTH-SES-12 (P1) | The system shall treat a caller as signed in only on an unaltered credential issued by this install for a session or API key that is open, and whose user or issuer is enabled, at the time of the request. | **Accept** | Everything else rests on it; the refusal itself is held once, in ACC-ENF-01. |
 | AUTH-SES-13 (P2) | The system shall not keep a credential that gives access to the API in browser storage that page scripts can read. | **Rewrite** | Not built. Owner must choose: move the credential (default), or accept it behind a strict content policy and drop the row. |
 | AUTH-MFA-01 (P2) | When a second factor is due, the system shall answer a correct password only with a credential that lasts at most 5 minutes and is refused for everything except verifying the factor, or enrolling one when the policy requires it and the user has none. | **Rewrite** | Not built. Already rewritten as AUTH-MFA-09 (debate A14); accepting AUTH-MFA-09 supersedes this row. No answer needed. |
-| AUTH-MFA-02 (P1) | The system shall let a user add an authenticator app (RFC 6238 one-time codes) as a second factor, active only after the user enters a valid code, with its secret stored encrypted, sent to no other service and never shown again once active. | **Accept** | Provisional: Not met. #142; fourth-ranked user request and a paid Mirth feature. Authenticator apps work everywhere, so this is the first factor. |
-| AUTH-MFA-03 (P1) | The system shall accept a one-time code only from the current 30-second step or the step before or after it, and shall refuse a code from the same or an earlier step than the last one it accepted for that user. | **Accept** | Provisional: Not met. #142: without the once rule, a code seen over a shoulder works again within its window. |
-| AUTH-MFA-04 (P1) | When a user adds an authenticator app, the system shall show 10 recovery codes once, each of which stands in for the second factor at one sign-in and never again. | **Accept** | Provisional: Not met. #142: without codes every lost phone needs an administrator, and the last administrator has none. |
+| AUTH-MFA-02 (P1) | The system shall let a user add an authenticator app (RFC 6238 one-time codes) as a second factor, active only after the user enters a valid code, with its secret stored encrypted, sent to no other service and never shown again once active. | **Accept** | #142; fourth-ranked user request and a paid Mirth feature. Authenticator apps work everywhere, so this is the first factor. |
+| AUTH-MFA-03 (P1) | The system shall accept a one-time code only from the current 30-second step or the step before or after it, and shall refuse a code from the same or an earlier step than the last one it accepted for that user. | **Accept** | #142: without the once rule, a code seen over a shoulder works again within its window. |
+| AUTH-MFA-04 (P1) | When a user adds an authenticator app, the system shall show 10 recovery codes once, each of which stands in for the second factor at one sign-in and never again. | **Accept** | #142: without codes every lost phone needs an administrator, and the last administrator has none. |
 | AUTH-MFA-05 (P3) | The system shall let a user sign in with a passkey (WebAuthn), as the second factor after a password or, when the passkey device confirmed the user, in place of both, with passkeys bound to the public host name the operator configured and never to one taken from the request. | **Defer** | Not built. #143 is wanted but comes after authenticator apps, needs a fixed public host name, and v1.0 is complete without it. |
-| AUTH-MFA-06 (P1) | The system shall let an administrator require a second factor from nobody (the default), administrators, holders of chosen roles or everyone, and choose which kinds of factor count, with no exemption for a single user. | **Accept** | Provisional: Not met. #141: an optional factor nobody can require does not satisfy an auditor. |
+| AUTH-MFA-06 (P1) | The system shall let an administrator require a second factor from nobody (the default), administrators, holders of chosen roles or everyone, and choose which kinds of factor count, with no exemption for a single user. | **Accept** | #141: an optional factor nobody can require does not satisfy an auditor. |
 | AUTH-MFA-07 (P2) | The system shall refuse a change to a user's second factors, to the sign-in policy, to a role or an assignment, and the issue or replacement of an API key, unless the caller is a signed-in person who passed a password or factor check in the last 5 minutes. | **Rewrite** | Not built. Already rewritten as AUTH-MFA-10 (debate A15); accepting AUTH-MFA-10 supersedes this row. No answer needed. |
-| AUTH-MFA-08 (P1) | The system shall open no session for a password sign-in until a second factor is verified, when the user has an active factor or the policy covers that user. | **Accept** | Provisional: Not met. As written, a build could enrol authenticator apps and never ask for a code. |
-| AUTH-MFA-09 (P1) | From a correct password until a due second factor is verified, the system shall refuse that caller everything except verifying it, or enrolling one the policy requires, and shall ask for the password again after 5 minutes. | **Accept** | Provisional: Not met. #140 builds it first; without it a password alone reaches something before the factor is checked. |
+| AUTH-MFA-08 (P1) | The system shall open no session for a password sign-in until a second factor is verified, when the user has an active factor or the policy covers that user. | **Accept** | As written, a build could enrol authenticator apps and never ask for a code. |
+| AUTH-MFA-09 (P1) | From a correct password until a due second factor is verified, the system shall refuse that caller everything except verifying it, or enrolling one the policy requires, and shall ask for the password again after 5 minutes. | **Accept** | #140 builds it first; without it a password alone reaches something before the factor is checked. |
 | AUTH-MFA-10 (P2) | Except under the enrolment AUTH-MFA-09 allows or AUTH-BRK recovery, the system shall refuse a change to second factors, the sign-in policy, a role or an assignment, and the issue or replacement of an API key, unless the caller is a person who, in the last 5 minutes, passed a check of their second factor, else their password, else a fresh sign-in at their identity provider. | **Accept** | Not built. #140; an unattended open session should not be able to mint lasting access, and single sign-on users can comply. |
 | AUTH-SSO-01 (P2) | The system shall let a user sign in through an OpenID Connect provider, Microsoft Entra ID among them, as the existing enabled account linked to the identity the provider verified, and shall refuse an identity with no account unless an administrator has turned on account creation. | **Rewrite** | Not built. Already rewritten as AUTH-SSO-06 (debate A16); accepting AUTH-SSO-06 supersedes this row. No answer needed. |
 | AUTH-SSO-02 (P2) | When an administrator requires single sign-on for chosen roles, the system shall refuse those users' passwords, and shall refuse a setting that leaves no enabled administrator able to sign in with a local password and second factor. | **Accept** | Not built. #148 asks for it; a provider outage must not lock every administrator out of a running engine. |
@@ -88,39 +114,39 @@
 | AUTH-SSO-07 (P2) | The system shall refuse a verified identity with no linked account or, when an administrator has turned on account creation, create one that holds no permission. | **Accept** | Not built. The old row left a created account's access unstated. |
 | AUTH-SSO-08 (P2) | The system shall refuse a provider answer that is altered, expired, already used, meant for another application, or not for a sign-in the same browser started. | **Accept** | Not built. The checks that make single sign-on safe must be in the contract before it is built. |
 | AUTH-SSO-09 (P2) | The system shall ask the provider at least every 60 minutes to renew each single sign-on session, and shall end the session when the provider refuses. | **Defer** | Not built. Entra disable is how HR cuts people off, but it means holding a provider credential per session. Decision D-A7. |
-| AUTH-KEY-01 (P1) | The system shall show an API key's secret only in the answer to the request that issues or replaces the key, and shall return it to no later request. | **Accept** | Provisional: Partial. A secret that can be read again can be copied by any later reader of the page. |
-| AUTH-KEY-02 (P1) | The system shall require an end time when an API key is issued, and once that time has passed or the key is revoked shall refuse every request made with it and refuse to enable it again. | **Accept** | Provisional: Met. D-313: a key with no end is a forgotten permanent credential to PHI. |
-| AUTH-KEY-03 (P1) | The system shall refuse to issue an API key with a permission its issuer does not hold over the key's whole scope until the key ends, and shall refuse every request made with a key while its issuer is disabled or no longer holds what the key holds. | **Accept** | Provisional: Partial. D-313, D-320: otherwise a key is how someone keeps access they were refused or lost. |
-| AUTH-KEY-04 (P1) | The system shall refuse to give an API key any permission over users, roles, API keys, the audit log, backups or restores. | **Accept** | Provisional: Met. A leaked key must not be able to make more access or erase its trail. |
-| AUTH-KEY-05 (P1) | The system shall refuse a request that carries an API key in its URL, and one made with an unknown, wrong, ended, revoked, disabled or no longer covered key, with one identical answer that does not say which applied. | **Accept** | Provisional: Partial. Keys in URLs land in proxy logs, and distinct refusals tell a guesser which part was right. |
+| AUTH-KEY-01 (P1) | The system shall show an API key's secret only in the answer to the request that issues or replaces the key, and shall return it to no later request. | **Accept** | A secret that can be read again can be copied by any later reader of the page. |
+| AUTH-KEY-02 (P1) | The system shall require an end time when an API key is issued, and once that time has passed or the key is revoked shall refuse every request made with it and refuse to enable it again. | **Accept** | D-313: a key with no end is a forgotten permanent credential to PHI. |
+| AUTH-KEY-03 (P1) | The system shall refuse to issue an API key with a permission its issuer does not hold over the key's whole scope until the key ends, and shall refuse every request made with a key while its issuer is disabled or no longer holds what the key holds. | **Accept** | D-313, D-320: otherwise a key is how someone keeps access they were refused or lost. |
+| AUTH-KEY-04 (P1) | The system shall refuse to give an API key any permission over users, roles, API keys, the audit log, backups or restores. | **Accept** | A leaked key must not be able to make more access or erase its trail. |
+| AUTH-KEY-05 (P1) | The system shall refuse a request that carries an API key in its URL, and one made with an unknown, wrong, ended, revoked, disabled or no longer covered key, with one identical answer that does not say which applied. | **Accept** | Keys in URLs land in proxy logs, and distinct refusals tell a guesser which part was right. |
 | AUTH-KEY-06 (P1) | The system shall let an API key read at most a set number of rows (messages and collection records) in a UTC day, 5,000 by default and counted across restarts, and shall refuse a read that would pass the limit, or whose day's count it cannot determine, before it sends any row. | **Rewrite** | Built. Already rewritten as AUTH-KEY-08 (debate A18); accepting AUTH-KEY-08 supersedes this row. No answer needed. |
-| AUTH-KEY-07 (P1) | When an API key is replaced, the system shall stop accepting the old secret at once, except that the key's own issuer may keep it working for at most 7 days and never past the key's end. | **Accept** | Provisional: Partial. D-322: a leak must end at once, and a planned change must not force downtime on a feed. |
-| AUTH-KEY-08 (P1) | The system shall let an API key read at most a set number of rows (messages and collection records, not messages it submits) in a UTC day, 5,000 by default and counted across restarts, and shall refuse a read that would pass the limit, or whose day's count it cannot determine, before it sends any row. | **Accept** | Provisional: Partial. A feed that submits by key must not stop at its 5,001st result. Today sends count: decision D-A4. |
-| AUTH-KEY-09 (P1) | The system shall hold an API key's daily row limit in total across reads sent at the same time. | **Accept** | Provisional: Met. Parallel reads must not multiply the ceiling that limits a leaked key. |
-| AUTH-KEY-10 (P1) | When access an API key's issuer lost only by the passing of time is given back, the system shall accept the key again. | **Accept** | Provisional: Partial. Documented behaviour that no row stated; otherwise either answer passes. |
-| AUTH-KEY-11 (P1) | An API key disabled because an edit narrowed its issuer's access shall stay disabled until a person enables it. | **Accept** | Provisional: Partial. Documented behaviour; a key must not come back because of an unrelated later edit. |
+| AUTH-KEY-07 (P1) | When an API key is replaced, the system shall stop accepting the old secret at once, except that the key's own issuer may keep it working for at most 7 days and never past the key's end. | **Accept** | D-322: a leak must end at once, and a planned change must not force downtime on a feed. |
+| AUTH-KEY-08 (P1) | The system shall let an API key read at most a set number of rows (messages and collection records, not messages it submits) in a UTC day, 5,000 by default and counted across restarts, and shall refuse a read that would pass the limit, or whose day's count it cannot determine, before it sends any row. | **Accept** | A feed that submits by key must not stop at its 5,001st result. Today sends count: decision D-A4. |
+| AUTH-KEY-09 (P1) | The system shall hold an API key's daily row limit in total across reads sent at the same time. | **Accept** | Parallel reads must not multiply the ceiling that limits a leaked key. |
+| AUTH-KEY-10 (P1) | When access an API key's issuer lost only by the passing of time is given back, the system shall accept the key again. | **Accept** | Documented behaviour that no row stated; otherwise either answer passes. |
+| AUTH-KEY-11 (P1) | An API key disabled because an edit narrowed its issuer's access shall stay disabled until a person enables it. | **Accept** | Documented behaviour; a key must not come back because of an unrelated later edit. |
 | AUTH-KEY-12 (P2) | The system shall send an alert, at most hourly per key, when a request carries the correct secret of an ended, revoked, disabled or uncovered key that worked in the last 7 days. | **Defer** | Not built. Tells a site its feed is knocking with a dead key, but pages about a cut-off that worked. Decision D-A5. |
 | AUTH-CUT-01 (P1) | Once it confirms that a user is disabled or deleted, the system shall refuse every request, session renewal and sign-in of that user, by any sign-in method, including those that began before the change. | **Rewrite** | Unknown. Already rewritten as AUTH-CUT-08 (debate A21); accepting AUTH-CUT-08 supersedes this row. No answer needed. |
 | AUTH-CUT-02 (P1) | Once it confirms that a user's password was changed or reset, the system shall refuse every session that user signed in to with the old password, whenever that sign-in began, except the session in which the user made the change. | **Rewrite** | Unknown. Already rewritten as AUTH-CUT-12 (debate A22); accepting AUTH-CUT-12 supersedes this row. No answer needed. |
 | AUTH-CUT-03 (P1) | The system shall close a user's live connections within 60 seconds after the session behind them ends for any reason or the user is disabled, deleted or given a new password by someone else. | **Reject** | Built. Debate A30 (Scope 2, Customer, Domain agree): API-LIV-01 already holds it, with the same 60 seconds. |
-| AUTH-CUT-04 (P1) | When a user is disabled or deleted, the system shall disable in the same change every working API key that user issued, except a key that someone who may manage keys and holds what it holds takes over in that change, which gets a new secret while the old one stops at once. | **Accept** | Provisional: Met. D-322: the leaver knows those secrets, so a working key is a former employee with access to PHI. |
+| AUTH-CUT-04 (P1) | When a user is disabled or deleted, the system shall disable in the same change every working API key that user issued, except a key that someone who may manage keys and holds what it holds takes over in that change, which gets a new secret while the old one stops at once. | **Accept** | D-322: the leaver knows those secrets, so a working key is a former employee with access to PHI. |
 | AUTH-CUT-05 (P1) | When a disabled user is enabled again, the system shall bring back none of that user's earlier sessions and none of the API keys disabled with the user. | **Accept** | Enabling an account must not quietly restore access nobody looked at; D-322 says it for keys. |
 | AUTH-CUT-06 (P1) | The system shall refuse to disable or delete the last enabled administrator, also when several such requests arrive at the same time. | **Rewrite** | Built. Already rewritten as ACC-ESC-06 (debate A24); accepting ACC-ESC-06 supersedes this row. No answer needed. |
 | AUTH-CUT-07 (P1) | The system shall refuse a request in which a user would disable or delete their own account, by any route and whatever the letter case of the identifier in the request. | **Rewrite** | Partly built. Already rewritten as AUTH-CUT-15 (debate A3); accepting AUTH-CUT-15 supersedes this row. No answer needed. |
-| AUTH-CUT-08 (P1) | Once it confirms that a user is disabled or deleted, the system shall refuse every request, session renewal and sign-in of that user, by any method, that it had not finished checking by then. | **Accept** | Provisional: Partial. Cut-off must mean cut off, which is the privacy officer's first question. |
-| AUTH-CUT-09 (P1) | The system shall stop sending an answer already under way within 60 seconds after its caller is disabled, deleted or revoked. | **Accept** | Provisional: Not met. An export half sent at cut-off is PHI leaving after the decision to stop it. |
-| AUTH-CUT-10 (P1) | A resend, reprocess or deployment already accepted when its caller is cut off shall run to its end. | **Accept** | Provisional: Partial. Half a bulk resend invites a duplicating rerun; an operator can still halt the channel. Decision D-A3. |
-| AUTH-CUT-11 (P1) | Locking, disabling or deleting an account shall not stop, undeploy or change any channel. | **Accept** | Provisional: Partial. Feeds outlive the person who built them; no row said so. |
+| AUTH-CUT-08 (P1) | Once it confirms that a user is disabled or deleted, the system shall refuse every request, session renewal and sign-in of that user, by any method, that it had not finished checking by then. | **Accept** | Cut-off must mean cut off, which is the privacy officer's first question. |
+| AUTH-CUT-09 (P1) | The system shall stop sending an answer already under way within 60 seconds after its caller is disabled, deleted or revoked. | **Accept** | An export half sent at cut-off is PHI leaving after the decision to stop it. |
+| AUTH-CUT-10 (P1) | A resend, reprocess or deployment already accepted when its caller is cut off shall run to its end. | **Accept** | Half a bulk resend invites a duplicating rerun; an operator can still halt the channel. Decision D-A3. |
+| AUTH-CUT-11 (P1) | Locking, disabling or deleting an account shall not stop, undeploy or change any channel. | **Accept** | Feeds outlive the person who built them; no row said so. |
 | AUTH-CUT-12 (P1) | Once it confirms that a user's password was changed or reset, the system shall refuse every session and unfinished sign-in of that user, by any sign-in method, except the session in which the user made the change. | **Accept** | A reset is the answer to a stolen password, so it must end everything open, not only password sessions. |
-| AUTH-CUT-13 (P1) | Before a user is disabled or deleted, the console shall list each working API key that will stop, with its name, scope and last use. | **Accept** | Provisional: Partial. Nobody should stop a feed unawares when someone leaves; D-322 built it, no row held it. |
+| AUTH-CUT-13 (P1) | Before a user is disabled or deleted, the console shall list each working API key that will stop, with its name, scope and last use. | **Accept** | Nobody should stop a feed unawares when someone leaves; D-322 built it, no row held it. |
 | AUTH-CUT-14 (P2) | The system shall let a user, or someone who may manage that account, end all of its sessions without disabling it. | **Accept** | Not built. A lost laptop otherwise means disabling a colleague mid-shift, which also stops their keys. |
-| AUTH-CUT-15 (P1) | The system shall refuse a request in which a user would disable or delete their own account, by any route. | **Accept** | Provisional: Partial. #398 tracks the route that allows it today. |
+| AUTH-CUT-15 (P1) | The system shall refuse a request in which a user would disable or delete their own account, by any route. | **Accept** | #398 tracks the route that allows it today. |
 | AUTH-BRK-01 (P2) | The system shall let a user with permission to manage an account, or an operator with access to the server when no administrator can sign in, clear that account's second factors, and shall change nothing when the clearing cannot be recorded in the audit log. | **Rewrite** | Not built. Already rewritten as AUTH-BRK-04 (debate A25); accepting AUTH-BRK-04 supersedes this row. No answer needed. |
-| AUTH-BRK-02 (P1) | The documentation shall give an emergency access procedure by which a site reaches its messages when no administrator can sign in the normal way, and a person shall be able to complete it with only what the page told the site to prepare. | **Accept** | Provisional: Not met. A required HIPAA implementation specification; today only a one-line suggestion of a sealed second account exists. |
+| AUTH-BRK-02 (P1) | The documentation shall give an emergency access procedure by which a site reaches its messages when no administrator can sign in the normal way, and a person shall be able to complete it with only what the page told the site to prepare. | **Accept** | A required HIPAA implementation specification; today only a one-line suggestion of a sealed second account exists. |
 | AUTH-BRK-03 (P2) | The system shall let an operator with access to the server restore sign-in for one named administrator account when no administrator can sign in, without changing any other account. | **Rewrite** | Not built. Already rewritten as AUTH-BRK-05 (debate A25); accepting AUTH-BRK-05 supersedes this row. No answer needed. |
-| AUTH-BRK-04 (P1) | The system shall let a user with permission to manage an account clear that account's second factors. | **Accept** | Provisional: Not met. #141, #142: required second factors are unsafe until a lost phone can be recovered from. |
-| AUTH-BRK-05 (P1) | The system shall let an operator with access to the server enable and unlock one named administrator account, clear its second factors and set its password, changing no other account. | **Rewrite** | Provisional: Not met. Required emergency access (164.312(a)(2)(ii)). Owner must choose: this recovery tool (default) or only a sealed second account. |
-| AUTH-BRK-06 (P1) | The system shall change nothing under AUTH-BRK-04 or AUTH-BRK-05 when it cannot record the change in the audit log. | **Accept** | Provisional: Not met. An unrecorded restore of an administrator is the one an auditor asks about. |
+| AUTH-BRK-04 (P1) | The system shall let a user with permission to manage an account clear that account's second factors. | **Accept** | #141, #142: required second factors are unsafe until a lost phone can be recovered from. |
+| AUTH-BRK-05 (P1) | The system shall let an operator with access to the server enable and unlock one named administrator account, clear its second factors and set its password, changing no other account. | **Rewrite** | Required emergency access (164.312(a)(2)(ii)). Owner must choose: this recovery tool (default) or only a sealed second account. |
+| AUTH-BRK-06 (P1) | The system shall change nothing under AUTH-BRK-04 or AUTH-BRK-05 when it cannot record the change in the audit log. | **Accept** | An unrecorded restore of an administrator is the one an auditor asks about. |
 | AUTH-SUN-01 (P2) | While an administrator has turned a system use notice on, the console shall show its title and text before every sign-in and shall offer no way to sign in until the person agrees. | **Accept** | Not built. #135: government and many healthcare sites cannot deploy without it, and it is small. |
 | AUTH-SUN-02 (P2) | The system shall record in the audit log, against the user who signs in, which version of the system use notice that person agreed to, with every saved change of the text being a new version. | **Rewrite** | Not built. Already rewritten as AUD-SIGN-05 (debate A26); accepting AUD-SIGN-05 supersedes this row. No answer needed. |
 
@@ -566,7 +592,7 @@
 | PIPE-STG-04 (P1) | When parsing, a preprocessor, a filter or a transformer fails for a message, or anything else goes wrong before the message is routed, the system shall send nothing past the failure (to no destination for a source stage, not to that destination for a destination stage), show error with the stage and the reason, and raise an alert. | **Accept** | Built. D-122 and D-132: a failed filter once let unfiltered, untransformed PHI through to partners. |
 | PIPE-STG-05 (P1) | The system shall show a message's source as sent only when every destination it was routed to was sent it, filtered it or put it on its queue and no postprocessor failed; otherwise it shall show the source as error. | **Accept** | Built. D-132: showing sent over a failed destination hides undelivered results. |
 | PIPE-STG-06 (P1) | When the system has delivered a message and cannot save that destination's status or the partner's answer, it shall log an error and raise an alert, each naming the channel, the message and the destination, and shall not show the delivery as failed. | **Accept** | Partly built. #404: the partner's answer is often the only proof of delivery, and it disappears silently. |
-| PIPE-STG-07 (P2) | The system shall count each received message once and each destination's final outcome once, also when the message was retried from a queue or run again after a server stop. | **Accept** | Partly built. Counts feed reconciliation; ROADMAP lists the double count as an issue and #401 fixes its cause. |
+| PIPE-STG-07 (P2) | The system shall count each received message once and each destination's final outcome once, also when the message was retried from a queue or run again after a server stop. | **Accept** | Partly built. Counts feed reconciliation; D-345 (merged during this run) fixes the double count of interrupted messages. |
 | PIPE-STG-08 (P1) | After a message has been deleted, the system shall hold none of its content and shall send it to no destination, also when it was being processed or queued when it was deleted. | **Accept** | Not built. #403: PHI outlives a delete and retention where nobody can see it, and a queued delivery can vanish. |
 | PIPE-RTE-01 (P1) | The system shall send each message that passes the source filter to every enabled destination of the channel except those a source script took out of the message's destination set, by name or by number. | **Accept** | Built. Migrated router channels depend on the destination set; proven by scenario s02. |
 | PIPE-RTE-02 (P1) | A destination that fails, is slow or holds a queue shall neither stop nor delay sending the same message to any other destination that is not set to wait for it. | **Accept** | Built. One partner's outage must not hold back every other partner's results. |
@@ -593,9 +619,9 @@
 | PIPE-LIF-02 (P1) | On a halt, the system shall end every script and every send of the channel that can be ended without waiting for its own time limit, put a queued message whose send it ended back on its queue without counting an attempt, and show any other message it ended as error. | **Accept** | Built. D-342 settles it; a halt that waits for a dead partner is no halt. |
 | PIPE-LIF-03 (P1) | On a stop, the system shall take no new message and shall not report the channel stopped until every message already being processed has a final status and its waiting sender its answer, unless a person halts the channel. | **Accept** | Partly built. Follows decision D-C6; halt stays the way to end a stop that takes too long. |
 | PIPE-REC-01 (P1) | After the server stopped for any reason, the first start of each channel shall finish every message the channel had recorded and not finished, or show it as error with the reason, such as content that was not kept; none shall stay unfinished with nothing said. | **Accept** | Partly built. The no-loss promise across a crash; messages without stored content stay unfinished silently. |
-| PIPE-REC-02 (P1) | A message interrupted by a server stop before it was routed shall be run again as the same message, so that however often the server stops meanwhile there is one message and one delivery per destination. | **Accept** | Not built. #401 measured 28 deliveries of one order; supersedes D-213's new-message rerun. |
+| PIPE-REC-02 (P1) | A message interrupted by a server stop before it was routed shall be run again as the same message, so that however often the server stops meanwhile there is one message and one delivery per destination. | **Accept** | Built on main since. D-345 (#408, merged during this run) does it; #401 measured 28 deliveries of one order. |
 | PIPE-REC-03 (P1) | After a server stop the system shall send an interrupted message only to destinations that had no final outcome, never again to one shown as sent or filtered, and shall show on the message each destination whose interrupted send it repeated. | **Accept** | Partly built. Resending to finished destinations duplicates orders; the repeated-send mark is not built. |
-| PIPE-REC-04 (P1) | When the same message has been interrupted by a server stop 3 times, the system shall not run it again by itself; it shall show it as error, raise an alert, and leave it for a person to run. | **Rewrite** | Not built. #401 needs the owner's number and whether the message fails or its channel is held. Default 3, message fails. |
+| PIPE-REC-04 (P1) | When the same message has been interrupted by a server stop 3 times, the system shall not run it again by itself; it shall show it as error, raise an alert, and leave it for a person to run. | **Rewrite** | Not built. D-345 sets no limit on reruns. Owner must give the number and say whether the message fails or its channel is held. Default 3, message fails. |
 | PIPE-REC-05 (P1) | A hand-off from one channel to another that a server stop interrupts shall leave exactly one message in the receiving channel after both channels have started again. | **Accept** | Not built. #401: one stop can make two messages in the next channel, each delivered. |
 | PIPE-REC-06 (P1) | The system shall never have two sends of one message to one destination under way at the same time, whether from the channel, its queue, a resend, or recovery while an earlier deployment of the channel is still sending. | **Accept** | Partly built. D-343 closed recovery; #339 shows a resend can still race a send. |
 | PIPE-BAT-01 (P2) | The system shall let a source split what it receives into messages at a delimiter, at each match of a regular expression, by a script, or at the message boundaries of its data type, set in the channel editor. | **Accept** | Partly built. Listed for v1.0; splitter code exists but no channel setting reaches it. |
@@ -933,3 +959,219 @@
 | UI-LOC-01 (P2) | The console shall show every time in the time zone and 12 or 24 hour format of the user's device, and shall show the zone wherever a time is shown in full. | **Accept** | Partly built. Device locale is used; no zone is shown, so two people can read one incident at different times. |
 | UI-LOC-02 (P3) | The console shall show its text in a language the user chooses from those the project ships. | **Reject** | Not built. Doc 18 says translation only on demand; none recorded, and it would cover every string for good. |
 | UI-FLOW-01 (P3) | The console shall let a user build and change a channel on a canvas of connected steps, with branches, error paths and reusable parts, and the result shall be an ordinary channel that the form editor, export, deploy and revision history treat the same. | **Defer** | Not built. v2.0, and doc 14 calls it an identity decision; Mapper steps (D-207) come first. |
+
+## Appendix A: the debate on Authentication and Connectors
+
+Two panels (Authentication; Connectors with the connector interface), five seats each: Contractor, Customer, Tester, Domain guardian (HIPAA, message data integrity, Mirth migration parity) and Scope guardian. Each seat wrote its review alone from one shared brief, then read and answered the other four. The chair merged the notes and checked every quoted row against the file. **Every finding below was applied as new Proposed rows** (column "Now"), and a replaced row keeps its text until you accept its replacement, when it becomes `Superseded by` it. The default for every finding is **accept the new rows**, except where the last column says otherwise.
+
+### Decisions the panels could not settle
+
+Answer like "D-A1 default, D-C2 b".
+
+| # | Question | Default | Other choices |
+|---|---|---|---|
+| D-A1 | Should a device that a user signed in from lately get past a lockout someone else caused (AUTH-LOG-10)? Customer and Domain want it; Contractor and Scope say a shared or stolen workstation gets a second guess budget. | Defer the row; unlock (AUTH-LOG-06) and recovery (AUTH-BRK-05) answer lockout | b: accept AUTH-LOG-10 |
+| D-A2 | Failures per client address before sign-in stops there (AUTH-LOG-08; 5 today) | 50, operator sets 20 to 200 | b: 30 (Customer). c: keep 5 |
+| D-A3 | A bulk resend or deployment already accepted when its caller is cut off (AUTH-CUT-10) | It runs to its end; an operator can halt the channel | b: it stops after the message in hand and the record lists what ran (Customer) |
+| D-A4 | Do messages a key submits count against its daily row ceiling (AUTH-KEY-08)? They do today (D-321). | No: a feed must not stop at its 5,001st result | b: keep counting them, because a send's answer carries content |
+| D-A5 | Alert when a dead key that worked this week is still being presented (AUTH-KEY-12) | Defer | b: accept |
+| D-A6 | What links a single sign-on identity to an account (AUTH-SSO-06)? #148 says verified email. | Issuer and subject, linked by an administrator | b: verified email within allowed domains (#148) |
+| D-A7 | Ask the identity provider at least hourly whether the person is still allowed (AUTH-SSO-09) | Defer: AUTH-SES-09 lets a site shorten sessions | b: accept |
+| D-C1 | Does an HL7 refusal (AE, AR, wrong control ID) end the message in error instead of queuing it (CONN-DST-08)? Today every failed send queues (D-210). | Yes, as Mirth does; a setting retries refusals. HTTP failures go on queuing | b: queue everything, as today. c: also end non-temporary HTTP, SMTP and DICOM refusals in error (Customer) |
+| D-C2 | A message a partner accepted in part, such as an email with one dead address (CONN-DST-09) | Error, never sent again unless a person resends it | b: retry only the refused parts (Customer; needs per-recipient state) |
+| D-C3 | Largest DICOM instance accepted (CONN-DCM-10) | 4 GiB, a guess | b: your number. c: no limit |
+| D-C4 | Must a C-STORE wait for the pipeline, so a message that ends in error is refused, as Mirth can do? | No: success once the instance is safely on disk and a message is certain (CONN-DCM-12) | b: yes, by response mode |
+| D-C5 | Delivery ID when a person resends (CPI-DST-18), and which fields carry it | Same ID unless the message shows SENT; Kafka header, HTTP header, SMTP Message-ID, on by default | b: a new ID at every resend (Contractor) |
+| D-C6 | How long does a stop wait for messages in flight (CONN-SRC-13, CPI-LIF-12, PIPE-LIF-03)? Today 5 s for MLLP, 30 s for Kafka and AMQP, unlimited for HTTP (D-341). | Until they end; halt is the way out | b: a limit per channel, 30 s by default, then left unanswered |
+| D-C7 | One message at a time across connections (CONN-SRC-14) | A setting, on for channels imported from Mirth with one thread | b: on by default for every channel (Customer, Tester) |
+| D-C8 | A screen that lists inputs a polling source holds back and releases one (CONN-SRC-16) | Accept at P2 | b: cut (Scope): the failure folder is enough |
+| D-C9 | Should reading DICOM tags in scripts (DATA-OTH-03) be P1 for migration parity? | Leave it P2 | b: P1 (Customer) |
+
+### Findings: Authentication
+
+| # | Raised by | Problem | Now |
+|---|---|---|---|
+| A1 | Contractor | Read literally, a password reset stopped the live feeds that use the person's API keys | AUTH-USR-08 |
+| A2 | Scope, Tester | Named an algorithm; mixed passwords with other credentials | AUTH-USR-09, AUTH-USR-10 |
+| A3 | Scope | The letter-case clause repeated API-CHG-03 | AUTH-USR-11, AUTH-CUT-15 |
+| A4 | Tester, Contractor | "Successful sign-in" undefined once a second factor exists; a count held in memory passed | AUTH-LOG-06, AUTH-LOG-07 |
+| A5 | Customer, Domain, Scope | Five failures behind one hospital address lock out the on-call team; the proxy clause stood in three places | AUTH-LOG-08, SEC-NET-05 (D-A2) |
+| A6 | Tester, Customer | "Same work" cannot be observed; locked and disabled accounts were unstated | AUTH-LOG-09, AUTH-LOG-11 |
+| A7 | Customer, Domain; against: Scope, Contractor | Anyone who knows a username can lock its owner out | AUTH-LOG-10 (default Defer, D-A1) |
+| A8 | Domain | Nothing said that a lock, disable or delete leaves channels and sessions alone | AUTH-LOG-12, AUTH-CUT-11 |
+| A9 | Contractor, Tester, Domain, Customer | Idle and maximum session times had no bounds, tolerance or meaning of "user action" | AUTH-SES-08, AUTH-SES-09 |
+| A10 | Customer, Domain | Ending a session left PHI on the screen and destroyed unsaved work without warning | AUTH-SES-10, AUTH-SES-11, UI-ACT-06 |
+| A11 | Scope | AUTH, ACC and API all said "refuse unless signed in" | AUTH-SES-12 |
+| A12 | Tester | Inspection cannot prove absence; a browser test can | AUTH-SES-13 (needs your choice) |
+| A13 | Contractor | "Production install" undefined: protections could sit behind a flag that defaults to off | OPS-INS-05 |
+| A14 | Contractor, Scope | A second factor was "due" without saying when; a build could never ask for one | AUTH-MFA-08, AUTH-MFA-09 |
+| A15 | Contractor, Customer | The re-authentication rule shut single sign-on users out of changing a role and contradicted enrolment and recovery | AUTH-MFA-10 |
+| A16 | Tester, Contractor | The link between an identity and an account was open, and a created account's access unstated | AUTH-SSO-06, AUTH-SSO-07, AUTH-SSO-08 (D-A6) |
+| A17 | Customer; against: Scope | Someone disabled at the provider stays in until the session ends | AUTH-SSO-09 (default Defer, D-A7) |
+| A18 | Domain, Tester | A key that submits results stopped at its 5,001st; parallel reads were unstated | AUTH-KEY-08, AUTH-KEY-09 (D-A4) |
+| A19 | Contractor | Whether a key comes back when its issuer's access does was unstated | AUTH-KEY-10, AUTH-KEY-11 |
+| A20 | Customer, Domain | Feeds stop silently when a key ends or its issuer leaves | MON-ALT-13, AUTH-CUT-13, AUTH-KEY-12 (default Defer, D-A5) |
+| A21 | Tester, Domain, Contractor | "Began before the change" had no observable outcome; a cut-off could strand half a bulk resend | AUTH-CUT-08, AUTH-CUT-09, AUTH-CUT-10 (D-A3) |
+| A22 | Contractor | A reset left sessions opened by other sign-in methods | AUTH-CUT-12 |
+| A23 | Customer | A lost laptop meant disabling a colleague | AUTH-CUT-14 |
+| A24 | Domain, Scope | The last-administrator rule had two definitions; a temporary administrator satisfied one | ACC-ESC-06 |
+| A25 | Tester, Scope, Customer, Domain | "When no administrator can sign in" cannot be detected, recovery was unrecorded, and P2 for a HIPAA-required procedure | AUTH-BRK-04, AUTH-BRK-05, AUTH-BRK-06 |
+| A26 | Scope | Rows held twice across areas | AUD-SIGN-05, UI-NOT-04, AUD-USE-05 |
+| A27 | Domain | Account creation, email, own password, factor and link changes were in no audit row | AUD-CHG-06 |
+| A28 | Customer, Domain | No account list for the privacy officer's review | ACC-WHO-06 |
+| A29 | Domain | Mirth's password settings vanish untold at migration | MIG-PAR-03 |
+| A30 | Scope, Customer, Domain | AUTH-CUT-03 repeats API-LIV-01 | Reject AUTH-CUT-03 |
+| A31 | Scope, Customer | SAML and LDAP have no issue and #140 excludes both | Defer AUTH-SSO-04, AUTH-SSO-05 |
+| A32 | Customer; Scope concedes | A security review refuses a product without second factors | Raised to P1: AUTH-MFA-02, -03, -04, -06; AUTH-MFA-05 lowered to P3 |
+
+### Findings: Connectors and the connector interface
+
+| # | Raised by | Problem | Now |
+|---|---|---|---|
+| C1 | Domain, Contractor | A refusal queues like an outage: one refused order holds every later result | CONN-DST-08, CPI-DST-13, CPI-DST-14, PIPE-QUE-09 (D-C1) |
+| C2 | Contractor, Domain, Customer | Retrying a partly accepted message mails the accepted recipients again without limit | CONN-DST-09 (D-C2) |
+| C3 | Contractor, Customer, Scope, Tester | Three answers to an input that keeps failing; a database restart could stop every File and Email channel | CPI-SRC-12, CPI-SRC-13, CPI-POL-03, CONN-KFK-05, CONN-AMQ-03 |
+| C4 | Contractor | Rows require an alert the contract gives no way to raise | CPI-SRC-14 |
+| C5 | Customer, Contractor | A partner that is down when the server boots leaves the feed dead | CPI-LIF-10, CONN-SRC-10 |
+| C6 | Contractor, Tester | The no-content rule forbade error text four other rows require | CPI-HLT-04, CPI-HLT-05 |
+| C7 | all five | SENT had two definitions | CPI-DST-15, CONN-DST-10 |
+| C8 | Tester, Contractor, Domain, Scope | Halt contradicted PIPE-LIF-02, D-342 and itself | CONN-DST-11, CPI-LIF-11 |
+| C9 | Contractor, Tester | A 50 MiB limit that covers DICOM refuses ordinary images | CONN-SRC-11, CONN-DCM-10 (D-C3) |
+| C10 | Domain, Contractor | A half-recorded batch had no legal answer | CPI-SRC-15 |
+| C11 | Tester, Contractor, Domain | The rule for an input recorded with an error was impossible for database rows and DICOM | CPI-SRC-16, CPI-SRC-17, CPI-SRC-18 (D-C4) |
+| C12 | Contractor | An unfilled placeholder had two answers and left out bound values | CPI-DST-16 |
+| C13 | Contractor | HTTP status and headers cannot cross the contract | CPI-DST-17 |
+| C14 | Contractor, Domain | A resend reused or changed the delivery ID, each harmful in one case | CPI-DST-18 (D-C5), CPI-DST-19 (default Defer) |
+| C15 | Contractor, Customer | The contract let a listener accept bytes CONN refuses; one bad byte could hold a feed | CPI-SRC-19, CONN-SRC-12 |
+| C16 | Scope | The contract let any connector accept first | CPI-SRC-20 |
+| C17 | Domain, Scope | Three stop rules; one allowed silent duplicates | CONN-SRC-13, CPI-LIF-12, PIPE-LIF-03 (D-C6) |
+| C18 | Scope | Three send time limits | CONN-DST-12, CPI-DST-20 |
+| C19 | Customer | Partners that never acknowledge had no row | CONN-TCP-08 |
+| C20 | Customer, Domain | "Never AR" contradicted MIG-SET-01 and Mirth's defaults | CONN-TCP-09 |
+| C21 | Customer, Domain | A 300-second idle limit drops quiet analyzers; Mirth's default is never | CONN-TCP-10, CONN-TCP-11 |
+| C22 | Customer | No row required TLS on the most used connector | CONN-TCP-12 |
+| C23 | Domain, Customer | A sender that reconnects can overtake its earlier message | CONN-SRC-14 (D-C7) |
+| C24 | Customer | A refused input left no trace | MON-CST-04 |
+| C25 | Customer, Scope | Failed files pile up unseen; after-processing had no row | CONN-SRC-15, CONN-FILE-08, CONN-FILE-09, CONN-SRC-16 (D-C8) |
+| C26 | Domain, Tester | Nobody is told about a duplicate from the crash window | CONN-SRC-17 |
+| C27 | Domain | No choice for a send that may have arrived; Mirth has one | PIPE-QUE-10 |
+| C28 | Domain | A lost Kafka position skips records in silence | CONN-KFK-06 |
+| C29 | Domain, Tester | A failed append leaves half a message | CONN-FILE-10 |
+| C30 | Domain | Images of deleted messages stay on disk | MSG-RET-10 |
+| C31 | Tester, Domain | Nothing said how bytes travel | CPI-SRC-21 |
+| C32 | Customer, Scope | DICOM routing needs the AE titles | CONN-DCM-11 (D-C9) |
+| C33 | Tester | "On disk" and "in-sync" could pass without proving anything | CONN-DCM-12, CONN-KFK-07 |
+| C34 | Scope; against in part: Customer | Rows that pre-empt the undecided plugin platform | CPI-MAN-03; Defer CPI-VER-01, CPI-REG-03, CPI-VER-03, CONN-EXT-01 |
+| C35 | Tester | The conformance kit could not run as written | CPI-TCK-03 |
+| C36 | Customer; against: Scope | Restart memory has nowhere to live on a read-only share | CPI-REG-04 |
+| C37 | Scope | The FHIR source could be read as a FHIR server | CONN-FHIR-05 |
+| C38 | Contractor | No default for the connection limit; schedules without a time zone | CONN-INB-05, CONN-SRC-18 |
+| C39 | Scope, Domain | Plain duplicates of PIPE-RTE-07, DATA-CHR-02, SEC-LOG-02 | Reject CONN-CHN-02, CONN-DST-06, CONN-DCM-09 |
+| C40 | Customer, Scope | Priorities | CONN-NEW-05 and CONN-FILE-05 raised to P1; Reject CONN-NEW-04 (WebDAV), CONN-NEW-09 (JMS), CONN-NEW-10 (POP3) |
+
+### Left alone
+
+- CPI-SRC-07, CPI-POL-02, CPI-CFG-02, -04, -05, CPI-REG-02 and CPI-HLT-01 (Scope: cite the owning area instead): kept, because an interface spec must give a connector author the exact shape and none contradicts its owner; CPI-POL-02's alert and CPI-CFG-04's authentication guard are in no other row.
+- A measured 10% timing bound on sign-in answers (Tester): not added, it would fail at random in CI. AUTH-LOG-11 covers it by inspection.
+- A content-free wall display exempt from idle logoff (Domain asked): no row; a question in Appendix B.
+- Customer's manifest row for third-party connectors (exported factories): not added, it pre-empts the plugin decision.
+- Domain's "shown as possibly delivered" after a halt: not added, CPI-DST-04 and PIPE-LIF-02 hold it.
+
+### The skill's check
+
+Pass: every finding cites a row or a missing behaviour. Pass: every proposed row has an ID and all five columns (srs-lint). Pass: every decision has a default. Pass: every seat's note was answered by at least one other in round 2. The Contractor found exploitable ambiguities (A14, C8) and the Tester unprovable rows (A21, C35).
+
+## Appendix B: rows that need your number or choice
+
+Every row recommended **Rewrite** in the batches. "Accept all recommendations in batch N" leaves these Proposed until you answer; "take all the defaults in Appendix B" settles them with the default below, and the row is reworded to match before it is accepted. The debate's own decisions (D-A1 to D-C9) are in Appendix A.
+
+| Row | Choose | Default |
+|---|---|---|
+| ACC-PERM-03 | Does the bulk export permission cover attachment download, and which roles get it on upgrade? | Bulk export only; deployer keeps it, the viewers lose it, named in the release notes |
+| ACC-ROLE-06 | When a release splits or adds a permission, do existing holders get it? | Only admin, unless the release notes say otherwise |
+| ACC-WHO-02 | Does a channel's Access tab list people who can change maps, data sources and alerts? | Yes |
+| API-VER-02 | How long is an old API version served? | 12 months |
+| AUD-CHG-04 | A configuration change that cannot be recorded: refuse it, or count the loss? | Refuse, as access changes already do |
+| AUTH-SES-13 | Move the access credential out of browser storage, or accept it behind a content policy? | Move it |
+| AUTH-BRK-05 | Recovery tool on the server, or only a sealed second administrator account? | Tool |
+| CHAN-EDIT-07 | May an import make a second channel of the same name? | No |
+| CHAN-DEP-10 | Deploying a version that drops a destination with waiting messages (#395) | Refuse unless the operator chooses what happens to them |
+| CHAN-ORG-01 | One group per channel, or several? | Several (D-311) |
+| CONN-SRC-01 | May the database update mode ALWAYS mark rows that were not recorded? | No: mark only recorded rows |
+| CONN-DST-05 | A `${name}` nothing fills, in a URL, a recipient or a bound value | Error the send |
+| CONN-JS-01 | A JavaScript source message that cannot be recorded | Raise an alert |
+| CONN-EML-02 | Email content (#369): raw, text or parsed | Raw bytes plus the attachment count |
+| CONN-DCM-10 | Largest DICOM instance (D-C3) | 4 GiB |
+| CPI-RES-03 | Is the list of named error codes part of v1.0? | Yes |
+| CPI-LIF-07 | Halt limit | 10 s |
+| CPI-DST-06 | Abort within 1 s; may database, file, DICOM, script and channel sends stay uncancellable? | Yes, if declared |
+| CPI-DST-18 | Delivery ID on resend, and which fields carry it (D-C5) | Same unless SENT; Kafka header, HTTP header, SMTP Message-ID; on |
+| DATA-GEN-06 | Does the outbound data type convert, or only check what the script built? | Check now, convert later |
+| DATA-BAT-03 | What is one X12 batch message? | One transaction set |
+| DATA-OTH-03 | DICOM tags: read only or editable? (and P1? D-C9) | Read only, P2 |
+| MIG-IMP-01 | Which Mirth and OIE export versions are promised? | Mirth 3.0 to 4.5; OIE 4.6 once a scenario covers it |
+| MIG-SAFE-07 | How is the manual-work estimate expressed? | Counts of scripts and settings, not hours |
+| MIG-BAK-02 | Which server backup sections are imported? | Configuration map and global scripts; groups, tags, dependencies and alerts later |
+| MON-DLV-03 | Which addresses may a webhook alert reach? | Those on the operator's script allow list |
+| MON-LOG-02 | Script logger output: server log, message record or both, and a flood limit | Server log, 100 lines per run |
+| MSG-STO-03 | May METADATA drop error text, and does DISABLED need to exist? | Drop it; retire DISABLED unless it differs |
+| MSG-ENC-02 | Content encryption on by default when a key exists (costs text search on that channel) | On |
+| MSG-SRCH-07 | Search time and volume | 5 s at 10 million messages (a placeholder) |
+| MSG-REP-07 | From how many messages must a reprocess be confirmed by typing the count? | 100 (a placeholder) |
+| MSG-RET-02 | Deleting a message still in progress (#403) | Refuse, with a way to end a stuck one |
+| MSG-RET-07 | Archive before pruning: where, what form, encrypted? | No default in any source |
+| MSG-RET-09 | Messages of a deleted channel (#202) | Show them marked, keep pruning, offer a purge |
+| OPS-UPG-08 | Which releases upgrade directly, and for how long is each supported? | No default in any source |
+| OPS-PERF-01, OPS-PERF-02, OPS-PERF-03 | Host, percentile, duration and channel count for the targets | 4 cores and 16 GB, median, 60 minutes, 500 channels |
+| OPS-TIM-02 | Time zone schedules run in | A server setting, shown beside the schedule |
+| PIPE-RTE-06 | Overall deadline per message: default, maximum, may it cut off a send? | Off unless set |
+| PIPE-RTE-07 | One hand-off limit (10 and 25 today) | 10 |
+| PIPE-QUE-04 | Queue on failure: may later messages go directly while one waits? | No |
+| PIPE-REC-04 | How many interrupted reruns, and then? | 3, then the message fails |
+| SCR-KND-03 | Preprocess before parsing? | Yes |
+| SCR-ISO-03 | Latency other channels keep while a script loops | 1 s |
+| SCR-ISO-04 | Script memory limit and the isolation that enforces it (#402) | No default |
+| SCR-ISO-05 | Host isolation: guarantee or best effort? | Guarantee, once #402 is decided |
+| SEC-KEY-01 | Key rotation: re-encrypt old content, or keep the old key for reading? | Re-encrypt in the background |
+| SEC-TLS-05 | Does the bundled container network count as the same machine? | Yes |
+| SEC-TLS-06 | May a mail destination opt out of TLS for an old relay? | No |
+| SEC-SUP-03 | Vulnerability fix times | 7 days critical, 30 days high |
+| SEC-SUP-04 | Does v1.0 wait for an outside security test? | Yes |
+| SHR-COL-08 | How soon is an expired collection record deleted, and does the pruner switch govern it? | 24 hours, independent |
+| SHR-COL-09 | Cap on an unlimited collection search | 1,000, then fail |
+| SHR-GEN-02 | Allowed slowdown from large maps (L22) | 10% at 10 MB, or defer |
+| UI-RCH-01 | Supported browsers | Current and previous Chrome, Edge, Firefox, Safari |
+| UI-RCH-03 | Which screens must work on a phone (#130)? | That issue's example list |
+| UI-ACS-01 | Accessibility level | WCAG 2.1 AA |
+
+Questions with no row: may an unattended wall display be exempt from idle logoff (default no)? Should v1.0 require second factors and OpenID Connect (default: authenticator app and policy yes, as P1; OpenID Connect P2; passkeys, SAML and LDAP later)? Certificate alert lead times (default 30 days, 7 days and at expiry, SEC-CRT-02)? Encrypt collection records and map values at rest (no source asks; default: no row)? Restore time and data-loss targets (no source; default: no row)? Second-person approval before promotion (#346; default: leave out)? When is the connector contract 1.0.0 declared (default: with the SDK)?
+
+## Appendix C: conflicts between sources, and the side taken
+
+Each is also in the row's source note. Overrule any by ID.
+
+- **Passwords and sessions**: #210 (configurable, 15, no composition rule) over capabilities.md (fixed 8); #172 (a session must end) over the 7-day sliding session; D-322 (a leaver's keys stop at once) over D-313's 7 days; #398 over access-control.md (disabling your own account is refused too).
+- **Audit**: D-312 and D-318 (fail closed) over D-144 and doc 20; the runbook (only the database owner drops months) over D-312's "an admin's action"; doc 20's intent that configuration changes are audited, though #264 and #265 are closed and nothing tracks them.
+- **Credentials**: access-control.md (channel writers read their channel's credentials) over D-145; D-332 (mail passwords only over TLS) over the HIPAA checklist.
+- **Connectors**: D-231 (AA for filtered) over D-135, then the debate's configurable codes; D-211 over the ALWAYS update mode; error over D-252 and D-275 for a placeholder nothing fills; D-261 (JMS stays out) over ROADMAP 11; SOAP and Document Writer kept as planned against doc 09.
+- **Pipeline**: #401 (one message, counted once) over D-213 and D-233; D-212 (5 minutes) over the 30 s in code; D-210 (hold order) over design 01; design 02's response modes over what the code does; 10 hand-offs over 25.
+- **Storage and channels**: doc 01 and code over D-092 for PRODUCTION storage; D-092 and D-131 for METADATA and DISABLED; #339 (resend to any destination) over D-172; D-240 over doc 13's comparison operators; D-311 (several groups) over capabilities.md (one).
+- **Migration**: D-301's holds over D-328; refuse until set over "deploys without its Digest credentials"; D-207's refusal over passing unknown types through; Mirth's retry count over D-230; disabling for polling limited to some hours over a warning.
+- **Monitoring**: D-217's one a minute over docs/testing/25; ROADMAP's kept throttle over D-217 and D-062's accepted loss; an alert change applies within 60 s without a redeploy, over the code and D-062.
+- **Operations and console**: D-283 (bundled editor) over capabilities.md's CDN; #363 (back up with the server stopped) over upgrade.md; published images over deployment.md; doc 15 over doc 06 for status colours and phones; D-306 over 5-second polling; multi-tenancy and the visual canvas are both ROADMAP phases and listed there as undecided.
+
+## Appendix D: lines you may want in Out of scope
+
+Found while drafting; the README was not changed. "Add" is the default for the first list, "leave out until asked" for the second.
+
+- Add: JMS, and SQS and Pub/Sub until demand (D-261); POP3 (#172); WebDAV (debate C40); API versioning by header and a channel diff-sync API (doc 05); sign-in methods as installable plugins (#140); SCIM provisioning (#148); per-user exemptions from a second-factor policy (#141); a cookie notice while browser storage is strictly necessary (#136); down migrations, rollback is a restore (upgrade.md); offline use of the console (doc 06); real-time co-editing (doc 18 ranking); persistent log storage and search in the product (D-110); connection strings supplied by scripts (D-178); address ranges or wildcards in the script host list (D-235); redacting configuration map values in backups (doc 20); using maps and collections as a secret store; External Script steps that read code from a server file, and hot reload without a deploy (both contradict D-328); folder-wide `.ignore` files (D-304).
+- Until asked: per-channel (not per-group) scope, department-level user administrators, scoping what channel code can reach, a per-key activity tab (doc 20); ranges and joins over collections (D-177); a hosted offering, native installers, full translation (doc 18); per-destination custom metadata and comparison operators (D-240); address allow lists and peppers for keys (#144, D-313); the product pushing to or pulling from a Git remote (#337); a plugin marketplace (ROADMAP v2.1, undecided).
+
+## Appendix E: planned or proposed behaviour with no row
+
+Left out to keep the areas readable, or because no area clearly owns it. Say "add <item>" for any.
+
+- Connectors: DICOM query/retrieve and storage commitment (#350 steps 4 and 5); HTTP multipart, repeated parameters and proxy (#342); FHIR OperationOutcome reasons and CapabilityStatement (#349); Kafka join limit, orphaned member, bracketed IPv6 brokers (ROADMAP V15); Database JavaScript mode (ROADMAP 1); File subfolders, size range, rename on move; TCP client-mode listener and reply on a new connection (doc 12); WebSocket, serial and Form sources (ROADMAP Someday, #152); SOAP attachments.
+- Formats: HL7 v2 to FHIR maps (V12, B7); ASTM; #194's code-point escape setting.
+- Console: "My access" in the account menu. Access: API key limits holding in total across several servers.
+- Data sources beyond PostgreSQL (doc 11); extension enable and disable (doc 05), whose effect on deploys needs your decision.

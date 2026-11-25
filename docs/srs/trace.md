@@ -19,7 +19,7 @@ Verified by five fresh-context verifiers who built none of the code, on the code
 | Connectors | 65 | 6 | 42 | 17 | 0 |
 | **Total** | 111 | 14 | 67 | 30 | 0 |
 
-118 P1 rows were in scope and 111 have a verdict here; the owner has the results of the other 7 directly.
+118 P1 rows were in scope and 111 have a verdict here; the other 7 are not published in this pass.
 
 ### Authentication
 
