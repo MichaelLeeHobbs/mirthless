@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { Result } from '@galvanigraph/core-util';
 import { MAX_SCRIPT_LOG_LINES, type ScriptLogRun } from '@galvanigraph/core-models';
 import { MessageProcessor, type ChannelScripts, type DestinationConfig, type DestinationResponse, type MessageStore, type PipelineConfig, type StoreFailure } from '../message-processor.js';
+import { GlobalChannelMap } from '../../runtime/global-channel-map.js';
 import { DEFAULT_EXECUTION_OPTIONS, VmSandboxExecutor } from '../../sandbox/sandbox-executor.js';
 import type { ScriptRunAt } from '../../sandbox/script-run-log.js';
 
@@ -128,6 +129,36 @@ describe('the message', () => {
 
     expect(status).toBe('SENT');
     expect(failures).toEqual([{ channelId: 'ch', messageId: 7, metaDataId: 0, what: 'what a script logged', errorMessage: 'disk full' }]);
+  });
+
+  // Another message's script can run while the log is stored.
+  it('is stored after the map changes of its script are in force, so that overlapping messages count on', async () => {
+    const sent: string[] = [];
+    let messages = 0;
+    const globalChannelMap = new GlobalChannelMap();
+    const processor = new MessageProcessor(
+      new VmSandboxExecutor(),
+      makeStore([], {
+        createMessage: async () => { messages += 1; return ok({ messageId: messages, correlationId: 'c' }); },
+        storeScriptLog: async () => { await new Promise((resolve) => { setTimeout(resolve, 30); }); return ok(undefined); },
+      }),
+      async (_metaDataId, _messageId, content) => { sent.push(content); return ok({ status: 'SENT' as const, content: '' }); },
+      {
+        channelId: 'ch', serverId: 's', dataType: 'RAW', globalChannelMap, destinations: [destination()],
+        scripts: { sourceTransformer: { code: '$gc("seq", ($gc("seq") || 0) + 1); logger.info("numbered"); return String($gc("seq"));' } },
+      },
+      DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const running: Promise<unknown>[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      running.push(processor.processMessage({ rawContent: 'm', sourceMap: {} }, AbortSignal.timeout(10_000)));
+      // Each starts while the log of the one before is stored.
+      await new Promise((resolve) => { setTimeout(resolve, 2); });
+    }
+    await Promise.all(running);
+
+    expect(sent.sort()).toEqual(['1', '2', '3', '4', '5']);
   });
 
   it('needs no store that keeps logs', async () => {

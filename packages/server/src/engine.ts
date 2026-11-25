@@ -407,7 +407,9 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       if (!shouldStoreContent(mode, CONTENT_TYPE.SCRIPT_LOG)) return OK_VOID;
       const stored = await loadContent(channelId, messageId, metaDataId, CONTENT_TYPE.SCRIPT_LOG);
       if (!stored.ok) return fail<void>(stored.error);
-      return storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.SCRIPT_LOG, withScriptLogRun(stored.value, run), 'JSON');
+      const text = tryCatch(() => withScriptLogRun(stored.value, run));
+      if (!text.ok) return fail<void>(text.error);
+      return storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.SCRIPT_LOG, text.value, 'JSON');
     },
     // markProcessed runs on success and on error/recovery paths, so it must NOT
     // delete content: error content is needed for investigation, and a still-queued

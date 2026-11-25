@@ -142,7 +142,9 @@ logging in forks, keep PHI and secrets out of log lines — logs are generally l
 than the database. What channel scripts write with `logger` is stored with the message. It goes
 to the server log (`component: "channel-script"`) only while **Log what channel scripts write**
 is on in the settings; it is off by default, because a script's text can hold PHI (D-387). Turn it
-on to look for something and off again, or where the log is protected as PHI is.
+on to look for something and off again, or where the log is protected as PHI is. Off again, the
+Server Log page no longer shows those lines; what has been collected from the output stays where
+it is. `LOG_LEVEL` applies to them as to every line, and a line keeps its first 1,000 characters.
 
 ---
 

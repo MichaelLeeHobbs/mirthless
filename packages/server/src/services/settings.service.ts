@@ -114,6 +114,12 @@ function clearedAttribute(cleared: boolean): { readonly cleared?: string } {
   return cleared ? { cleared: SMTP_PASSWORD } : {};
 }
 
+/** Who can read what scripts write depends on it, so the record says which way it was set. */
+function scriptLogAttribute(inputs: readonly UpsertSettingInput[]): Record<string, unknown> {
+  const set = inputs.find(({ key }) => key === SCRIPT_LOG_SETTING);
+  return set === undefined ? {} : { [SCRIPT_LOG_SETTING]: set.value };
+}
+
 function recordChange(attributes: Record<string, unknown>, context: AuditContext | undefined): void {
   emitEvent({
     level: 'INFO', name: 'SETTINGS_CHANGED', outcome: 'SUCCESS',
@@ -173,7 +179,7 @@ export class SettingsService {
     return tryCatch(async () => {
       const { detail, cleared } = await saveAll([input]);
       await SettingsService.applied([input.key]);
-      recordChange({ key: input.key, ...clearedAttribute(cleared) }, context);
+      recordChange({ key: input.key, ...scriptLogAttribute([input]), ...clearedAttribute(cleared) }, context);
       return detail[0]!;
     });
   }
@@ -182,7 +188,7 @@ export class SettingsService {
     return tryCatch(async () => {
       const { detail, cleared } = await saveAll(inputs);
       await SettingsService.applied(inputs.map((i) => i.key));
-      recordChange({ keys: inputs.map((i) => i.key), ...clearedAttribute(cleared) }, context);
+      recordChange({ keys: inputs.map((i) => i.key), ...scriptLogAttribute(inputs), ...clearedAttribute(cleared) }, context);
       return detail;
     });
   }

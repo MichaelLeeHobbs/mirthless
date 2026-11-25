@@ -3,7 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { withScriptLogRun, type ScriptLog, type ScriptLogRun } from '@galvanigraph/core-models';
 import { darkTheme } from '../../../styles/theme.js';
-import { formatClockTime } from '../../../lib/format.js';
+import { formatClockTime, formatTimestamp } from '../../../lib/format.js';
 import { ScriptLogView } from '../ScriptLogView.js';
 
 const TIME = '2026-11-25T10:00:00.123Z';
@@ -35,6 +35,13 @@ describe('ScriptLogView', () => {
     ]);
     expect(screen.getByLabelText('Log of Source transformer').textContent).toContain('INFO  hello');
     expect(screen.queryByText(/not kept/)).toBeNull();
+  });
+
+  it('shows when a run was, and an HL7 message line by line', () => {
+    show(withScriptLogRun(null, run('Source filter', { lines: [{ level: 'INFO', time: TIME, text: 'MSH|^~\\&\rPID|1\r\nOBX|1' }] })));
+
+    expect(screen.getByText(formatTimestamp(TIME))).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Log of Source filter' }).textContent).toContain('MSH|^~\\&\nPID|1\nOBX|1');
   });
 
   it.each([

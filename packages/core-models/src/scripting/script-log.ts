@@ -8,8 +8,14 @@ export const MAX_SCRIPT_LOG_LINES = 200;
 /** A line keeps its first characters: a script may log whole messages. */
 export const MAX_SCRIPT_LOG_LINE_CHARS = 10_000;
 
+/** And a run no more than this, in however many lines. */
+export const MAX_SCRIPT_LOG_RUN_CHARS = 100_000;
+
 /** A connector keeps its last runs: a queue can run a destination's script without end. */
 export const MAX_SCRIPT_LOG_RUNS = 20;
+
+/** And fewer when they hold more than this: each run reads and writes them all. */
+export const MAX_SCRIPT_LOG_CHARS = 500_000;
 
 export const SCRIPT_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const;
 export type ScriptLogLevel = (typeof SCRIPT_LOG_LEVELS)[number];
@@ -40,10 +46,26 @@ export function readScriptLog(stored: string): ScriptLog | null {
   }
 }
 
+function charsOf({ lines }: ScriptLogRun): number {
+  return lines.reduce((sum, { text }) => sum + text.length, 0);
+}
+
+/** The last of them that fit, and the last one in any case. */
+function lastRuns(runs: readonly ScriptLogRun[]): readonly ScriptLogRun[] {
+  const kept: ScriptLogRun[] = [];
+  let chars = 0;
+  for (const run of runs.slice(-MAX_SCRIPT_LOG_RUNS).reverse()) {
+    chars += charsOf(run);
+    if (kept.length > 0 && chars > MAX_SCRIPT_LOG_CHARS) break;
+    kept.unshift(run);
+  }
+  return kept;
+}
+
 /** The text to store for a connector after another run. `stored` is what is there now. */
 export function withScriptLogRun(stored: string | null, run: ScriptLogRun): string {
   const log = (stored === null ? null : readScriptLog(stored)) ?? { runs: [], earlierRuns: 0 };
   const runs = [...log.runs, run];
-  const kept = runs.slice(-MAX_SCRIPT_LOG_RUNS);
-  return JSON.stringify({ runs: kept, earlierRuns: log.earlierRuns + runs.length - kept.length } satisfies ScriptLog);
+  const kept = lastRuns(runs);
+  return JSON.stringify({ runs: [...kept], earlierRuns: log.earlierRuns + runs.length - kept.length } satisfies ScriptLog);
 }

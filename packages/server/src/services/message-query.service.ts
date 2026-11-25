@@ -117,7 +117,7 @@ export class MessageQueryService {
       if (hasContentSearch) {
         const searchTerm = containsPattern(filters.contentSearch!);
         conditions.push(
-          sql`${messages.id} IN (SELECT DISTINCT mc.message_id FROM message_content mc WHERE mc.channel_id = ${channelId} AND mc.content ILIKE ${searchTerm})`
+          sql`${messages.id} IN (SELECT DISTINCT mc.message_id FROM message_content mc WHERE mc.channel_id = ${channelId} AND mc.content_type <> ${CONTENT_TYPE.SCRIPT_LOG} AND mc.content ILIKE ${searchTerm})`
         );
       }
 

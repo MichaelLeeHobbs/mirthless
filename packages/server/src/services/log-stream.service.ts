@@ -1,5 +1,6 @@
 import { Writable } from 'node:stream';
 import { SOCKET_EVENT } from '@galvanigraph/core-models';
+import { SCRIPT_LOG_COMPONENT, scriptsAreLogged } from '../lib/script-log.js';
 import { emitToRoom } from '../lib/socket.js';
 
 const MAX_ENTRIES = 10_000;
@@ -10,6 +11,12 @@ export interface LogEntry {
   readonly levelLabel: string;
   readonly logger: string;
   readonly message: string;
+  /** Counts the lines since the server started. */
+  readonly seq: number;
+}
+
+interface KeptEntry extends LogEntry {
+  readonly ofScript: boolean;
 }
 
 export interface LogQueryParams {
@@ -33,11 +40,11 @@ const LEVEL_LABELS: Record<number, string> = {
   60: 'FATAL',
 };
 
-const buffer: LogEntry[] = [];
+const buffer: KeptEntry[] = [];
 let writeIndex = 0;
 let totalWritten = 0;
 
-function addEntry(entry: LogEntry): void {
+function addEntry(entry: KeptEntry): void {
   if (buffer.length < MAX_ENTRIES) {
     buffer.push(entry);
   } else {
@@ -47,11 +54,10 @@ function addEntry(entry: LogEntry): void {
   totalWritten++;
 }
 
-function getEntries(): readonly LogEntry[] {
-  if (totalWritten <= MAX_ENTRIES) {
-    return buffer;
-  }
-  return [...buffer.slice(writeIndex), ...buffer.slice(0, writeIndex)];
+function getEntries(): readonly KeptEntry[] {
+  const entries = totalWritten <= MAX_ENTRIES ? buffer : [...buffer.slice(writeIndex), ...buffer.slice(0, writeIndex)];
+  // What scripts wrote can hold PHI, and is shown no longer than it is logged (D-387).
+  return scriptsAreLogged() ? entries : entries.filter((e) => !e.ofScript);
 }
 
 export class LogStreamService {
@@ -72,7 +78,7 @@ export class LogStreamService {
     entries.reverse();
 
     const total = entries.length;
-    const paged = entries.slice(offset, offset + limit);
+    const paged = entries.slice(offset, offset + limit).map(({ ofScript: _ofScript, ...entry }) => entry);
 
     return { entries: paged, total };
   }
@@ -105,9 +111,10 @@ export class LogStreamService {
             levelLabel: LEVEL_LABELS[level] ?? 'UNKNOWN',
             logger: loggerName,
             message: msg,
+            seq: totalWritten,
           };
 
-          addEntry(entry);
+          addEntry({ ...entry, ofScript: obj['component'] === SCRIPT_LOG_COMPONENT });
           emitToRoom('logs', SOCKET_EVENT.SERVER_LOG, entry);
         } catch {
           // Not JSON — ignore non-JSON log lines
@@ -130,7 +137,7 @@ export class LogStreamService {
   }
 
   /** Tests only. */
-  static _addEntry(entry: LogEntry): void {
-    addEntry(entry);
+  static _addEntry(entry: Omit<LogEntry, 'seq'>): void {
+    addEntry({ ...entry, seq: totalWritten, ofScript: false });
   }
 }

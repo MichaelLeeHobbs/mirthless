@@ -50,11 +50,8 @@ const startupDeps = {
   status: startupStatus,
   startQueue: () => tryCatch(async () => { await startQueue(); }),
   startPrunerScheduler: () => PrunerSchedulerService.start(),
-  redeployChannels: async () => {
-    // Before a deploy script runs.
-    await SettingsService.applied();
-    return DeploymentService.autoDeployChannels();
-  },
+  applySettings: () => SettingsService.applied(),
+  redeployChannels: () => DeploymentService.autoDeployChannels(),
   ensureAuditPartitions,
 };
 // Before any channel can run a script.

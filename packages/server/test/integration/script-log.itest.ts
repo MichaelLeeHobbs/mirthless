@@ -62,6 +62,7 @@ describeIntegration('what scripts log (real Postgres)', () => {
   interface Channel {
     readonly filter?: string;
     readonly deployScript?: string;
+  readonly undeployScript?: string;
     readonly destination?: Record<string, unknown>;
     readonly transformer?: string;
     readonly source?: string;
@@ -76,7 +77,7 @@ describeIntegration('what scripts log (real Postgres)', () => {
       name: `itest-script-log-${randomUUID()}`, enabled: true, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'AUTO_AFTER_DESTINATIONS',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: settings.source ?? 'return [];', pollingIntervalMs: settings.pollingIntervalMs ?? 600_000 },
       properties: { encryptData: settings.encryptData ?? false, ...(settings.messageStorageMode === undefined ? {} : { messageStorageMode: settings.messageStorageMode }) },
-      ...(settings.deployScript === undefined ? {} : { scripts: { deploy: settings.deployScript } }),
+      scripts: { ...(settings.deployScript === undefined ? {} : { deploy: settings.deployScript }), ...(settings.undeployScript === undefined ? {} : { undeploy: settings.undeployScript }) },
       destinations: [{ name: 'JS', connectorType: 'JAVASCRIPT', properties: { script: 'return "ok";' }, ...settings.destination }],
       filters: settings.filter === undefined ? [] : [{ connectorId: null, rules: [{ type: 'JAVASCRIPT', script: settings.filter }] }],
       transformers: settings.transformer === undefined ? [] : [
@@ -145,15 +146,19 @@ describeIntegration('what scripts log (real Postgres)', () => {
 
     it('keeps the last runs of a destination that its queue tries again and again', async () => {
       await withChannel({
-        destination: {
-          properties: { script: 'logger.info("try"); throw new Error("not yet");' },
-          queueMode: 'ALWAYS', retryCount: 0, retryIntervalMs: 1,
-        },
+        destination: { properties: { script: 'logger.info("try"); throw new Error("not yet");' }, queueMode: 'ALWAYS', retryCount: 0, retryIntervalMs: 1 },
       }, async (channelId) => {
         const messageId = await send(channelId);
+        await vi.waitFor(async () => { expect((await logOf(channelId, messageId, 1))?.runs.length).toBeGreaterThan(0); }, WAIT);
+        // As after many tries: it tries once a second.
+        const runs = Array.from({ length: MAX_SCRIPT_LOG_RUNS }, (_, i) => ({ script: `try ${String(i)}`, lines: [], leftOut: 0 }));
+        await mods.pool.query('UPDATE message_content SET content = $3 WHERE channel_id = $1 AND message_id = $2 AND meta_data_id = 1 AND content_type = 14', [channelId, messageId, JSON.stringify({ runs, earlierRuns: 0 })]);
 
         await vi.waitFor(async () => { expect((await logOf(channelId, messageId, 1))?.earlierRuns).toBeGreaterThan(0); }, WAIT);
-        expect((await logOf(channelId, messageId, 1))?.runs).toHaveLength(MAX_SCRIPT_LOG_RUNS);
+        const log = await logOf(channelId, messageId, 1);
+        expect(log?.runs).toHaveLength(MAX_SCRIPT_LOG_RUNS);
+        expect(log?.runs.at(-1)?.script).toBe('JavaScript destination');
+        expect(log?.runs[0]?.script).not.toBe('try 0');
       });
     });
 
@@ -187,6 +192,7 @@ describeIntegration('what scripts log (real Postgres)', () => {
   describe('in the server log', () => {
     const CHANNEL: Channel = {
       deployScript: 'logger.info("deploying MRN-1");',
+      undeployScript: 'logger.info("undeploying MRN-9");',
       source: 'logger.info("polling MRN-2"); return [];',
       pollingIntervalMs: 1_000,
       filter: 'logger.warn("filtering MRN-3"); return true;',
@@ -211,13 +217,16 @@ describeIntegration('what scripts log (real Postgres)', () => {
       });
 
       const at = { channelId, messageId: String(messageId) };
+      const of = `channel ${channelId}, message ${String(messageId)}`;
+      const firstPoll = serverLines().findIndex((l) => l['script'] === 'JavaScript source');
       // It polls every second.
-      const polls = serverLines().filter((l) => l['msg'] === 'polling MRN-2');
-      expect(serverLines().filter((l) => !polls.slice(1).some((p) => p['time'] === l['time'])).map(({ level, msg, channelId: c, messageId: m, metaDataId, script }) => ({ level, msg, channelId: c, messageId: m, metaDataId, script }))).toEqual([
-        { level: 30, msg: 'deploying MRN-1', channelId, messageId: undefined, metaDataId: undefined, script: 'Deploy' },
-        { level: 30, msg: 'polling MRN-2', channelId, messageId: undefined, metaDataId: undefined, script: 'JavaScript source' },
-        { level: 40, msg: 'filtering MRN-3', ...at, metaDataId: 0, script: 'Source filter' },
-        { level: 50, msg: 'writing MRN-4', ...at, metaDataId: 1, script: 'JavaScript destination' },
+      const lines = serverLines().filter((l, i) => l['script'] !== 'JavaScript source' || i === firstPoll);
+      expect(lines.map(({ level, msg, channelId: c, messageId: m, metaDataId, script }) => ({ level, msg, channelId: c, messageId: m, metaDataId, script }))).toEqual([
+        { level: 30, msg: `[Deploy, channel ${channelId}] deploying MRN-1`, channelId, messageId: undefined, metaDataId: undefined, script: 'Deploy' },
+        { level: 30, msg: `[JavaScript source, channel ${channelId}] polling MRN-2`, channelId, messageId: undefined, metaDataId: undefined, script: 'JavaScript source' },
+        { level: 40, msg: `[Source filter, ${of}] filtering MRN-3`, ...at, metaDataId: 0, script: 'Source filter' },
+        { level: 50, msg: `[JavaScript destination, ${of}] writing MRN-4`, ...at, metaDataId: 1, script: 'JavaScript destination' },
+        { level: 30, msg: `[Undeploy, channel ${channelId}] undeploying MRN-9`, channelId, messageId: undefined, metaDataId: undefined, script: 'Undeploy' },
       ]);
     });
 
@@ -227,7 +236,7 @@ describeIntegration('what scripts log (real Postgres)', () => {
 
       const lines = serverLines();
       expect(lines).toHaveLength(MAX_SCRIPT_LOG_LINES + 1);
-      expect(lines.at(-1)).toMatchObject({ level: 40, msg: '50 more lines of this script run are left out', script: 'Source filter' });
+      expect(lines.at(-1)).toMatchObject({ level: 40, msg: expect.stringContaining('] 50 more lines of this script run are left out') as string, script: 'Source filter' });
     });
 
     it.each<[string, () => Promise<unknown>]>([

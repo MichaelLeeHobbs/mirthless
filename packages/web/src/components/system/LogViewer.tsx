@@ -23,6 +23,9 @@ const LEVELS = [
   { value: 50, label: 'ERROR', color: 'error.main' },
 ] as const;
 
+/** More rows than this take the page seconds to draw. */
+const MAX_ROWS = 1_000;
+
 function getLevelColor(level: number): string {
   if (level >= 50) return 'status.critical';
   if (level >= 40) return 'status.warning';
@@ -51,7 +54,7 @@ export function LogViewer(): ReactNode {
     const combined: LogEntry[] = [];
 
     for (const entry of streamEntries) {
-      const key = `${entry.timestamp}:${entry.message}`;
+      const key = `${entry.timestamp}:${String(entry.seq)}`;
       if (!seen.has(key)) {
         seen.add(key);
         combined.push(entry);
@@ -59,7 +62,7 @@ export function LogViewer(): ReactNode {
     }
 
     for (const entry of historical) {
-      const key = `${entry.timestamp}:${entry.message}`;
+      const key = `${entry.timestamp}:${String(entry.seq)}`;
       if (!seen.has(key)) {
         seen.add(key);
         combined.push(entry);
@@ -155,7 +158,7 @@ export function LogViewer(): ReactNode {
         <Typography variant="body2" sx={{
           color: 'text.secondary'
         }}>
-          {filteredEntries.length} entries
+          {filteredEntries.length} entries{filteredEntries.length > MAX_ROWS ? `, the newest ${String(MAX_ROWS)} shown` : ''}
         </Typography>
       </Box>
 
@@ -172,7 +175,7 @@ export function LogViewer(): ReactNode {
           lineHeight: 1.6,
         }}
       >
-        {filteredEntries.map((entry, idx) => (
+        {filteredEntries.slice(0, MAX_ROWS).map((entry, idx) => (
           <Box
             key={`${entry.timestamp}-${String(idx)}`}
             sx={{ color: getLevelColor(entry.level), whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}

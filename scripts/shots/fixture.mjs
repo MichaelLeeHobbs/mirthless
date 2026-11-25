@@ -318,7 +318,7 @@ const logs = [
   [50, 'ERROR', 'pipeline', 'Destination "To EHR" failed after 3 attempts: ECONNREFUSED'],
   [20, 'DEBUG', 'pruner', 'Next pruner run scheduled for 02:00'],
   [30, 'INFO', 'http', 'GET /api/v1/channels/statistics 200 4ms'],
-].map(([level, levelLabel, logger, message], i) => ({ timestamp: ago(i * 2), level, levelLabel, logger, message }));
+].map(([level, levelLabel, logger, message], i) => ({ timestamp: ago(i * 2), level, levelLabel, logger, message, seq: 100 - i }));
 
 const libraries = [
   { id: 'l1', name: 'HL7 helpers', description: 'Segment and field utilities', revision: 4, templateCount: 2, channelIds: ['c1', 'c2'], outsideScopeCount: 3, createdAt: ago(90000), updatedAt: ago(800) },

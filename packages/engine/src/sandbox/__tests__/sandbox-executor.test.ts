@@ -7,7 +7,7 @@ import {
 } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy, createX12Proxy } from '../../pipeline/data-type-handler.js';
-import { MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS } from '@galvanigraph/core-models';
+import { MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS, MAX_SCRIPT_LOG_RUN_CHARS } from '@galvanigraph/core-models';
 import { Hl7Message, X12Message } from '@galvanigraph/core-util';
 import type { BridgeDependencies } from '../bridge-functions.js';
 import { ScriptRunLog } from '../script-run-log.js';
@@ -167,6 +167,31 @@ describe('VmSandboxExecutor', () => {
       const texts = log.run()?.lines.map((l) => l.text);
       expect(texts?.[0]).toBe('x'.repeat(MAX_SCRIPT_LOG_LINE_CHARS));
       expect(texts?.[1]).toBe(`${'x'.repeat(MAX_SCRIPT_LOG_LINE_CHARS)}... (7 more characters)`);
+    });
+
+    it('keeps the first characters of a run, and no line after them', async () => {
+      const log = new ScriptRunLog('Source filter');
+      const full = MAX_SCRIPT_LOG_RUN_CHARS / MAX_SCRIPT_LOG_LINE_CHARS;
+
+      await executor.execute(makeScript(`for (let i = 0; i < ${String(full)}; i++) logger.info("x".repeat(${String(MAX_SCRIPT_LOG_LINE_CHARS)})); logger.info("y"); logger.info("");`), makeContext(), { ...makeOptions(), log });
+
+      expect(log.run()?.lines).toHaveLength(full);
+      expect(log.run()?.leftOut).toBe(2);
+    });
+
+    it('keeps a short line where a long one would be too much, and none after it', async () => {
+      const log = new ScriptRunLog('Source filter');
+
+      await executor.execute(makeScript(`for (let i = 0; i < 9; i++) logger.info("x".repeat(${String(MAX_SCRIPT_LOG_LINE_CHARS)})); logger.info("short"); logger.info("x".repeat(${String(MAX_SCRIPT_LOG_LINE_CHARS)})); logger.info("after");`), makeContext(), { ...makeOptions(), log });
+
+      expect(log.run()?.lines.at(-1)?.text).toBe('short');
+      expect(log.run()).toMatchObject({ leftOut: 2 });
+    });
+
+    it('keeps text as it is, lone surrogates and U+0000 too', async () => {
+      const log = new ScriptRunLog('Source filter');
+      await executor.execute(makeScript('logger.info("a\\u0000b\\ud800c \\u{1f600}");'), makeContext(), { ...makeOptions(), log });
+      expect(log.run()?.lines[0]?.text).toBe('a\u0000b\ud800c \u{1f600}');
     });
 
     it('passes each line on as it is written, and the count at the end', async () => {

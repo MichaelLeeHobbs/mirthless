@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { readScriptLog, type ScriptLogLevel, type ScriptLogRun } from '@galvanigraph/core-models';
-import { formatClockTime } from '../../lib/format.js';
+import { formatClockTime, formatTimestamp } from '../../lib/format.js';
 import { eventLevelLevel } from '../../lib/status.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 import { ContentViewer } from './ContentViewer.js';
@@ -16,6 +16,11 @@ function more(count: number, one: string, many: string): string {
   return count === 1 ? `1 ${one}` : `${String(count)} ${many}`;
 }
 
+/** HL7 segments end in \r. */
+function shown(text: string): string {
+  return text.replace(/\r\n?/g, '\n');
+}
+
 function Note({ children }: { readonly children: ReactNode }): ReactNode {
   return <Typography variant="body2" sx={{ color: 'text.secondary' }}>{children}</Typography>;
 }
@@ -23,9 +28,13 @@ function Note({ children }: { readonly children: ReactNode }): ReactNode {
 function Run({ run }: { readonly run: ScriptLogRun }): ReactNode {
   return (
     <Box>
-      <Typography variant="subtitle2" component="h3" sx={{ mb: 0.5 }}>{run.script}</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
+        <Typography variant="subtitle2" component="h3">{run.script}</Typography>
+        <Note>{formatTimestamp(run.lines[0]?.time)}</Note>
+      </Box>
       <Box
         component="pre"
+        role="region"
         tabIndex={0}
         aria-label={`Log of ${run.script}`}
         sx={{
@@ -35,7 +44,7 @@ function Run({ run }: { readonly run: ScriptLogRun }): ReactNode {
       >
         {run.lines.map((line, i) => (
           <Box key={i} component="span" sx={{ display: 'block', color: lineColor(line.level) }}>
-            {`${formatClockTime(line.time)} ${line.level.padEnd(5)} ${line.text}`}
+            {`${formatClockTime(line.time)} ${line.level.padEnd(5)} ${shown(line.text)}`}
           </Box>
         ))}
       </Box>

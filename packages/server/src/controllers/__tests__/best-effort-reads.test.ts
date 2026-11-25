@@ -74,6 +74,17 @@ describe('best-effort reads', () => {
     expect(recorded()).toMatchObject({ action: 'SERVER_LOG_READ', attributes: { query: { search: 'Smith' } } });
   });
 
+  it('tells the lines of a server log read apart by a short id, whatever they hold', () => {
+    const entry = (seq: number, message: string): Record<string, unknown> => ({ timestamp: '2026-11-25T10:00:00.000Z', seq, message });
+    logs.query.mockReturnValueOnce({ entries: [entry(1, 'x'.repeat(5_000)), entry(2, 'same'), entry(3, 'same')], total: 3 } as never);
+
+    LogController.getEntries(req(), makeRes());
+
+    const { ids } = recorded()['dedupe'] as { ids: string[] };
+    expect(new Set(ids).size).toBe(3);
+    for (const id of ids) expect(id).toHaveLength(44);
+  });
+
   it('records a channel read only when its secrets are unmasked', async () => {
     channels.getById.mockResolvedValue(ok({ id: 'c1', sourceConnectorProperties: {} }));
     await ChannelController.getById(req({ params: { id: 'c1' } }), makeRes());

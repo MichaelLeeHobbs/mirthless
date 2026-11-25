@@ -70,6 +70,7 @@ const log = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
 vi.mock('../../lib/logger.js', () => ({ default: log }));
 
 const { SettingsService } = await import('../settings.service.js');
+const { emitEvent } = await import('../../lib/event-emitter.js');
 const { SCRIPT_LOG_SETTING, serverScriptLog } = await import('../../lib/script-log.js');
 
 const NOW = new Date('2026-03-01T12:00:00Z');
@@ -274,6 +275,25 @@ describe('SettingsService', () => {
       if (!result.ok) return;
       expect(result.value).toHaveLength(2);
       expect(mockTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('the record of a change (#164)', () => {
+    const save = (value: string) => ({ key: SCRIPT_LOG_SETTING, value, type: 'boolean' as const });
+
+    it.each(['true', 'false'])('says which way the logging of scripts was set: %s', async (value) => {
+      mockReturning.mockResolvedValue([makeSettingRow({ key: SCRIPT_LOG_SETTING, value, type: 'boolean' })]);
+      await SettingsService.upsert(save(value), { userId: 'u1', ipAddress: null });
+      expect(vi.mocked(emitEvent)).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'SETTINGS_CHANGED', userId: 'u1', attributes: { key: SCRIPT_LOG_SETTING, [SCRIPT_LOG_SETTING]: value } }));
+
+      await SettingsService.bulkUpsert([{ key: 'general.server_name', value: 'x', type: 'string' }, save(value)]);
+      expect(vi.mocked(emitEvent)).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { keys: ['general.server_name', SCRIPT_LOG_SETTING], [SCRIPT_LOG_SETTING]: value } }));
+    });
+
+    it('holds the value of no other setting', async () => {
+      mockReturning.mockResolvedValue([makeSettingRow()]);
+      await SettingsService.upsert({ key: 'general.server_name', value: 'x', type: 'string' });
+      expect(vi.mocked(emitEvent)).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { key: 'general.server_name' } }));
     });
   });
 

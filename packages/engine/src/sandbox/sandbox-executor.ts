@@ -7,7 +7,7 @@ import * as vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
 import type { Result } from '@galvanigraph/core-util';
 import { tryCatch } from '@galvanigraph/core-util';
-import { MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS, type ScriptLogLevel } from '@galvanigraph/core-models';
+import { MAX_SCRIPT_LOG_LINES, MAX_SCRIPT_LOG_LINE_CHARS, MAX_SCRIPT_LOG_RUN_CHARS, type ScriptLogLevel } from '@galvanigraph/core-models';
 import type { SandboxContext } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
@@ -59,8 +59,11 @@ export interface SandboxExecutor {
 
 interface HostBridgeState {
   readonly log: ScriptLogSink | undefined;
-  /** Lines the script has written. */
+  /** Lines of the script that are kept, and their characters. */
   logged: number;
+  loggedChars: number;
+  /** Lines after those. */
+  leftOut: number;
   readonly bridges: BridgeFunctions;
   readonly hl7Handles: Map<number, Hl7MessageProxy>;
   readonly x12Handles: Map<number, X12MessageProxy>;
@@ -220,15 +223,23 @@ function makeNonThrowingDispatch(
   };
 }
 
+/** A copy of its own: a part of a string keeps all of that in memory. */
+function firstChars(text: string): string {
+  const first = Buffer.from(text.slice(0, MAX_SCRIPT_LOG_LINE_CHARS), 'utf16le').toString('utf16le');
+  const cut = text.length - first.length;
+  return cut > 0 ? `${first}... (${String(cut)} more characters)` : first;
+}
+
 function writeLog(state: HostBridgeState, level: ScriptLogLevel, text: string): void {
+  const kept = Math.min(text.length, MAX_SCRIPT_LOG_LINE_CHARS);
+  // Of a run that is full no later line is kept, however short.
+  if (state.leftOut > 0 || state.logged === MAX_SCRIPT_LOG_LINES || state.loggedChars + kept > MAX_SCRIPT_LOG_RUN_CHARS) {
+    state.leftOut += 1;
+    return;
+  }
   state.logged += 1;
-  if (state.logged > MAX_SCRIPT_LOG_LINES) return;
-  const cut = text.length - MAX_SCRIPT_LOG_LINE_CHARS;
-  state.log?.line({
-    level,
-    time: new Date().toISOString(),
-    text: cut > 0 ? `${text.slice(0, MAX_SCRIPT_LOG_LINE_CHARS)}... (${String(cut)} more characters)` : text,
-  });
+  state.loggedChars += kept;
+  state.log?.line({ level, time: new Date().toISOString(), text: firstChars(text) });
 }
 
 function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown[]) => unknown {
@@ -818,6 +829,8 @@ export class VmSandboxExecutor implements SandboxExecutor {
       const state: HostBridgeState = {
         log: options.log,
         logged: 0,
+        loggedChars: 0,
+        leftOut: 0,
         bridges: createBridgeFunctions(this.deps),
         hl7Handles: new Map(),
         x12Handles: new Map(),
@@ -872,7 +885,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
           mapUpdates: collected.maps,
         };
       } finally {
-        if (state.logged > MAX_SCRIPT_LOG_LINES) state.log?.leftOut(state.logged - MAX_SCRIPT_LOG_LINES);
+        if (state.leftOut > 0) state.log?.leftOut(state.leftOut);
       }
     });
   }

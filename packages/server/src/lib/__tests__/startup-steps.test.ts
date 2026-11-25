@@ -20,7 +20,7 @@ interface Harness {
   readonly emitEvent: ReturnType<typeof vi.fn>;
 }
 
-function harness(overrides: Partial<Pick<StartupDeps, 'startQueue' | 'startPrunerScheduler' | 'redeployChannels' | 'ensureAuditPartitions'>> = {}): Harness {
+function harness(overrides: Partial<Pick<StartupDeps, 'startQueue' | 'startPrunerScheduler' | 'applySettings' | 'redeployChannels' | 'ensureAuditPartitions'>> = {}): Harness {
   const status = new StartupStatus();
   const logError = vi.fn();
   const logWarn = vi.fn();
@@ -30,6 +30,7 @@ function harness(overrides: Partial<Pick<StartupDeps, 'startQueue' | 'startPrune
     logger, emitEvent, status,
     startQueue: vi.fn(async () => OK),
     startPrunerScheduler: vi.fn(async () => OK),
+    applySettings: vi.fn(async () => undefined),
     redeployChannels: vi.fn(async () => OK),
     ensureAuditPartitions: vi.fn(async () => OK),
     ...overrides,
@@ -49,6 +50,19 @@ describe('runStartupSteps', () => {
     expect(h.status.failed()).toEqual([]);
     expect(h.emitEvent).not.toHaveBeenCalled();
     expect(h.logError).not.toHaveBeenCalled();
+  });
+
+  it('puts the stored settings into force before it redeploys channels, whose scripts go by them (#164)', async () => {
+    let applied: () => void = () => undefined;
+    const h = harness({ applySettings: vi.fn(() => new Promise<void>((resolve) => { applied = resolve; })) });
+
+    const running = runStartupSteps(h.deps);
+    await new Promise((resolve) => { setImmediate(resolve); });
+    expect(h.deps.redeployChannels).not.toHaveBeenCalled();
+    applied();
+    await running;
+
+    expect(h.deps.redeployChannels).toHaveBeenCalledOnce();
   });
 
   it('still redeploys channels when the queue fails, and reports the queue and the pruner as failed', async () => {

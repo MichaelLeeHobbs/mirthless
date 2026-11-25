@@ -979,7 +979,7 @@ export class MessageProcessor {
     };
     const log = new ScriptRunLog(at.script, this.config.scriptLog?.({ channelId: this.config.channelId, ...at }));
     const result = await this.sandbox.execute(script, context, { ...this.execOptions, signal, log });
-    await this.storeScriptLog(at, log.run());
+    // Before anything is waited for: what another message's script reads in that time has these changes.
     if (result.ok) {
       const updates = result.value.mapUpdates;
       Object.assign(mapState.channelMap, updates.channelMap);
@@ -988,6 +988,7 @@ export class MessageProcessor {
       if (gcm && gcmBefore) gcm.applyChanges(gcmBefore, updates.globalChannelMap);
       if (globalMapProxy && globalBefore) globalMapProxy.applyChanges(globalBefore, updates.globalMap);
     }
+    await this.storeScriptLog(at, log.run());
     return result;
   }
 }
