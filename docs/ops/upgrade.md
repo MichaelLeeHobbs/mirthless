@@ -523,6 +523,14 @@ An image in a transfer syntax the archive does not take is now an ERROR that nam
 
 A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans and doses, segmentations, presentation states, key object selections and ECGs among others were rejected, as were JPEG Extended and JPEG Lossless. It now accepts every standard one ([DICOM](../user/connector-reference.md#dicom), D-355): check the filters of channels that relied on the rejection. A Listener whose port is in use now fails to start, where it read started and received nothing. Look for such channels after the upgrade.
 
+## Channels imported from Mirth: Message Builder steps and retry counts (#418)
+
+An import before this version dropped the content of a Mirth Message Builder step, and the engine skipped the empty step, so messages went on without what the step set. An enabled Message Builder step with no script now fails the deploy (`Transformer step 2 has type MESSAGE_BUILDER, which this engine cannot run without a script`), at a restart too, which reports the channel as one that failed to redeploy. Before upgrading, open the transformers of channels imported from Mirth and write the step's script, or disable the step if the message is right without it.
+
+Such an import also kept Mirth's retry count, which in Mirth is the attempts before a message is queued. Here it ends the queue: a message that fails that many retries goes to ERROR (D-230). Set the retry count of a queued destination to 0 where the message must be retried until it is delivered, as Mirth does. A new import does this.
+
+A new import can also hold a channel disabled, or refuse to overwrite an enabled one, where it only warned or said nothing before: see the migration table in [capabilities.md](../user/capabilities.md).
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
