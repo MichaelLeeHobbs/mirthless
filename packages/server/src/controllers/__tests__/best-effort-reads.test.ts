@@ -30,6 +30,7 @@ const { CollectionController } = await import('../collection.controller.js');
 const { ChannelController } = await import('../channel.controller.js');
 const { EventController } = await import('../event.controller.js');
 const { LogController } = await import('../log.controller.js');
+const { standingFor } = await import('../../../test/standing.js');
 
 function makeRes(): Response {
   return { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() } as unknown as Response;
@@ -78,7 +79,7 @@ describe('best-effort reads', () => {
     await ChannelController.getById(req({ params: { id: 'c1' } }), makeRes());
     expect(recordReadBestEffort).not.toHaveBeenCalled();
 
-    await ChannelController.getById(req({ params: { id: 'c1' }, user: { id: 'u1', permissions: ['channels:write'] } }), makeRes());
+    await ChannelController.getById(req({ params: { id: 'c1' }, principal: { userId: 'u1', grants: standingFor({ id: 'u1', role: 'developer' }).grants } }), makeRes());
     expect(recorded()).toMatchObject({ action: 'CHANNEL_SECRETS_READ', channelId: 'c1' });
   });
 

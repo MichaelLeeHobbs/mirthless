@@ -28,6 +28,11 @@ export async function holdsOnChannel(grants: FoldedGrants, permission: Permissio
   return can(grants, permission, { groupIds: await channelGroupIds(channelId) });
 }
 
+/** On the channel a route behind scopeToChannel names. Fails closed without a principal. */
+export function holdsOnRouteChannel(req: Request, permission: Permission): boolean {
+  return req.principal !== undefined && can(req.principal.grants, permission, { groupIds: req.channelScope ?? [] });
+}
+
 /** ALL_CHANNELS when held unscoped, so a list applies no filter and channels in no group still show. */
 export async function channelScopeOf(req: Request, permission: Permission): Promise<ChannelScope> {
   return grantedChannels(req.principal?.grants, permission);
