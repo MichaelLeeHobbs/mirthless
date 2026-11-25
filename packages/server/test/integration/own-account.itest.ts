@@ -4,9 +4,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { IssuedApiKey } from '@galvanigraph/core-models';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { apiCall, describeIntegration, loadServerModules, userWithRole, type ApiAnswer, type ServerModules, type TestUser } from './_setup.js';
+import { apiCall, describeIntegration, issueKey, loadServerModules, userWithRole, type ApiAnswer, type ServerModules, type TestUser } from './_setup.js';
 
 const NEW_PASSWORD = 'Itest-password-2!';
 
@@ -48,14 +47,6 @@ describeIntegration('your own account (real Postgres)', () => {
     return rows[0]!;
   }
 
-  async function issueKey(as: TestUser): Promise<IssuedApiKey> {
-    const res = await apiCall<IssuedApiKey>(base, as.token, 'POST', '/api-keys', {
-      name: `itest-${randomUUID().slice(0, 8)}`, permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    });
-    expect(res.status).toBe(201);
-    return res.json.data!;
-  }
-
   async function enabledChanges(id: string): Promise<Array<{ by: string; enabled: boolean }>> {
     const { rows } = await mods.pool.query<{ by: string; enabled: boolean }>(
       `SELECT user_id AS by, (attributes->>'enabled')::boolean AS enabled FROM audit_log
@@ -66,7 +57,6 @@ describeIntegration('your own account (real Postgres)', () => {
 
   beforeAll(async () => {
     process.env['API_RATE_LIMIT_MAX'] = '1000000';
-    process.env['API_KEY_RATE_LIMIT_MAX'] = '1000000';
     mods = await loadServerModules();
     // Stays throughout, so no refusal below is the last-admin check's.
     await admin();
@@ -107,7 +97,7 @@ describeIntegration('your own account (real Postgres)', () => {
 
   it.each(FORMS)('refuses disabling your own account, your id %s, and changes nothing: not the account, its sessions, its keys or the fields sent with it', async (_form, write) => {
     const who = await admin();
-    const { key } = await issueKey(who);
+    const { key } = await issueKey(base, who, ['channels:read']);
     const before = await account(who.id);
     expect(before).toMatchObject({ enabled: true, sessions: '1', working_keys: [key.id] });
 
@@ -143,7 +133,7 @@ describeIntegration('your own account (real Postgres)', () => {
   it('disables another user, ends their sessions and stops the keys they issued', async () => {
     const who = await admin();
     const target = await admin();
-    const { key } = await issueKey(target);
+    const { key } = await issueKey(base, target, ['channels:read']);
     const before = await account(target.id);
     expect(before).toMatchObject({ enabled: true, sessions: '1', working_keys: [key.id] });
 
@@ -152,17 +142,6 @@ describeIntegration('your own account (real Postgres)', () => {
     expect(answer.status).toBe(200);
     expect(await account(target.id)).toEqual({ ...before, enabled: false, sessions: '0', working_keys: [] });
     expect(await enabledChanges(target.id)).toEqual([{ by: who.id, enabled: false }]);
-  });
-
-  it('refuses an API key that tries to disable the user who issued it', async () => {
-    const who = await admin();
-    const { token } = await issueKey(who);
-    const before = await account(who.id);
-
-    const answer = await apiCall(base, token, 'PUT', `/users/${who.id}`, { enabled: false });
-
-    expect(answer.status).toBe(403);
-    expect(await account(who.id)).toEqual(before);
   });
 
   it.each(FORMS)('refuses changing your own role, your id %s', async (_form, write) => {

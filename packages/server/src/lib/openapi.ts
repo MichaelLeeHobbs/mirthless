@@ -659,6 +659,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
           ],
           responses: {
             '204': noContent,
+            '400': openApiErrorResponse('Validation error, or your own account'),
             '401': openApiErrorResponse('Not authenticated'),
             '404': openApiErrorResponse('User not found'),
           },
