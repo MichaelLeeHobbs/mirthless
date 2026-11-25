@@ -1,4 +1,5 @@
 import { it, expect, afterEach, vi } from 'vitest';
+import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
 import {
   SmtpDispatcher,
@@ -9,8 +10,28 @@ import { deployChannel, teardownAll, CaptureDestination, type ChannelSpec, type 
 import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeMail, requireMail } from './gates.js';
 import { freePort } from '../../../__fixtures__/free-port.js';
+import { DISPATCHED_KEYWORD, ERROR_KEYWORD } from '../../../email/imap-client.js';
 
 const TCP_PORT = await freePort();
+
+const WAIT = { timeout: 20_000, interval: 100 };
+const TEST_TIMEOUT = 60_000;
+
+/** A sink that holds its first message until it is let go. */
+function heldSink(): { readonly sink: CaptureDestination; readonly reached: Promise<void>; readonly letGo: () => void } {
+  let reach = (): void => undefined;
+  let letGo = (): void => undefined;
+  const reached = new Promise<void>((resolve) => { reach = resolve; });
+  const held = new Promise<void>((resolve) => { letGo = resolve; });
+  const sink = new CaptureDestination();
+  const send = sink.send.bind(sink);
+  vi.spyOn(sink, 'send').mockImplementation(async (message, signal) => {
+    reach();
+    await held;
+    return send(message, signal);
+  });
+  return { sink, reached, letGo: () => { letGo(); } };
+}
 
 let deployed: DeployedChannel[] = [];
 afterEach(async () => {
@@ -107,7 +128,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
 
     const firstSink = new CaptureDestination();
     const first = await deployReceiver(1, firstSink);
-    await vi.waitFor(() => { expect(firstSink.received).toHaveLength(1); }, { timeout: 15_000, interval: 50 });
+    await vi.waitFor(() => { expect(firstSink.received).toHaveLength(1); }, WAIT);
     await first.teardown();
     deployed = deployed.filter((c) => c !== first);
 
@@ -116,7 +137,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
     await new Promise((r) => setTimeout(r, 3_500)); // three polls
 
     expect(secondSink.received).toHaveLength(0);
-  });
+  }, TEST_TIMEOUT);
 
   const sendEmail = async (subject: string, text: string): Promise<void> => {
     const cfg = requireMail();
@@ -125,7 +146,11 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
   };
 
   let next = 0;
-  async function deployReader(subject: string, spec: Pick<ChannelSpec, 'destinations' | 'transformer'>): Promise<DeployedChannel> {
+  async function deployReader(
+    subject: string,
+    spec: Pick<ChannelSpec, 'destinations' | 'transformer'>,
+    postAction: 'MARK_READ' | 'DELETE' = 'MARK_READ',
+  ): Promise<DeployedChannel> {
     const cfg = requireMail();
     next += 1;
     const channel = await deployChannel({
@@ -134,7 +159,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
       source: new EmailReceiver({
         host: cfg.host, port: cfg.imapPort, secure: false,
         username: cfg.username, password: cfg.password, protocol: 'IMAP',
-        folder: 'INBOX', pollingIntervalMs: 1000, postAction: 'MARK_READ', moveToFolder: '', subjectFilter: subject,
+        folder: 'INBOX', pollingIntervalMs: 1000, postAction, moveToFolder: '', subjectFilter: subject,
       }),
       ...spec,
     });
@@ -155,33 +180,47 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
       transformer: "throw new Error('cannot be transformed');",
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     });
-    await vi.waitFor(() => { expect(first.store.messageCount()).toBe(1); }, { timeout: 15_000, interval: 50 });
+    await vi.waitFor(() => { expect(first.store.messageCount()).toBe(1); }, WAIT);
     await redeploy(first);
 
     const second = await deployReader(subject, { destinations: [{ metaDataId: 1, name: 'sink', connector: sink }] });
-    await new Promise((r) => setTimeout(r, 3_500)); // three polls
+    // Listed behind it, so once it is delivered the first had its turn.
+    await sendEmail(subject, 'BEHIND-IT');
+    await vi.waitFor(() => { expect(sink.lastContent()).toContain('BEHIND-IT'); }, WAIT);
 
-    expect(second.store.messageCount()).toBe(0);
-    expect(sink.received).toEqual([]);
-  });
+    expect(second.store.messageCount()).toBe(1);
+    expect(sink.received).toHaveLength(1);
+  }, TEST_TIMEOUT);
+
+  it('marks an email whose channel was halted while a stop waited for it, so a redeploy does not dispatch it again (#413)', async () => {
+    const subject = `E2E-STOP-HALT-${Date.now()}`;
+    await sendEmail(subject, 'IN-HAND');
+    const { sink: firstSink, reached, letGo } = heldSink();
+    const first = await deployReader(subject, { destinations: [{ metaDataId: 1, name: 'sink', connector: firstSink }] });
+    await reached;
+
+    const stopping = first.runtime.stop();
+    expect((await first.runtime.halt()).ok).toBe(true);
+    letGo();
+    expect((await stopping).ok).toBe(false);
+    await redeploy(first);
+
+    const secondSink = new CaptureDestination();
+    await deployReader(subject, { destinations: [{ metaDataId: 1, name: 'sink', connector: secondSink }] });
+    await sendEmail(subject, 'BEHIND-IT');
+    await vi.waitFor(() => { expect(secondSink.lastContent()).toContain('BEHIND-IT'); }, WAIT);
+
+    expect(firstSink.received).toHaveLength(1);
+    expect(secondSink.received).toHaveLength(1);
+  }, TEST_TIMEOUT);
 
   it('a stop takes no email after the one in hand, and a redeploy delivers each once (#413)', async () => {
     const subject = `E2E-STOP-${Date.now()}`;
     await sendEmail(subject, 'PAYLOAD-ONE');
     await sendEmail(subject, 'PAYLOAD-TWO');
-    let reached = (): void => undefined;
-    const sending = new Promise<void>((resolve) => { reached = resolve; });
-    let letGo = (): void => undefined;
-    const held = new Promise<void>((resolve) => { letGo = resolve; });
-    const firstSink = new CaptureDestination();
-    const send = firstSink.send.bind(firstSink);
-    vi.spyOn(firstSink, 'send').mockImplementation(async (message, signal) => {
-      reached();
-      await held;
-      return send(message, signal);
-    });
+    const { sink: firstSink, reached, letGo } = heldSink();
     const first = await deployReader(subject, { destinations: [{ metaDataId: 1, name: 'sink', connector: firstSink }] });
-    await sending;
+    await reached;
 
     const stopping = first.runtime.stop();
     letGo();
@@ -191,10 +230,89 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
 
     const secondSink = new CaptureDestination();
     await deployReader(subject, { destinations: [{ metaDataId: 1, name: 'sink', connector: secondSink }] });
-    await vi.waitFor(() => { expect(secondSink.received).toHaveLength(1); }, { timeout: 15_000, interval: 50 });
-    await new Promise((r) => setTimeout(r, 2_500)); // two more polls
+    await sendEmail(subject, 'PAYLOAD-THREE');
+    await vi.waitFor(() => { expect(secondSink.lastContent()).toContain('PAYLOAD-THREE'); }, WAIT);
 
-    const delivered = [...firstSink.received, ...secondSink.received].map((m) => /PAYLOAD-(ONE|TWO)/.exec(m.content)?.[0]);
-    expect(delivered.sort()).toEqual(['PAYLOAD-ONE', 'PAYLOAD-TWO']);
-  });
+    const delivered = [...firstSink.received, ...secondSink.received].map((m) => /PAYLOAD-(ONE|TWO|THREE)/.exec(m.content)?.[0]);
+    expect(delivered).toEqual(['PAYLOAD-ONE', 'PAYLOAD-TWO', 'PAYLOAD-THREE']);
+  }, TEST_TIMEOUT);
+
+  /** A mail client of its own, as a person or another program has the mailbox open. */
+  async function withMailbox<T>(work: (client: ImapFlow) => Promise<T>): Promise<T> {
+    const cfg = requireMail();
+    const client = new ImapFlow({
+      host: cfg.host, port: cfg.imapPort, secure: false, auth: { user: cfg.username, pass: cfg.password }, logger: false,
+    });
+    await client.connect();
+    try {
+      await client.mailboxOpen('INBOX');
+      return await work(client);
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /** Subject to flags of every email in the folder whose subject holds the text. */
+  function inMailbox(text: string): Promise<Map<string, ReadonlySet<string>>> {
+    return withMailbox(async (client) => {
+      const found = new Map<string, ReadonlySet<string>>();
+      for await (const email of client.fetch('1:*', { envelope: true, flags: true })) {
+        const subject = email.envelope?.subject ?? '';
+        if (subject.includes(text)) found.set(subject, email.flags ?? new Set());
+      }
+      return found;
+    });
+  }
+
+  async function flag(subject: string, flags: string[]): Promise<void> {
+    await withMailbox(async (client) => {
+      const uids = await client.search({ subject }, { uid: true });
+      expect(uids).toHaveLength(1);
+      await client.messageFlagsAdd(uids as number[], flags, { uid: true });
+    });
+  }
+
+  it('DELETE removes the emails it recorded and no other, whoever flagged that deleted (#413)', async () => {
+    const run = `E2E-DELETE-${String(Date.now())}`;
+    const filter = `${run}-HL7`;
+    const subjects = {
+      recorded: `${filter}-recorded`,
+      error: `${filter}-error`,
+      before: `${filter}-before`,
+      other: `${run}-other`,
+    };
+    await sendEmail(subjects.before, 'BEFORE');
+    await sendEmail(subjects.other, 'OTHER');
+    await sendEmail(subjects.error, 'MAKE-IT-FAIL');
+    // As an earlier version left it, and as a mail client flags an email before it is expunged.
+    await flag(subjects.before, ['\\Deleted', DISPATCHED_KEYWORD]);
+    await flag(subjects.other, ['\\Deleted']);
+    const spec = (sink: CaptureDestination): Pick<ChannelSpec, 'destinations' | 'transformer'> => ({
+      transformer: "if (String(msg).includes('MAKE-IT-FAIL')) throw new Error('cannot be transformed'); return msg;",
+      destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
+    });
+
+    const sink = new CaptureDestination();
+    const first = await deployReader(filter, spec(sink), 'DELETE');
+    await sendEmail(subjects.recorded, 'RECORDED');
+    await vi.waitFor(async () => {
+      expect([...(await inMailbox(run)).keys()].sort()).toEqual([subjects.before, subjects.error, subjects.other].sort());
+    }, WAIT);
+    await vi.waitFor(async () => {
+      expect([...(await inMailbox(run)).get(subjects.error)!].map((f) => f.toLowerCase())).toContain(ERROR_KEYWORD.toLowerCase());
+    }, WAIT);
+    expect(sink.received).toHaveLength(1);
+    expect(sink.lastContent()).toContain('RECORDED');
+    await redeploy(first);
+
+    const again = new CaptureDestination();
+    const second = await deployReader(filter, spec(again), 'DELETE');
+    await sendEmail(`${filter}-behind`, 'BEHIND');
+    await vi.waitFor(async () => {
+      expect([...(await inMailbox(run)).keys()].sort()).toEqual([subjects.before, subjects.error, subjects.other].sort());
+      expect(again.received).toHaveLength(1);
+    }, WAIT);
+
+    expect(second.store.messageCount()).toBe(1);
+  }, TEST_TIMEOUT);
 });

@@ -115,9 +115,11 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
   `$GalvaniGraphDispatched` on it before the post-action (mark read, delete or move). An
   email marked `$GalvaniFlowDispatched` or `$MirthlessDispatched` by a version from
   before a rename counts as dispatched too. If the
-  post-action fails, later polls, restarts and redeploys retry only the post-action. To
-  process such an email again, remove the keyword (both, if it has both). A mailbox that rejects custom keywords
-  (a warning is logged once) can still reprocess an email after a restart if its post-action failed.
+  post-action fails, later polls, restarts and redeploys retry only the post-action, except that `DELETE` is retried
+  only until the next restart or redeploy; after that the email stays, and a warning counts it. An email whose message
+  was recorded with an error gets `$GalvaniGraphError` and is left alone. To process an email with a keyword again,
+  remove the keyword (each, if it has several). A mailbox that rejects custom keywords (a warning is logged once) can
+  still dispatch an email again after a restart if it was left in the folder.
 - **Batch files** are ingested as one message. A file with several MSH segments is not
   split.
 - Migration 0007 drops message history on upgrade from installs that predate it; see
