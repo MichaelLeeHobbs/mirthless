@@ -118,6 +118,8 @@ async function listen(pipeline: Pipeline, overrides: Partial<DicomReceiverConfig
     postAction: 'NONE', moveToDirectory: '', channelId: 'channel-1', roots: { allowed: [dir], denied: [] }, ...overrides,
   }, undefined, SWEEP_MS);
   receiver.setDispatcher(pipeline as MessageDispatcher);
+  // What an alert of the source's health says.
+  receiver.setHealthHandler((failure) => { if (failure !== null) logged.push({ msg: 'health', health: failure.message }); });
   const started = await receiver.onStart();
   if (!started.ok) throw started.error;
   listener = receiver;
@@ -339,6 +341,7 @@ describe('the Listener, while it takes an image', () => {
     failing.on.set('readdir', '.galvanigraph-pending');
     await listen(async () => PROCESSED);
 
+    expect(await line(/^health$/)).toMatchObject({ health: `Associations waiting for their message could not be listed (readdir failed: EBUSY ${path.join(dir, '.galvanigraph-pending', 'channel-1')})` });
     expect(await line(/could not be listed/)).toMatchObject({ errMsg: `readdir failed: EBUSY ${path.join(dir, '.galvanigraph-pending', 'channel-1')}`, directory: dir });
   });
 
@@ -351,6 +354,7 @@ describe('the Listener, while it takes an image', () => {
 
     await store();
 
+    expect(await line(/^health$/)).toMatchObject({ health: `An association waiting for its message could not be read (${operation} failed: EBUSY)` });
     expect(await line(/could not be read; tried again/)).toMatchObject({ directory: dir, errMsg: `${operation} failed: EBUSY`, associationId: expect.stringMatching(/^assoc-/) as string });
   });
 });
