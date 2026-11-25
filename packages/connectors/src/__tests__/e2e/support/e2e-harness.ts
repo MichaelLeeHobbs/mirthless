@@ -337,7 +337,7 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
       pollIntervalMs: 100,
       // As the server wires it (engine.ts).
       onMessageDelivered: spec.source.onMessageDelivered
-        ? (_messageId, rawContent) => spec.source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
+        ? (messageId, rawContent) => spec.source.onMessageDelivered?.(rawContent, messageId) ?? Promise.resolve()
         : undefined,
     }, store, sendFn));
 

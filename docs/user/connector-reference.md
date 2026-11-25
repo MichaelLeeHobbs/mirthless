@@ -465,6 +465,14 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 
 DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories](#file-security) do (D-326). The listener's `storageDir` and `moveToDirectory` are checked at deploy and again before every write and every move, after symlinks are resolved, so a directory later swapped for a link out of the roots is refused. The sending AE names each file through its SOP Instance UID, so an instance whose UID is not a DICOM UID (digits and dots, at most 64 characters) is refused with a C-STORE failure rather than stored. The destination checks the path in the message before it reads the file: message content comes from transformers, and without the check a script could send any DICOM file the server can read to the remote AE.
 
+A stored file's name is its image's SOP Instance UID, which leads to one patient's study, so a DICOM connector's log lines, a DICOM Sender's ERROR texts and the alerts made of them hold no path of an image (D-386). A line about one file has the connector's storage directory and `file`, the first 12 hex digits of the SHA-256 of its name, and the message or association id; an ERROR text about a file that cannot be used or read has the hash. The stored message has the full path, as long as its content is kept. To find the file in its directory:
+
+```bash
+for f in *; do printf '%s  %s\n' "$(printf %s "$f" | sha256sum | cut -c1-12)" "$f"; done | grep 2b7b59d38673
+```
+
+The hash has no key, so a UID can be checked against the log, and one that can be guessed (many scanners count up) can be found from it: keep the log as you keep other records with identifiers. What a channel's own scripts log or throw is not changed, so do not put the path or a UID in it. The images themselves, in the storage directory, are named by their UIDs.
+
 ### DICOM as a source
 
 | Property | Required | Notes |

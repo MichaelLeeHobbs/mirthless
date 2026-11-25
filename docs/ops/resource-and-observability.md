@@ -137,7 +137,7 @@ string included. Treat the web container's error output like the server log.
 
 ### PHI in logs
 
-Never log message content. The application avoids logging PHI and credentials (a failed database statement is logged without its parameters, D-347); if you add
+Never log message content. The application avoids logging PHI and credentials (a failed database statement is logged without its parameters, D-347; a DICOM image by a hash of its file name, D-386); if you add
 logging in custom scripts or forks, keep PHI and secrets out of log lines — logs are
 generally less protected than the database.
 
