@@ -1,5 +1,5 @@
 // At most `max` attempts per key and window fail, and attempts that succeed do
-// not count, however many come at once (D-359). An attempt's outcome is known
+// not count, however many come at once (D-363). An attempt's outcome is known
 // only when it ends, so the failures and the attempts under way are never more
 // than `max` together: the rest wait for a place, and are refused once `max`
 // have failed.
