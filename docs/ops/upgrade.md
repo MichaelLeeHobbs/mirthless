@@ -441,7 +441,7 @@ The receiver never read it: an email arrives as the mail server holds it, attach
 
 ## The Email source keeps every byte of an email (#369)
 
-An email that is not valid UTF-8, such as one in ISO-8859-1 with 8-bit parts, had those bytes replaced by U+FFFD. It is now read with each byte as the character of its number, and `charset` in the source map says `latin1` instead of `utf-8` (D-388). A script that worked around U+FFFD in such emails sees the characters now. With the post-action `DELETE` such an email is marked read, as before. `attachmentCount`, which was always 0, is the number of attachments (null for an email of more than 1,000 parts). Messages already stored keep their U+FFFD.
+An email that is not valid UTF-8, such as one in ISO-8859-1 with 8-bit parts, had those bytes replaced by U+FFFD. It is now read with each byte as the character of its number, and `charset` in the source map says `latin1` instead of `utf-8` (D-388). A script that worked around U+FFFD in such emails sees the characters now. With the post-action `DELETE` such an email is marked read, as before. `attachmentCount`, which was always 0, is the number of attachments (null for an email that is made of too much to count). Messages already stored keep their U+FFFD.
 
 ## An alert's regex must compile (#133)
 
