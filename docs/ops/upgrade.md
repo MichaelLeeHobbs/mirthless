@@ -421,6 +421,12 @@ The editor no longer shows the Listener's pool sizes or the Sender's mode and ma
 
 Until 2026-11-23 the backup commands on this page and in [Backup & restore](backup-restore.md) wrote dumps that can't be restored. Take a new backup with `docker/backup.sh`, change any cron job or script that runs `pg_dump` through `docker exec -t`, and [repair the dumps you still need](backup-restore.md#dumps-taken-with-docker-exec--t).
 
+## Backups carry a code template's language, and the server gets time to stop (#419)
+
+A server backup left out whether a code template is JavaScript or TypeScript, so a TypeScript template restored onto another server became JavaScript, which is not type-checked. If you restored a backup like that, set those templates back to TypeScript. Take a new backup after the upgrade: one made before it restores a template the server does not have as JavaScript.
+
+The production compose file now gives the server 45 seconds to stop (`stop_grace_period`). Docker's default of 10 cut off the 30 it uses to let the messages under way end. Add it to a compose file of your own. The container from before the upgrade still has the old limit, so stop it yourself before step 3 of the [upgrade](#standard-upgrade-docker): `docker compose -f docker/docker-compose.prod.yml stop -t 45 server`.
+
 ## Alert email signs in over TLS only (#358)
 
 With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTTLS, and it fails if the server does not offer it (before, it signed in over plaintext). Turn on `smtp.secure` if the server takes TLS from the start, or clear `smtp.auth_user` if it needs no sign-in. A value of `smtp.secure` other than `true` or `false` also fails the email; before, it counted as off. Changing `smtp.host` clears the saved password, so type it again in the same save. A script that sets the settings one at a time must set `smtp.host` before `smtp.auth_pass`, on a new install too. The new `smtp.require_tls` setting appears on the Settings page once the seed has run; with `SEED_ON_START=false`, add it with `PUT /api/v1/settings/smtp.require_tls`.
@@ -569,6 +575,34 @@ A script that counted on the defaults must send them. These now get a 400:
 - `PUT /api/v1/alerts/:id` with a `CHANNEL_ERROR` trigger without its `regex` (null for none).
 
 A script saved on a channel that was imported without that script is now stored. Before, the save was answered as done and the script was lost, in the editor too. Look at the Scripts tab of channels you imported from Mirth (the importer leaves out scripts that are Mirth's defaults) or from a file without all four scripts.
+
+## Database values, timeouts and marked rows (#411)
+
+**PostgreSQL values change in messages** from a DATABASE source, in the response of a DATABASE destination that returns rows, and in what `dbQuery` returns ([DATABASE](../user/connector-reference.md#database), D-365). Nothing stored is rewritten. Check the scripts and destinations that read these columns before you upgrade:
+
+| Column | Before | Now |
+|---|---|---|
+| `date` | midnight in the server's time zone, as UTC: `2026-01-15T08:00:00.000Z` for a server in Los Angeles, the day before for one in Tokyo | `2026-01-15` |
+| `timestamp` | shifted from the server's time zone into UTC and cut to milliseconds: `2026-01-15T08:30:00.123Z` | `2026-01-15T00:30:00.123456`, as the database has it. With a server in UTC, as the Docker image is, only the `Z` goes and digits after the third come |
+| `timestamptz` | `2026-01-15T08:30:00.123Z` | the same, with the digits after the third: `2026-01-15T08:30:00.123456Z`. A value without any is as before |
+| `numeric[]` | numbers, with digits lost | text, as a `numeric` was and is |
+| a number in `json` or `jsonb` | a number, with digits lost where JavaScript cannot hold it | text where JavaScript cannot hold it; every other number as before |
+| `NaN`, `Infinity` in a `real`, `double precision`, `point` or `circle`, `infinity` in a date or an interval | `null` (an interval: `{}`, a coordinate: `null`) | the database's text |
+| a date, time or interval from a database whose `DateStyle` or `IntervalStyle` is not the default | `null` or `{}` | the database's text |
+
+Arrays of these hold the same. `rowData` in the source map held Date objects while a message was processed and holds the text above. A script that calls `new Date(...)` on a `timestamp` now reads it in the server's time zone, as the database has it, where it read a UTC time. A script that cuts the `Z` off by position, or compares such a value with one stored before the upgrade, needs a look. An `updateQuery` that finds its row by a time now finds one with microseconds, where it found none.
+
+**A row whose `updateQuery` fails is no longer sent at every poll**: each poll tries the update again instead ([limits](../user/connector-reference.md#database-limits)). If a channel has been sending the same rows for a while, its log has `Database mark-as-processed UPDATE failed`; correct the query or the rights it needs.
+
+**A DATABASE source's `FOR SHARE` is sent as `FOR UPDATE`** when the source has an update mode, so two sources no longer take the same row. That includes a `FOR SHARE` inside a `WITH` query or a subquery in `FROM`; the query around it gets the lock as well, which PostgreSQL refuses on an aggregate, so such a channel logs an ERROR at each poll. `FOR SHARE OF r` becomes `FOR UPDATE OF r`: name the table whose rows the source takes. The database user needs the right to update the table, as it did for PostgreSQL's `FOR SHARE`. A comment at the end of the query, which hid the lock, is left off.
+
+**MySQL statements are stopped on the server** when they take more than 25 seconds, with `KILL QUERY` on a second connection of the same user: leave that user one connection more than the channels use when it has a limit (`max_user_connections`). Before, an INSERT, UPDATE or DELETE failed at 30 seconds and could take effect later, so a queue's retry wrote it twice; rows written twice before the upgrade stay. An error that ends in `may still take effect` means that the server never answered. A PostgreSQL statement still has 30 seconds, and its error now says `canceling statement due to statement timeout`, where it usually said `Query read timeout`.
+
+**A stop of a DATABASE source waits for the row being processed** and takes no more rows. Before, a PostgreSQL source sent the rest of the poll first, and a MySQL source closed its connection and sent the row again at the next start.
+
+**`${patient-id}`, `${a.b}` and `${ name }` are parameters** in a query, where they were sent to the database as written, which refused them. Each is one key, not a path.
+
+**MariaDB**: a connection set `max_execution_time`, which MariaDB does not document, so it should have failed. The connector now sets MariaDB's `max_statement_time` when the server does not know the other. This was written from MariaDB's documentation and has not been tested on a MariaDB server.
 
 ## Standard upgrade (Docker)
 

@@ -14,7 +14,8 @@ export interface ShutdownDeps {
   readonly closePool: () => Promise<void>;
 }
 
-const DRAIN_TIMEOUT_MS = 30_000;
+/** docker-compose.prod.yml gives the container longer than this to stop. */
+export const DRAIN_TIMEOUT_MS = 30_000;
 
 /** From the signal on. What is left of the drain timeout is for what waited for the sends. */
 const QUEUES_END_MS = 20_000;

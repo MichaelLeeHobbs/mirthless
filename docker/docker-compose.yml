@@ -45,7 +45,7 @@ services:
       - "3143:3143"
 
   mysql-test:
-    # A partner MySQL database for the migration scenario suite (e2e/scenarios).
+    # A partner MySQL database, also for the migration scenario suite (e2e/scenarios).
     image: mysql:8.4
     container_name: galvanigraph-mysql-test
     profiles: ["test"]
@@ -56,6 +56,12 @@ services:
       MYSQL_PASSWORD: mirthpw
     ports:
       - "3307:3306"
+    healthcheck:
+      # Over TCP: the image's first-start server, which has no port, answers on the socket.
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -umirth -pmirthpw -e 'SELECT 1' partner > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
 
   kafka-test:
     # Single-node KRaft Kafka for the Kafka connectors. 19092 is plaintext,

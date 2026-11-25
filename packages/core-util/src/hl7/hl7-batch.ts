@@ -21,7 +21,7 @@ export function splitHl7Batch(content: string): string[] {
       continue;
     }
     const current = messages.at(-1);
-    if (!current) throw new Error(`HL7 batch has a ${name} segment before its first MSH`);
+    if (!current) throw new Error('HL7 batch has a segment before its first MSH');
     current.push(segment);
   }
   return messages.map((segments) => segments.join('\r'));

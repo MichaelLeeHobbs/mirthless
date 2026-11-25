@@ -30,7 +30,7 @@ import { useChannelGroups } from '../hooks/use-channel-groups.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import { keyScopeLabel } from '../lib/api-keys.js';
-import { permissionLabel } from '../lib/channel-access.js';
+import { groupNamer, permissionLabel } from '../lib/channel-access.js';
 import { apiKeyLevel } from '../lib/status.js';
 import { formatTimestamp, humanize } from '../lib/format.js';
 import { PageHeader } from '../components/common/PageHeader.js';
@@ -141,7 +141,7 @@ export function ApiKeysPage(): ReactNode {
   const [replaceTarget, setReplaceTarget] = useState<ApiKeyView | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyView | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const groupName = (id: string): string => groups?.find((g) => g.id === id)?.name ?? id;
+  const groupName = groupNamer(groups);
   const failed = (err: Error): void => { setActionError(err.message); };
 
   return (
