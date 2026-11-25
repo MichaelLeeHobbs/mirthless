@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import { AmqpDispatcher, type AmqpDispatcherConfig } from '../amqp-dispatcher.js';
 import { connectOptions, socketOptions, type AmqpPublisherFactory } from '../amqp-client.js';
 import { FakeAmqpPublisher } from '../../__fixtures__/fake-amqp.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 const config: AmqpDispatcherConfig = {
   host: 'rabbit', port: 5672, vhost: '/', username: 'u', password: 'p',
@@ -99,6 +100,55 @@ describe('send', () => {
     pubs.failNext = 1;
     expect((await dispatcher.send(message(), signal())).ok).toBe(false);
     expect((await dispatcher.send(message(), signal())).ok).toBe(true);
+  });
+
+  it.each([
+    ['halt', 'onHalt', 2_000],
+    ['stop', 'onStop', 10_000],
+  ] as const)('a %s ends although the broker never lets the connection open, which is closed when it does (#413)', async (_what, action, withinMs) => {
+    let connected = (publisher: FakeAmqpPublisher): void => { void publisher; };
+    const { logger, warnings } = makeMockLogger();
+    const dispatcher = new AmqpDispatcher(config, () => new Promise((resolve) => { connected = resolve; }), logger);
+    await dispatcher.onStart();
+    vi.useFakeTimers();
+    try {
+      const sending = dispatcher.send(message(), AbortSignal.abort());
+      expect((await sending).ok).toBe(false);
+      const controller = new AbortController();
+      const hanging = dispatcher.send(message(), controller.signal);
+      controller.abort();
+      expect((await hanging).ok).toBe(false);
+
+      const ending = dispatcher[action]();
+      await vi.advanceTimersByTimeAsync(withinMs);
+      expect((await ending).ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    const late = new FakeAmqpPublisher();
+    connected(late);
+    await vi.waitFor(() => { expect(late.closed).toBe(true); });
+    expect(late.published).toEqual([]);
+    expect(warnings.map((w) => w.msg)).toEqual(['Error closing AMQP connection']);
+  });
+
+  it('a send left over from before a halt does not close the connection of the next start', async () => {
+    const { dispatcher, pubs } = await started();
+    const first = { fail: (err: Error): void => { void err; } };
+    await dispatcher.send(message(), signal());
+    const old = pubs.made[0]!;
+    vi.spyOn(old, 'publish').mockReturnValue(new Promise((_resolve, reject) => { first.fail = reject; }));
+    const leftOver = dispatcher.send(message(), signal());
+    await Promise.resolve();
+    await dispatcher.onHalt();
+    await dispatcher.onStart();
+    expect((await dispatcher.send(message(), signal())).ok).toBe(true);
+
+    first.fail(new Error('Channel closed'));
+
+    expect((await leftOver).ok).toBe(false);
+    expect(pubs.made).toHaveLength(2);
+    expect(pubs.made[1]?.closed).toBe(false);
   });
 
   it('refuses to send before start, after stop and with an aborted signal', async () => {

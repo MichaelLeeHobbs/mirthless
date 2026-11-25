@@ -52,27 +52,27 @@ scenario('S13 ADT is filtered, mapped to JSON, sent to HTTP and Postgres, retrie
     expect(await sendMllp(PORT, adt('A08', 'S13X', 'IGNORED'))).toContain('MSA|AA|S13X');
     expect(await sendMllp(PORT, adt('A01', 'S13A', 'GARCIA'))).toContain('MSA|AA|S13A');
 
-    await expect.poll(async () => (await sql('SELECT mrn, family FROM partner.s13_patients')).length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(async () => (await sql('SELECT mrn, family FROM partner.s13_patients')).length).toBe(1);
     expect(await sql('SELECT mrn, family FROM partner.s13_patients')).toEqual([{ mrn: 'MRNS13A', family: 'GARCIA' }]);
     const a01 = async () => {
       const list = await api.messages(channelId);
       const m = list.items.find((i) => i.connectors.some((c) => c.metaDataId === 1));
       return m ? api.message(channelId, m.messageId) : null;
     };
-    await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.status, { timeout: 15_000 }).toBe('QUEUED');
+    await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.status).toBe('QUEUED');
     // The queue makes the first attempt shortly after the message is queued.
-    await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.content['error'] ?? '', { timeout: 15_000 }).toContain('500');
+    await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.content['error'] ?? '').toContain('500');
 
     sink.status = 200;
-    await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.status, { timeout: 20_000 }).toBe('SENT');
+    await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.status).toBe('SENT');
     expect(sink.requests.filter((r) => r.method === 'POST').length).toBeGreaterThanOrEqual(1);
     expect(JSON.parse(sink.requests.at(-1)!.body)).toEqual({ mrn: 'MRNS13A', family: 'GARCIA', given: 'PAT' });
     expect(sink.requests.some((r) => r.body.includes('IGNORED'))).toBe(false);
 
     const before = sink.requests.length;
     await api.post(`/channels/${channelId}/messages/${String((await a01())!.messageId)}/reprocess`);
-    await expect.poll(() => sink.requests.length, { timeout: 15_000 }).toBe(before + 1);
-    await expect.poll(async () => (await sql('SELECT mrn FROM partner.s13_patients')).length, { timeout: 15_000 }).toBe(2);
+    await expect.poll(() => sink.requests.length).toBe(before + 1);
+    await expect.poll(async () => (await sql('SELECT mrn FROM partner.s13_patients')).length).toBe(2);
   } finally {
     await sink.close();
   }

@@ -48,13 +48,13 @@ scenario('S28 File Reader leaves or moves the files it reads as Mirth did', asyn
     drop(moveDir, 'order2.hl7', order(2));
 
     // A second receipt means a later poll found the file again, so a delete after the first can't pass.
-    await expect.poll(() => keepSink.received.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => keepSink.received.length).toBeGreaterThanOrEqual(2);
     expect(keepSink.received[0]).toContain('ORC|NW|ACC0281');
     expect(exists(keepDir, 'order1.hl7')).toBe(true);
 
-    await expect.poll(() => moveSink.received.length, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => moveSink.received.length).toBe(1);
     expect(moveSink.received[0]).toContain('ORC|NW|ACC0282');
-    await expect.poll(() => exists(`${moveDir}/done`, 'order2.hl7'), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => exists(`${moveDir}/done`, 'order2.hl7')).toBe(true);
     expect(exists(moveDir, 'order2.hl7')).toBe(false);
   } finally {
     // The kept file is read again on every poll, as in Mirth; stop the channel before its sink goes.

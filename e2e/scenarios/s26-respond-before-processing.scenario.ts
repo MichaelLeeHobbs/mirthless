@@ -27,6 +27,6 @@ scenario('S26 a listener that responds before processing answers AA even when it
   const ack = await sendMllp(PORT, 'MSH|^~\\&|RIS|SITE26|HUB|HUB|20261110120000||ORM^O01|S26CTL|P|2.3\rORC|NW|BAD');
   expect(ack).toContain('MSA|AA|S26CTL');
 
-  await expect.poll(async () => (await api.messages(channelId)).items[0]?.connectors.find((c) => c.metaDataId === 0)?.status, { timeout: 10_000 })
+  await expect.poll(async () => (await api.messages(channelId)).items[0]?.connectors.find((c) => c.metaDataId === 0)?.status)
     .toBe('ERROR');
 });

@@ -5,6 +5,7 @@ import { expect, request } from '@playwright/test';
 import { channelExport, httpListener, tcpSender } from './support/mirth-xml.js';
 import { MllpSink } from './support/net.js';
 import { scenario, mirthId } from './support/scenario.js';
+import { INTEGRATION_WAIT_MS } from '../../packages/server/test/time-budgets.js';
 
 const PORT = 16605;
 const SINK = 16655;
@@ -38,14 +39,14 @@ scenario('S05 JSON report is sent as an ORU to the configuration-map host', asyn
       }],
     }), ['S05 Report Processor']);
 
-    const ctx = await request.newContext();
+    const ctx = await request.newContext({ timeout: INTEGRATION_WAIT_MS });
     const res = await ctx.post(`http://127.0.0.1:${String(PORT)}/`, {
       data: { site: 'SITE5', accession: 'ACC005', mrn: 'MRN005', procedure: '71020^CHEST 2V', impression: 'Normal study' },
     });
     expect(res.status()).toBe(200);
     await ctx.dispose();
 
-    await expect.poll(() => sink.received.length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     const oru = sink.received[0]!;
     expect(oru).toContain('ORU^R01|ACC005');
     expect(oru).toContain('OBX|1|TX|IMP||Normal study');

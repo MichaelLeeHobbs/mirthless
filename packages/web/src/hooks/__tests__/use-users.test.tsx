@@ -33,6 +33,20 @@ beforeEach(() => {
   getMock.mockResolvedValue({ success: true, data: [] });
 });
 
+describe('a user change that is refused', () => {
+  it('reads the users again, since another admin may have disabled the account', async () => {
+    const reads = (): number => getMock.mock.calls.filter(([path]) => path === '/users').length;
+    writeMock.mockResolvedValue({ success: false, error: { code: 'CONFLICT', message: 'Enable the account first.' } });
+    const { result } = renderHook(() => ({ users: useUsers(), update: useUpdateUser() }), { wrapper });
+    await waitFor(() => { expect(result.current.users.isSuccess).toBe(true); });
+    expect(reads()).toBe(1);
+
+    await expect(result.current.update.mutateAsync({ id: 'u1', input: { email: 'a@example.test' } })).rejects.toThrow('Enable the account first.');
+
+    await waitFor(() => { expect(reads()).toBe(2); });
+  });
+});
+
 describe('access changes and the API key list', () => {
   it('reloads API keys after a user is deleted, since their keys were disabled or taken over', async () => {
     writeMock.mockResolvedValue({ success: true, data: { takenOver: [] } });

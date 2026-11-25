@@ -5,6 +5,8 @@ import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import type { AmqpDelivery } from '../amqp-client.js';
 
 class FakeChannel extends EventEmitter {
+  constructor(private readonly onClose: () => void) { super(); }
+  async close(): Promise<void> { this.onClose(); }
   calls: [string, ...unknown[]][] = [];
   consumer: ((msg: unknown) => void) | null = null;
   checkQueueError: Error | null = null;
@@ -35,11 +37,21 @@ class FakeChannel extends EventEmitter {
 }
 
 class FakeModel extends EventEmitter {
-  channel = new FakeChannel();
+  channel = new FakeChannel(() => { this.order.push('channel'); });
+  readonly order: string[] = [];
   closed = 0;
+  /** The broker never answers the close. */
+  hangs = false;
+  socketDestroyed = false;
+  readonly connection = { stream: { destroy: (err: Error): void => { this.socketDestroyed = true; this.emit('error', err); } } };
   async createChannel(): Promise<FakeChannel> { return this.channel; }
   async createConfirmChannel(): Promise<FakeChannel> { return this.channel; }
-  async close(): Promise<void> { this.closed += 1; this.emit('close'); }
+  async close(): Promise<void> {
+    this.closed += 1;
+    this.order.push('connection');
+    if (this.hangs) await new Promise(() => undefined);
+    this.emit('close');
+  }
 }
 
 const lib = vi.hoisted(() => ({ models: [] as unknown[], connectArgs: [] as unknown[][] }));
@@ -167,7 +179,7 @@ describe('createAmqpPublisher', () => {
     expect(publisher.isOpen).toBe(true);
     lastModel().channel.emit('close');
     expect(publisher.isOpen).toBe(false);
-    await publisher.close();
+    await publisher.close(1_000);
     expect(lastModel().closed).toBe(1);
   });
 });
@@ -191,5 +203,34 @@ describe('testAmqpConnection', () => {
     // An 'error' emitted with no listener would throw here instead of rejecting.
     await expect(attempt).rejects.toThrow('NOT_FOUND');
     expect(lastModel().closed).toBe(1);
+  });
+});
+
+describe('a close that the broker never answers (#413)', () => {
+  it.each([
+    ['consumer', (): Promise<{ close(timeoutMs: number): Promise<void> }> => consumeAmqp({ ...config, queue: 'adt' }, () => undefined)],
+    ['publisher', (): Promise<{ close(timeoutMs: number): Promise<void> }> => createAmqpPublisher(config)],
+  ])('ends in time for a %s, and the socket goes', async (_what, open) => {
+    const opened = await open();
+    lastModel().hangs = true;
+    vi.useFakeTimers();
+    try {
+      const closing = opened.close(2_000).catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(lastModel().socketDestroyed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await closing).toMatchObject({ name: 'TimeoutError', message: 'AMQP close timed out after 2000ms' });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(lastModel().socketDestroyed).toBe(true);
+  });
+
+  // The broker would return the message acknowledged last, and deliver it again.
+  it('closes a consumer\'s channel before its connection, whose close overtakes an acknowledgement', async () => {
+    const consumer = await consumeAmqp({ ...config, queue: 'adt' }, () => undefined);
+    await consumer.close(2_000);
+    expect(lastModel().order).toEqual(['channel', 'connection']);
+    expect(lastModel().socketDestroyed).toBe(false);
   });
 });
