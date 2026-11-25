@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { ChannelAccessView } from '@galvanigraph/core-models';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole,
   type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -45,12 +44,11 @@ describeIntegration('who can access a channel (real Postgres)', () => {
     lapsed = await user('channel-viewer', [lab]);
     await mods.pool.query(`UPDATE assignments SET expires_at = now() - interval '1 day' WHERE user_id = $1`, [lapsed.id]);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = $1', [CHANNEL]);
     await deleteTestChannel(mods, CHANNEL);

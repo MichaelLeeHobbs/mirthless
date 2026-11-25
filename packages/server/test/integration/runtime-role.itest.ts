@@ -118,11 +118,9 @@ describeIntegration('Runtime database role (real Postgres)', () => {
 
     runtime = new pg.Client({ connectionString: urlFor(DB_NAME, ROLE, ROLE_PASSWORD) });
     await runtime.connect();
-  }, 120_000);
+  });
 
-  // WITH (FORCE) ends any session left over. Dropping two migrated databases is
-  // server work a loaded machine slows down, so the teardown gets the setup's
-  // budget, not the 30 s default (#294).
+  // WITH (FORCE) ends any session left over.
   afterAll(async () => {
     await runtime?.end();
     await owner?.end();
@@ -134,7 +132,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
       await admin.query(`DROP ROLE IF EXISTS "${SUPER_ROLE}"`);
       await admin.end();
     }
-  }, 120_000);
+  });
 
   /** The partition function refuses a channel id with no row. */
   async function newChannel(client: pg.Client): Promise<string> {
@@ -174,7 +172,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
       const [job] = await boss.fetch('itest-fresh');
       expect(job?.data).toEqual({ from: 'runtime' });
     });
-  }, 120_000);
+  });
 
   it('passes the startup check: not a superuser and without the table owner rights', async () => {
     const check = await checkRuntimeRole(runtime);
@@ -448,7 +446,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
        FROM audit_log l, users u WHERE l.action = 'GRANT_BASELINE' AND u.username = 'admin' ORDER BY l.occurred_at DESC, l.id DESC LIMIT 1`,
     );
     expect(baseline.rows[0]?.held).toBe(true);
-  }, 120_000);
+  });
 
   it('PartitionManagerService creates a channel\'s partitions as the runtime role', async () => {
     // lib/db.ts reads DATABASE_URL when first imported, and each test file has

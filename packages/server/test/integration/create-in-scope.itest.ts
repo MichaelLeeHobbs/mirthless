@@ -4,10 +4,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
-  apiCall, describeIntegration, insertTestGroup, loadServerModules, userWithRole, type ApiAnswer, type ServerModules, type TestUser,
+  apiCall, closeServer, describeIntegration, insertTestGroup, listen, loadServerModules, userWithRole,
+  type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
 
 describeIntegration('new channels land in the creator\'s scope (real Postgres)', () => {
@@ -66,12 +66,11 @@ describeIntegration('new channels land in the creator\'s scope (real Postgres)',
     process.env['API_RATE_LIMIT_MAX'] = '1000000';
     mods = await loadServerModules();
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (channelIds.length > 0) {
       await mods.pool.query('DELETE FROM channel_group_members WHERE channel_id = ANY($1::uuid[])', [channelIds]);
       await mods.pool.query('UPDATE channels SET deleted_at = now() WHERE id = ANY($1::uuid[])', [channelIds]);

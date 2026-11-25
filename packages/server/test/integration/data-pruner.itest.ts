@@ -91,7 +91,7 @@ describeIntegration('DataPruner (real Postgres)', () => {
 
     expect(result.ok ? result.value.deletedCount : result.error.message).toBe(total);
     expect(await remainingIds(channelId)).toEqual([recentId]);
-  }, 120_000);
+  });
 
   it('keeps an aged-out message that has not finished processing', async () => {
     const { DataPrunerService } = mods;

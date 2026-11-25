@@ -5,12 +5,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { randomUUID } from 'node:crypto';
 import { CONTENT_TYPE, createChannelSchema, updateChannelSchema } from '@galvanigraph/core-models';
 import type { ChannelDetail } from '../../src/services/channel.service.js';
-import { adminActor, deleteTestChannel, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
+import { adminActor, deleteTestChannel, describeIntegration, loadServerModules, unwrap, WAIT, type ServerModules, type TestActor } from './_setup.js';
 import { databaseDestination } from './_database-destination.js';
 
 describeIntegration('Queued messages and edited destinations (real Postgres, real database destinations)', () => {
   const TABLE = 'itest_queued_destination';
-  const WAIT = 15_000;
   let mods: ServerModules;
   let actor: TestActor;
   let deployment: typeof import('../../src/services/deployment.service.js').DeploymentService;

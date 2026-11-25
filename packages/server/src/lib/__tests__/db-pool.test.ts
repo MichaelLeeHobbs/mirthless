@@ -6,6 +6,7 @@ const cfg = vi.hoisted(() => ({
   DATABASE_SSL_REJECT_UNAUTHORIZED: true,
   DATABASE_SSL_CA: undefined as string | undefined,
   DATABASE_STATEMENT_TIMEOUT_MS: 120_000,
+  DATABASE_CONNECT_TIMEOUT_MS: 5_000,
 }));
 vi.mock('../../config/index.js', () => ({ config: cfg }));
 vi.mock('../logger.js', () => ({ default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
@@ -20,6 +21,11 @@ describe('buildPoolConfig', () => {
   it('uses the configured limit', () => {
     cfg.DATABASE_STATEMENT_TIMEOUT_MS = 5_000;
     expect(buildPoolConfig().statement_timeout).toBe(5_000);
+  });
+
+  it('waits for a connection no longer than the configured time', () => {
+    cfg.DATABASE_CONNECT_TIMEOUT_MS = 7_000;
+    expect(buildPoolConfig().connectionTimeoutMillis).toBe(7_000);
   });
 
   it('sets no limit when the setting is 0', () => {

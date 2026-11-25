@@ -11,9 +11,6 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 
 const MIGRATIONS = fileURLToPath(new URL('../../src/db/migrations', import.meta.url));
 
-/** Creating, migrating and dropping a database is server work a loaded machine slows down (#294). */
-export const MIGRATION_DB_TIMEOUT_MS = 120_000;
-
 function urlFor(database: string): string {
   const url = new URL(process.env.DATABASE_URL ?? '');
   url.pathname = `/${database}`;

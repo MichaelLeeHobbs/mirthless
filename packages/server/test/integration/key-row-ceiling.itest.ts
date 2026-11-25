@@ -2,11 +2,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { IssuedApiKey } from '@galvanigraph/core-models';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, unwrap, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, unwrap, userWithRole,
   type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -41,8 +40,7 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
     admin = await userWithRole(mods.pool, 'admin', null);
     users.push(admin.id);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
     const issued = await apiCall<IssuedApiKey>(base, admin.token, 'POST', '/api-keys', {
       name: 'Ceiling', permissions: ['channels:read', 'messages:read'], groupIds: [lab], expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
     });
@@ -52,7 +50,7 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     await mods.pool.query(`DELETE FROM users WHERE id IN (SELECT user_id FROM api_keys WHERE issued_by = ANY($1::uuid[]))`, [users]);
     await mods.pool.query(`DELETE FROM roles WHERE key_role AND NOT EXISTS (SELECT 1 FROM assignments a WHERE a.role_id = roles.id)`);
     await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);

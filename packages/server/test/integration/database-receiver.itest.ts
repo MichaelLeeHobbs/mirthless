@@ -64,14 +64,14 @@ describeIntegration('DatabaseReceiver (real Postgres)', () => {
     expect((await receiver.onDeploy()).ok).toBe(true);
     expect((await receiver.onStart()).ok).toBe(true);
 
-    await expect.poll(processedIds, { timeout: 5_000 }).toEqual([1, 3]);
-    await new Promise((resolve) => { setTimeout(resolve, 350); });
+    await expect.poll(processedIds).toEqual([1, 3]);
+    // Two more polls have read the table since.
+    await expect.poll(() => dispatched.filter((id) => id === 2).length).toBeGreaterThan(2);
     await receiver.onStop();
     receiver = null;
 
-    // Row 2's acknowledgement keeps failing, so only it is read again.
+    // Row 2's acknowledgement keeps failing, so only it was read again.
     expect(dispatched.filter((id) => id === 1)).toHaveLength(1);
     expect(dispatched.filter((id) => id === 3)).toHaveLength(1);
-    expect(dispatched.filter((id) => id === 2).length).toBeGreaterThan(1);
   });
 });

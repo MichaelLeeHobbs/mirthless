@@ -3,10 +3,12 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { createChannelSchema, updateChannelSchema } from '@galvanigraph/core-models';
-import { adminActor, apiCall, describeIntegration, insertTestGroup, loadServerModules, unwrap, userWithRole, type ServerModules, type TestActor, type TestUser } from './_setup.js';
+import {
+  adminActor, apiCall, closeServer, describeIntegration, insertTestGroup, listen, loadServerModules, unwrap, userWithRole, WAIT,
+  type ServerModules, type TestActor, type TestUser,
+} from './_setup.js';
 
 describeIntegration('who reads connector credentials (real Postgres)', () => {
   let mods: ServerModules;
@@ -85,17 +87,16 @@ describeIntegration('who reads connector credentials (real Postgres)', () => {
     const saved = unwrap(await mods.ChannelService.update(id, updateChannelSchema.parse({ revision: made.revision, description: 'saved' }), actor));
     revision = saved.revision;
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
     // A save records its revision after it answers.
     const writer = await user('developer', null);
     await vi.waitFor(async () => {
       expect((await apiCall(base, writer.token, 'GET', `/channels/${id}/revisions/${String(revision)}`)).status).toBe(200);
-    }, 20_000);
-  }, 60_000);
+    }, WAIT);
+  });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (channels.length > 0) await mods.pool.query('DELETE FROM channels WHERE id = ANY($1::uuid[])', [channels]);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     if (roles.length > 0) await mods.pool.query('DELETE FROM roles WHERE name = ANY($1)', [roles]);
@@ -183,7 +184,7 @@ describeIntegration('who reads connector credentials (real Postgres)', () => {
       await apiCall(base, reader.token, 'GET', path);
       await apiCall(base, writer.token, 'GET', path);
     }
-    await expect.poll(() => recorded(writer.id), { timeout: 10_000 }).toBe(2);
+    await expect.poll(() => recorded(writer.id)).toBe(2);
     expect(await recorded(reader.id)).toBe(0);
   });
 });
