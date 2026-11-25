@@ -488,9 +488,23 @@ node -p "new TextDecoder('windows-1252').decode(Uint8Array.of(0x80)).charCodeAt(
 
 Messages stored that way stay as they are. Their text has characters from U+0080 to U+009F, which real text does not use, and nothing is lost: each is the byte of that number, to be read as Windows-1252. Where partners got such text, correct it with them: sending the messages again can duplicate them there.
 
+## A DICOM Listener answers once the message is safe (#410)
+
+A DICOM Listener answered success before the message was stored. In `PER_FILE` mode it now answers when the message is in the database, and a sender gets a C-STORE failure while the database is down. In `PER_ASSOCIATION` mode it keeps a list of answered files under `.galvanigraph-pending` in the storage directory until the message is stored ([DICOM](../user/connector-reference.md#dicom), D-353): include that folder in the backup of the storage directory, and let nothing clean it up. An association that was aborted now gives a message of the images it answered, where it gave none; one that stored nothing (a C-ECHO) gives none, where it gave a message with an empty list. `associationId` in the source map is now unique (`assoc-<uuid>`), where it started again at `assoc-1` with each start. Files that were left in a storage directory without a message before the upgrade are not picked up.
+
+## DICOM images pass byte for byte (#410)
+
+The DICOM Listener and Sender read and rewrote every dataset, which dropped private attributes and tags the library does not know and rewrote numbers as text (`1.50` became `1.5`). The Listener now stores the dataset as it came, and the Sender sends the stored bytes ([DICOM](../user/connector-reference.md#dicom), D-354). Images received before the upgrade stay as they were stored. An instance without a SOP Class UID or SOP Instance UID in its dataset is now refused, where it was stored under a made-up UID.
+
+An image in a transfer syntax the archive does not take is now an ERROR that names it. A compressed one never went out uncompressed (it was not sent, and read SENT); one in explicit VR big endian or in implicit VR was rewritten in the archive's, with that loss, and no longer is.
+
+## A DICOM Listener accepts every standard storage class, and its start can fail (#410)
+
+A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans and doses, segmentations, presentation states, key object selections and ECGs among others were rejected, as were JPEG Extended and JPEG Lossless. It now accepts every standard one ([DICOM](../user/connector-reference.md#dicom), D-355): check the filters of channels that relied on the rejection. A Listener whose port is in use now fails to start, where it read started and received nothing. Look for such channels after the upgrade.
+
 ## Updates keep what the request leaves out (#400)
 
-`PUT` on a channel, an alert or a setting put each field the request left out back to its default, without a word. What is left out now stays as it is (D-353). The web UI sends every field, so this concerns scripts that call the API. Check what such a script saved:
+`PUT` on a channel, an alert or a setting put each field the request left out back to its default, without a word. What is left out now stays as it is (D-356). The web UI sends every field, so this concerns scripts that call the API. Check what such a script saved:
 
 - A channel: `enabled`, `description` and `responseMode`; with `properties` in the request, all of them, such as `encryptData` (off), `messageStorageMode` (`DEVELOPMENT`) and `pruningEnabled` (off); with `scripts`, the scripts that were left out (emptied); with `destinations`, `filters` or `transformers`, what was left out of each, such as the queue settings and the `enabled` of a rule or step (on). **History** in the channel editor compares one save with another.
 - An alert: without its `actions` it told nobody, without its `channelIds` it watched every channel, and without `enabled` it was switched on. This lists the alerts without an action:

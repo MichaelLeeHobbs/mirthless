@@ -111,7 +111,7 @@ router.put('/:id',
 | GET | `/channels` | List channels (filtered by user access) | channels:read |
 | POST | `/channels` | Create channel | channels:write |
 | GET | `/channels/:id` | Get channel by ID | channels:read |
-| PUT | `/channels/:id` | Update channel (optimistic locking via revision); what the request leaves out stays as it is (D-353) | channels:write |
+| PUT | `/channels/:id` | Update channel (optimistic locking via revision); what the request leaves out stays as it is (D-356) | channels:write |
 | DELETE | `/channels/:id` | Delete channel | channels:delete |
 | PATCH | `/channels/:id/enabled` | Enable/disable | channels:write |
 | GET | `/channels/:id/status` | Get runtime status | channels:read |

@@ -57,7 +57,7 @@ describe('registry FILE roots', () => {
   it('passes the server roots to the File source and destination', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gg-registry-roots-'));
     try {
-      const env = { fileRoots: { allowed: [dir], denied: [] } };
+      const env = { fileRoots: { allowed: [dir], denied: [] }, channelId: 'ch' };
       expect((await createSourceConnector('FILE', { directory: dir, fileFilter: '*' }, env).onDeploy()).ok).toBe(true);
       expect((await createDestinationConnector('FILE', { directory: dir }, env).onDeploy()).ok).toBe(true);
       expect((await createSourceConnector('FILE', { directory: os.homedir(), fileFilter: '*' }, env).onDeploy()).ok).toBe(false);

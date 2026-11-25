@@ -208,7 +208,7 @@ export function smtpDispatcherConfig(props: Record<string, unknown>): SmtpDispat
 /** A DICOM Listener: schema-checked props, its directories limited to the server's File roots. */
 function dicomReceiver(props: Record<string, unknown>, env: ConnectorEnvironment): DicomReceiver {
   const { processBatch: _processBatch, ...config } = parseProps('DICOM', dicomSourcePropertiesSchema, props);
-  return new DicomReceiver({ ...config, roots: env.fileRoots });
+  return new DicomReceiver({ ...config, roots: env.fileRoots, channelId: env.channelId });
 }
 
 /** A DICOM Sender: schema-checked props, the files it sends limited to the server's File roots. */
@@ -268,10 +268,11 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
 export interface ConnectorEnvironment {
   /** Where File connectors may read and write (FILE_CONNECTOR_ROOTS, D-315). */
   readonly fileRoots: FileRoots;
+  readonly channelId: string;
 }
 
 /** A File connector built without the server's environment can use no path. */
-const DEFAULT_ENVIRONMENT: ConnectorEnvironment = { fileRoots: NO_FILE_ROOTS };
+const DEFAULT_ENVIRONMENT: ConnectorEnvironment = { fileRoots: NO_FILE_ROOTS, channelId: '' };
 
 export function createSourceConnector(
   connectorType: string,

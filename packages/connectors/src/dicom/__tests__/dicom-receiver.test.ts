@@ -26,6 +26,7 @@ function makeConfig(overrides?: Partial<DicomReceiverConfig>): DicomReceiverConf
     dispatchMode: 'PER_FILE',
     postAction: 'DELETE',
     moveToDirectory: '',
+    channelId: 'channel-1',
     roots: { allowed: ['/data', os.tmpdir()], denied: [] },
     ...overrides,
   };
@@ -60,16 +61,18 @@ function makeAssociationData(overrides?: Partial<DcmtkAssociationData>): DcmtkAs
     source: '192.168.1.10:4242',
     files: ['/data/dicom/assoc-1/img1.dcm', '/data/dicom/assoc-1/img2.dcm'],
     durationMs: 500,
+    released: true,
     ...overrides,
   };
 }
 
 interface MockReceiver extends DcmtkReceiver {
-  fileHandler: ((data: DcmtkFileData) => void) | null;
+  fileHandler: ((data: DcmtkFileData) => Promise<void>) | null;
   assocHandler: ((data: DcmtkAssociationData) => void) | null;
   errorHandler: ((data: { readonly error: Error }) => void) | null;
   start: Mock<DcmtkReceiver['start']>;
   stop: Mock<DcmtkReceiver['stop']>;
+  halt: Mock<DcmtkReceiver['halt']>;
 }
 
 function makeMockReceiver(): MockReceiver {
@@ -84,6 +87,7 @@ function makeMockReceiver(): MockReceiver {
     },
     start: vi.fn<DcmtkReceiver['start']>(async () => ({ ok: true as const, value: undefined as void, error: null })),
     stop: vi.fn<DcmtkReceiver['stop']>(async () => {}),
+    halt: vi.fn<DcmtkReceiver['halt']>(async () => {}),
   };
   return mock;
 }
@@ -215,7 +219,7 @@ describe('DicomReceiver PER_FILE dispatch', () => {
     await receiver.onStart();
 
     const fileData = makeFileData();
-    mock.fileHandler!(fileData);
+    await mock.fileHandler!(fileData);
 
     await vi.waitFor(() => {
       expect(dispatcher).toHaveBeenCalledTimes(1);
@@ -231,7 +235,7 @@ describe('DicomReceiver PER_FILE dispatch', () => {
     expect(raw.sourceMap['associationId']).toBe('assoc-1');
   });
 
-  it('does not dispatch when dispatcher is null', async () => {
+  it('refuses the file, so its sender keeps it, when dispatcher is null', async () => {
     const mock = makeMockReceiver();
     const receiver = new DicomReceiver(makeConfig(), makeMockFactory(mock));
     const dispatcher = makeDispatcher();
@@ -240,9 +244,21 @@ describe('DicomReceiver PER_FILE dispatch', () => {
 
     await receiver.onUndeploy();
 
-    mock.fileHandler!(makeFileData());
-    // Give time for any async operations
-    await new Promise(resolve => { setTimeout(resolve, 50); });
+    await expect(mock.fileHandler!(makeFileData())).rejects.toThrow('stopping');
+    expect(dispatcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('DicomReceiver while it stops', () => {
+  it.each(['PER_FILE', 'PER_ASSOCIATION'] as const)('refuses a file, so its sender keeps it (%s)', async (dispatchMode) => {
+    const mock = makeMockReceiver();
+    const dispatcher = makeDispatcher();
+    const receiver = new DicomReceiver(makeConfig({ dispatchMode }), makeMockFactory(mock));
+    receiver.setDispatcher(dispatcher);
+    await receiver.onStart();
+    await receiver.onStop();
+
+    await expect(mock.fileHandler!(makeFileData())).rejects.toThrow('stopping');
     expect(dispatcher).not.toHaveBeenCalled();
   });
 });
@@ -299,8 +315,8 @@ describe('DicomReceiver post-action', () => {
     const receiver = new DicomReceiver(makeConfig({ storageDir: dir, ...overrides }), makeMockFactory(mock));
     receiver.setDispatcher(dispatcher);
     await receiver.onStart();
-    mock.fileHandler!(makeFileData({ filePath }));
-    await vi.waitFor(() => { expect(dispatcher).toHaveBeenCalledTimes(1); });
+    await mock.fileHandler!(makeFileData({ filePath }));
+    expect(dispatcher).toHaveBeenCalledTimes(1);
     return receiver;
   }
 
@@ -332,9 +348,9 @@ describe('DicomReceiver post-action', () => {
     expect(await exists(filePath)).toBe(true);
   });
 
-  it('keeps the file when dispatch fails', async () => {
+  it('keeps the file when the message was recorded with an error', async () => {
     const filePath = await storedFile('a.dcm');
-    await receiveFile(filePath, { ok: false, value: null, error: stderr('Dispatch failed') });
+    await receiveFile(filePath, { ok: true, value: { messageId: 1, status: 'ERROR' }, error: null });
     await new Promise((r) => { setTimeout(r, 50); });
     expect(await exists(filePath)).toBe(true);
   });
@@ -425,7 +441,8 @@ describe('DicomReceiver lifecycle', () => {
 
     const result = await receiver.onHalt();
     expect(result.ok).toBe(true);
-    expect(mock.stop).toHaveBeenCalledTimes(1);
+    expect(mock.halt).toHaveBeenCalledTimes(1);
+    expect(mock.stop).not.toHaveBeenCalled();
   });
 
   it('undeploys and nulls out references', async () => {

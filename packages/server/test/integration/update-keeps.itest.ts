@@ -1,4 +1,4 @@
-// An update keeps what the request leaves out (#400, D-353).
+// An update keeps what the request leaves out (#400, D-356).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
