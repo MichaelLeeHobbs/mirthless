@@ -1113,10 +1113,13 @@ export class EngineManager {
     const loadSourceMap = async (channelId: string, messageId: number): Promise<Result<Record<string, unknown>>> => {
       const stored = await store.loadContent(channelId, messageId, 0, CONTENT_TYPE.SOURCE_MAP);
       if (!stored.ok) return fail(stored.error);
-      return tryCatch(() => {
+      try {
         const parsed: unknown = stored.value === null ? {} : JSON.parse(stored.value);
-        return isPlainObject(parsed) ? parsed : {};
-      });
+        return { ok: true, value: isPlainObject(parsed) ? parsed : {}, error: null };
+      } catch {
+        // Not the parser's own message, which quotes the text: a source map can hold PHI.
+        return { ok: false, value: null, error: new Error('Its stored source map is not valid JSON') } as Result<Record<string, unknown>>;
+      }
     };
 
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
@@ -1135,7 +1138,7 @@ export class EngineManager {
       if (runSignal.aborted) return INTERRUPTED;
       logger.info({ channelId, messageId }, 'Running a message again that a server stop interrupted');
       const processed = await runAgain(received.value, raw.value, sourceMap.value);
-      return processed.ok ? OK_VOID : leave(processed.error);
+      return processed.ok ? OK_VOID : { ok: false, value: null, error: processed.error } as Result<void>;
     };
 
     const redispatcher = this.redispatcherFor(recovery);

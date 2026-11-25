@@ -84,7 +84,7 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
     for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk: Buffer) => { output += chunk.toString(); });
     const ended = new Promise<Error>((resolve) => {
       child.once('error', resolve);
-      child.once('exit', (code, signal) => { resolve(new Error(`The server ended by itself (${String(code ?? signal)}): ${output}`)); });
+      child.once('close', (code, signal) => { resolve(new Error(`The server ended by itself (${String(code ?? signal)}): ${output}`)); });
     });
     let early: Error | null = null;
     try {

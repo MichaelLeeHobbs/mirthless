@@ -600,7 +600,7 @@ describe('EngineManager recovery', () => {
       ['its raw content cannot be read', (t) => (t === RAW ? FAILED : ok(null)), 'cannot decrypt'],
       ['its raw content is not stored', () => ok(null), 'not stored'],
       ['its source map cannot be read', (t) => (t === SOURCE_MAP ? FAILED : ok('payload')), 'cannot decrypt'],
-      ['its source map is damaged', (t) => ok(t === SOURCE_MAP ? '{' : 'payload'), 'JSON'],
+      ['its source map is damaged', (t) => ok(t === SOURCE_MAP ? 'DOE^JANE' : 'payload'), 'not valid JSON'],
     ])('is left as it was, and that is logged, when %s', async (_why, load, errMsg) => {
       const logger = (await import('../../lib/logger.js')).default;
       unrouted();
@@ -611,6 +611,7 @@ describe('EngineManager recovery', () => {
       expect(ms.resetToReceived).not.toHaveBeenCalled();
       expect(mockSend).not.toHaveBeenCalled();
       expect(logger.error).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, errMsg: expect.stringContaining(errMsg) }, expect.stringContaining('could not run a message again'));
+      expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('DOE');
       await engine.dispose();
     });
 

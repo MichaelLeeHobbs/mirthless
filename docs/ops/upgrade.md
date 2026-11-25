@@ -441,7 +441,7 @@ Exports and backups now hold each channel's script timeout. Before, a channel im
 
 ## Crash recovery runs an interrupted message again as the same message (#401)
 
-Before, a server that stopped again while crash recovery was running a message left a second copy of it, and the next start ran and delivered both. The upgrade stops that from happening, and it can't tell copies that are already there apart: each one is run and delivered once at the first start. If the server has been restarting over and over, disable the affected channels before the upgrade, and delete the extra RECEIVED copies in the message browser (same content, received seconds apart) before you enable and deploy them.
+Before, a server that stopped again while crash recovery was running a message left a second copy of it, and the next start ran and delivered both. The upgrade stops that from happening, and it can't tell copies that are already there apart: each one is run and delivered once at the first start. If the server has been restarting over and over, disable the affected channels before the upgrade (the API may answer only now and then, so try again), and delete the extra copies in the message browser before you enable and deploy them: they have the same content and read RECEIVED. Keep one, or none if a copy with that content already reads SENT.
 
 ## Standard upgrade (Docker)
 
