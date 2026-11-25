@@ -349,7 +349,6 @@ export class MessageProcessor {
         parseForSandbox(content, dataType, this.config.dataTypeOptions);
       } catch (parseErr) {
         const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-        // Use inline error-out since errorOut helper isn't defined yet
         await this.recordSourceError(messageId, `Invalid ${dataType}: ${parseMsg}`);
         mark('parseInbound');
         if (this.config.onError) {

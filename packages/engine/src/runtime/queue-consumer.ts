@@ -272,26 +272,26 @@ export class QueueConsumer {
     const stored = await this.saved(msg, 'the response of a delivered destination',
       this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.RESPONSE, response, 'TEXT'));
     // An earlier attempt left why it failed; a delivered message must not show it.
-    if (this.store.removeContent) {
-      const cleared = await this.saved(msg, 'the removal of why an earlier attempt failed',
-        this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR));
-      if (!cleared.ok) {
-        await this.alert(
-          `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but the reason an ` +
-          `earlier attempt failed could not be removed: ${cleared.error.message}. The message still shows it.`,
-        );
-      }
-    }
+    const cleared = this.store.removeContent
+      ? await this.saved(msg, 'the removal of why an earlier attempt failed',
+        this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR))
+      : undefined;
     const released = await this.saved(msg, STATUS_OF.SENT, this.store.release(channelId, msg.messageId, msg.metaDataId, 'SENT'));
     if (!released.ok) {
       await this.reportUnrecorded(msg, 'SENT', released.error.message);
       return;
     }
-    // Not before: it would use up the alert that says the message is sent again.
+    // Not before: they would use up the alert that says the message is sent again.
     if (!stored.ok) {
       await this.alert(
         `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but its response could not be saved: ` +
         `${stored.error.message}. A response the message shows is from an earlier attempt.`,
+      );
+    }
+    if (cleared && !cleared.ok) {
+      await this.alert(
+        `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but the reason an ` +
+        `earlier attempt failed could not be removed: ${cleared.error.message}. The message still shows it.`,
       );
     }
     await this.saved(msg, 'the count of a delivered destination', this.store.incrementStats(channelId, msg.metaDataId, serverId, 'sent'));

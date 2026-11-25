@@ -224,8 +224,8 @@ describe('QueueConsumer', () => {
         }));
       });
 
-      it('alerts only that the message is sent again when neither its answer nor its SENT status was saved, and reports both', async () => {
-        const store = refuse('storeContent');
+      it('alerts only that the message is sent again when nothing about a delivery was saved, and reports each', async () => {
+        const store: MessageStore = { ...refuse('storeContent'), removeContent: vi.fn().mockResolvedValue(fail('db down')) };
         (store.release as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
         const onError = vi.fn().mockResolvedValue(undefined);
         queue(store, 0);
@@ -233,7 +233,11 @@ describe('QueueConsumer', () => {
         consumer = new QueueConsumer(makeConfig({ onError, onStoreFailure }), store, makeSendFn());
         await consumer.poll();
 
-        expect(reported()).toEqual([failure('the response of a delivered destination'), failure('the SENT status of a delivered destination')]);
+        expect(reported()).toEqual([
+          failure('the response of a delivered destination'),
+          failure('the removal of why an earlier attempt failed'),
+          failure('the SENT status of a delivered destination'),
+        ]);
         expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errorMessage: expect.stringMatching(/could not save SENT.*PENDING/) as unknown as string }));
       });
 
