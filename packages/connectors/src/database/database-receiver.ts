@@ -52,7 +52,7 @@ function isWriteRefused(error: Error): boolean {
 /** For an alert: a database's text can quote a value of a row. */
 function withoutText(error: Error): Error {
   const { code } = error as { readonly code?: unknown };
-  return typeof code === 'string' ? new Error(`The database answered ${code}; the server log has its text`) : error;
+  return typeof code === 'string' ? new Error(`The database failed with ${code}; the server log has its text`) : error;
 }
 
 /** One start of the source. A cycle that outlives a halt keeps its own pool, not a later start's. */

@@ -28,27 +28,39 @@ interface Partner {
   readonly source: SourceConnectorRuntime;
   down(): void | Promise<void>;
   up(): void | Promise<void>;
-  /** Makes the polls that come now wait, where the partner is a fake; the result makes them fail. */
-  hold?(): () => void;
+  /** Makes the polls that come now wait, where the partner is a fake. */
+  hold?(): HeldPolls;
   /** In the text of the failure. */
   readonly reason: string;
 }
 
-/** Held polls. */
+interface HeldPolls {
+  /** How many wait. */
+  waiting(): number;
+  /** They fail, and later ones go on. */
+  fail(): void;
+}
+
 class Gate {
   private held: Promise<void> = Promise.resolve();
+  private waiting = 0;
 
-  hold(): () => void {
-    let fail: () => void = () => undefined;
-    this.held = new Promise((_resolve, reject) => { fail = (): void => { reject(new Error('a held poll failed')); }; });
+  hold(): HeldPolls {
+    let reject: (reason: Error) => void = () => undefined;
+    this.waiting = 0;
+    this.held = new Promise((_resolve, fail) => { reject = fail; });
     this.held.catch(() => undefined);
-    return () => {
-      fail();
-      this.held = Promise.resolve();
+    return {
+      waiting: () => this.waiting,
+      fail: () => {
+        reject(new Error('a held poll failed'));
+        this.held = Promise.resolve();
+      },
     };
   }
 
   passed(): Promise<void> {
+    this.waiting += 1;
     return this.held;
   }
 }
@@ -190,16 +202,6 @@ async function started(make: () => Partner | Promise<Partner>): Promise<Partner 
   return { ...partner, seen };
 }
 
-/** Once nothing has been reported for as long as two polls of any of these sources but EMAIL take. */
-async function settled(seen: readonly unknown[]): Promise<number> {
-  let last = -1;
-  while (last !== seen.length) {
-    last = seen.length;
-    await new Promise((resolve) => { setTimeout(resolve, 250); });
-  }
-  return last;
-}
-
 afterEach(async () => {
   for (const dir of folders.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
@@ -236,12 +238,12 @@ const HELD = Object.values(PARTNERS).flat().filter(([name]) => !['FILE', 'KAFKA'
 
 describe.each(HELD)('a %s source with a poll under way', (_name, make) => {
   /** Started, with a poll that waits. */
-  async function polling(): Promise<Awaited<ReturnType<typeof started>> & { readonly fail: () => void }> {
+  async function polling(): Promise<Awaited<ReturnType<typeof started>> & HeldPolls> {
     const partner = await started(make);
     await vi.waitFor(() => { expect(partner.seen.length).toBeGreaterThan(0); }, WAIT);
-    const fail = partner.hold!();
-    await settled(partner.seen);
-    return { ...partner, fail };
+    const held = partner.hold!();
+    await vi.waitFor(() => { expect(held.waiting()).toBeGreaterThan(0); }, WAIT);
+    return { ...partner, ...held };
   }
 
   it.each(['onStop', 'onHalt'] as const)('says nothing of that poll after %s', async (end) => {
@@ -251,9 +253,10 @@ describe.each(HELD)('a %s source with a poll under way', (_name, make) => {
     const ending = source[end]();
     fail();
     await ending;
-    await settled(seen);
+    // A poll that a halt does not wait for has nothing left but to report.
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
 
-    expect(seen.length).toBe(before);
+    expect(seen.slice(before).filter((failure) => failure !== null)).toEqual([]);
   });
 
   it('says nothing of it after a halt and a start', async () => {
@@ -325,6 +328,20 @@ describe('a SFTP source whose server closed the connection it kept', () => {
   });
 });
 
+describe('a DICOM source', () => {
+  it('says so when the list of an association that still needs its message cannot be read', async () => {
+    const { source, seen } = await started(async () => {
+      const partner = await dicom();
+      const lists = path.join(folders.at(-1)!, 'in', '.galvanigraph-pending', 'c1');
+      // A folder in the place of a list is found and cannot be read.
+      return { ...partner, up: async () => { await fs.mkdir(path.join(lists, 'a1.jsonl'), { recursive: true }); } };
+    });
+
+    await vi.waitFor(() => { expect(seen.some((failure) => failure?.message.includes('could not be read'))).toBe(true); }, WAIT);
+    await source.onStop();
+  });
+});
+
 describe('a DATABASE source', () => {
   it('says what the database refused by its code: its text can quote a value of a row', async () => {
     const refused = { ok: false, value: null, error: Object.assign(new Error('invalid input syntax for type date: "DOE^JANE"'), { code: '22007' }) };
@@ -341,6 +358,6 @@ describe('a DATABASE source', () => {
     await vi.waitFor(() => { expect(seen.length).toBeGreaterThan(0); }, WAIT);
     await source.onStop();
 
-    expect(seen[0]?.message).toBe('The database answered 22007; the server log has its text');
+    expect(seen[0]?.message).toBe('The database failed with 22007; the server log has its text');
   });
 });

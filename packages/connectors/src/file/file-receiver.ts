@@ -132,7 +132,9 @@ export class FileReceiver implements SourceConnectorRuntime {
   private polling = false;
   /** False once stop or halt is requested: the cycle in flight takes no more files. */
   private running = false;
+  /** When the listing under way last went on. */
   private listingSince: number | null = null;
+  private lateListingLogged = false;
   /** The poll cycle in flight, so stop can wait for the file being processed. */
   private cycle: Promise<void> | null = null;
   /**
@@ -227,6 +229,7 @@ export class FileReceiver implements SourceConnectorRuntime {
     this.polling = true;
     try {
       this.listingSince = Date.now();
+      this.lateListingLogged = false;
       const entries = await this.listMatchingFiles();
       this.listingSince = null;
       this.reportHealth(null);
@@ -258,7 +261,10 @@ export class FileReceiver implements SourceConnectorRuntime {
   /** A mount that is gone can hang the listing for ever. Another one beside it would take up one more thread. */
   private reportLateListing(): void {
     if (this.listingSince === null || Date.now() - this.listingSince < LISTING_LATE_MS) return;
-    this.reportHealth(new Error(`The directory has not been listed for ${String(LISTING_LATE_MS / 1_000)} s`));
+    const failure = new Error(`Listing the directory has not gone on for ${String(LISTING_LATE_MS / 1_000)} s`);
+    if (!this.lateListingLogged) this.logger.error({ ...errorInfo(failure), directory: this.config.directory }, 'File poll hangs; no other is begun beside it');
+    this.lateListingLogged = true;
+    this.reportHealth(failure);
   }
 
   private reportHealth(failure: Error | null): void {
@@ -272,25 +278,32 @@ export class FileReceiver implements SourceConnectorRuntime {
   private async listMatchingFiles(): Promise<readonly FileEntry[]> {
     const directory = await resolveWithinRoots(this.config.directory, this.config.roots);
     const dirEntries = await fs.readdir(directory, { withFileTypes: true });
+    this.listingSince = Date.now();
     const listed = new Set(dirEntries.map((e) => e.name));
     const results: FileEntry[] = [];
     let failure: unknown = null;
+    const unseen: string[] = [];
+    let seen = 0;
 
     for (const entry of dirEntries) {
       if (!entry.isFile() || !this.takesName(entry.name, listed)) continue;
 
       const fullPath = path.join(directory, entry.name);
-      const version = await versionOf(fullPath).catch((err: unknown) => {
-        failure = err;
-        this.logger.error({ ...errorInfo(err), file: fullPath }, 'File could not be looked at; skipping it this poll');
+      const version = await versionOf(fullPath).then((found) => { seen += 1; return found; }, (err: unknown) => {
+        failure ??= err;
+        unseen.push(fullPath);
         return null;
       });
+      this.listingSince = Date.now();
       // Gone since the listing (another reader took it): nothing to process.
       if (version === null || isTooNew(version, this.minAgeMs())) continue;
 
       results.push({ name: entry.name, fullPath, ...version });
     }
-    if (results.length === 0 && failure !== null) throw failure;
+    if (unseen.length > 0) {
+      this.logger.error({ ...errorInfo(failure), files: unseen.length, file: unseen[0] }, 'Files could not be looked at; skipping them this poll');
+      if (seen === 0) throw failure;
+    }
     return results;
   }
 
