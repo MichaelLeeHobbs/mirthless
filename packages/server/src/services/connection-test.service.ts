@@ -502,26 +502,6 @@ async function closeSftp(client: SftpClient): Promise<void> {
   }
 }
 
-/**
- * ssh2-sftp-client's end() does nothing while connect is pending, so `close`
- * also closes a session that opens after the test gives up, once it settles.
- */
-function startSftpConnect(client: SftpClient): { readonly connecting: Promise<void>; close(): Promise<void> } {
-  const connecting = client.connect();
-  let settled = false;
-  const whenSettled = connecting.then(() => { settled = true; }, () => { settled = true; });
-  return {
-    connecting,
-    async close(): Promise<void> {
-      if (settled) {
-        await closeSftp(client);
-        return;
-      }
-      void whenSettled.then(() => closeSftp(client));
-    },
-  };
-}
-
 function sftpPathResult(
   mode: string,
   kind: SftpPathKind,
@@ -545,10 +525,9 @@ const testSftp: Tester = async (mode, props) => {
   const start = performance.now();
   const target = `${options.host}:${String(options.port)}`;
   const client = sftpClientFactory(options);
-  const session = startSftpConnect(client);
   try {
     const kind = await withTimeout(
-      session.connecting.then(() => client.pathKind(remoteDirectory)),
+      client.connect().then(() => client.pathKind(remoteDirectory)),
       TEST_TIMEOUT_MS,
       'SFTP connection test',
     );
@@ -557,7 +536,7 @@ const testSftp: Tester = async (mode, props) => {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return failureResult(`SFTP connection failed: ${msg}`, performance.now() - start);
   } finally {
-    await session.close();
+    await closeSftp(client);
   }
 };
 
