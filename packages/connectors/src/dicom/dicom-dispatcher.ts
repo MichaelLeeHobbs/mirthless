@@ -7,7 +7,7 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
-import { createDimseSender } from './dcmjs-dimse-adapter.js';
+import { createDimseSender, statusText } from './dimse-sender.js';
 
 export interface DicomDispatcherConfig {
   readonly host: string;
@@ -29,6 +29,8 @@ export interface DcmtkSendResult {
   readonly files: readonly string[];
   readonly fileCount: number;
   readonly durationMs: number;
+  /** The warning statuses among the answers: stored, but changed or questioned by the remote AE. */
+  readonly warnings: readonly number[];
 }
 
 export interface DcmtkSender {
@@ -127,9 +129,11 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
         };
       }
 
+      const { fileCount, durationMs, warnings } = sendResult.value;
+      const warned = warnings.map((status) => `, warning=${statusText(status)}`).join('');
       return {
         status: 'SENT' as const,
-        content: `files=${String(sendResult.value.fileCount)}, durationMs=${String(sendResult.value.durationMs)}`,
+        content: `files=${String(fileCount)}, durationMs=${String(durationMs)}${warned}`,
       };
     });
   }
