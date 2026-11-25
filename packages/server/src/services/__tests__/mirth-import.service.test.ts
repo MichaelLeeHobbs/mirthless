@@ -1516,6 +1516,14 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     });
   });
 
+  it.each([
+    ['5C0002AB-0000-4000-8000-000000000001', '5c0002ab-0000-4000-8000-000000000001'],
+    ['${Target}', '${Target}'],
+  ])('imports a Channel Writer to %s with the target as the channel registers itself', (written, target) => {
+    const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, () => `<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>${written}</channelId></properties>`));
+    expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: target });
+  });
+
   it('leaves a Channel Writer set to "none" without a target', () => {
     const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>none</channelId></properties>'));
     expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: '' });

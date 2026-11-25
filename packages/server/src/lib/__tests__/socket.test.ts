@@ -289,16 +289,8 @@ describe('Socket.IO Auth & Room Management', () => {
     });
   });
 
-  describe('room join/leave via connection handler', () => {
-    // We test room behavior indirectly through emitToRoom by setting up a mock io.
-    // The connection handlers are registered inside initializeSocketIO, which is
-    // tightly coupled to creating a real SocketIOServer. Instead, we test the
-    // event handlers by verifying emitToRoom and emitToAll work with a mock io.
-
-    it('join:channel and leave:channel are validated (channelId must be string)', () => {
-      // authMiddleware validates input types for channel room join
-      // The socket handler ignores non-string channelIds silently
-      // This is tested via the integration below with mock io
+  describe('a token that is not text', () => {
+    it('is refused', () => {
       const socket = createMockSocket();
       const next = vi.fn();
 
