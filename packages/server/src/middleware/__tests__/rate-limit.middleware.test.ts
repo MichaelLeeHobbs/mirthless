@@ -229,11 +229,17 @@ describe('authRateLimiter (production)', () => {
       await handlerCalls(31);
       client.write(REQUEST('/login'));
       await handlerCalls(32);
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
 
       expect(sockets[0]!.listenerCount('close')).toBe(listeners);
       await new Promise((resolve) => { setImmediate(resolve); });
       expect(warnings).toEqual([]);
+      // Nothing is kept for a login that was answered, so its connection's end tells nobody.
+      const abort = vi.spyOn(AbortController.prototype, 'abort');
       client.destroy();
+      await openSockets(0);
+      expect(abort).not.toHaveBeenCalled();
+      abort.mockRestore();
     } finally {
       process.off('warning', note);
     }

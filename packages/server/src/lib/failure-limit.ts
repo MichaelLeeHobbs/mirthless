@@ -9,7 +9,7 @@ export interface FailureLimitOptions {
   readonly windowMs: number;
   readonly maxWaiting: number;
   readonly maxWaitMs: number;
-  /** An attempt not settled by then counts as failed, so none holds a place for good. */
+  /** An attempt not settled by then counts as failed unless it succeeds later, so none holds a place for good. */
   readonly maxUnderWayMs: number;
 }
 
@@ -18,7 +18,7 @@ export type Refusal =
   | { readonly admitted: false; readonly why: 'BUSY' | 'GONE' };
 
 export type Admission =
-  /** `settle` takes the outcome. Later calls do nothing. */
+  /** `settle` takes the outcome, once. */
   | { readonly admitted: true; readonly settle: (succeeded: boolean) => void }
   | Refusal;
 
@@ -27,10 +27,15 @@ interface Waiter {
   readonly answer: (admission: Admission) => void;
 }
 
+interface Window {
+  readonly endsAt: number;
+}
+
 interface Entry {
   failures: number;
   underWay: number;
-  windowEndsAt: number;
+  /** From the first failure on. */
+  window: Window | null;
   readonly waiting: Waiter[];
 }
 
@@ -42,7 +47,7 @@ export class FailureLimit {
   /** Aborting `gone` takes an attempt that waits out, and fails one that is under way. */
   async admit(key: string, gone: AbortSignal): Promise<Admission> {
     if (gone.aborted) return { admitted: false, why: 'GONE' };
-    const entry = this.entries.get(key) ?? { failures: 0, underWay: 0, windowEndsAt: 0, waiting: [] };
+    const entry = this.entries.get(key) ?? { failures: 0, underWay: 0, window: null, waiting: [] };
     if (entry.failures >= this.options.max) return this.refused(entry);
     if (this.hasPlace(entry)) {
       this.entries.set(key, entry);
@@ -57,7 +62,7 @@ export class FailureLimit {
   }
 
   private refused(entry: Entry): Refusal {
-    return { admitted: false, why: 'FAILURES', retryAfterMs: Math.max(0, entry.windowEndsAt - Date.now()) };
+    return { admitted: false, why: 'FAILURES', retryAfterMs: Math.max(0, (entry.window?.endsAt ?? 0) - Date.now()) };
   }
 
   private wait(entry: Entry, gone: AbortSignal): Promise<Admission> {
@@ -82,8 +87,8 @@ export class FailureLimit {
   private start(key: string, entry: Entry, gone: AbortSignal): Admission {
     entry.underWay += 1;
     let settled = false;
-    const settle = (succeeded: boolean): void => {
-      if (settled) return;
+    let timedOutIn: Window | null = null;
+    const end = (succeeded: boolean): void => {
       settled = true;
       clearTimeout(timer);
       gone.removeEventListener('abort', fail);
@@ -91,17 +96,33 @@ export class FailureLimit {
       if (!succeeded) this.countFailure(key, entry);
       this.advance(key, entry);
     };
-    const fail = (): void => { settle(false); };
-    const timer = setTimeout(fail, this.options.maxUnderWayMs).unref();
+    const settle = (succeeded: boolean): void => {
+      if (!settled) {
+        end(succeeded);
+        return;
+      }
+      // Past its window the entry may no longer be the key's: leave the one that is alone.
+      const takesBack = succeeded && timedOutIn !== null && entry.window === timedOutIn;
+      timedOutIn = null;
+      if (!takesBack) return;
+      entry.failures -= 1;
+      this.advance(key, entry);
+    };
+    const fail = (): void => { end(false); };
+    const timer = setTimeout(() => {
+      end(false);
+      timedOutIn = entry.window;
+    }, this.options.maxUnderWayMs).unref();
     gone.addEventListener('abort', fail);
     return { admitted: true, settle };
   }
 
   private countFailure(key: string, entry: Entry): void {
     entry.failures += 1;
-    if (entry.failures > 1) return;
-    entry.windowEndsAt = Date.now() + this.options.windowMs;
+    if (entry.window !== null) return;
+    entry.window = { endsAt: Date.now() + this.options.windowMs };
     setTimeout(() => {
+      entry.window = null;
       entry.failures = 0;
       this.advance(key, entry);
     }, this.options.windowMs).unref();
@@ -113,6 +134,6 @@ export class FailureLimit {
       const next = entry.waiting.shift();
       next?.answer(refuse ? this.refused(entry) : this.start(key, entry, next.gone));
     }
-    if (entry.failures === 0 && entry.underWay === 0) this.entries.delete(key);
+    if (entry.window === null && entry.underWay === 0) this.entries.delete(key);
   }
 }

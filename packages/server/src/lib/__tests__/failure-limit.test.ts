@@ -127,6 +127,70 @@ describe('FailureLimit', () => {
     expect((await admit()).admitted).toBe(false);
   });
 
+  it('lets one that waits in when a failure is taken back', async () => {
+    const late = await started();
+    vi.advanceTimersByTime(5_000);
+    await fail(1);
+    await started();
+    const waiting = admit();
+    late(true);
+
+    expect((await waiting).admitted).toBe(true);
+  });
+
+  it('takes back the failure of an attempt that timed out and then succeeded', async () => {
+    await fail(2);
+    const late = await started();
+    vi.advanceTimersByTime(5_000);
+    expect((await admit()).admitted).toBe(false);
+    late(true);
+    expect((await admit()).admitted).toBe(true);
+  });
+
+  it('takes back no more than that failure, and only once', async () => {
+    const late = await started();
+    vi.advanceTimersByTime(5_000);
+    late(true);
+    late(true);
+    await fail(3);
+
+    expect((await admit()).admitted).toBe(false);
+  });
+
+  it('keeps the failure of one that timed out and then failed, or then hung up', async () => {
+    const gone = new AbortController();
+    const [failed] = [await started(), await started(KEY, gone.signal)];
+    vi.advanceTimersByTime(5_000);
+    failed(false);
+    gone.abort();
+    await fail(1);
+
+    expect((await admit()).admitted).toBe(false);
+  });
+
+  it('takes no failure from a later window', async () => {
+    const late = await started();
+    vi.advanceTimersByTime(5_000 + 60_000);
+    await fail(3);
+    late(true);
+
+    expect((await admit()).admitted).toBe(false);
+  });
+
+  it('keeps the window that a failure taken back had opened', async () => {
+    const late = await started();
+    vi.advanceTimersByTime(5_000);
+    late(true);
+    vi.advanceTimersByTime(59_000);
+    await fail(3);
+    vi.advanceTimersByTime(999);
+    expect(await admit()).toEqual({ admitted: false, why: 'FAILURES', retryAfterMs: 1 });
+    vi.advanceTimersByTime(1);
+
+    expect((await admit()).admitted).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
   it('frees no place by a time that was up for an attempt already settled', async () => {
     (await started())(true);
     await started();
