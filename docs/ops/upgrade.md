@@ -590,7 +590,7 @@ An alert you create, change, enable, disable or delete used to reach a running c
 
 ## Expired collection records are no longer found (#417)
 
-A collection record's expiry was stored and shown, and nothing asked about it: a script's `find` returned an expired record like any other. From this version on it does not match, and a script's `update` of it answers `null` unless it sets `expireAt` (D-377). Nothing is deleted by the upgrade. **Look at your collections before upgrading**, because a channel may rely on records whose life was over without anyone noticing:
+A collection record's expiry was stored and shown, and nothing asked about it: a script's `find` returned an expired record like any other. From this version on it does not match, and a script's `update` of it answers `null` unless it gives the record a new life (D-377). **The data pruner's next run deletes it** (D-379): at the pruner's next scheduled time if it is on, or when someone presses Run Now. The event `DATA_PRUNER_RAN` then has how many were deleted of which collection. With the pruner off, nothing is deleted. A first run over many records stops after 5 minutes and the next one goes on; Run Now stops after 30 s of them. **Look at your collections before upgrading**, because a channel may rely on records whose life was over without anyone noticing:
 
 - A record keeps the expiry it was stored with. After a longer default TTL, or none, was set on the collection, its older records still expire when they first would have. The records page used to say "Records never expire" for such a collection.
 - A script's `update` does not renew a record's life. A record that a channel updates every day still expires when it was first to.

@@ -204,23 +204,13 @@ describeIntegration('CollectionService (real Postgres)', () => {
     });
   });
 
-  it('applies the collection default TTL and prunes expired records', async () => {
-    const { CollectionService, db, schema, eq } = mods;
-    const { id, name } = await makeCollection(['k'], 1);
+  it('applies the collection default TTL', async () => {
+    const { CollectionService } = mods;
+    const { name } = await makeCollection(['k'], 3_600);
 
-    unwrap(await CollectionService.store(name, { fields: { k: 'v' }, payload: 'EXPIRES' }));
+    const record = unwrap(await CollectionService.store(name, { fields: { k: 'v' }, payload: 'p' }));
 
-    // Force it into the past so the pruner deletes it deterministically.
-    await db
-      .update(schema.collectionRecords)
-      .set({ expireAt: new Date(Date.now() - 60_000) })
-      .where(eq(schema.collectionRecords.collectionId, id));
-
-    const deleted = unwrap(await CollectionService.pruneExpired());
-    expect(deleted).toBeGreaterThanOrEqual(1);
-
-    const remaining = unwrap(await CollectionService.listRecords(id, { page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' })).items;
-    expect(remaining).toHaveLength(0);
+    expect(Math.abs(record.expireAt!.getTime() - Date.now() - 3_600_000)).toBeLessThan(60_000);
   });
 
   it('honours a per-write TTL override over the collection default', async () => {

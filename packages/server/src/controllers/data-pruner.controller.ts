@@ -26,7 +26,7 @@ export class DataPrunerController {
     }
 
     logger.info(
-      { channelsPruned: result.value.channelsPruned, totalDeleted: result.value.totalDeleted },
+      { channelsPruned: result.value.channelsPruned, totalDeleted: result.value.totalDeleted, expiredRecordsDeleted: result.value.expiredRecordsDeleted },
       'Data pruner completed',
     );
     res.json({ success: true, data: result.value });

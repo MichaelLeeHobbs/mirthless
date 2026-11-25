@@ -8,6 +8,7 @@ import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import { deleteMessagesByIds, DELETE_BATCH_SIZE, type DeleteRules } from './message-delete-helper.js';
 import { SWEEP_BUDGET_MS, sweepLeftoverRows } from './leftover-rows.js';
+import { pruneExpiredRecords } from './expired-records.js';
 
 const DEFAULT_MAX_AGE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -25,6 +26,11 @@ export interface PruneAllResult {
   readonly leftoverRowsDeleted: number;
   /** False when some are for the next run to look at. */
   readonly leftoverRowsComplete: boolean;
+  /** Collection records past their life, deleted before a failure too. */
+  readonly expiredRecordsDeleted: number;
+  /** False when some are for the next run. */
+  readonly expiredRecordsComplete: boolean;
+  readonly expiredRecordsFailed: boolean;
 }
 
 export interface PrunableChannelStats {
@@ -146,7 +152,8 @@ export class DataPrunerService {
       const leftoverRowsDeleted = swept.ok ? swept.value.rowsDeleted : 0;
       const leftoverRowsComplete = swept.ok && swept.value.complete;
       if (!leftoverRowsComplete) logger.info('Data pruner did not get to every row that deleted messages may have left behind; the next run goes on');
-      const failed = failedChannelIds.length > 0 || !swept.ok || swept.value.failed;
+      const expired = await pruneExpiredRecords(sweepBudgetMs);
+      const failed = failedChannelIds.length > 0 || !swept.ok || swept.value.failed || expired.failed;
 
       emitEvent({
         level: failed ? 'ERROR' : 'INFO',
@@ -156,10 +163,16 @@ export class DataPrunerService {
         channelId: null,
         serverId: null,
         ipAddress: context?.ipAddress ?? null,
-        attributes: { channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete },
+        attributes: {
+          channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete,
+          expiredRecordsDeleted: expired.deleted, expiredRecordsByCollection: expired.byCollection, expiredRecordsComplete: expired.complete,
+        },
       });
 
-      return { channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete };
+      return {
+        channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete,
+        expiredRecordsDeleted: expired.deleted, expiredRecordsComplete: expired.complete, expiredRecordsFailed: expired.failed,
+      };
     });
   }
 

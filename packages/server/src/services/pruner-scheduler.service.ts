@@ -19,6 +19,7 @@ export interface PrunerScheduleStatus {
 export interface PrunerLastRunResult {
   readonly channelsPruned: number;
   readonly totalDeleted: number;
+  readonly expiredRecordsDeleted: number;
   readonly completedAt: string;
 }
 
@@ -59,15 +60,16 @@ export class PrunerSchedulerService {
             lastRunResult = {
               channelsPruned: result.value.channelsPruned,
               totalDeleted: result.value.totalDeleted,
+              expiredRecordsDeleted: result.value.expiredRecordsDeleted,
               completedAt: now,
             };
-            if (result.value.failedChannelIds.length > 0) {
-              logger.error({ result: result.value }, 'Auto data pruner completed, but some channels could not be pruned');
+            if (result.value.failedChannelIds.length > 0 || result.value.expiredRecordsFailed) {
+              logger.error({ result: result.value }, 'Auto data pruner completed, but not everything could be pruned');
             } else {
               logger.info({ result: result.value }, 'Auto data pruner completed');
             }
           } else {
-            lastRunResult = { channelsPruned: 0, totalDeleted: 0, completedAt: now };
+            lastRunResult = { channelsPruned: 0, totalDeleted: 0, expiredRecordsDeleted: 0, completedAt: now };
             logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Auto data pruner failed');
           }
         });

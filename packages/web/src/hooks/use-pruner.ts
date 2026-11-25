@@ -8,6 +8,7 @@ interface PrunerScheduleStatus {
   readonly lastRunResult: {
     readonly channelsPruned: number;
     readonly totalDeleted: number;
+    readonly expiredRecordsDeleted: number;
     readonly completedAt: string;
   } | null;
 }
@@ -20,6 +21,10 @@ interface UpdatePrunerScheduleInput {
 interface PruneAllResult {
   readonly channelsPruned: number;
   readonly totalDeleted: number;
+  readonly expiredRecordsDeleted: number;
+  /** False when some are for the next run. */
+  readonly expiredRecordsComplete: boolean;
+  readonly expiredRecordsFailed: boolean;
   /** Channels whose prune failed; the others were still pruned. */
   readonly failedChannelIds: readonly string[];
 }

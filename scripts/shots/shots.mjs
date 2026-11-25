@@ -71,6 +71,7 @@ const PAGES = {
   system: '/system',
   'system-logs': '/system/logs',
   'system-pruner': '/system/pruner',
+  'system-pruner-run': { url: '/system/pruner', click: 'Run Now' },
   // Each export and the backup ask for a reason first (D-318).
   'backup-reason': { url: '/system/backup', click: 'Download Backup' },
   'message-export-reason': { url: '/channels/c1/messages', click: ['Export', 'Export as CSV'] },

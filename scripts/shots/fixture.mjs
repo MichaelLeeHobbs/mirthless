@@ -383,7 +383,7 @@ export function route(pathname, search) {
   if (p === '/settings') return settings;
   if (p === '/system') return systemInfo;
   if (p === '/system/logs') return { entries: logs, total: logs.length };
-  if (p === '/admin/prune/schedule') return { enabled: true, cronExpression: '0 2 * * *', lastRunAt: ago(720), lastRunResult: { channelsPruned: 4, totalDeleted: 18230, completedAt: ago(715) } };
+  if (p === '/admin/prune/schedule') return { enabled: true, cronExpression: '0 2 * * *', lastRunAt: ago(720), lastRunResult: { channelsPruned: 4, totalDeleted: 18230, expiredRecordsDeleted: 412, completedAt: ago(715) } };
   if (p === '/code-templates/libraries') return libraries;
   if (p === '/code-templates') return templates;
   if (p === '/global-scripts') {
