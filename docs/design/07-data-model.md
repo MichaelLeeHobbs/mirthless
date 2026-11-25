@@ -656,7 +656,7 @@ Audit log. Every significant operation creates an event for HIPAA compliance and
 | `GLOBAL_SCRIPT_UPDATED` | INFO | Global script modified |
 | `MESSAGE_VIEWED` | INFO | PHI access — message content viewed (HIPAA audit) |
 | `MESSAGE_REPROCESSED` | INFO | Message reprocessed |
-| `MESSAGE_DELETED` | INFO | Message(s) deleted |
+| `MESSAGE_DELETED`, `MESSAGES_DELETED` | WARN, INFO (WARN with unfinished ones) | Message(s) deleted |
 | `MESSAGES_PRUNED` | INFO | Data pruner removed messages |
 | `BACKUP_CREATED` | INFO | Server backup exported |
 | `BACKUP_RESTORED` | WARN | Server backup imported |

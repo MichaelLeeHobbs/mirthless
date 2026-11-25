@@ -1,12 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@mui/material/styles';
 import type { ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
 import { BulkMessageActionsToolbar } from '../BulkMessageActionsToolbar.js';
 import { useAuthStore } from '../../../stores/auth.store.js';
+import { useNotificationStore } from '../../../stores/notification.store.js';
 import { PERMISSION } from '../../../lib/permissions.js';
+
+const apiFetch = vi.hoisted(() => vi.fn());
+vi.mock('../../../api/client.js', () => ({ api: {}, apiFetch }));
 
 function renderToolbar(node: ReactElement): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -44,6 +48,22 @@ describe('BulkMessageActionsToolbar', () => {
     expect(screen.getByText('3 selected')).toBeTruthy();
     expect(screen.getByRole('button', { name: /reprocess/i })).not.toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: /^delete$/i })).toBeTruthy();
+  });
+
+  it('names the messages that were not deleted because something still works on them', async () => {
+    setPermissions([PERMISSION.MESSAGES_DELETE]);
+    apiFetch.mockResolvedValue({ success: true, data: { deletedCount: 1, refusedIds: [2] } });
+    const onClear = vi.fn();
+    renderToolbar(<BulkMessageActionsToolbar channelId="c1" selectedIds={new Set([1, 2])} onClear={onClear} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('still waits on a queue is not sent');
+    fireEvent.click(within(dialog).getByRole('button', { name: /^delete$/i }));
+
+    await waitFor(() => { expect(onClear).toHaveBeenCalledOnce(); });
+    expect(apiFetch).toHaveBeenCalledExactlyOnceWith('/channels/c1/messages/bulk', { method: 'DELETE', body: { messageIds: [1, 2] } });
+    expect(useNotificationStore.getState().notifications).toEqual([expect.objectContaining({ severity: 'warning', message: expect.stringContaining('not deleted: #2') as string })]);
   });
 
   it('disables actions when the user lacks permissions', () => {
