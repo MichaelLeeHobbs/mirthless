@@ -1041,8 +1041,8 @@ export class EngineManager {
     return this.runtimes;
   }
 
-  /** NOT_FOUND when not deployed, CONFLICT when not STARTED or not processed; the send-message API maps them to HTTP statuses. */
-  async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
+  /** NOT_FOUND when not deployed, CONFLICT when not STARTED; the send-message API maps them to HTTP statuses. */
+  async takingMessages(channelId: string): Promise<Result<DeployedChannel>> {
     return tryCatch(async () => {
       const deployed = this.runtimes.get(channelId);
       if (!deployed) {
@@ -1052,7 +1052,16 @@ export class EngineManager {
       if (state !== 'STARTED') {
         throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to receive messages`);
       }
-      const result = await deployed.processMessage(content);
+      return deployed;
+    });
+  }
+
+  /** Refused as `takingMessages` refuses, and CONFLICT when not processed. */
+  async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
+    return tryCatch(async () => {
+      const deployed = await this.takingMessages(channelId);
+      if (!deployed.ok) throw deployed.error;
+      const result = await deployed.value.processMessage(content);
       if (!result.ok) {
         throw new ServiceError('CONFLICT', result.error.message);
       }
