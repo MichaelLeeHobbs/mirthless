@@ -16,8 +16,8 @@ import type { Writable } from 'node:stream';
 import { settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
-import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
-import { fileHeader, readableDataset, startsWithFileMeta } from './dicom-file.js';
+import type { DcmtkReceiver, DcmtkErrorData, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
+import { fileHeader, MAX_UID_LENGTH, readableDataset, startsWithFileMeta } from './dicom-file.js';
 import { makeDirectory, syncDirectory } from './durable-file.js';
 
 const { Server, Scp, Dataset, Implementation, constants, responses, log } = pkg;
@@ -108,12 +108,17 @@ interface ReceiverOptions {
 
 /** A DICOM UID (PS3.5 9.1): digits and dots, at most 64 characters. Nothing in it can leave a directory. */
 const DICOM_UID = /^[0-9]+(\.[0-9]+)*$/;
-const MAX_UID_LENGTH = 64;
 
 /** The SOP Instance UID names the file, and the sending AE supplies it, so anything but a DICOM UID is refused (#313). */
 function checkedUid(uid: string): string {
   if (uid.length <= MAX_UID_LENGTH && DICOM_UID.test(uid)) return uid;
   throw new Error('The SOP Instance UID is not a DICOM UID (digits and dots, at most 64 characters); the instance was not stored');
+}
+
+/** The answer repeats the UID, and the library, which cuts one this long itself, logs it. */
+function cutLongUid(request: CStoreRequestType): void {
+  const uid: unknown = request.getAffectedSopInstanceUid();
+  if (typeof uid === 'string' && uid.length > MAX_UID_LENGTH) request.setAffectedSopInstanceUid(uid.slice(0, MAX_UID_LENGTH));
 }
 
 /** PS3.4 B.2.3. The library's constants stop at the general statuses. */
@@ -202,13 +207,13 @@ class DimseReceiver implements DcmtkReceiver {
   private readonly associations = new Set<OpenAssociation>();
   private fileListener: ((data: DcmtkFileData) => Promise<void>) | null = null;
   private assocListener: ((data: DcmtkAssociationData) => void) | null = null;
-  private errorListener: ((data: { readonly error: Error }) => void) | null = null;
+  private errorListener: ((data: DcmtkErrorData) => void) | null = null;
 
   constructor(private readonly options: ReceiverOptions) {}
 
   onFileReceived(listener: (data: DcmtkFileData) => Promise<void>): void { this.fileListener = listener; }
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void { this.assocListener = listener; }
-  onEvent(_event: 'error', listener: (data: { readonly error: Error }) => void): void { this.errorListener = listener; }
+  onEvent(_event: 'error', listener: (data: DcmtkErrorData) => void): void { this.errorListener = listener; }
 
   /**
    * Persist a received dataset to a .dcm file and hand it to the listener. Once this resolves the
@@ -244,7 +249,7 @@ class DimseReceiver implements DcmtkReceiver {
     const storageDir = this.options.storageDir;
     const handleInstance = this.handleInstance.bind(this);
     const emitAssociation = (data: DcmtkAssociationData): void => { this.assocListener?.(data); };
-    const emitError = (error: Error): void => { this.errorListener?.({ error }); };
+    const emitError = (err: unknown, associationId: string): void => { this.errorListener?.({ error: err instanceof Error ? err : new Error(String(err)), associationId }); };
     const associations = this.associations;
     const isStopping = (): boolean => this.stopping;
 
@@ -323,7 +328,7 @@ class DimseReceiver implements DcmtkReceiver {
           dataset = new ReceivedDataset(bytesOf(stream), context.getAcceptedTransferSyntaxUid() ?? '');
         } catch (err) {
           // Answered as not understood; thrown, it would end the association.
-          emitError(err instanceof Error ? err : new Error(String(err)));
+          emitError(err, this.assocId);
         }
         callback(dataset as ReceivedDataset);
       }
@@ -335,6 +340,7 @@ class DimseReceiver implements DcmtkReceiver {
       }
 
       override cStoreRequest(request: CStoreRequestType, callback: (response: CStoreResponseType) => void): void {
+        cutLongUid(request);
         const response = CStoreResponse.fromRequest(request);
         const dataset = request.getDataset();
         // Nothing would make a message of an image sent after the release, or while the listener stops.
@@ -347,7 +353,7 @@ class DimseReceiver implements DcmtkReceiver {
         const stored = handleInstance(dataset, this.callingAe, this.calledAe, this.assocId, this.files).then(
           () => { response.setStatus(Status.Success); },
           (err: unknown) => {
-            emitError(err instanceof Error ? err : new Error(String(err)));
+            emitError(err, this.assocId);
             response.setStatus(Status.ProcessingFailure);
           },
         ).finally(() => {

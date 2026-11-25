@@ -463,6 +463,14 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 
 DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories](#file-security) do (D-326). The listener's `storageDir` and `moveToDirectory` are checked at deploy and again before every write and every move, after symlinks are resolved, so a directory later swapped for a link out of the roots is refused. The sending AE names each file through its SOP Instance UID, so an instance whose UID is not a DICOM UID (digits and dots, at most 64 characters) is refused with a C-STORE failure rather than stored. The destination checks the path in the message before it reads the file: message content comes from transformers, and without the check a script could send any DICOM file the server can read to the remote AE.
 
+A stored file's name is its image's SOP Instance UID, which leads to one patient's study, so a DICOM connector's log lines, a DICOM Sender's ERROR texts and the alerts made of them hold no path of an image (D-379). They give the directory, the message or association id, and the first 12 hex digits of the SHA-256 of the file name. The stored message has the full path. To find the file in its directory:
+
+```bash
+for f in *; do printf '%s  %s\n' "$(printf %s "$f" | sha256sum | cut -c1-12)" "$f"; done | grep 2b7b59d38673
+```
+
+What a channel's own scripts log or throw is not changed, so do not put the path or a UID in it. The images themselves, in the storage directory, are named by their UIDs.
+
 ### DICOM as a source
 
 | Property | Required | Notes |
@@ -497,6 +505,7 @@ DICOM files stay under `FILE_CONNECTOR_ROOTS`, as [File connectors' directories]
 - The attributes in the source map are read by a library that gives numbers as numbers (a Slice Thickness of `1.50` is `1.5` there) and leaves out what it does not know. The file has everything; a script that needs the exact text has to read the file.
 - An instance is refused (C-STORE status 0xC000) when its dataset does not give a SOP Class UID and SOP Instance UID, starts with file meta information, or is deflated and cannot be inflated or grows past 256 MiB. Beyond that the dataset is not checked: one that is cut short is stored and sent on as it came.
 - A port in use fails the channel's start. A stop, or a pause, lets the images whose message is being stored be answered, for up to 5 seconds, and then aborts the open associations; an image still being written is answered with a failure, and new associations are rejected as temporary congestion. A halt cuts every association off at once.
+- The Sender refuses an image whose SOP Class UID or SOP Instance UID is longer than the 64 characters DICOM allows: it could only be sent cut short, as another instance.
 - Private SOP classes (a vendor's own, such as Siemens CSA Non-Image) are rejected.
 - No limit on concurrent associations in either direction. The destination opens one association per message. `minPoolSize` and `maxPoolSize` (source) and `mode` and `maxAssociations` (destination), which earlier versions saved and never used, are dropped when a channel is validated (#154).
 

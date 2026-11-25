@@ -90,7 +90,7 @@ export interface SourceConnectorRuntime extends ConnectorLifecycle {
    * source dispatched. Called by the queue consumer, so it can come after a
    * restart, from a new instance of the source.
    */
-  onMessageDelivered?(content: string): Promise<void>;
+  onMessageDelivered?(content: string, messageId: number): Promise<void>;
 }
 
 export interface ConnectorMessage {

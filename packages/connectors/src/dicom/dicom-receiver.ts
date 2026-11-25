@@ -15,6 +15,7 @@ import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { isMissing, resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import { createDimseReceiver, DIMSE_SOURCE } from './dcmjs-dimse-adapter.js';
+import { fileHash, resolveImage, withoutPath } from './image-path.js';
 import { PendingAssociations, type PendingAssociation } from './pending-associations.js';
 
 const DICOM_POST_ACTION = {
@@ -67,11 +68,16 @@ export interface DcmtkAssociationData {
   readonly released: boolean;
 }
 
+export interface DcmtkErrorData {
+  readonly error: Error;
+  readonly associationId?: string;
+}
+
 export interface DcmtkReceiver {
   /** The sender's answer waits for the listener: stored when it resolves, failed when it rejects. The file is the listener's. */
   onFileReceived(listener: (data: DcmtkFileData) => Promise<void>): void;
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void;
-  onEvent(event: 'error', listener: (data: { readonly error: Error }) => void): void;
+  onEvent(event: 'error', listener: (data: DcmtkErrorData) => void): void;
   start(): Promise<Result<void>>;
   /** Answers what it took first, for a bounded time. */
   stop(): Promise<void>;
@@ -98,12 +104,6 @@ function filesIn(content: string): string[] {
   } catch {
     return [];
   }
-}
-
-/** What to log of a failed file operation: its message names the file, which is a SOP Instance UID. */
-function failureCode(err: unknown): string {
-  if (err instanceof Error && 'code' in err && typeof err.code === 'string') return err.code;
-  return err instanceof Error ? err.name : 'unknown';
 }
 
 /** How often a listener looks for associations whose message still has to be made. */
@@ -177,8 +177,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
 
       // Subscribe to the receiver's error event. Without a listener a dcmtk
       // emitter error would surface as an uncaughtException and kill the engine.
-      this.receiver.onEvent('error', ({ error }) => {
-        this.logger.error(errorInfo(error), 'DICOM receiver error');
+      this.receiver.onEvent('error', ({ error, associationId }) => {
+        this.logger.error({ ...this.failed(error), associationId }, 'DICOM receiver error');
       });
 
       this.stopping = false;
@@ -186,7 +186,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
       if (this.config.dispatchMode === DICOM_DISPATCH_MODE.PER_ASSOCIATION) {
         this.receiver.onAssociationComplete((data) => {
           this.handleAssociationComplete(data).catch((err: unknown) => {
-            this.logger.error({ ...errorInfo(err), associationId: data.associationId }, 'DICOM association could not be finished');
+            this.logger.error({ ...this.failed(err), associationId: data.associationId }, 'DICOM association could not be finished');
           });
         });
       }
@@ -200,6 +200,11 @@ export class DicomReceiver implements SourceConnectorRuntime {
       this.sweepTimer = setInterval(() => { void this.sweep(); }, this.sweepMs);
       this.sweepTimer.unref();
     });
+  }
+
+  /** What a log line says of a failure. */
+  private failed(err: unknown): Readonly<Record<string, unknown>> {
+    return { ...errorInfo(withoutPath(err)), directory: this.config.storageDir };
   }
 
   private endSweeps(): void {
@@ -262,7 +267,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
       return { done };
     });
     // Not awaited: the destinations can take longer than a sender waits for its answer.
-    void dispatched.done.then((result) => this.finish(result, [data.filePath], { associationId: data.associationId, callingAE: data.callingAE }));
+    const context = { associationId: data.associationId, callingAE: data.callingAE, file: fileHash(data.filePath) };
+    void dispatched.done.then((result) => this.finish(result, [data.filePath], context));
   }
 
   /** Nothing has the file if the step fails, and its sender has the image: copies of it would fill the disk during an outage. */
@@ -309,7 +315,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
     });
     if (!taken.ok) {
       this.logger.error(
-        { ...errorInfo(taken.error), associationId, fileCount: files.length },
+        { ...this.failed(taken.error), associationId, fileCount: files.length },
         'DICOM association could not be stored as a message; it is tried again',
       );
       this.pending.release(associationId);
@@ -332,7 +338,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
         if (this.stopping || !(await this.recover(id))) return;
       }
     } catch (err) {
-      this.logger.error({ code: failureCode(err) }, 'DICOM associations waiting for their message could not be listed; tried again');
+      this.logger.error(this.failed(err), 'DICOM associations waiting for their message could not be listed; tried again');
     } finally {
       this.sweeping = false;
     }
@@ -344,7 +350,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
     try {
       association = await this.pending.open(associationId);
     } catch (err) {
-      this.logger.error({ code: failureCode(err), associationId }, 'A DICOM association waiting for its message could not be read; tried again');
+      this.logger.error({ ...this.failed(err), associationId }, 'A DICOM association waiting for its message could not be read; tried again');
       return true;
     }
     if (association === null) return true;
@@ -377,13 +383,14 @@ export class DicomReceiver implements SourceConnectorRuntime {
   }
 
   /** The message is in the store, so from here the files are its own: act on them, or leave them for it. */
-  private async finish(result: Result<DispatchResult>, files: readonly string[], context: Readonly<Record<string, unknown>>): Promise<void> {
+  private async finish(result: Result<DispatchResult>, files: readonly string[], of: Readonly<Record<string, unknown>>): Promise<void> {
+    const context = result.ok ? { ...of, messageId: result.value.messageId } : of;
     const failure = dispatchFailure(result);
     if (failure !== null) {
-      this.logger.error({ ...errorInfo(failure), ...context }, 'DICOM message failed; its files are kept for reprocessing or manual recovery');
+      this.logger.error({ ...this.failed(failure), ...context }, 'DICOM message failed; its files are kept for reprocessing or manual recovery');
       return;
     }
-    if (!this.keepsInput(result, context)) await this.applyPostActions(files);
+    if (!this.keepsInput(result, context)) await this.applyPostActions(files, context);
   }
 
   /**
@@ -392,11 +399,11 @@ export class DicomReceiver implements SourceConnectorRuntime {
    * (PER_FILE) or a JSON list of them (PER_ASSOCIATION). It is read by its
    * shape, not the current mode, since the mode may have changed since.
    */
-  async onMessageDelivered(content: string): Promise<void> {
-    const failures = await this.applyPostActions(filesIn(content));
+  async onMessageDelivered(content: string, messageId: number): Promise<void> {
+    const failures = await this.applyPostActions(filesIn(content), { messageId });
     // Thrown so the queue consumer raises an alert, not only a log line.
     if (failures.length > 0) {
-      throw new Error(`DICOM post-action failed for ${String(failures.length)} file(s), left in place: ${failures.map((f) => f.message).join('; ')}`);
+      throw new Error(`DICOM post-action failed for ${String(failures.length)} file(s), left in place: ${failures.join('; ')}`);
     }
   }
 
@@ -410,7 +417,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
     if (!result.ok) return false;
     if (result.value.destinationFailed === true) {
       this.logger.error(
-        { ...context, messageId: result.value.messageId },
+        { ...context, directory: this.config.storageDir },
         'DICOM message had a destination fail; file retained for reprocessing or manual recovery',
       );
       return true;
@@ -419,9 +426,9 @@ export class DicomReceiver implements SourceConnectorRuntime {
   }
 
   /** Apply the post-action to each file; the failures, each already logged. */
-  private async applyPostActions(files: readonly string[]): Promise<Error[]> {
-    const results = await Promise.all(files.filter((f) => f !== '').map((f) => this.applyPostAction(f)));
-    return results.filter((e): e is Error => e !== null);
+  private async applyPostActions(files: readonly string[], context: Readonly<Record<string, unknown>>): Promise<string[]> {
+    const results = await Promise.all(files.filter((f) => f !== '').map((f) => this.applyPostAction(f, context)));
+    return results.filter((failure) => failure !== null);
   }
 
   /**
@@ -429,26 +436,27 @@ export class DicomReceiver implements SourceConnectorRuntime {
    * and the queue consumer can both finish a message (D-325). Anything else
    * leaves the file where it is, is logged, and is returned.
    */
-  private async applyPostAction(filePath: string): Promise<Error | null> {
-    if (this.config.postAction === DICOM_POST_ACTION.NONE) return null;
+  private async applyPostAction(filePath: string, context: Readonly<Record<string, unknown>>): Promise<string | null> {
+    const { postAction, moveToDirectory } = this.config;
+    if (postAction === DICOM_POST_ACTION.NONE) return null;
     try {
       const file = await this.storedFile(filePath);
-      if (this.config.postAction === DICOM_POST_ACTION.DELETE) {
+      if (postAction === DICOM_POST_ACTION.DELETE) {
         await fs.unlink(file);
         return null;
       }
-      const target = await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
+      const target = await resolveWithinRoots(moveToDirectory, this.config.roots);
       await fs.mkdir(target, { recursive: true });
       await fs.rename(file, path.join(target, path.basename(file)));
       return null;
     } catch (err) {
       if (isMissing(err)) return null;
-      const error = err instanceof Error ? err : new Error(String(err));
+      const file = fileHash(filePath);
       this.logger.error(
-        { ...errorInfo(error), filePath, postAction: this.config.postAction },
+        { ...this.failed(err), ...context, file, postAction, moveToDirectory },
         'DICOM post-action failed; file left in place',
       );
-      return error;
+      return `${file} (${withoutPath(err).message})`;
     }
   }
 
@@ -459,9 +467,9 @@ export class DicomReceiver implements SourceConnectorRuntime {
    */
   private async storedFile(filePath: string): Promise<string> {
     const dir = await resolveWithinRoots(this.config.storageDir, this.config.roots);
-    const file = await resolveWithinRoots(filePath, this.config.roots);
+    const file = await resolveImage(filePath, this.config.roots);
     if (path.dirname(file) !== dir) {
-      throw new Error(`"${filePath}" is not a file in the DICOM storage directory`);
+      throw new Error(`DICOM file ${fileHash(filePath)} is not a file in the DICOM storage directory`);
     }
     return file;
   }

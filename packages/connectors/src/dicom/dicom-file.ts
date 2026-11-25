@@ -17,6 +17,9 @@ const SHORT_VRS: ReadonlySet<string> = new Set([
   'AE', 'AS', 'AT', 'CS', 'DA', 'DS', 'DT', 'FD', 'FL', 'IS', 'LO', 'LT', 'PN', 'SH', 'SL', 'SS', 'ST', 'TM', 'UI', 'UL', 'US',
 ]);
 
+/** PS3.5 9.1. */
+export const MAX_UID_LENGTH = 64;
+
 export interface DicomFile {
   readonly transferSyntax: string;
   /** The dataset as its transfer syntax encodes it: what a C-STORE sends. */

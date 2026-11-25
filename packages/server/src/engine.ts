@@ -885,7 +885,7 @@ export class EngineManager {
         onReadFailure: logReadFailure,
         // A source that keeps its input until every destination delivered (DICOM).
         onMessageDelivered: source.onMessageDelivered
-          ? (_messageId, rawContent) => source.onMessageDelivered?.(rawContent) ?? Promise.resolve()
+          ? (messageId, rawContent) => source.onMessageDelivered?.(rawContent, messageId) ?? Promise.resolve()
           : undefined,
       };
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));

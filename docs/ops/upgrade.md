@@ -634,6 +634,11 @@ GROUP BY c.channel_id;
 
 This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
 
+## DICOM log lines hold no UID (#321)
+
+- A DICOM connector's log lines give `directory` and `file` (a hash of the file name) where they had `filePath`, and the message or association id ([how to find the file](../user/connector-reference.md#dicom-security), D-379). The ERROR texts of a DICOM Sender name the image the same way: `DICOM file 2b7b59d38673 cannot be read: open failed: ENOENT`, where the text quoted the path. Change log queries and the regex filters of alerts that look for the old texts. **Lines and messages written before the upgrade still hold the paths**, so keep or delete old logs accordingly.
+- A DICOM Sender refuses an image whose SOP Class UID or SOP Instance UID is longer than 64 characters (ERROR). It was sent with its UID cut short, so the archive has it under another UID than the image's own.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
