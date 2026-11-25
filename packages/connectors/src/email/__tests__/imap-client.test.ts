@@ -71,6 +71,14 @@ describe('the IMAP client\'s deletion', () => {
     expect(failure).not.toBeInstanceOf(ImapRefusal);
   });
 
+  it.each([{ usable: false }, { mailbox: false as const }, { byeReason: 'shutting down' }])('nor is it for a flag (%o)', async (state) => {
+    const { flow, messageFlagsAdd } = fakeFlow();
+    messageFlagsAdd.mockResolvedValue(false);
+    const failure: unknown = await wrapImapFlow({ ...flow, ...state }).markRead(4).catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(ImapRefusal);
+  });
+
   it.each(['deleteMessage', 'moveMessage'] as const)('%s is refused when the server does not say that UIDs last', async (action) => {
     const { flow, messageDelete, messageMove } = fakeFlow();
     await expect(wrapImapFlow({ ...flow, mailbox: {} })[action](4, 'Done')).rejects.toThrow(ImapRefusal);

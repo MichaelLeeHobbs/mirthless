@@ -530,7 +530,7 @@ A stop or a pause waits for the email in hand, marks, deletes or moves it, and t
 | `protocol` | No | `IMAP`. `POP3` refuses to deploy. |
 | `folder` | No | Folder to read, `INBOX` by default. An empty folder refuses to deploy. |
 | `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 1000 to 2147483647. Defaults to 60000. |
-| `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. `DELETE` needs a server that offers UIDPLUS, and `MOVE` one that offers MOVE or UIDPLUS, because without them a server can only remove every email in the folder that is flagged deleted, and both need UIDVALIDITY. Without it the email stays, and an error is logged at every poll until the channel is redeployed. |
+| `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. `DELETE` needs a server that offers UIDPLUS, and `MOVE` one that offers MOVE or UIDPLUS, because without them a server can only remove every email in the folder that is flagged deleted, and both need UIDVALIDITY. Without it the email stays, and an error is logged at every poll, for `DELETE` until the channel is redeployed. |
 | `moveToFolder` | No | Folder for `MOVE`. Required when `postAction` is `MOVE`. |
 | `subjectFilter` | No | Only read emails whose subject contains this text, ignoring case. |
 

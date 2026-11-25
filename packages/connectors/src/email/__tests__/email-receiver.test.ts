@@ -1222,6 +1222,30 @@ describe('EmailReceiver and what a poll lists (#413)', () => {
     expect(dispatched).toHaveLength(1);
   });
 
+  it('a mark that always fails does not keep an email from its post-action', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1 })]);
+    vi.mocked(client.mark).mockRejectedValue(new Error('Connection lost'));
+    const { dispatched } = await startWith(client);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(dispatched).toHaveLength(1);
+    expect(client.markRead).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('does not take an email for one it knew on an earlier connection when the server does not say that UIDs last', async () => {
+    const client = makeMockClient();
+    vi.mocked(client.fetchUnread)
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 1, body: 'old' })], ''))
+      .mockResolvedValue(listing([makeMessage({ uid: 1, body: 'new' })], ''));
+    vi.mocked(client.markRead).mockRejectedValueOnce(new Error('Connection lost'));
+    const { dispatched } = await startWith(client);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(dispatched).toEqual(['old', 'new']);
+  });
+
   it('says once which emails the server listed and did not answer', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread).mockResolvedValue(listing([], '1', [4, 9]));

@@ -85,8 +85,9 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private readonly recorded = new Map<string, { done: boolean }>();
   /** Emails the pipeline recorded with an error. Backs up {@link ERROR_KEYWORD} in the same way. */
   private readonly heldAfterError = new Set<string>();
-  /** Emails already reported as left in the folder: not deleted, not dispatched or not readable. */
+  /** Emails already reported as left in the folder: not deleted, or not dispatched. */
   private readonly reported = new Set<string>();
+  private readonly reportedUnreadable = new Set<string>();
   private warnedNoKeywords = false;
 
   constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory, logger?: ConnectorLogger) {
@@ -223,7 +224,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
     for (const [key, { done }] of this.recorded) {
       if (otherFolder(key) || (done && !listed.has(key))) this.recorded.delete(key);
     }
-    for (const keys of [this.heldAfterError, this.reported]) {
+    for (const keys of [this.heldAfterError, this.reported, this.reportedUnreadable]) {
       for (const key of keys) {
         if (otherFolder(key)) keys.delete(key);
       }
@@ -231,6 +232,12 @@ export class EmailReceiver implements SourceConnectorRuntime {
   }
 
   private async connect(session: Session): Promise<ImapClient> {
+    // Without UIDVALIDITY a UID means nothing on another connection.
+    for (const keys of [this.recorded, this.heldAfterError]) {
+      for (const key of keys.keys()) {
+        if (key.startsWith(keyOf('', ''))) keys.delete(key);
+      }
+    }
     const client = this.createClient(this.config);
     session.client = await connectFresh(client, IMAP_OP_TIMEOUT_MS, 'IMAP connect', () => client.disconnect());
     return session.client;
@@ -269,23 +276,25 @@ export class EmailReceiver implements SourceConnectorRuntime {
       return;
     }
     if (this.isLeft(key, email)) return;
-    if (this.recorded.has(key)) {
-      if (!email.dispatched) await this.markOnServer(client, email.uid, DISPATCHED_KEYWORD);
-    } else if (!email.dispatched && !(await this.dispatch(client, email, key))) {
-      return;
-    }
-    await this.postProcessed(client, email, key);
+    const before = email.dispatched || this.recorded.has(key);
+    if (!before && !(await this.dispatch(client, email, key))) return;
+    const done = await this.postProcessed(client, email, key);
+    // After the post-action, or a mark that always fails would keep it from being tried.
+    if (!done && before && !email.dispatched) await this.markOnServer(client, email.uid, DISPATCHED_KEYWORD);
   }
 
-  private async postProcessed(client: ImapClient, email: EmailMessage, key: string): Promise<void> {
+  /** False when the server refused it. */
+  private async postProcessed(client: ImapClient, email: EmailMessage, key: string): Promise<boolean> {
     try {
       await this.postProcess(client, email);
       const entry = this.recorded.get(key);
       if (entry) entry.done = true;
+      return true;
     } catch (err) {
       // Still in `recorded`, so the next poll retries only the post-action.
       this.logger.error({ ...errorInfo(err), uid: email.uid }, 'Email post-action failed after dispatch; will retry the post-action only');
       if (!(err instanceof ImapRefusal)) throw err;
+      return false;
     }
   }
 
@@ -297,23 +306,26 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private report(unread: UnreadEmails, listed: readonly ListedEmail[]): void {
     const keysOf = (items: readonly ListedEmail[]): string[] => items.map(({ key }) => key);
     this.reportOnce(
+      this.reportedUnreadable,
       unread.unreadable.map((uid) => keyOf(unread.uidValidity, uid)),
-      'Emails could not be read: the mail server lists them and did not answer with their content. They stay in the folder, unread',
+      'Emails could not be read: the mail server listed them and did not answer with their content. They stay in the folder, unread, or are gone from it',
     );
     this.reportOnce(
+      this.reported,
       keysOf(listed.filter(({ key, email }) => this.isLeft(key, email))),
       'Emails not deleted: their keyword says that they were dispatched before this channel was deployed, or by another channel. They stay in the folder; delete them there if their messages are recorded',
     );
     this.reportOnce(
+      this.reported,
       keysOf(listed.filter(({ key, email }) => email.held && !this.heldAfterError.has(key))),
       `Emails not read: their keyword ${ERROR_KEYWORD} says that their messages were recorded with an error, by this channel or another. They stay in the folder until it is removed`,
     );
   }
 
-  private reportOnce(keys: readonly string[], message: string): void {
-    const unreported = keys.filter((key) => !this.reported.has(key));
+  private reportOnce(reported: Set<string>, keys: readonly string[], message: string): void {
+    const unreported = keys.filter((key) => !reported.has(key));
     if (unreported.length === 0) return;
-    for (const key of unreported) this.reported.add(key);
+    for (const key of unreported) reported.add(key);
     const uids = unreported.slice(0, REPORTED_UIDS).map((key) => Number(key.slice(key.lastIndexOf(':') + 1)));
     this.logger.warn({ emails: unreported.length, uids, folder: this.config.folder }, message);
   }
