@@ -4,6 +4,7 @@ import { eq, and, ne, asc, type SQL } from 'drizzle-orm';
 import type { AssignmentInput, AssignmentView, CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
@@ -32,6 +33,22 @@ async function lockTarget(tx: DbExecutor, id: string): Promise<{ readonly enable
     throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
   }
   return row;
+}
+
+function usernameTaken(username: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Username already taken: ${username}`);
+}
+
+function emailTaken(email: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Email already in use: ${email}`);
+}
+
+/** A name another account has, as the answer the checks before a write give: two writes at once can both pass those. */
+function asTaken(err: unknown, sent: { readonly username?: string; readonly email?: string | undefined }): unknown {
+  const constraint = uniqueConstraint(err);
+  if (constraint === users.username.uniqueName && sent.username !== undefined) return usernameTaken(sent.username);
+  if (constraint === users.email.uniqueName && sent.email !== undefined) return emailTaken(sent.email);
+  return err;
 }
 
 function withRoles<T extends { readonly roleNames: readonly string[] }>(row: T): Omit<T, 'roleNames'> & { readonly role: string; readonly roles: readonly string[] } {
@@ -129,7 +146,7 @@ export class UserService {
         .where(eq(users.username, input.username));
 
       if (existingUsername) {
-        throw new ServiceError('ALREADY_EXISTS', `Username already taken: ${input.username}`);
+        throw usernameTaken(input.username);
       }
 
       const [existingEmail] = await db
@@ -138,7 +155,7 @@ export class UserService {
         .where(eq(users.email, input.email));
 
       if (existingEmail) {
-        throw new ServiceError('ALREADY_EXISTS', `Email already in use: ${input.email}`);
+        throw emailTaken(input.email);
       }
 
       const passwordHash = await hashPassword(input.password);
@@ -158,7 +175,8 @@ export class UserService {
             ...(input.firstName != null ? { firstName: input.firstName } : {}),
             ...(input.lastName != null ? { lastName: input.lastName } : {}),
           })
-          .returning({ id: users.id });
+          .returning({ id: users.id })
+          .catch((err: unknown) => { throw asTaken(err, input); });
 
         if (!row) {
           throw new ServiceError('INTERNAL', 'Failed to create user');
@@ -206,7 +224,8 @@ export class UserService {
         }
         const target = await lockTarget(tx, id);
         if (input.enabled === true && !target.enabled) await GrantService.assertCanManageToTheEnd(tx, actorId, id);
-        await tx.update(users).set(userUpdates(input)).where(eq(users.id, id));
+        await tx.update(users).set(userUpdates(input)).where(eq(users.id, id))
+          .catch((err: unknown) => { throw asTaken(err, input); });
         // Who could act is replayed from the audit log (grant.service channelAccessAsOf).
         if (input.enabled !== undefined && input.enabled !== target.enabled) {
           await GrantService.recordEnabledChange(tx, id, input.enabled, actor);

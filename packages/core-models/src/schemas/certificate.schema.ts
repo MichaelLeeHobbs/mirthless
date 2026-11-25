@@ -40,7 +40,7 @@ export type UpdateCertificateInput = z.infer<typeof updateCertificateSchema>;
 export const certificateListQuerySchema = z.object({
   type: z.enum(certificateTypeValues).optional(),
   search: z.string().optional(),
-  expiringSoon: z.coerce.boolean().optional(),
+  expiringSoon: z.stringbool().optional(),
 });
 
 export type CertificateListQuery = z.infer<typeof certificateListQuerySchema>;
