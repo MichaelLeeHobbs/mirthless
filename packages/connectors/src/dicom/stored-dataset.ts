@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import pkg from 'dcmjs-dimse';
 import { explicitToImplicit, readDicomFile, readableDataset } from './dicom-file.js';
+import { fileHash, withoutPath } from './image-path.js';
 
 const { Dataset, constants } = pkg;
 const { TransferSyntax } = constants;
@@ -15,7 +16,10 @@ export class StoredDataset extends Dataset {
   }
 
   static async ofFile(filePath: string): Promise<StoredDataset> {
-    const { dataset, transferSyntax } = readDicomFile(await fs.readFile(filePath));
+    const bytes = await fs.readFile(filePath).catch((err: unknown) => {
+      throw new Error(`DICOM file ${fileHash(filePath)} cannot be read: ${withoutPath(err, []).message}`);
+    });
+    const { dataset, transferSyntax } = readDicomFile(bytes);
     const head = new Dataset(readableDataset(dataset, transferSyntax), transferSyntax, { untilTag: '00080018', includeUntilTagValue: true });
     const { SOPClassUID, SOPInstanceUID } = head.getElements();
     if (typeof SOPClassUID !== 'string' || typeof SOPInstanceUID !== 'string' || SOPClassUID === '' || SOPInstanceUID === '') {

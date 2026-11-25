@@ -16,16 +16,14 @@ import type { Writable } from 'node:stream';
 import { settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
-import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
+import type { DcmtkReceiver, DcmtkErrorData, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
 import { fileHeader, readableDataset, startsWithFileMeta } from './dicom-file.js';
 import { makeDirectory, syncDirectory } from './durable-file.js';
+import './quiet-libraries.js';
 
-const { Server, Scp, Dataset, Implementation, constants, responses, log } = pkg;
+const { Server, Scp, Dataset, Implementation, constants, responses } = pkg;
 const { AbortReason, AbortSource, SopClass, TransferSyntax, PresentationContextResult, RejectReason, RejectResult, RejectSource, Status } = constants;
 const { CEchoResponse, CStoreResponse } = responses;
-
-// Quiets the library's per-association INFO chatter; the connector logs failures itself.
-log.setLevel('warn');
 
 type AssociationType = InstanceType<typeof pkg.association.Association>;
 type CStoreRequestType = InstanceType<typeof pkg.requests.CStoreRequest>;
@@ -97,6 +95,8 @@ interface OpenAssociation {
   /** Answer what was taken, then abort. Resolves once the connection is closed. */
   finish(): Promise<void>;
 }
+
+type Association = Pick<DcmtkFileData, 'associationId' | 'callingAE' | 'calledAE'>;
 
 interface ReceiverOptions {
   readonly port: number;
@@ -202,13 +202,13 @@ class DimseReceiver implements DcmtkReceiver {
   private readonly associations = new Set<OpenAssociation>();
   private fileListener: ((data: DcmtkFileData) => Promise<void>) | null = null;
   private assocListener: ((data: DcmtkAssociationData) => void) | null = null;
-  private errorListener: ((data: { readonly error: Error }) => void) | null = null;
+  private errorListener: ((data: DcmtkErrorData) => void) | null = null;
 
   constructor(private readonly options: ReceiverOptions) {}
 
   onFileReceived(listener: (data: DcmtkFileData) => Promise<void>): void { this.fileListener = listener; }
   onAssociationComplete(listener: (data: DcmtkAssociationData) => void): void { this.assocListener = listener; }
-  onEvent(_event: 'error', listener: (data: { readonly error: Error }) => void): void { this.errorListener = listener; }
+  onEvent(_event: 'error', listener: (data: DcmtkErrorData) => void): void { this.errorListener = listener; }
 
   /**
    * Persist a received dataset to a .dcm file and hand it to the listener. Once this resolves the
@@ -216,35 +216,47 @@ class DimseReceiver implements DcmtkReceiver {
    * against the roots before every write, so one swapped for a link out of them since deploy is
    * refused.
    */
-  private async handleInstance(dataset: ReceivedDataset, callingAe: string, calledAe: string, assocId: string, files: string[]): Promise<void> {
-    const sopInstanceUid = checkedUid(dataset.sopInstance);
-    const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
-    await makeDirectory(dir);
-    const filePath = await claimFileName(dir, sopInstanceUid);
+  private async handleInstance(dataset: ReceivedDataset, association: Association, files: string[]): Promise<void> {
+    let filePath: string | undefined;
+    try {
+      const sopInstanceUid = checkedUid(dataset.sopInstance);
+      const dir = await resolveWithinRoots(this.options.storageDir, this.options.roots);
+      await makeDirectory(dir);
+      filePath = await claimFileName(dir, sopInstanceUid);
+      await this.write(dataset, filePath);
+      await this.fileListener?.({
+        ...association,
+        filePath,
+        associationDir: this.options.storageDir,
+        source: DIMSE_SOURCE,
+        instance: { dataset: dataset.getElements() },
+      });
+      files.push(filePath);
+    } catch (err) {
+      this.report(err, association.associationId, filePath);
+      throw err;
+    }
+  }
+
+  private async write(dataset: ReceivedDataset, filePath: string): Promise<void> {
     try {
       await writeInstance(dataset, filePath);
-      await syncDirectory(dir);
+      await syncDirectory(path.dirname(filePath));
     } catch (err) {
       await fs.rm(filePath, { force: true });
       throw err;
     }
-    await this.fileListener?.({
-      filePath,
-      associationId: assocId,
-      associationDir: this.options.storageDir,
-      callingAE: callingAe,
-      calledAE: calledAe,
-      source: DIMSE_SOURCE,
-      instance: { dataset: dataset.getElements() },
-    });
-    files.push(filePath);
+  }
+
+  private report(err: unknown, associationId: string, filePath?: string): void {
+    this.errorListener?.({ error: err instanceof Error ? err : new Error(String(err)), associationId, filePath });
   }
 
   async start(): Promise<Result<void>> {
     const storageDir = this.options.storageDir;
     const handleInstance = this.handleInstance.bind(this);
     const emitAssociation = (data: DcmtkAssociationData): void => { this.assocListener?.(data); };
-    const emitError = (error: Error): void => { this.errorListener?.({ error }); };
+    const report = this.report.bind(this);
     const associations = this.associations;
     const isStopping = (): boolean => this.stopping;
 
@@ -323,7 +335,7 @@ class DimseReceiver implements DcmtkReceiver {
           dataset = new ReceivedDataset(bytesOf(stream), context.getAcceptedTransferSyntaxUid() ?? '');
         } catch (err) {
           // Answered as not understood; thrown, it would end the association.
-          emitError(err instanceof Error ? err : new Error(String(err)));
+          report(err, this.assocId);
         }
         callback(dataset as ReceivedDataset);
       }
@@ -344,12 +356,10 @@ class DimseReceiver implements DcmtkReceiver {
           return;
         }
         // The SCU waits for the response, so it learns whether the file was stored.
-        const stored = handleInstance(dataset, this.callingAe, this.calledAe, this.assocId, this.files).then(
+        const association = { associationId: this.assocId, callingAE: this.callingAe, calledAE: this.calledAe };
+        const stored = handleInstance(dataset, association, this.files).then(
           () => { response.setStatus(Status.Success); },
-          (err: unknown) => {
-            emitError(err instanceof Error ? err : new Error(String(err)));
-            response.setStatus(Status.ProcessingFailure);
-          },
+          () => { response.setStatus(Status.ProcessingFailure); },
         ).finally(() => {
           callback(response);
           this.storing.delete(stored);

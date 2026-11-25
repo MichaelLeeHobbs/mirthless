@@ -197,7 +197,7 @@ describe('DicomDispatcher.send', () => {
   it.each([
     ['outside the roots', makeConfig(), '/etc/galvanigraph/image.dcm', 'outside FILE_CONNECTOR_ROOTS'],
     ['climbing out of the roots', makeConfig(), '/data/../etc/image.dcm', 'outside FILE_CONNECTOR_ROOTS'],
-    ['relative', makeConfig(), 'image.dcm', 'must be absolute'],
+    ['relative', makeConfig(), 'image.dcm', 'not the absolute path'],
     ['anywhere when no roots are set', makeConfig({ roots: { allowed: [], denied: [] } }), '/data/image.dcm', 'FILE_CONNECTOR_ROOTS is not set'],
   ])('returns ERROR and sends nothing for a path %s', async (_case, config, content, message) => {
     const sender = makeMockSender();

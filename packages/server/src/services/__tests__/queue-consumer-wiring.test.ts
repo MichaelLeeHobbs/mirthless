@@ -289,7 +289,7 @@ describe('QueueConsumer wiring', () => {
 
       const config = MockQueueConsumerCtor.mock.calls[0]![0] as { onMessageDelivered?: (id: number, raw: string) => Promise<void> };
       await config.onMessageDelivered?.(7, '/dicom/in/1.2.dcm');
-      expect(onMessageDelivered).toHaveBeenCalledWith('/dicom/in/1.2.dcm');
+      expect(onMessageDelivered).toHaveBeenCalledWith('/dicom/in/1.2.dcm', 7);
     });
 
     it('gives the queue no delivered hook when the source has none', async () => {

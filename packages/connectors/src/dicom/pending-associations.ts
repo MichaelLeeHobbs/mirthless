@@ -12,6 +12,11 @@ import { makeDirectory, syncDirectory, syncFile } from './durable-file.js';
 const PENDING_DIR = '.galvanigraph-pending';
 const EXTENSION = '.jsonl';
 
+/** Where a listener keeps its lists. */
+export function pendingDirectory({ storageDir, channelId }: { readonly storageDir: string; readonly channelId: string }): string {
+  return path.join(storageDir, PENDING_DIR, channelId);
+}
+
 /**
  * Lists a listener in this process is receiving or dispatching, by path. Process-wide because a
  * redeployed channel's listener starts while the old one may still be dispatching.
@@ -156,7 +161,7 @@ export class PendingAssociations {
   }
 
   private async directory(): Promise<string> {
-    return resolveWithinRoots(path.join(this.options.storageDir, PENDING_DIR, this.options.channelId), this.options.roots);
+    return resolveWithinRoots(pendingDirectory(this.options), this.options.roots);
   }
 
   private async pathOf(associationId: string): Promise<string> {
