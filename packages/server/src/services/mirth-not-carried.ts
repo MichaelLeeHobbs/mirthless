@@ -2,16 +2,28 @@
 // channel where running without them would lose or change data nobody chose to.
 
 import { isPlainObject } from '@galvanigraph/core-util';
-import { scriptElements } from './mirth-steps.js';
+import { connectorType } from './mirth-connectors.js';
+import { filterOf, scriptElements } from './mirth-steps.js';
 import { getBoolean, getNestedRecord, getString, stringList, toRecordList } from './mirth-xml.js';
 
-/** Mirth's name for the channel's attachment handler, or null when it has none. */
+/** The entries of a Mirth map of strings. */
+function stringEntries(node: unknown): ReadonlyArray<readonly [string, string]> {
+  if (!isPlainObject(node)) return [];
+  return toRecordList(node['entry']).map(stringList).map(([key, value]) => [key ?? '', value ?? ''] as const);
+}
+
+/** Mirth's name for the channel's attachment handler, or null when it has none that does anything. */
 function attachmentHandler(mirthChannel: Record<string, unknown>): string | null {
   const props = getNestedRecord(getNestedRecord(mirthChannel, 'properties') ?? {}, 'attachmentProperties') ?? {};
   const className = getString(props, 'className') ?? '';
   const type = getString(props, 'type') ?? className.slice(className.lastIndexOf('.') + 1);
-  return type === '' || type === 'None' ? null : type;
+  const script = stringEntries(props['properties']).find(([key]) => key === 'javascript.script')?.[1];
+  if (type === '' || type === 'None' || (type.startsWith('JavaScript') && script !== undefined && isMirthDefaultScript(script))) return null;
+  return type;
 }
+
+/** Those that only take parts of the message out, which Mirth puts back when it sends it. */
+const EXTRACTS_ONLY = /^(?:Regex|DICOM|Entire Message|Identity|Passthru)/;
 
 export function attachmentWarnings(mirthChannel: Record<string, unknown>, channelName: string): string[] {
   const handler = attachmentHandler(mirthChannel);
@@ -24,7 +36,7 @@ export function attachmentHolds(mirthChannel: Record<string, unknown>, destinati
   const handler = attachmentHandler(mirthChannel);
   if (handler === null) return [];
   const holds: string[] = [];
-  if (handler === 'JavaScript' || handler === 'Custom') holds.push(`its ${handler} attachment handler can change the message before it is processed, and does not run here`);
+  if (!EXTRACTS_ONLY.test(handler)) holds.push(`its ${handler} attachment handler can change the message before it is processed, and does not run here`);
   for (const dest of destinations) {
     const props = getNestedRecord(getNestedRecord(dest, 'properties') ?? {}, 'destinationConnectorProperties') ?? {};
     if (!getBoolean(props, 'reattachAttachments', true)) {
@@ -43,19 +55,19 @@ const MIRTH_ACK_DEFAULTS: Readonly<Record<string, string>> = {
   rejectedACKCode: 'AR',
   rejectedACKMessage: 'Message Rejected.',
   msh15ACKAccept: 'false',
-  dateFormat: 'yyyyMMddHHmmss.SSS',
 };
 
 function hasEnabledRule(sourceConnector: Record<string, unknown>): boolean {
-  const filter = getNestedRecord(sourceConnector, 'filter');
+  const filter = filterOf(sourceConnector);
   return filter !== null && scriptElements(filter, 'rules', 'rule').some(({ node }) => getBoolean(node, 'enabled', true));
 }
 
-/** Mirth uses these settings only where it generates the answer itself. */
+/** Mirth uses these settings only where it generates the answer itself, and only a TCP listener here answers with one. */
 export function ackWarnings(sourceConnector: Record<string, unknown>, channelName: string): string[] {
   const transformer = getNestedRecord(sourceConnector, 'transformer') ?? {};
   const source = getNestedRecord(getNestedRecord(sourceConnector, 'properties') ?? {}, 'sourceConnectorProperties') ?? {};
   const respondFrom = getString(source, 'responseVariable') ?? '';
+  if (connectorType(sourceConnector) !== 'TCP_MLLP') return [];
   if (getString(transformer, 'inboundDataType') !== 'HL7V2' || !respondFrom.startsWith('Auto-generate')) return [];
   const ack = getNestedRecord(getNestedRecord(transformer, 'inboundProperties') ?? {}, 'responseGenerationProperties') ?? {};
   const changed = Object.entries(MIRTH_ACK_DEFAULTS).flatMap(([key, usual]) => {
@@ -71,8 +83,9 @@ export function ackWarnings(sourceConnector: Record<string, unknown>, channelNam
   return warnings;
 }
 
-/** A Mirth attachment is sent as its text for these types, and for any other decoded from base64. */
+/** A Mirth attachment is sent as its text for these types, and for any other decoded from base64. A type filled per message can be either. */
 function isTextAttachment(mimeType: string): boolean {
+  if (mimeType.includes('$')) return false;
   return !mimeType.includes('/') || mimeType.startsWith('text/') || mimeType.toLowerCase() === 'application/xml';
 }
 
@@ -88,7 +101,7 @@ function smtpAttachments(propsNode: Record<string, unknown>): readonly SmtpAttac
   if (!isPlainObject(list)) return [];
   return Object.values(list).flatMap(toRecordList).map((a) => {
     const mimeType = getString(a, 'mimeType') ?? '';
-    return { filename: getString(a, 'name') ?? '', mimeType: mimeType.includes('/') ? mimeType : 'text/plain', content: getString(a, 'content') ?? '' };
+    return { filename: getString(a, 'name') ?? '', mimeType: /[/$]/.test(mimeType) ? mimeType : 'text/plain', content: getString(a, 'content') ?? '' };
   });
 }
 
@@ -96,16 +109,11 @@ export function smtpTextAttachments(propsNode: Record<string, unknown>): readonl
   return smtpAttachments(propsNode).filter((a) => isTextAttachment(a.mimeType));
 }
 
-/** The first string of each entry of a Mirth string map. */
-function mapKeys(node: unknown): readonly string[] {
-  return isPlainObject(node) ? toRecordList(node['entry']).map((entry) => stringList(entry)[0] ?? '') : [];
-}
-
 /** What an email would go out without. */
 function smtpLosses(propsNode: Record<string, unknown>): readonly string[] {
   const headers = getBoolean(propsNode, 'isUseHeadersVariable', false)
     ? [`the headers in the map variable "${getString(propsNode, 'headersVariable') ?? ''}"`]
-    : mapKeys(propsNode['headers']).map((name) => `the header ${name}`);
+    : stringEntries(propsNode['headers']).map(([name]) => `the header ${name}`);
   const attachments = getBoolean(propsNode, 'isUseAttachmentsVariable', false)
     ? [`the attachments in the map variable "${getString(propsNode, 'attachmentsVariable') ?? ''}"`]
     : smtpAttachments(propsNode).filter((a) => !isTextAttachment(a.mimeType))
@@ -166,10 +174,7 @@ export function backupWarnings(serverConfiguration: Record<string, unknown>): st
 
 /** Those that do something, by name. */
 function globalScripts(serverConfiguration: Record<string, unknown>): ReadonlyArray<readonly [string, string]> {
-  const scripts = getNestedRecord(serverConfiguration, 'globalScripts') ?? {};
-  return toRecordList(scripts['entry']).map(stringList)
-    .map(([name, script]) => [name ?? '', script ?? ''] as const)
-    .filter(([, script]) => !isMirthDefaultScript(script));
+  return stringEntries(serverConfiguration['globalScripts']).filter(([, script]) => !isMirthDefaultScript(script));
 }
 
 export function backupHolds(serverConfiguration: Record<string, unknown>): string[] {

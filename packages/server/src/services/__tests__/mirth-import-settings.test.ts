@@ -24,10 +24,11 @@ interface TransformerXml {
   readonly inbound?: string;
   readonly outbound?: string;
   readonly inboundProperties?: string;
+  readonly more?: string;
 }
 
 function transformerXml(tag: string, t: TransformerXml = {}): string {
-  return `<${tag} version="4.5.0">${t.elements ? `<elements>${t.elements}</elements>` : '<elements/>'}<inboundDataType>${t.inbound ?? 'HL7V2'}</inboundDataType><outboundDataType>${t.outbound ?? 'HL7V2'}</outboundDataType>${t.inboundProperties ?? ''}</${tag}>`;
+  return `<${tag} version="4.5.0">${t.elements ? `<elements>${t.elements}</elements>` : '<elements/>'}<inboundDataType>${t.inbound ?? 'HL7V2'}</inboundDataType><outboundDataType>${t.outbound ?? 'HL7V2'}</outboundDataType>${t.inboundProperties ?? ''}${t.more ?? ''}</${tag}>`;
 }
 
 function jsStep(script: string, sequence = 0, enabled = true, name = 'Step'): string {
@@ -51,11 +52,12 @@ interface SourceXml {
   readonly responseVariable?: string;
   readonly transformer?: TransformerXml;
   readonly filter?: string;
+  readonly noFilter?: boolean;
 }
 
 function sourceXml(s: SourceXml = {}): string {
   const respond = s.responseVariable === undefined ? '' : `<sourceConnectorProperties version="4.5.0"><responseVariable>${s.responseVariable}</responseVariable></sourceConnectorProperties>`;
-  return `<sourceConnector version="4.5.0"><metaDataId>0</metaDataId><name>sourceConnector</name><properties class="${CLASS}.${s.className ?? 'vm.VmReceiverProperties'}" version="4.5.0">${respond}${s.props ?? ''}</properties>${transformerXml('transformer', s.transformer)}<filter version="4.5.0">${s.filter ?? '<elements/>'}</filter><transportName>${s.transport ?? 'Channel Reader'}</transportName><enabled>true</enabled></sourceConnector>`;
+  return `<sourceConnector version="4.5.0"><metaDataId>0</metaDataId><name>sourceConnector</name><properties class="${CLASS}.${s.className ?? 'vm.VmReceiverProperties'}" version="4.5.0">${respond}${s.props ?? ''}</properties>${transformerXml('transformer', s.transformer)}${s.noFilter ? '' : `<filter version="4.5.0">${s.filter ?? '<elements/>'}</filter>`}<transportName>${s.transport ?? 'Channel Reader'}</transportName><enabled>true</enabled></sourceConnector>`;
 }
 
 interface DestXml {
@@ -171,6 +173,25 @@ describe('response transformers', () => {
     expectHeld(result, 'the response transformer of "Out" uses responseStatus');
   });
 
+  it('holds the channel when the response transformer throws, which in Mirth makes the message an error', () => {
+    expectHeld(convert({ destinations: [{ response: { elements: jsStep("if (!msg) { throw new Error('no answer'); }") } }] }), 'the response transformer of "Out" uses throw');
+  });
+
+  it('says what else differs: when it runs, what sees its result and that its templates are gone', () => {
+    const templates = '<inboundTemplate encoding="base64">TVNI</inboundTemplate>';
+    const [warning] = warningsWith(convert({ destinations: [{ response: { elements: jsStep('a();'), more: templates } }] }), 'response transformer');
+    expect(warning).toContain('only for an answer that counts as delivered');
+    expect(warning).toContain('postprocessor');
+    expect(warning).toContain('templates');
+    expect(warningsWith(convert({ destinations: [{ response: { elements: jsStep('a();') } }] }), 'templates')).toEqual([]);
+  });
+
+  it('knows X12 by Mirth\'s name for it', () => {
+    const x12 = { inbound: 'EDI/X12', outbound: 'EDI/X12' };
+    const result = convert({ source: { transformer: x12 }, destinations: [{ transformer: x12, response: { ...x12, elements: jsStep('a();') } }] });
+    expect(warningsWith(result, 'where Mirth used')).toEqual([]);
+  });
+
   it('holds nothing for a destination disabled in Mirth, which never sends', () => {
     const result = convert({ destinations: [{ enabled: false, response: { elements: jsStep('responseStatus = ERROR;') + MAPPER } }] });
     expectNotHeld(result);
@@ -232,9 +253,15 @@ describe('a TCP connector\'s charset', () => {
 
   it('does not apply to binary data, which Mirth keeps as base64 and this connector as text', () => {
     const result = convert({ source: listener('DEFAULT_ENCODING', true), destinations: [sender('UTF-8', true)] });
-    expect(warningsWith(result, 'TCP Listener', 'binary')).toHaveLength(1);
-    expect(warningsWith(result, 'TCP Sender "Out"', 'binary')).toHaveLength(1);
+    expect(warningsWith(result, 'the TCP Listener handles binary')).toHaveLength(1);
+    expect(warningsWith(result, 'the TCP Sender "Out" handles binary')).toHaveLength(1);
     expect(warningsWith(result, 'default charset')).toEqual([]);
+  });
+
+  it('holds the channel for binary data, which text cannot hold', () => {
+    expectHeld(convert({ source: listener('UTF-8', true) }), 'its TCP Listener receives binary data');
+    expectHeld(convert({ destinations: [sender('UTF-8', true)] }), 'the TCP Sender "Out" sends binary data');
+    expectNotHeld(convert({ destinations: [{ ...sender('UTF-8', true), enabled: false }] }));
   });
 });
 
@@ -270,9 +297,24 @@ describe('an SMTP Sender', () => {
     expect(firstDest(binary).properties['attachments']).toBeUndefined();
     expectHeld(binary, 'the SMTP Sender "Mail" would lose the attachment "r.pdf" (application/pdf, which Mirth decodes from base64)');
 
+    const typed = convert(smtp(`<attachments>${attachment('r', '${mime}', '${pdf}')}</attachments>`));
+    expect(firstDest(typed).properties['attachments']).toBeUndefined();
+    expectHeld(typed, 'the attachment "r" (${mime}');
+
     expectHeld(convert(smtp('<isUseAttachmentsVariable>true</isUseAttachmentsVariable><attachmentsVariable>files</attachmentsVariable>')), 'the attachments in the map variable "files"');
     expectHeld(convert(smtp('<headers class="linked-hash-map"><entry><string>X-Encrypt</string><string>secret-value</string></entry></headers>')), 'the header X-Encrypt');
     expectHeld(convert(smtp('<isUseHeadersVariable>true</isUseHeadersVariable><headersVariable>hdrs</headersVariable>')), 'the headers in the map variable "hdrs"');
+  });
+
+  it('is held when its export names it by transport only', () => {
+    const { className: _class, ...dest } = smtp('<headers class="linked-hash-map"><entry><string>X-A</string><string>v</string></entry></headers>').destinations![0]!;
+    const xml = channelXml({ destinations: [dest] }).replace(` class="${CLASS}.js.JavaScriptDispatcherProperties"`, '');
+    expectHeld(convertRaw(xml), 'the header X-A');
+  });
+
+  it('sends an empty body where Mirth does, not the whole message', () => {
+    const xml = channelXml(smtp('')).replace('<body>x</body>', '<body></body>');
+    expect(firstDest(convertRaw(xml)).properties['bodyTemplate']).toBe('');
   });
 
   it('never quotes a header\'s value', () => {
@@ -315,6 +357,19 @@ describe('the attachment handler', () => {
     expectNotHeld(convert({ properties: handler('None', ''), destinations: [{ queue }] }));
   });
 
+  it('reads an export that has only the handler\'s class', () => {
+    const only = (className: string): string => `<attachmentProperties version="3.0.0"><className>${className}</className></attachmentProperties>`;
+    expectHeld(convert({ properties: only('com.mirth.connect.server.attachments.javascript.JavaScriptAttachmentHandlerProvider') }), 'attachment handler');
+    expectNotHeld(convert({ properties: only('com.mirth.connect.server.attachments.regex.RegexAttachmentHandlerProvider') }));
+  });
+
+  it('that is Mirth\'s do-nothing script is no handler', () => {
+    const properties = '<attachmentProperties version="4.5.0"><className>x.Provider</className><type>JavaScript</type><properties><entry><string>javascript.script</string><string>// Modify the message variable below to create attachments&#xa;return message;</string></entry></properties></attachmentProperties>';
+    const result = convert({ properties });
+    expect(result.warnings).toEqual([]);
+    expectNotHeld(result);
+  });
+
   it('says nothing when Mirth has none', () => {
     expect(convert({ properties: handler('None', '') }).warnings).toEqual([]);
   });
@@ -329,7 +384,10 @@ describe('HL7 acknowledgement settings', () => {
     return `<inboundProperties><responseGenerationProperties>${Object.entries(values).map(([k, v]) => `<${k}>${v}</${k}>`).join('')}</responseGenerationProperties></inboundProperties>`;
   };
   const withAck = (over: Readonly<Record<string, string>>, more: Partial<SourceXml> = {}): MirthConvertResult =>
-    convert({ source: { responseVariable: 'Auto-generate (After source transformer)', transformer: { inboundProperties: ackProps(over) }, ...more } });
+    convert({ source: {
+      transport: 'TCP Listener', className: 'tcp.TcpReceiverProperties', props: '<listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>6661</port></listenerConnectorProperties>',
+      responseVariable: 'Auto-generate (After source transformer)', transformer: { inboundProperties: ackProps(over) }, ...more,
+    } });
 
   it('that were changed are named with their values', () => {
     const result = withAck({ successfulACKCode: 'CA', errorACKMessage: 'Call the desk' });
@@ -353,6 +411,15 @@ describe('HL7 acknowledgement settings', () => {
     expect(warningsWith(withAck({}, { filter }), 'filtered message', 'AR', 'AA')).toHaveLength(1);
     expect(withAck({ rejectedACKCode: 'AA' }, { filter }).warnings.filter((w) => w.includes('filtered message'))).toEqual([]);
     expect(withAck({}, { filter, responseVariable: 'Auto-generate (Before processing)' }).warnings).toEqual([]);
+  });
+
+  it('reads the source filter where older exports keep it', () => {
+    const result = withAck({}, { transformer: { inboundProperties: ackProps({}), more: `<filter>${jsRule('return false;')}</filter>` }, noFilter: true });
+    expect(warningsWith(result, 'filtered message')).toHaveLength(1);
+  });
+
+  it('of a source that answers nobody are not mentioned', () => {
+    expect(withAck({ successfulACKCode: 'CA' }, { transport: 'JavaScript Reader', className: 'js.JavaScriptReceiverProperties', props: '<script>return;</script>' }).warnings).toEqual([]);
   });
 });
 
@@ -394,6 +461,59 @@ describe('code template libraries in a channel export', () => {
     vi.spyOn(CodeTemplateService, 'assertCanWriteLinks').mockResolvedValue({ ok: false, value: null, error: new Error('outside your scope') } as never);
     const result = await MirthImportService.importFromXml(channelXml({ exportData: exported(library('Globals')) }), { collisionMode: 'SKIP', dryRun: false });
     expect(result).toMatchObject({ ok: true, value: { importResult: { created: 1, errors: ['Code template libraries were not imported: outside your scope'] } } });
+  });
+
+  it('that fail part way are reported with what was written', async () => {
+    vi.spyOn(ChannelImportService, 'importChannels').mockResolvedValue({ ok: true, value: { created: 1, updated: 0, skipped: 0, errors: [] }, error: null });
+    vi.spyOn(CodeTemplateService, 'listLibraries').mockResolvedValue({ ok: true, value: [], error: null });
+    vi.spyOn(CodeTemplateService, 'assertCanWriteLinks').mockResolvedValue({ ok: true, value: undefined, error: null });
+    vi.spyOn(CodeTemplateService, 'createLibrary').mockResolvedValue({ ok: true, value: { id: 'l' }, error: null } as never);
+    vi.spyOn(CodeTemplateService, 'listTemplates').mockResolvedValue({ ok: true, value: [], error: null });
+    vi.spyOn(CodeTemplateService, 'createTemplate')
+      .mockResolvedValueOnce({ ok: true, value: { id: 't' }, error: null } as never)
+      .mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') } as never);
+    const two = channelXml({ exportData: exported(library('One') + library('Two')) });
+    const result = await MirthImportService.importFromXml(two, { collisionMode: 'SKIP', dryRun: false });
+    expect(result).toMatchObject({ ok: true, value: {
+      codeTemplates: { created: 1, updated: 0, skipped: 0 },
+      importResult: { errors: ['Code template libraries were imported only in part: db down. Import again'] },
+    } });
+  });
+
+  describe('when the library is here already', () => {
+    const stored = { id: 'l', name: 'Globals', revision: 1, channelIds: ['5c000418-0000-4000-8000-0000000000ee'] };
+    async function importOver(xml: string, collisionMode: 'SKIP' | 'OVERWRITE', channelIds: readonly string[] | null = stored.channelIds): Promise<{ readonly warnings: readonly string[]; readonly rescoped: number; readonly updated: number }> {
+      vi.spyOn(ChannelImportService, 'importChannels').mockResolvedValue({ ok: true, value: { created: 1, updated: 0, skipped: 0, errors: [] }, error: null });
+      vi.spyOn(CodeTemplateService, 'listLibraries').mockResolvedValue({ ok: true, value: [{ ...stored, channelIds }], error: null } as never);
+      vi.spyOn(CodeTemplateService, 'assertCanWriteLinks').mockResolvedValue({ ok: true, value: undefined, error: null });
+      vi.spyOn(CodeTemplateService, 'listTemplates').mockResolvedValue({ ok: true, value: [{ id: 't', name: 'f', revision: 1 }], error: null } as never);
+      const rescope = vi.spyOn(CodeTemplateService, 'updateLibrary').mockResolvedValue({ ok: true, value: {}, error: null } as never);
+      const update = vi.spyOn(CodeTemplateService, 'updateTemplate').mockResolvedValue({ ok: true, value: {}, error: null } as never);
+      const result = await MirthImportService.importFromXml(xml, { collisionMode, dryRun: false });
+      if (!result.ok) throw result.error;
+      return { warnings: result.value.convertResult.warnings, rescoped: rescope.mock.calls.length, updated: update.mock.calls.length };
+    }
+
+    it('a channel\'s export never changes it, even with OVERWRITE, and says so, and which channel it does not reach', async () => {
+      const { warnings, rescoped, updated } = await importOver(channelXml({ exportData: exported(library('Globals')) }), 'OVERWRITE');
+      expect([rescoped, updated]).toEqual([0, 0]);
+      expect(warnings.filter((w) => w.includes('library "Globals" is here already') && w.includes('left as it is'))).toHaveLength(1);
+      expect(warnings.filter((w) => w.includes('"Globals"') && w.includes('does not reach') && w.includes('"C"'))).toHaveLength(1);
+    });
+
+    it('it is not said of a library that reaches the channel', async () => {
+      const reaches = async (channelIds: readonly string[] | null): Promise<readonly string[]> =>
+        (await importOver(channelXml({ exportData: exported(library('Globals')) }), 'SKIP', channelIds)).warnings.filter((w) => w.includes('does not reach'));
+      expect(await reaches(null)).toEqual([]);
+      expect(await reaches([ID])).toEqual([]);
+    });
+
+    it('a server backup with OVERWRITE replaces it', async () => {
+      const xml = `<serverConfiguration version="4.5.0"><channels>${channelXml()}</channels>${exported(library('Globals'))}</serverConfiguration>`;
+      const { warnings, rescoped, updated } = await importOver(xml, 'OVERWRITE');
+      expect([rescoped, updated]).toEqual([1, 1]);
+      expect(warnings).toEqual([]);
+    });
   });
 });
 
@@ -454,6 +574,13 @@ describe('a Message Builder step', () => {
     expect(convert({ source: { transformer: { elements: builderStep('', 'x', '', '<replacements/>', false) } } }).warnings).toEqual([]);
   });
 
+  it('of the 3.x form, with a space in its type, is one too', () => {
+    const legacy = (script: string): ChannelXml => ({ source: { transformer: { more: `<steps><step><sequenceNumber>0</sequenceNumber><name>Old</name><enabled>true</enabled><type>Message Builder</type>${script}</step></steps>` } } });
+    const xml = (script: string): string => channelXml(legacy(script)).replace('<transformer version="4.5.0"><elements/>', '<transformer version="3.0.0">');
+    expect(steps(convertRaw(xml('<script>tmp.a = 1;</script>')))[0]).toMatchObject({ type: 'MESSAGE_BUILDER', script: 'tmp.a = 1;' });
+    expect(warningsWith(convertRaw(xml('')), 'Message Builder step "Old"', 'will not deploy')).toHaveLength(1);
+  });
+
   it('is carried in a response transformer too', () => {
     const result = convert({ destinations: [{ response: { elements: builderStep('msg.a', "'x'") } }] });
     expect(firstDest(result).responseTransformer).toContain("msg.a = validate('x', '', new Array());");
@@ -481,6 +608,10 @@ describe('a File Reader\'s file size range', () => {
     expectHeld(convert(reader('<fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum>5000</fileSizeMaximum><ignoreFileSizeMaximum>false</ignoreFileSizeMaximum>')), reason);
   });
 
+  it('whose minimum is a reference holds it too', () => {
+    expectHeld(convert(reader('<fileSizeMinimum>${min}</fileSizeMinimum>')), 'file size range');
+  });
+
   it('that takes every file holds nothing', () => {
     expectNotHeld(convert(reader('<fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum>5000</fileSizeMaximum><ignoreFileSizeMaximum>true</ignoreFileSizeMaximum>')));
     expectNotHeld(convert(reader('<fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum/><ignoreFileSizeMaximum>false</ignoreFileSizeMaximum>')));
@@ -495,14 +626,51 @@ describe('${...} references', () => {
   const tcp = (host: string, template: string, port = '6662'): ChannelXml => ({
     destinations: [{ transport: 'TCP Sender', className: 'tcp.TcpDispatcherProperties', props: `<remoteAddress>${host}</remoteAddress><remotePort>${port}</remotePort><charsetEncoding>UTF-8</charsetEncoding><template>${esc(template)}</template>` }],
   });
-  const http = (url: string, header: string): ChannelXml => ({
-    destinations: [{ transport: 'HTTP Sender', className: 'http.HttpDispatcherProperties', props: `<host>${esc(url)}</host><method>post</method><headers class="linked-hash-map"><entry><string>X-A</string><list><string>${esc(header)}</string></list></entry></headers><content>\${message.encodedData}</content>` }],
+  const http = (url: string, header: string, content = '${message.encodedData}'): ChannelXml => ({
+    destinations: [{ transport: 'HTTP Sender', className: 'http.HttpDispatcherProperties', props: `<host>${esc(url)}</host><method>post</method><headers class="linked-hash-map"><entry><string>X-A</string><list><string>${esc(header)}</string></list></entry></headers><content>${content}</content>` }],
   });
   const cannotFill = 'cannot fill';
   const atDeploy = 'configuration map at deploy';
 
   it('that a destination\'s template fills are not mentioned', () => {
-    expect(convert(tcp('partner', '${message.rawData}|${message.transformedData}|${message.encodedData}|${accession}|${originalFilename}')).warnings).toEqual([]);
+    expect(convert(tcp('partner', '${message.encodedData}|${accession}|${originalFilename}')).warnings).toEqual([]);
+  });
+
+  // Mirth's raw data of a destination is what the source transformer made, GalvaniGraph's what came in.
+  it('to the raw data are the encoded message when the destination changes nothing, and hold the channel when it does', () => {
+    const same = convert(tcp('partner', 'R:${message.rawData}'));
+    expect(firstDest(same).properties['template']).toBe('R:${message.encodedData}');
+    expect(same.warnings).toEqual([]);
+
+    const dest = tcp('partner', 'R:${message.rawData}').destinations![0]!;
+    const reason = 'the template of "Out" uses ${message.rawData}';
+    expectHeld(convert({ destinations: [{ ...dest, transformer: { elements: jsStep('msg.x = 1;') } }] }), reason);
+    expectHeld(convert({ destinations: [{ ...dest, transformer: { outbound: 'JSON' } }] }), reason);
+    expectNotHeld(convert({ destinations: [{ ...dest, transformer: { elements: jsStep('off();', 0, false) } }] }));
+    expectNotHeld(convert({ destinations: [{ ...dest, enabled: false, transformer: { elements: jsStep('msg.x = 1;') } }] }));
+  });
+
+  it('to the transformed data hold the channel: Mirth sends its internal form', () => {
+    expectHeld(convert(tcp('partner', '${message.transformedData}')), 'the template of "Out" uses ${message.transformedData}');
+    expectHeld(convert(http('http://api', 'x', '${message.transformedData}')), '${message.transformedData}');
+  });
+
+  it('without braces, and Velocity directives, are named', () => {
+    const [warning] = warningsWith(convert(tcp('partner', "$accession $!{q} $date.get('y') #if($x)a#end $5 ${ok}")), cannotFill);
+    for (const text of ['$accession', '$date', '$x', '#if', '#end']) expect(warning).toContain(text);
+    expect(warning).not.toContain('$5');
+    expect(warning).not.toContain('${ok}');
+  });
+
+  it('in the name of a header are named', () => {
+    expect(warningsWith(convert({ destinations: [{ ...http('http://api', 'x').destinations![0]!, props: http('http://api', 'x').destinations![0]!.props!.replace('X-A', '${name}') }] }), cannotFill, '${name} (headers)')).toHaveLength(1);
+  });
+
+  it('are found in time that grows with the text, not with its square', () => {
+    const text = '${'.repeat(200_000) + 'validate('.repeat(20_000);
+    const started = performance.now();
+    convert({ destinations: [{ props: `<script>${text}</script>` }, { ...tcp('partner', text).destinations![0]!, id: 2, name: 'Two' }] });
+    expect(performance.now() - started).toBeLessThan(5_000);
   });
 
   it('to the message id become the name GalvaniGraph fills', () => {
@@ -574,8 +742,17 @@ describe('the retry count', () => {
 
   it('that Mirth applies before it queues is named', () => {
     expect(warningsWith(convert(queue(true, true, 3)), '"Out"', '3 times', 'before it queues')).toHaveLength(1);
-    expect(convert(queue(true, false, 3)).warnings).toEqual([]);
-    expect(convert(queue(true, true, 0)).warnings).toEqual([]);
+    expect(warningsWith(convert(queue(true, false, 3)), 'before it queues')).toEqual([]);
+    expect(warningsWith(convert(queue(true, true, 0)), 'before it queues')).toEqual([]);
+  });
+
+  it('is joined by a warning where the queue retries what Mirth\'s gives up: a NACK and a script that fails', () => {
+    const tcpSender = { ...queue(true, false, 0).destinations![0]!, transport: 'TCP Sender', className: 'tcp.TcpDispatcherProperties', props: '<remoteAddress>p</remoteAddress><remotePort>1</remotePort><charsetEncoding>UTF-8</charsetEncoding>' };
+    expect(warningsWith(convert({ destinations: [tcpSender] }), '"Out"', 'negative acknowledgement', 'sends it again', 'behind it')).toHaveLength(1);
+    expect(warningsWith(convert(queue(true, false, 0)), '"Out"', 'script', 'runs it again')).toHaveLength(1);
+    expect(convert(queue(false, false, 0)).warnings).toEqual([]);
+    const http = { ...tcpSender, transport: 'HTTP Sender', className: 'http.HttpDispatcherProperties', props: '<host>http://api</host>' };
+    expect(convert({ destinations: [http] }).warnings).toEqual([]);
   });
 
   it('of a destination with no queue is named, since nothing here retries it', () => {
@@ -590,7 +767,7 @@ describe('importing copies (RENAME)', () => {
   const OTHER = '5c000418-0000-4000-8000-000000000002';
   const ELSEWHERE = '5c000418-0000-4000-8000-00000000000f';
   const writer = (id: number, target: string): DestXml => ({ id, name: `W${String(id)}`, transport: 'Channel Writer', className: 'vm.VmDispatcherProperties', props: `<channelId>${target}</channelId><channelTemplate>\${message.encodedData}</channelTemplate>` });
-  const file = `<list>${channelXml({ name: 'A', destinations: [writer(1, OTHER.toUpperCase()), writer(2, ELSEWHERE)] })}${channelXml({ id: OTHER, name: 'B', destinations: [{ props: `<script>routeMessage(&apos;${ID}&apos;, msg);</script>` }] })}</list>`;
+  const file = `<list>${channelXml({ name: 'A', destinations: [writer(1, OTHER.toUpperCase()), writer(2, ELSEWHERE)] })}${channelXml({ id: OTHER, name: 'B', destinations: [{ props: '<script>routeMessage(&apos;A&apos;, rawData);</script>' }] })}</list>`;
 
   async function imported(copies: ReadonlyMap<string, string>): Promise<{ entries: readonly ChannelExportEntry[]; warnings: readonly string[] }> {
     vi.spyOn(ChannelImportService, 'copyIds').mockResolvedValue(copies);
@@ -606,7 +783,7 @@ describe('importing copies (RENAME)', () => {
     const { entries, warnings } = await imported(new Map([[ID, copyA], [OTHER, copyB]]));
     expect(entries.map((e) => e.id)).toEqual([copyA, copyB]);
     expect(entries[0]?.destinations.map((d) => d.properties['targetChannelId'])).toEqual([copyB, ELSEWHERE]);
-    expect(warnings.filter((w) => w.includes('Channel "B"') && w.includes(ID) && w.includes(copyA))).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes('Channel "B"') && w.includes('"A"') && w.includes('by its name'))).toHaveLength(1);
   });
 
   it('changes nothing when no channel of the file exists here', async () => {

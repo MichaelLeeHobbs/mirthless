@@ -35,9 +35,31 @@ export function scriptElements(container: Record<string, unknown>, legacyKey: 's
   return list.map((node) => ({ className: null, node }));
 }
 
+/** Mirth 3.x/4.x: <filter> is a sibling of <transformer>. Older exports nest it. */
+export function filterOf(connector: Record<string, unknown>): Record<string, unknown> | null {
+  return getNestedRecord(connector, 'filter') ?? getNestedRecord(getNestedRecord(connector, 'transformer') ?? {}, 'filter');
+}
+
+/** GalvaniGraph's name for a Mirth data type: Mirth calls X12 "EDI/X12". */
+export function mirthDataType(name: string | null): string | null {
+  return name === 'EDI/X12' ? 'X12' : name;
+}
+
+function dataTypes(transformer: Record<string, unknown>): readonly [string, string] {
+  const type = (key: string): string => mirthDataType(getString(transformer, key)) ?? 'HL7V2';
+  return [type('inboundDataType'), type('outboundDataType')];
+}
+
+/** Whether a destination's own transformer can make another message of the one it gets. */
+export function transforms(destination: Record<string, unknown>): boolean {
+  const transformer = getNestedRecord(destination, 'transformer') ?? {};
+  const [inbound, outbound] = dataTypes(transformer);
+  return inbound !== outbound || transformerSteps(transformer).some((s) => s.enabled);
+}
+
 function mapTransformerStepType(type: string | null): string {
   if (!type) return 'JAVASCRIPT';
-  const upper = type.toUpperCase();
+  const upper = type.toUpperCase().replace(/\s+/g, '_');
   if (upper.includes('JAVASCRIPT') || upper === 'STEP_BUILDER') return 'JAVASCRIPT';
   if (upper.includes('MAPPER') || upper === 'MAPPER') return 'MAPPER';
   if (upper.includes('MESSAGE_BUILDER') || upper === 'MESSAGEBUILDERSTEP') return 'MESSAGE_BUILDER';
@@ -98,9 +120,13 @@ export interface ResponseTransformer {
   readonly disabledSteps: readonly string[];
   /** Mirth's data types for the answer, in and out. */
   readonly dataTypes: readonly string[];
+  readonly hasTemplates: boolean;
 }
 
-const NO_RESPONSE_TRANSFORMER: ResponseTransformer = { script: null, holds: [], disabledSteps: [], dataTypes: [] };
+const NO_RESPONSE_TRANSFORMER: ResponseTransformer = { script: null, holds: [], disabledSteps: [], dataTypes: [], hasTemplates: false };
+
+/** What a Mirth response transformer makes an answer an error, or a delivery, with. */
+const DECIDES_DELIVERY = ['responseStatus', 'throw'] as const;
 
 /** A destination has one response transformer script and no steps, so Mirth's enabled steps become one script. */
 export function responseTransformer(destination: Record<string, unknown>): ResponseTransformer {
@@ -117,16 +143,15 @@ export function responseTransformer(destination: Record<string, unknown>): Respo
     // In its place, so that it fails on every answer instead of being skipped (D-207).
     return { ...step, type: 'JAVASCRIPT', script: `throw new Error(${JSON.stringify(`Not imported from Mirth: ${what}. Rewrite it here.`)});` };
   });
+  const decides = DECIDES_DELIVERY.filter((word) => enabled.some((step) => new RegExp(`\\b${word}\\b`).test(step.script ?? '')));
+  if (decides.length > 0) holds.push(`${of} uses ${decides.join(' and ')}, which decides in Mirth whether the message was delivered and cannot here`);
   const compiled = compileTransformerStepsToScript(parts);
-  const script = compiled.ok ? compiled.value : null;
-  if (script !== null && /\bresponseStatus\b/.test(script)) {
-    holds.push(`${of} uses responseStatus, which decides in Mirth whether the message was delivered and does not exist here`);
-  }
   return {
-    script,
+    script: compiled.ok ? compiled.value : null,
     holds,
     disabledSteps: steps.filter((s) => !s.enabled).map((s) => s.name ?? ''),
-    dataTypes: [getString(node, 'inboundDataType') ?? 'HL7V2', getString(node, 'outboundDataType') ?? 'HL7V2'],
+    dataTypes: dataTypes(node),
+    hasTemplates: ['inboundTemplate', 'outboundTemplate'].some((key) => (getString(node, key) ?? getString(node[key], '#text') ?? '') !== ''),
   };
 }
 
@@ -141,12 +166,17 @@ export interface ResponseTransformerContext {
 export function responseTransformerWarnings(transformer: ResponseTransformer, context: ResponseTransformerContext): string[] {
   if (transformer.script === null) return [];
   const prefix = `Channel "${context.channelName}": destination "${context.destination}"'s response transformer`;
-  const differences = ['it cannot change whether the message counts as delivered'];
+  const differences = [
+    'it runs only for an answer that counts as delivered',
+    'it cannot change whether the message counts as delivered',
+    'the postprocessor and later destinations get the answer as it came',
+  ];
   if (context.queued) differences.push('it does not run for a message the queue delivers');
   const other = [...new Set(transformer.dataTypes)].filter((type) => type !== context.dataType);
   if (other.length > 0) differences.push(`it gets the answer as the channel's ${context.dataType}, where Mirth used ${other.join(' and ')}`);
+  if (transformer.hasTemplates) differences.push('its message templates are not carried');
   return [
-    `${prefix} is carried as one script; here ${differences.join(', and ')}`,
+    `${prefix} is carried as one script; here ${differences.join(', ')}`,
     ...transformer.disabledSteps.map((name) => `${prefix} has the disabled step "${name}", which is left out`),
   ];
 }

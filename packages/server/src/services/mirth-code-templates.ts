@@ -4,7 +4,8 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { CODE_TEMPLATE_CONTEXTS } from '@galvanigraph/core-models';
-import { isPlainObject } from '@galvanigraph/core-util';
+import { errorInfo, isPlainObject } from '@galvanigraph/core-util';
+import logger from '../lib/logger.js';
 import { mirthOnlyTemplateWarning } from './mirth-only-constructs.js';
 import { getString, stringList, toRecordList } from './mirth-xml.js';
 import { CodeTemplateService, type TemplateDetail } from './code-template.service.js';
@@ -107,11 +108,17 @@ export function extractCodeTemplateLibraries(
   });
 }
 
+/** `failed`: why the rest was not imported, when some of it was. */
+export interface CodeTemplateImport extends CodeTemplateImportCounts {
+  readonly failed?: string;
+}
+
+/** An error means that nothing was written. */
 export async function importCodeTemplateLibraries(
   libraries: readonly MirthCodeTemplateLibrary[],
   overwrite: boolean,
   context?: AuditContext,
-): Promise<Result<CodeTemplateImportCounts>> {
+): Promise<Result<CodeTemplateImport>> {
   return tryCatch(async () => {
     const counts = { created: 0, updated: 0, skipped: 0 };
     if (libraries.length === 0) return counts;
@@ -126,18 +133,39 @@ export async function importCodeTemplateLibraries(
     });
     const allowed = await CodeTemplateService.assertCanWriteLinks(touched, context);
     if (!allowed.ok) throw allowed.error;
-    for (const lib of libraries) {
-      const found = existingLibraries.value.find((l) => l.name === lib.name);
-      if (found && overwrite) await rescopeLibrary(found.id, found.revision, lib.channelIds, context);
-      const libraryId = found?.id ?? await createLibrary(lib, context);
-      const existing = await CodeTemplateService.listTemplates(libraryId);
-      if (!existing.ok) throw existing.error;
-      for (const template of lib.templates) {
-        const outcome = await importTemplate(libraryId, template, existing.value, overwrite, context);
-        counts[outcome]++;
+    try {
+      for (const lib of libraries) {
+        const found = existingLibraries.value.find((l) => l.name === lib.name);
+        if (found && overwrite) await rescopeLibrary(found.id, found.revision, lib.channelIds, context);
+        const libraryId = found?.id ?? await createLibrary(lib, context);
+        const existing = await CodeTemplateService.listTemplates(libraryId);
+        if (!existing.ok) throw existing.error;
+        for (const template of lib.templates) {
+          const outcome = await importTemplate(libraryId, template, existing.value, overwrite, context);
+          counts[outcome]++;
+        }
       }
+    } catch (err) {
+      const info = errorInfo(err);
+      logger.error(info, 'Code template libraries of a Mirth import were imported only in part');
+      return { ...counts, failed: String(info.errMsg) };
     }
     return counts;
+  });
+}
+
+/** What an import that leaves the libraries here as they are does not do for the file's channels. */
+export function keptLibraryNotes(
+  libraries: readonly MirthCodeTemplateLibrary[],
+  existing: ReadonlyArray<{ readonly name: string; readonly channelIds: readonly string[] | null }>,
+  channels: ReadonlyArray<{ readonly id: string; readonly name: string }>,
+): string[] {
+  return libraries.flatMap((lib) => {
+    const scope = existing.find((l) => l.name === lib.name)?.channelIds;
+    if (!scope) return [];
+    const missed = channels.filter((c) => (lib.channelIds?.includes(c.id) ?? true) && !scope.includes(c.id));
+    return missed.length === 0 ? []
+      : [`Code template library "${lib.name}" is here already and does not reach ${missed.map((c) => `"${c.name}"`).join(', ')}; add them to its channels`];
   });
 }
 

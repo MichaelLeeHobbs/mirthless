@@ -22,7 +22,11 @@ const MIRTH_BUILT_INS: ReadonlySet<string> = new Set([
 /** Filled by their own rule, which the deploy checks, or code, where `${...}` is a template literal. */
 const CHECKED_ELSEWHERE: ReadonlySet<string> = new Set(['script', 'outputPattern', 'fileNameTemplate']);
 
-const REFERENCE = /\$(!?)\{([^}]*)\}/g;
+// Neither brace inside, so a text of many `${` is read once, not once for each.
+const REFERENCE = /\$(!?)\{([^{}]*)\}/g;
+/** The texts Mirth's template engine also reads `$name` and `#if(...)` in. Not SQL, nor settings that can hold a password. */
+const TEMPLATE_TEXTS: ReadonlySet<string> = new Set(['template', 'subject', 'bodyTemplate', 'attachments']);
+const BARE_OR_DIRECTIVE = /\$!?[A-Za-z_]\w*|#(?:if|elseif|else|end|set|foreach|parse|include|macro|stop|break)\b/g;
 /** A name a script can have put in a map, and the only form a SQL parameter has. */
 const VARIABLE = /^[A-Za-z_]\w*$/;
 
@@ -38,9 +42,13 @@ function inner(value: unknown): readonly unknown[] {
   return Array.isArray(value) || isPlainObject(value) ? Object.values(value) : [value];
 }
 
+/** Connector settings are text, or lists and maps of it, at most two levels deep. */
+function texts(value: unknown): readonly string[] {
+  return inner(value).flatMap(inner).filter((text) => typeof text === 'string');
+}
+
 function references(value: unknown): readonly Reference[] {
-  // Connector settings are text, or lists and maps of it, at most two levels deep.
-  return inner(value).flatMap(inner).filter((text) => typeof text === 'string').flatMap((text) =>
+  return texts(value).flatMap((text) =>
     Array.from(text.matchAll(REFERENCE), (m) => ({ text: m[0], name: (m[2] ?? '').trim(), quiet: m[1] === '!' })));
 }
 
@@ -70,6 +78,18 @@ function isFixedSql(connector: ImportedConnector, key: string): boolean {
   return connector.type === 'DATABASE' && key === 'selectQuery';
 }
 
+export function referenceNames(text: string): readonly string[] {
+  return references(text).filter((r) => !r.quiet).map((r) => r.name);
+}
+
+/** References in no form GalvaniGraph reads: Velocity's own, and any in the name of a header or parameter. */
+function neverFilled(connector: ImportedConnector, key: string, value: unknown): readonly string[] {
+  const velocity = connector.direction === 'destination' && TEMPLATE_TEXTS.has(key)
+    ? texts(value).flatMap((text) => Array.from(text.matchAll(BARE_OR_DIRECTIVE), (m) => m[0])) : [];
+  const names = isPlainObject(value) ? references(Object.keys(value)).map((r) => r.text) : [];
+  return [...velocity, ...names];
+}
+
 function named(found: ReadonlyMap<string, ReadonlySet<string>>): string {
   return [...found].map(([text, keys]) => `${text} (${[...keys].join(', ')})`).join(', ');
 }
@@ -85,6 +105,7 @@ export function referenceWarnings(connector: ImportedConnector, channelName: str
   const atDeploy = new Map<string, Set<string>>();
   for (const [key, value] of Object.entries(connector.properties)) {
     if (CHECKED_ELSEWHERE.has(key)) continue;
+    for (const text of neverFilled(connector, key, value)) add(unfilled, text, key);
     const builtIns = perMessageValues(connector, key);
     for (const reference of references(value)) {
       if (builtIns === null && !isFixedSql(connector, key) && !reference.quiet) add(atDeploy, reference.text, key);
@@ -94,7 +115,7 @@ export function referenceWarnings(connector: ImportedConnector, channelName: str
   const prefix = `Channel "${channelName}": the ${connector.label} uses`;
   const warnings: string[] = [];
   if (unfilled.size > 0) {
-    warnings.push(`${prefix} ${named(unfilled)}, which GalvaniGraph cannot fill and would send as written; set a map variable in a script and use its name`);
+    warnings.push(`${prefix} ${named(unfilled)}, which GalvaniGraph cannot fill and would send as written; set a map variable in a script and write it \${name}`);
   }
   if (atDeploy.size > 0) {
     warnings.push(`${prefix} ${named(atDeploy)}, which GalvaniGraph fills only from the configuration map at deploy, never from a message or script; add the entries first`);
@@ -104,7 +125,7 @@ export function referenceWarnings(connector: ImportedConnector, channelName: str
 
 /** A text with Mirth's names for some values changed to GalvaniGraph's. Any other `${...}` stays as written. */
 export function renameReferences(text: string, names: Readonly<Record<string, string>>): string {
-  return text.replace(/\$\{([^}]*)\}/g, (whole, raw: string) => {
+  return text.replace(/\$\{([^{}]*)\}/g, (whole, raw: string) => {
     const name = raw.trim();
     return Object.hasOwn(names, name) ? '${' + String(names[name]) + '}' : whole;
   });

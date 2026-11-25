@@ -12,7 +12,8 @@ const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bconnectorMessage\.get\w+\s*\(/, 'connectorMessage.getRawData(): use rawData'],
   [/\b(?:ResponseFactory|DateUtil|FileUtil|SerializerFactory|ACKGenerator|ChannelUtil|AttachmentUtil|stringUtils|router)\./, 'Mirth user API objects: use the GalvaniGraph scripting API'],
   [/\b(?:return|String\()\s*message\b/, MESSAGE_VARIABLE],
-  [/\bvalidate\s*\([^;]*\bnew\s+Array\s*\(/, "Mirth's validate(value, default, replacements): use value || default, and String.replace for each replacement"],
+  // Bounded, so that a script of many calls is not read to its end from each.
+  [/\bvalidate\s*\([^;]{0,1000}?\bnew\s+Array\s*\(/, "Mirth's validate(value, default, replacements): use value || default, and String.replace for each replacement"],
   [/\bresponseStatus(?:Message)?\b|\bresponseErrorMessage\b/, "Mirth's responseStatus: a response transformer here cannot change whether the message counts as delivered"],
 ];
 
