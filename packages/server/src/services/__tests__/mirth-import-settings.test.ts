@@ -719,6 +719,12 @@ describe('${...} references', () => {
     expect(select).not.toContain('${id}');
   });
 
+  it('in the template of an SFTP File Writer are carried with it', () => {
+    const sftp = convert({ destinations: [{ transport: 'File Writer', className: 'file.FileDispatcherProperties', props: '<scheme>SFTP</scheme><host>sftp.example.com/in</host><outputPattern>a.txt</outputPattern><template>H|${accession}</template>' }] });
+    expect(firstDest(sftp)).toMatchObject({ connectorType: 'SFTP', properties: { template: 'H|${accession}' } });
+    expect(validateConnectorProperties('SFTP', 'destination', { ...firstDest(sftp).properties, username: 'u', password: 'p', strictHostKey: false })).toMatchObject({ ok: true });
+  });
+
   it('in a script are code, and in a file name are reported once, by the file name check', () => {
     expect(convert({ destinations: [{ props: '<script>var t = `${x.y}`;</script>' }] }).warnings).toEqual([]);
     const file = convert({ destinations: [{ transport: 'File Writer', className: 'file.FileDispatcherProperties', props: '<scheme>FILE</scheme><host>/out</host><outputPattern>${UUID}.txt</outputPattern>' }] });
