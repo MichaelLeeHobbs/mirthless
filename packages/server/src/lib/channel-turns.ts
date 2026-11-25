@@ -7,11 +7,6 @@ const queues = new Map<string, Promise<unknown>>();
  * startup redeploy cannot bring back a version someone replaced meanwhile, and a channel that is
  * being deployed is not deleted.
  */
-/** Whether something is under way on the channel, or waits for its turn. */
-export function turnUnderWay(channelId: string): boolean {
-  return queues.has(channelId);
-}
-
 export async function inTurn<T>(channelId: string, fn: () => Promise<T>): Promise<T> {
   const previous = queues.get(channelId) ?? Promise.resolve();
   const run = previous.then(fn, fn);
@@ -22,4 +17,9 @@ export async function inTurn<T>(channelId: string, fn: () => Promise<T>): Promis
   } finally {
     if (queues.get(channelId) === tail) queues.delete(channelId);
   }
+}
+
+/** Whether something is under way on the channel, or waits for its turn. */
+export function turnUnderWay(channelId: string): boolean {
+  return queues.has(channelId);
 }

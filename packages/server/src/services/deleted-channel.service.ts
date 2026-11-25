@@ -41,6 +41,7 @@ interface CountRow extends Record<string, unknown> {
 }
 
 // A row an earlier delete left behind is of no message, so it is not an undelivered one.
+// purge_deleted_channel (migration 0029) counts them the same way for its record.
 function counts(channelId: SQL): SQL {
   return sql`
     SELECT count(*) AS messages, min(received_at) AS first, max(received_at) AS last, (
@@ -76,15 +77,15 @@ async function countsOf(channelId: string): Promise<Counted | undefined> {
   return (await db.execute<Counted>(sql`SELECT (${holdsAnything(id)}) AS holds, n.* FROM (${counts(id)}) n`)).rows[0];
 }
 
-/** A lock the purge could not have, or a deadlock with a statement that took the tables in another order. */
-const GAVE_WAY: readonly unknown[] = [PG_ERROR.LOCK_NOT_AVAILABLE, PG_ERROR.DEADLOCK_DETECTED];
-
-async function emptyTables(tx: AuditTransaction, channelId: string): Promise<void> {
+/** Counted by the function once it holds the channel's partitions, so the numbers are of what it removed. */
+async function emptyTables(tx: AuditTransaction, channelId: string): Promise<MessageNumbers> {
   try {
-    await tx.execute(sql`SELECT public.purge_deleted_channel(${channelId}::uuid)`);
+    const { rows } = await tx.execute<{ purged_messages: string; purged_undelivered: string }>(
+      sql`SELECT purged_messages, purged_undelivered FROM public.purge_deleted_channel(${channelId}::uuid)`);
+    return { messages: Number(rows[0]?.purged_messages ?? 0), undelivered: Number(rows[0]?.purged_undelivered ?? 0) };
   } catch (err) {
-    if (!GAVE_WAY.includes(pgCode(err))) throw err;
-    throw new ServiceError('CONFLICT', 'The messages are being read, or a backup is under way. Nothing was removed. Try again later.');
+    if (pgCode(err) !== PG_ERROR.LOCK_NOT_AVAILABLE) throw err;
+    throw new ServiceError('CONFLICT', 'The messages are being read, vacuumed or backed up. Nothing was removed. Try again later.');
   }
 }
 
@@ -92,9 +93,7 @@ async function removeAll(tx: AuditTransaction, channelId: string, reason: string
   const [channel] = await tx.select({ name: channels.name, deletedAt: channels.deletedAt }).from(channels).where(eq(channels.id, channelId)).for('update');
   if (!channel) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
   if (channel.deletedAt === null) throw new ServiceError('CONFLICT', 'The channel is not deleted, so its messages are not removed');
-  const counted = (await tx.execute<CountRow>(counts(sql`${channelId}::uuid`))).rows[0];
-  const numbers = { messages: Number(counted?.messages ?? 0), undelivered: Number(counted?.undelivered ?? 0) };
-  await emptyTables(tx, channelId);
+  const numbers = await emptyTables(tx, channelId);
   try {
     await AuditService.recordInTx(tx, {
       action: AUDIT_ACTION.MESSAGES_PURGED, outcome: 'SUCCESS', channelId,

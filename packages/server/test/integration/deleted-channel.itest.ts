@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { inTurn } from '../../src/lib/channel-turns.js';
 import { migratedFrom } from './_migration-db.js';
 import {
-  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, unwrap, userWithRole, WAIT,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, unwrap, userWithRole,
   type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -269,7 +269,9 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
 
         const started = Date.now();
         const refused = await purge(id);
-        expect(Date.now() - started).toBeLessThan(WAIT.timeout);
+        // It tries for 5 seconds, and the last wait can end a second after that.
+        expect(Date.now() - started).toBeGreaterThan(4_500);
+        expect(Date.now() - started).toBeLessThan(9_000);
         expect([refused.status, refused.json.error?.code]).toEqual([409, 'CONFLICT']);
         expect(refused.json.error?.message).toContain('Nothing was removed');
         expect(await rowsOf(id)).toEqual([1, 2, 1, 1, 1]);
@@ -303,6 +305,38 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
       } finally {
         await reader.query('ROLLBACK').catch(() => undefined);
         reader.release();
+      }
+    });
+
+    // Postgres cancels an autovacuum only for a lock that has waited behind it for deadlock_timeout.
+    it('waits for a partition held until someone waits for it, as an autovacuum holds one, and holds nothing else meanwhile', async () => {
+      const id = await channel();
+      await message(id);
+      await del(id);
+      const suffix = `_p_${id.replaceAll('-', '_')}`;
+      const waiting = async (): Promise<number> => (await mods.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_locks WHERE relation = $1::regclass AND mode = 'AccessExclusiveLock' AND NOT granted`, [`connector_messages${suffix}`])).rows[0]!.n;
+      const holder = await mods.pool.connect();
+      try {
+        await holder.query('BEGIN');
+        await holder.query(`LOCK TABLE connector_messages${suffix} IN SHARE UPDATE EXCLUSIVE MODE`);
+        const purging = purge(id);
+        await expect.poll(waiting).toBe(1);
+
+        const { rows } = await mods.pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_class c ON c.oid = l.relation WHERE c.relname LIKE '%' || $1 AND l.mode = 'AccessExclusiveLock' AND l.granted`, [suffix]);
+        expect(rows[0]!.n).toBe(0);
+        // Creating a channel locks the parent tables; a purge that held them would hold it up, and every insert behind it.
+        const started = Date.now();
+        await channel();
+        expect(Date.now() - started).toBeLessThan(1_000);
+        await holder.query('COMMIT');
+
+        expect((await purging).status).toBe(200);
+        expect(await rowsOf(id)).toEqual([0, 0, 0, 0, 0]);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        holder.release();
       }
     });
 
