@@ -2,16 +2,17 @@ import { tryCatch, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import type { DcmtkSender, DcmtkSendResult } from './dicom-dispatcher.js';
 
-const { Client, constants, requests, log } = pkg;
+const { Client, constants, requests, responses, log } = pkg;
 const { Status } = constants;
 const { CStoreRequest } = requests;
+const { CStoreResponse } = responses;
 
 // Quiets the library's per-association INFO chatter; the connector reports failures itself.
 log.setLevel('warn');
 
 type AssociationType = InstanceType<typeof pkg.association.Association>;
 type CStoreRequestType = InstanceType<typeof pkg.requests.CStoreRequest>;
-type CStoreResponseType = InstanceType<typeof pkg.responses.CStoreResponse>;
+type ResponseType = InstanceType<typeof pkg.responses.Response>;
 
 interface SenderOptions {
   readonly host: string;
@@ -66,8 +67,19 @@ class StoreAnswers {
 
   constructor(private readonly stores: readonly CStoreRequestType[]) {
     for (const store of stores) {
-      store.on('response', (response: CStoreResponseType) => { this.answers.set(store, response.getStatus()); });
+      store.on('response', (response: ResponseType) => { this.record(store, response); });
     }
+  }
+
+  /** The first final answer stands: a second one, or another service's, is a broken peer and changes nothing. */
+  private record(store: CStoreRequestType, response: ResponseType): void {
+    const status = response.getStatus();
+    if (!(response instanceof CStoreResponse) || status === Status.Pending || this.answers.has(store)) return;
+    this.answers.set(store, status);
+  }
+
+  has(store: CStoreRequestType): boolean {
+    return this.answers.has(store);
   }
 
   /** Why the files are not delivered, or null when the remote AE said it stored every one. */
@@ -104,6 +116,12 @@ class DimseSender implements DcmtkSender {
         if (failure !== null) reject(failure);
         else resolve({ files, fileCount: files.length, durationMs: Date.now() - startedAt, warnings: answers.warnings() });
       };
+      for (const store of stores) {
+        // How the library reports a request it could not encode, after which it ends normally.
+        store.on('done', () => {
+          if (!answers.has(store)) cause = new Error('The image could not be converted to the transfer syntax the remote AE accepted; it was not sent');
+        });
+      }
       client.on('associationAccepted', (association: AssociationType) => {
         // The library leaves out a request with no accepted context, and still ends normally.
         const left = stores.find((store) => association.getAcceptedPresentationContextFromRequest(store) === undefined);

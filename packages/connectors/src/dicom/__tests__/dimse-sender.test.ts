@@ -3,8 +3,11 @@
 // archive that answers as told.
 
 import { describe, it, expect, afterEach } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import pkg from 'dcmjs-dimse';
 import type { Result } from '@galvanigraph/core-util';
 import type { ConnectorResponse } from '../../base.js';
 import { createDimseSender } from '../dimse-sender.js';
@@ -12,6 +15,8 @@ import { DicomDispatcher, type DcmtkSendResult } from '../dicom-dispatcher.js';
 import { startFakeScp, type FakeScp, type ScpBehaviour } from '../../__fixtures__/fake-scp.js';
 import { freePort } from '../../__fixtures__/free-port.js';
 
+const { Dataset, constants } = pkg;
+const { StorageClass, TransferSyntax } = constants;
 const SAMPLE_DCM = fileURLToPath(new URL('../../__tests__/e2e/fixtures/sample.dcm', import.meta.url));
 
 interface SendOptions {
@@ -95,6 +100,17 @@ describe('a C-STORE the remote AE stored', () => {
     expect(scp?.stores()).toBe(1);
   });
 
+  it('is sent when the release is never answered', async () => {
+    const result = await sendTo({ answerThenHang: 0x0000 }, { timeoutMs: 2_000, maxRetries: 2 });
+
+    expect(outcomeOf(result)).toBe('sent');
+    expect(scp?.stores()).toBe(1);
+  });
+
+  it('is sent when a pending status comes before the answer', async () => {
+    expect(outcomeOf(await sendTo({ answers: [0xFF00, 0x0000] }))).toBe('sent');
+  });
+
   it('shows a warning status in the destination response', async () => {
     const response = await dispatchTo({ answer: 0xB000 });
 
@@ -115,9 +131,9 @@ describe('a C-STORE the remote AE did not store', () => {
     ['0xC000', 0xC000, 'cannot understand'],
     ['0xCFFF', 0xCFFF, 'cannot understand'],
     // Not C-STORE answers: cancel, and the general warnings PS3.7 Annex C keeps for the N- services.
-    ['0xFE00', 0xFE00, 'not stored'],
-    ['0x0001', 0x0001, 'not stored'],
-    ['0x0107', 0x0107, 'not stored'],
+    ['0xFE00', 0xFE00, 'unknown reason'],
+    ['0x0001', 0x0001, 'unknown reason'],
+    ['0x0107', 0x0107, 'unknown reason'],
   ])('fails when the answer is %s', async (text, status, reason) => {
     const result = await sendTo({ answer: status });
 
@@ -152,7 +168,7 @@ describe('a C-STORE the remote AE did not store', () => {
   });
 
   it('fails when no answer comes in time', async () => {
-    const result = await sendTo('never-answer', { timeoutMs: 1_500 });
+    const result = await sendTo('never-answer', { timeoutMs: 3_000 });
 
     expect(scp?.stores()).toBe(1);
     expect(result.ok).toBe(false);
@@ -163,7 +179,29 @@ describe('a C-STORE the remote AE did not store', () => {
   });
 
   it('fails when the file is not DICOM', async () => {
-    expect((await sendFile(fileURLToPath(import.meta.url), await freePort())).ok).toBe(false);
+    scp = await startFakeScp({ answer: 0x0000 });
+
+    expect((await sendFile(fileURLToPath(import.meta.url), scp.port)).ok).toBe(false);
+    expect(scp.stores()).toBe(0);
+  });
+
+  // The remote AE takes the SOP class, not this transfer syntax, and nothing here decompresses.
+  it('fails, saying so, when the image cannot be converted to what the remote AE accepts', async () => {
+    const compressed = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'dimse-sender-')), 'compressed.dcm');
+    const frame = new Uint8Array([0xff, 0x4f, 0xff, 0xd9]).buffer;
+    new Dataset({ SOPClassUID: StorageClass.MrImageStorage, SOPInstanceUID: '1.2.3', PixelData: [frame] }, TransferSyntax.Jpeg2000Lossless)
+      .toFile(compressed);
+    scp = await startFakeScp('uncompressed-only');
+
+    const result = await sendFile(compressed, scp.port);
+    await fs.rm(path.dirname(compressed), { recursive: true, force: true });
+
+    expect(scp.stores()).toBe(0);
+    expect(outcomeOf(result)).toContain('could not be converted');
+  });
+
+  it('stays a failure when a success follows the refusal', async () => {
+    expect(outcomeOf(await sendTo({ answers: [0xA700, 0x0000] }))).toContain('0xA700');
   });
 
   it('is retried as often as configured', async () => {
