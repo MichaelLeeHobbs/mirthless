@@ -91,7 +91,7 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 - Give the server more than 30 seconds to stop: it uses up to 30 to let the messages under
   way end, and is killed in the middle of them if the container's grace period is shorter. The
   production compose file sets `stop_grace_period: 45s`; a Docker run of your own needs
-  `docker stop -t 45` (the default is 10), and Kubernetes
+  `--stop-timeout 45` (the default is 10), and Kubernetes
   `terminationGracePeriodSeconds: 45` (the default is 30).
 - Capacity: [Soak test](soak-test.md) baseline (memory, latency, database growth at 100 msg/s).
 - Backups: [Backup & restore](backup-restore.md).

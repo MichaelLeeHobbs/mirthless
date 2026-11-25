@@ -424,7 +424,7 @@ describe('DeploymentService', () => {
       expect(result.error).toMatchObject({ code: 'CONFLICT', message: 'The channel is halted, but: Source halt failed: port still open' });
       expect(mockEmitEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
         name: 'CHANNEL_STOPPED', level: 'ERROR', outcome: 'FAILURE', channelId: CHANNEL_ID,
-        attributes: { method: 'halt', reason: 'Source halt failed: port still open' },
+        attributes: { method: 'halt', error: 'Source halt failed: port still open' },
       }));
     });
 

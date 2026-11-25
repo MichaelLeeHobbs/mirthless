@@ -33,8 +33,9 @@ describe('serverRestoreInputSchema', () => {
     expect(parseTemplate(template).data?.backup.codeTemplates).toEqual([template]);
   });
 
-  it('refuses a language there is not', () => {
-    expect(parseTemplate({ ...template, language: 'COBOL' }).success).toBe(false);
+  it('reads a language it does not know as JavaScript, so the rest of the backup restores', () => {
+    const parsed = parseTemplate({ ...template, language: 'WASM' });
+    expect(parsed.data?.backup.codeTemplates).toEqual([{ ...template, language: 'JAVASCRIPT' }]);
   });
 });
 

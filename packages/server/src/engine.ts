@@ -1081,7 +1081,8 @@ export class EngineManager {
       const stopResult = await deployed.runtime.stop();
       if (!stopResult.ok) {
         // Fall back to a force-halt so teardown can still proceed.
-        await deployed.runtime.halt();
+        const halted = await deployed.runtime.halt();
+        if (!halted.ok) logger.error({ channelId, errMsg: halted.error.message }, 'A connector did not halt while its channel was being undeployed');
       }
     }
 

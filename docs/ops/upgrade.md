@@ -533,6 +533,12 @@ An image in a transfer syntax the archive does not take is now an ERROR that nam
 
 A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans and doses, segmentations, presentation states, key object selections and ECGs among others were rejected, as were JPEG Extended and JPEG Lossless. It now accepts every standard one ([DICOM](../user/connector-reference.md#dicom), D-355): check the filters of channels that relied on the rejection. A Listener whose port is in use now fails to start, where it read started and received nothing. Look for such channels after the upgrade.
 
+## Backups carry a code template's language, and the server gets time to stop (#419)
+
+A server backup left out whether a code template is JavaScript or TypeScript, so a TypeScript template restored onto another server became JavaScript, which is not type-checked. If you restored a backup like that, set those templates back to TypeScript. Take a new backup after the upgrade: one made before it restores a template the server does not have as JavaScript.
+
+The production compose file now gives the server 45 seconds to stop (`stop_grace_period`). Docker's default of 10 cut off the 30 it uses to let the messages under way end. Add it to a compose file of your own. The container from before the upgrade still has the old limit, so stop it yourself before step 3 below: `docker compose -f docker/docker-compose.prod.yml stop -t 45 server`.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

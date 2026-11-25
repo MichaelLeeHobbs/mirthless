@@ -380,11 +380,14 @@ export class DeploymentService {
         level: result.ok ? 'INFO' : 'ERROR', name: 'CHANNEL_STOPPED', outcome: result.ok ? 'SUCCESS' : 'FAILURE',
         userId: context?.userId ?? null, channelId,
         serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { method: 'halt', ...(result.ok ? {} : { reason: result.error.message }) },
+        attributes: { method: 'halt', ...(result.ok ? {} : { error: result.error.message }) },
       });
       emitStateChange(channelId, state);
 
-      if (!result.ok) throw new ServiceError('CONFLICT', `The channel is halted, but: ${result.error.message}`);
+      if (!result.ok) {
+        logger.error({ channelId, errMsg: result.error.message }, 'A channel was halted, but a connector did not halt');
+        throw new ServiceError('CONFLICT', `The channel is halted, but: ${result.error.message}`);
+      }
       return { channelId, state };
     });
   }

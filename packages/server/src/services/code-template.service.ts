@@ -4,6 +4,7 @@ import { and, eq, count, asc, or, isNull, sql } from 'drizzle-orm';
 import {
   ALL_CHANNELS,
   PERMISSIONS,
+  toScriptLanguage,
   type CreateCodeTemplateLibraryInput,
   type UpdateCodeTemplateLibraryInput,
   type CreateCodeTemplateInput,
@@ -55,8 +56,7 @@ function toTemplateDetail(r: CodeTemplate): TemplateDetail {
     name: r.name,
     description: r.description,
     type: r.type,
-    // Written only from codeTemplateLanguageSchema.
-    language: r.language as CodeTemplateLanguage,
+    language: toScriptLanguage(r.language),
     code: r.code,
     contexts: r.contexts,
     revision: r.revision,
