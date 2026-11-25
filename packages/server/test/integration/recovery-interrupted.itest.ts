@@ -41,9 +41,9 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
   });
 
   /** A deployed channel whose script reads the resources table, with the server stopped. */
-  async function stoppedChannel(): Promise<{ readonly id: string; readonly name: string }> {
+  async function stoppedChannel(properties: Record<string, unknown> = {}): Promise<{ readonly id: string; readonly name: string }> {
     const channel = unwrap(await mods.ChannelService.create(createChannelSchema.parse({
-      name: `itest-401-${randomUUID()}`, enabled: true, properties: { initialState: 'STARTED' },
+      name: `itest-401-${randomUUID()}`, enabled: true, properties: { initialState: 'STARTED', ...properties },
       inboundDataType: 'RAW', outboundDataType: 'RAW',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 },
       responseMode: 'AUTO_AFTER_DESTINATIONS',
@@ -130,6 +130,26 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
     }), { received: 0, sent: 0, errored: 0 })).toEqual({ received: 1, sent: 1, errored: 0 });
   });
 
+  it('ends in ERROR at the next start when its raw content is not stored (#416)', async () => {
+    const { id } = await stoppedChannel({ messageStorageMode: 'METADATA' });
+    const messageId = Number(unwrap(await mods.MessageService.initializeMessage(id, 'itest', 'Source', [])).messageId);
+    unwrap(await mods.MessageService.createConnectorMessage(id, messageId, 1, 'Partner', 'RECEIVED'));
+    unwrap(await mods.MessageService.storeCustomMetadata(id, messageId, 0, { mrn: '42' }));
+
+    expect(await restart()).toBeNull();
+
+    await vi.waitFor(async () => { expect(await messagesOf(id)).toEqual([{ id: messageId, processed: true }]); }, WAIT);
+    const asLeft = [{ message: messageId, connector: 0, status: 'ERROR' }];
+    expect(await connectorsOf(id)).toEqual(asLeft);
+    expect((await mods.pool.query('SELECT 1 FROM message_custom_metadata WHERE message_id = $1', [messageId])).rows).toHaveLength(1);
+    const errored = async (): Promise<unknown> => (await mods.pool.query('SELECT sum(errored)::int AS errored FROM message_statistics WHERE channel_id = $1 AND meta_data_id = 0', [id])).rows[0];
+    await vi.waitFor(async () => { expect(await errored()).toEqual({ errored: 1 }); }, WAIT);
+
+    expect(await restart()).toBeNull();
+    expect(await connectorsOf(id)).toEqual(asLeft);
+    expect(await errored()).toEqual({ errored: 1 });
+  });
+
   describe('put back as it was received', () => {
     const { RAW, SOURCE_MAP, TRANSFORMED, SENT, PROCESSING_ERROR } = CONTENT_TYPE;
     const channelId = randomUUID();
@@ -167,13 +187,14 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
       expect(await statuses(other)).toHaveLength(2);
     });
 
-    it('takes a source that was transformed and had no destinations', async () => {
+    it.each([['resetToReceived', 'RECEIVED', false], ['failUnrouted', 'ERROR', true]] as const)('%s takes a source that was transformed and had no destinations', async (action, status, processed) => {
       const messageId = await unfinishedMessage(channelId);
-      unwrap(await mods.MessageService.updateConnectorMessageStatus(channelId, messageId, 0, 'TRANSFORMED'));
+      unwrap<unknown>(await mods.MessageService.updateConnectorMessageStatus(channelId, messageId, 0, 'TRANSFORMED'));
 
-      unwrap(await mods.MessageService.resetToReceived(channelId, messageId));
+      unwrap<unknown>(await mods.MessageService[action](channelId, messageId));
 
-      expect(await statuses(messageId)).toEqual([[0, 'RECEIVED']]);
+      expect(await statuses(messageId)).toEqual([[0, status]]);
+      expect((await mods.pool.query('SELECT processed FROM messages WHERE id = $1', [messageId])).rows).toEqual([{ processed }]);
     });
 
     it.each<[string, (messageId: number) => Promise<unknown>]>([
@@ -189,12 +210,14 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
       const before = { contents: await contentsOf(messageId), statuses: await statuses(messageId) };
 
       const reset = await mods.MessageService.resetToReceived(channelId, messageId);
+      const failed = await mods.MessageService.failUnrouted(channelId, messageId);
 
-      expect(reset.ok).toBe(false);
+      expect([reset.ok, failed.ok]).toEqual([false, false]);
       expect({ contents: await contentsOf(messageId), statuses: await statuses(messageId) }).toEqual(before);
     });
 
     it('is refused for a message that is gone', async () => {
+      expect((await mods.MessageService.failUnrouted(channelId, 9_999_999)).ok).toBe(false);
       expect((await mods.MessageService.resetToReceived(channelId, 9_999_999)).ok).toBe(false);
     });
   });

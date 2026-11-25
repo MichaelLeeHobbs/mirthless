@@ -24,6 +24,7 @@ function createMockDeps(overrides?: Partial<ShutdownDeps>): ShutdownDeps {
     logger: createMockLogger(),
     stopAccepting: vi.fn().mockResolvedValue(undefined),
     stopEngine: vi.fn().mockResolvedValue(undefined),
+    haltQueues: vi.fn().mockResolvedValue(undefined),
     stopSocketIO: vi.fn().mockResolvedValue(undefined),
     stopPrunerScheduler: vi.fn().mockResolvedValue(undefined),
     stopQueue: vi.fn().mockResolvedValue(undefined),
@@ -105,6 +106,36 @@ describe('createShutdownHandler', () => {
       [{ phase: 'shutdown', step: 'database' }, 'Closing database pool'],
       [{ phase: 'shutdown' }, 'Graceful shutdown complete'],
     ]) expect(logged).toContainEqual(line);
+  });
+
+  it.each(['stopAccepting', 'stopEngine'] as const)('halts the queues after 20 seconds, so that %s, which waits for a queued send, can end', async (step) => {
+    let end = (): void => undefined;
+    const deps = createMockDeps({
+      [step]: vi.fn(() => new Promise<void>((resolve) => { end = resolve; })),
+      haltQueues: vi.fn(async () => { end(); }),
+    });
+
+    createShutdownHandler(deps)('SIGTERM');
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(deps.haltQueues).not.toHaveBeenCalled();
+    expect(mockExit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(deps.haltQueues).toHaveBeenCalledOnce();
+    expect(mockExit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('goes on when the queues cannot be halted, and says so', async () => {
+    const deps = createMockDeps({
+      stopEngine: vi.fn(() => new Promise<void>(() => undefined)),
+      haltQueues: vi.fn().mockRejectedValue(new Error('no engine')),
+    });
+
+    createShutdownHandler(deps)('SIGTERM');
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(deps.logger.error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errMsg: 'no engine' }), 'Could not halt the queued sends');
+    expect(mockExit).not.toHaveBeenCalled();
   });
 
   it('exits with the given code after a clean shutdown that followed a fatal error', async () => {
@@ -296,5 +327,25 @@ describe('undeployAll', () => {
       { channelId: 'b', errMsg: 'undeploy script failed' },
       'Channel failed to undeploy during shutdown',
     );
+  });
+
+  it('undeploys the other channels while one waits for a send', async () => {
+    const { undeployAll } = await import('../shutdown.js');
+    const undeployed: string[] = [];
+    let end = (): void => undefined;
+    const engine = {
+      getAll: () => new Map([['waits', {}], ['b', {}]]),
+      undeploy: async (id: string): Promise<void> => {
+        if (id === 'waits') await new Promise<void>((resolve) => { end = resolve; });
+        undeployed.push(id);
+      },
+    };
+
+    const done = undeployAll(engine, { error: vi.fn() });
+    await Promise.resolve();
+    expect(undeployed).toEqual(['b']);
+    end();
+    await done;
+    expect(undeployed).toEqual(['b', 'waits']);
   });
 });

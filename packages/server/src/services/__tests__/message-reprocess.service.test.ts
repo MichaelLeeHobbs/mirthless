@@ -331,6 +331,26 @@ describe('MessageReprocessService.resendDestination', () => {
     expect(set).not.toHaveBeenCalled();
   });
 
+  describe('a destination that has not been sent to yet', () => {
+    it('is refused while the message is open: the pipeline or crash recovery may be sending it', async () => {
+      mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ON_FAILURE' }]));
+      mockSelectSequence([{ status: 'RECEIVED', open: true }]);
+      const { set } = mockUpdateCapture();
+
+      expect(await MessageReprocessService.resendDestination('ch-001', 5, 1)).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('still being sent to "Lab"') } });
+      expect(set).not.toHaveBeenCalled();
+    });
+
+    it('is taken once the message is finished: nothing else will send it', async () => {
+      mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ON_FAILURE' }]));
+      mockSelectSequence([{ status: 'RECEIVED', open: false }], [{ content: 'MSH|sent' }]);
+      const { set } = mockUpdateCapture();
+
+      expect((await MessageReprocessService.resendDestination('ch-001', 5, 1)).ok).toBe(true);
+      expect(set).toHaveBeenCalledWith({ status: 'QUEUED', sendAttempts: 0 });
+    });
+  });
+
   it('refuses to resend content it cannot decrypt', async () => {
     mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
     mockSelectSequence([{ status: 'ERROR' }], [{ content: 'enc:v1:not-really' }]);
