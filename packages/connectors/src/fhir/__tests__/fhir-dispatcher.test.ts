@@ -9,6 +9,7 @@ import {
   extractResourceId,
   type FhirDispatcherConfig,
 } from '../fhir-dispatcher.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 function makeConfig(overrides?: Partial<FhirDispatcherConfig>): FhirDispatcherConfig {
   return {
@@ -230,12 +231,7 @@ describe('FhirDispatcher lifecycle', () => {
 
 describe('FhirDispatcher.send', () => {
   it('sends FHIR resource and returns SENT on success', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 201,
-      statusText: 'Created',
-      text: async () => '{"id":"123"}',
-    });
+    mockFetch.mockResolvedValue(new Response('{"id":"123"}', { status: 201, statusText: 'Created' }));
 
     const dispatcher = new FhirDispatcher(makeConfig());
     await dispatcher.onStart();
@@ -249,10 +245,7 @@ describe('FhirDispatcher.send', () => {
   });
 
   it('calls fetch with correct URL and method', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true, status: 201, statusText: 'Created',
-      text: async () => '{}',
-    });
+    mockFetch.mockResolvedValue(new Response('{}', { status: 201, statusText: 'Created' }));
 
     const dispatcher = new FhirDispatcher(makeConfig({
       baseUrl: 'https://fhir.test.com/r4',
@@ -283,12 +276,7 @@ describe('FhirDispatcher.send', () => {
   });
 
   it('returns ERROR on non-OK response', async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 422,
-      statusText: 'Unprocessable Entity',
-      text: async () => '{"issue":[{"severity":"error"}]}',
-    });
+    mockFetch.mockResolvedValue(new Response('{"issue":[{"severity":"error"}]}', { status: 422, statusText: 'Unprocessable Entity' }));
 
     const dispatcher = new FhirDispatcher(makeConfig());
     await dispatcher.onStart();
@@ -299,6 +287,33 @@ describe('FhirDispatcher.send', () => {
       expect(result.value.status).toBe('ERROR');
       expect(result.value.errorMessage).toContain('422');
     }
+  });
+
+  it('reads an answer in the charset it declares (#415)', async () => {
+    mockFetch.mockResolvedValue(new Response(Buffer.from([0x4d, 0xfc, 0x6c]), { status: 201, headers: { 'Content-Type': 'application/fhir+xml; charset=ISO-8859-1' } }));
+    const { logger, warnings } = makeMockLogger();
+    const dispatcher = new FhirDispatcher(makeConfig(), logger);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.value).toEqual({ status: 'SENT', content: 'M\u00fcl' });
+    expect(warnings).toEqual([]);
+  });
+
+  it('logs an answer it cannot read, without the answer (#415)', async () => {
+    mockFetch.mockResolvedValue(new Response(Buffer.from([0x4d, 0xfc, 0x6c]), { status: 201 }));
+    const { logger, warnings } = makeMockLogger();
+    const dispatcher = new FhirDispatcher(makeConfig(), logger);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.value).toEqual({ status: 'SENT', content: 'M\ufffdl' });
+    expect(warnings).toEqual([{
+      obj: { channelId: 'ch-1', messageId: 1, metaDataId: 1, status: 201, contentType: null, problem: 'it is not valid utf-8' },
+      msg: expect.stringContaining('U+FFFD') as string,
+    }]);
   });
 
   it('fails when not started', async () => {
@@ -315,10 +330,7 @@ describe('FhirDispatcher.send', () => {
   });
 
   it('sends with Bearer auth headers', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true, status: 200, statusText: 'OK',
-      text: async () => '{}',
-    });
+    mockFetch.mockResolvedValue(new Response('{}', { status: 200, statusText: 'OK' }));
 
     const dispatcher = new FhirDispatcher(makeConfig({
       authType: 'BEARER',
@@ -333,10 +345,7 @@ describe('FhirDispatcher.send', () => {
   });
 
   it('uses PUT method against the instance URL (id from body) when configured', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true, status: 200, statusText: 'OK',
-      text: async () => '{}',
-    });
+    mockFetch.mockResolvedValue(new Response('{}', { status: 200, statusText: 'OK' }));
 
     const dispatcher = new FhirDispatcher(makeConfig({ method: 'PUT' }));
     await dispatcher.onStart();

@@ -12,6 +12,7 @@ import {
   apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole, WAIT,
   type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
+import { pgCode } from '../../src/lib/pg-error.js';
 import { INTEGRATION_WAIT_MS } from '../time-budgets.js';
 
 type Tx = Parameters<Parameters<ServerModules['db']['transaction']>[0]>[0];
@@ -507,9 +508,5 @@ describeIntegration('the access lock (real Postgres)', () => {
     } finally {
       void client.end().catch(() => undefined);
     }
-  }
-
-  function pgCode(err: unknown): unknown {
-    return (err as { code?: unknown }).code ?? (err as { cause?: { code?: unknown } }).cause?.code;
   }
 });

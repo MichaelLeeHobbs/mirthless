@@ -84,6 +84,8 @@ describe('DeploymentController.sendMessage', () => {
       success: false,
       error: { code: 'NOT_FOUND', message: `Channel ${CHANNEL_ID} is not deployed` },
     });
+    // The record is what counts a row against an API key's day (#419).
+    expect(recordReadOrRefuse).not.toHaveBeenCalled();
   });
 
   it('answers 409 CONFLICT when the channel is not STARTED', async () => {
@@ -99,6 +101,22 @@ describe('DeploymentController.sendMessage', () => {
       success: false,
       error: { code: 'CONFLICT', message: 'Channel is STOPPED, must be STARTED to receive messages' },
     });
+    expect(recordReadOrRefuse).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 CONFLICT when the channel stopped while the send was being recorded', async () => {
+    const processMessage = vi.fn();
+    deploy('STARTED', processMessage);
+    recordReadOrRefuse.mockImplementationOnce(async () => {
+      deploy('STOPPED', processMessage);
+      return true;
+    });
+    const res = makeRes();
+
+    await DeploymentController.sendMessage(makeReq(), res);
+
+    expect(processMessage).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
   });
 
   it('answers 409 CONFLICT with the cause when the channel fails to process the message', async () => {
