@@ -498,6 +498,10 @@ The DICOM Listener and Sender read and rewrote every dataset, which dropped priv
 
 An image in a transfer syntax the archive does not take is now an ERROR that names it. A compressed one never went out uncompressed (it was not sent, and read SENT); one in explicit VR big endian or in implicit VR was rewritten in the archive's, with that loss, and no longer is.
 
+## A DICOM Listener accepts every standard storage class, and its start can fail (#410)
+
+A DICOM Listener accepted 59 storage SOP classes, so RT structure sets, plans and doses, segmentations, presentation states, key object selections and ECGs among others were rejected, as were JPEG Extended and JPEG Lossless. It now accepts every standard one ([DICOM](../user/connector-reference.md#dicom), D-355): check the filters of channels that relied on the rejection. A Listener whose port is in use now fails to start, where it read started and received nothing. Look for such channels after the upgrade.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

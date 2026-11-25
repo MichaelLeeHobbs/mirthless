@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Writable } from 'node:stream';
-import type { Result } from '@galvanigraph/core-util';
+import { settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
 import pkg from 'dcmjs-dimse';
 import { resolveWithinRoots, type FileRoots } from '../file/file-roots.js';
 import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
@@ -22,7 +22,7 @@ import { fileHeader, readableDataset } from './dicom-file.js';
 import { makeDirectory, syncDirectory } from './durable-file.js';
 
 const { Server, Scp, Dataset, Implementation, constants, responses, log } = pkg;
-const { SopClass, StorageClass, TransferSyntax, PresentationContextResult, Status } = constants;
+const { AbortReason, AbortSource, SopClass, TransferSyntax, PresentationContextResult, RejectReason, RejectResult, RejectSource, Status } = constants;
 const { CEchoResponse, CStoreResponse } = responses;
 
 // Quiets the library's per-association INFO chatter; the connector logs failures itself.
@@ -39,53 +39,57 @@ type ServerType = InstanceType<typeof pkg.Server>;
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
 }
-function fail<T>(error: Error): Result<T> {
-  return { ok: false, value: null, error } as unknown as Result<T>;
+
+/** The root DICOM gives its storage SOP classes (PS3.4 B.5 and I.4), and the ones it put elsewhere (PS3.4 GG). */
+const STORAGE_ROOT = '1.2.840.10008.5.1.4.1.1.';
+const OTHER_STORAGE: ReadonlySet<string> = new Set([
+  '1.2.840.10008.5.1.4.34.7', // RT Beams Delivery Instruction
+  '1.2.840.10008.5.1.4.34.10', // RT Brachy Application Setup Delivery Instruction
+  '1.2.840.10008.5.1.4.38.1', // Hanging Protocol
+  '1.2.840.10008.5.1.4.39.1', // Color Palette
+  '1.2.840.10008.5.1.4.43.1', // Generic Implant Template
+  '1.2.840.10008.5.1.4.44.1', // Implant Assembly Template
+  '1.2.840.10008.5.1.4.45.1', // Implant Template Group
+]);
+
+/** Every standard storage SOP class, by its UID and not by a list of names: the connector stores bytes, whatever they are. */
+function isAcceptedSopClass(uid: string): boolean {
+  return uid === SopClass.Verification || uid.startsWith(STORAGE_ROOT) || OTHER_STORAGE.has(uid);
 }
 
-// An SCP must accept each requested presentation context whose SOP class and a transfer
-// syntax it supports, or the peer sees the association rejected ("Source: Service User").
-const ACCEPTED_TRANSFER_SYNTAXES: ReadonlySet<string> = new Set<string>([
+const UNCOMPRESSED: ReadonlySet<string> = new Set<string>([
   TransferSyntax.ImplicitVRLittleEndian,
   TransferSyntax.ExplicitVRLittleEndian,
   TransferSyntax.ExplicitVRBigEndian,
   TransferSyntax.DeflatedExplicitVRLittleEndian,
-  TransferSyntax.RleLossless,
-  TransferSyntax.JpegBaseline,
-  TransferSyntax.JpegLossless,
-  TransferSyntax.JpegLsLossless,
-  TransferSyntax.JpegLsLossy,
-  TransferSyntax.Jpeg2000Lossless,
-  TransferSyntax.Jpeg2000Lossy,
 ]);
 
-// Every storage SOP class rather than a modality list, since the connector only stores.
-const ACCEPTED_ABSTRACT_SYNTAXES: ReadonlySet<string> = new Set<string>([
-  SopClass.Verification,
-  ...Object.values(StorageClass) as string[],
-]);
+/** Where DICOM puts its image and video codecs, and the two (JPIP) whose pixel data is only a URL: stored, there would be no image. */
+const CODEC_ROOT = '1.2.840.10008.1.2.4.';
+const JPIP: ReadonlySet<string> = new Set(['1.2.840.10008.1.2.4.94', '1.2.840.10008.1.2.4.95', '1.2.840.10008.1.2.4.204', '1.2.840.10008.1.2.4.205']);
+
+function isAcceptedTransferSyntax(uid: string): boolean {
+  return UNCOMPRESSED.has(uid) || uid === TransferSyntax.RleLossless || (uid.startsWith(CODEC_ROOT) && !JPIP.has(uid));
+}
 
 function negotiatePresentationContexts(association: AssociationType): void {
-  const contexts = association.getPresentationContexts();
-  for (const { id } of contexts) {
+  for (const { id } of association.getPresentationContexts()) {
     const context = association.getPresentationContext(id);
-    const abstractSyntax = context.getAbstractSyntaxUid();
-    if (!ACCEPTED_ABSTRACT_SYNTAXES.has(abstractSyntax)) {
+    const transferSyntax = context.getTransferSyntaxUids().find(isAcceptedTransferSyntax);
+    if (!isAcceptedSopClass(context.getAbstractSyntaxUid())) {
       context.setResult(PresentationContextResult.RejectAbstractSyntaxNotSupported);
-      continue;
-    }
-    let accepted = false;
-    for (const ts of context.getTransferSyntaxUids()) {
-      if (ACCEPTED_TRANSFER_SYNTAXES.has(ts)) {
-        context.setResult(PresentationContextResult.Accept, ts);
-        accepted = true;
-        break;
-      }
-    }
-    if (!accepted) {
+    } else if (transferSyntax === undefined) {
       context.setResult(PresentationContextResult.RejectTransferSyntaxesNotSupported);
+    } else {
+      context.setResult(PresentationContextResult.Accept, transferSyntax);
     }
   }
+}
+
+/** An association a stop has to end. */
+interface OpenAssociation {
+  /** Answer what was taken, then abort. Resolves once the connection is closed. */
+  finish(): Promise<void>;
 }
 
 interface ReceiverOptions {
@@ -156,6 +160,9 @@ async function writeInstance({ dataset, sopClass, sopInstance }: ReceivedInstanc
   }
 }
 
+/** How long a stop waits for the images already taken to be answered. */
+const ANSWERS_END_MS = 5_000;
+
 /** What the source map of a message from this SCP names as its source. */
 export const DIMSE_SOURCE = 'dcmjs-dimse';
 
@@ -184,6 +191,8 @@ async function claimFileName(dir: string, uid: string): Promise<string> {
 
 class DimseReceiver implements DcmtkReceiver {
   private server: ServerType | null = null;
+  private stopping = false;
+  private readonly associations = new Set<OpenAssociation>();
   private fileListener: ((data: DcmtkFileData) => Promise<void>) | null = null;
   private assocListener: ((data: DcmtkAssociationData) => void) | null = null;
   private errorListener: ((data: { readonly error: Error }) => void) | null = null;
@@ -228,8 +237,10 @@ class DimseReceiver implements DcmtkReceiver {
     const handleInstance = this.handleInstance.bind(this);
     const emitAssociation = (data: DcmtkAssociationData): void => { this.assocListener?.(data); };
     const emitError = (error: Error): void => { this.errorListener?.({ error }); };
+    const associations = this.associations;
+    const isStopping = (): boolean => this.stopping;
 
-    class ConnectorScp extends Scp {
+    class ConnectorScp extends Scp implements OpenAssociation {
       private callingAe = '';
       private calledAe = '';
       private readonly assocId = `assoc-${randomUUID()}`;
@@ -240,7 +251,20 @@ class DimseReceiver implements DcmtkReceiver {
 
       constructor(...args: ConstructorParameters<typeof Scp>) {
         super(...args);
-        this.on('close', () => { this.end(false); });
+        associations.add(this);
+        this.on('close', () => {
+          associations.delete(this);
+          this.end(false);
+        });
+      }
+
+      async finish(): Promise<void> {
+        await Promise.allSettled(this.storing);
+        const closed = new Promise<void>((resolve) => { this.on('close', () => { resolve(); }); });
+        this.sendAbort(AbortSource.ServiceUser, AbortReason.NotSpecified);
+        // Ends the socket once what was written has gone out.
+        this.close();
+        await closed;
       }
 
       /** The association has ended, whether its sender released it, aborted it or hung up: what it stored is complete. */
@@ -267,6 +291,10 @@ class DimseReceiver implements DcmtkReceiver {
       override associationRequested(association: AssociationType): void {
         this.callingAe = association.getCallingAeTitle();
         this.calledAe = association.getCalledAeTitle();
+        if (isStopping()) {
+          this.sendAssociationReject(RejectResult.Transient, RejectSource.ServiceProviderPresentation, RejectReason.TemporaryCongestion);
+          return;
+        }
         negotiatePresentationContexts(association);
         this.sendAssociationAccept();
       }
@@ -300,9 +328,9 @@ class DimseReceiver implements DcmtkReceiver {
       override cStoreRequest(request: CStoreRequestType, callback: (response: CStoreResponseType) => void): void {
         const response = CStoreResponse.fromRequest(request);
         const dataset = request.getDataset();
-        // Sent after the release: nothing would make a message of it.
-        if (!(dataset instanceof ReceivedDataset) || this.ended) {
-          response.setStatus(CANNOT_UNDERSTAND);
+        // Nothing would make a message of an image sent after the release, or while the listener stops.
+        if (!(dataset instanceof ReceivedDataset) || this.ended || isStopping()) {
+          response.setStatus(dataset instanceof ReceivedDataset ? Status.ProcessingFailure : CANNOT_UNDERSTAND);
           callback(response);
           return;
         }
@@ -321,24 +349,37 @@ class DimseReceiver implements DcmtkReceiver {
       }
     }
 
-    try {
-      const server = new Server(ConnectorScp as unknown as typeof Scp);
-      server.on('networkError', (e: Error) => { this.errorListener?.({ error: e }); });
+    this.stopping = false;
+    return this.listen(new Server(ConnectorScp as unknown as typeof Scp));
+  }
+
+  /** Ok once the port is open. The library reports a port in use as it does any later network error. */
+  private async listen(server: ServerType): Promise<Result<void>> {
+    const listening = new Promise<void>((resolve, reject) => {
+      server.on('listening', () => { resolve(); });
+      server.on('networkError', (error: Error) => {
+        reject(error);
+        if (this.server === server) this.errorListener?.({ error });
+      });
       server.listen(this.options.port, {
         connectTimeout: this.options.connectionTimeoutMs,
         associationTimeout: this.options.connectionTimeoutMs,
         pduTimeout: this.options.connectionTimeoutMs,
       });
-      this.server = server;
-      return ok(undefined);
-    } catch (err) {
-      return fail(err instanceof Error ? err : new Error(String(err)));
-    }
+    });
+    const opened = await tryCatch(listening);
+    if (opened.ok) this.server = server;
+    return opened;
   }
 
   async stop(): Promise<void> {
-    this.server?.close();
+    const { server } = this;
+    if (!server) return;
+    this.stopping = true;
+    // A sender whose image was taken is told so before its association is cut off.
+    await settleWithin(Promise.allSettled([...this.associations].map((association) => association.finish())), ANSWERS_END_MS);
     this.server = null;
+    server.close();
   }
 }
 

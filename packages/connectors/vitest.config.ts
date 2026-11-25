@@ -16,7 +16,7 @@ export default defineConfig({
       // The integration lane (*.itest.ts and its gates) is test code that this run never loads.
       exclude: ['src/**/*.test.ts', 'src/**/*.itest.ts', 'src/__tests__/e2e/integration/gates.ts', 'src/index.ts'],
       // About 1 point under measured coverage; only ever raised, toward the 95% target (D-193).
-      thresholds: { statements: 92, branches: 89, functions: 90, lines: 94 },
+      thresholds: { statements: 93, branches: 89, functions: 91, lines: 95 },
     },
   },
 });
