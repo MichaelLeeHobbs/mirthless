@@ -1,14 +1,15 @@
 import * as net from 'node:net';
 import * as http from 'node:http';
+import { INTEGRATION_WAIT_MS } from '../../../packages/server/test/time-budgets.js';
 
 const VT = '\x0b';
 const FS_CR = '\x1c\r';
 
-export function sendFramed(port: number, message: string, start = VT, end = FS_CR, timeoutMs = 10_000): Promise<string> {
+export function sendFramed(port: number, message: string, start = VT, end = FS_CR): Promise<string> {
   return new Promise((resolve, reject) => {
     const client = net.createConnection({ host: '127.0.0.1', port }, () => { client.write(start + message + end); });
     let buf = '';
-    const timer = setTimeout(() => { client.destroy(); reject(new Error(`no reply from port ${String(port)} in ${String(timeoutMs)}ms`)); }, timeoutMs);
+    const timer = setTimeout(() => { client.destroy(); reject(new Error(`no reply from port ${String(port)} in ${String(INTEGRATION_WAIT_MS)}ms`)); }, INTEGRATION_WAIT_MS);
     client.setEncoding('utf8');
     client.on('data', (chunk: string) => {
       buf += chunk;
