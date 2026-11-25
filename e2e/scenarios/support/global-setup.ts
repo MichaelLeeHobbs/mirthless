@@ -3,10 +3,11 @@
 // database, so re-set the same password through the API once.
 
 import { request } from '@playwright/test';
+import { INTEGRATION_LIMIT_MS } from '../../../packages/server/test/time-budgets.js';
 import { ADMIN, API_BASE } from './api.js';
 
 export default async function globalSetup(): Promise<void> {
-  const ctx = await request.newContext();
+  const ctx = await request.newContext({ timeout: INTEGRATION_LIMIT_MS });
   try {
     const login = await ctx.post(`${API_BASE}/auth/login`, { data: ADMIN });
     if (!login.ok()) throw new Error(`admin login failed: ${String(login.status())} ${await login.text()}`);

@@ -21,7 +21,7 @@ scenario('S11 JavaScript Reader polls on an interval and keeps a counter in $gc'
   }), ['S11 Event Poller']);
   const channelId = ids['S11 Event Poller']!;
 
-  await expect.poll(async () => (await api.messages(channelId)).total, { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
+  await expect.poll(async () => (await api.messages(channelId)).total).toBeGreaterThanOrEqual(3);
   const items = [...(await api.messages(channelId)).items].sort((a, b) => a.messageId - b.messageId).slice(0, 3);
   const raws: string[] = [];
   for (const m of items) {

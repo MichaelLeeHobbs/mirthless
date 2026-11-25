@@ -37,7 +37,7 @@ test('HARNESS GreenMail inbox reader sees a mail sent over SMTP', async () => {
   const subject = `HARNESS mail ${String(Date.now())}`;
   await nodemailer.createTransport({ host: '127.0.0.1', port: MAIL.smtpPort, secure: false })
     .sendMail({ from: 'h@example.com', to: MAIL.address, subject, text: 'x' });
-  await expect.poll(() => mailSubjects(subject), { timeout: 10_000 }).toEqual([subject]);
+  await expect.poll(() => mailSubjects(subject)).toEqual([subject]);
 });
 
 test('HARNESS SFTP, MySQL and partner Postgres are reachable', async () => {
@@ -70,7 +70,7 @@ test('HARNESS a natively built TCP channel delivers through the real server', as
     await api.undeploy(id);
     await api.deployAndStart(id);
     expect(await sendMllp(16693, 'MSH|^~\\&|A|B|C|D|20261110||ADT^A01|H2|P|2.5')).toContain('MSA|AA|H2');
-    await expect.poll(() => sink.received.length, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
   } finally {
     await sink.close();
     await api.dispose();

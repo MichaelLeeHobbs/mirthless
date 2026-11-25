@@ -35,7 +35,7 @@ scenario('S29 DICOM router forwards a stored image to the PACS', async (api) => 
 
     await cStore(ROUTER_PORT, SAMPLE_DCM, 'S29_CT', 'S29_ROUTER');
 
-    await expect.poll(() => sink.received.length, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     const stored = sink.received[0]!.trim();
     // The PACS stored a real DICOM object: a 128-byte preamble, then "DICM".
     expect(readFileSync(stored).subarray(128, 132).toString('ascii')).toBe('DICM');

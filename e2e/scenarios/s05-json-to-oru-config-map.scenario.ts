@@ -45,7 +45,7 @@ scenario('S05 JSON report is sent as an ORU to the configuration-map host', asyn
     expect(res.status()).toBe(200);
     await ctx.dispose();
 
-    await expect.poll(() => sink.received.length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     const oru = sink.received[0]!;
     expect(oru).toContain('ORU^R01|ACC005');
     expect(oru).toContain('OBX|1|TX|IMP||Normal study');
