@@ -35,19 +35,19 @@ async function lockTarget(tx: DbExecutor, id: string): Promise<{ readonly enable
   return row;
 }
 
-function usernameTaken(username: string | undefined): ServiceError {
-  return new ServiceError('ALREADY_EXISTS', `Username already taken: ${username ?? ''}`);
+function usernameTaken(username: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Username already taken: ${username}`);
 }
 
-function emailTaken(email: string | undefined): ServiceError {
-  return new ServiceError('ALREADY_EXISTS', `Email already in use: ${email ?? ''}`);
+function emailTaken(email: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Email already in use: ${email}`);
 }
 
 /** A name another account has, as the answer the checks before a write give: two writes at once can both pass those. */
 function asTaken(err: unknown, sent: { readonly username?: string; readonly email?: string | undefined }): unknown {
   const constraint = uniqueConstraint(err);
-  if (constraint === users.username.uniqueName) return usernameTaken(sent.username);
-  if (constraint === users.email.uniqueName) return emailTaken(sent.email);
+  if (constraint === users.username.uniqueName && sent.username !== undefined) return usernameTaken(sent.username);
+  if (constraint === users.email.uniqueName && sent.email !== undefined) return emailTaken(sent.email);
   return err;
 }
 

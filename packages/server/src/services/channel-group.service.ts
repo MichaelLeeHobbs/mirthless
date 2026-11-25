@@ -4,6 +4,7 @@ import { DEFAULT_GROUP_NAME, type CreateChannelGroupInput, type UpdateChannelGro
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
+import { PG_ERROR, pgCode } from '../lib/pg-error.js';
 import { channelGroups, channelGroupMembers, channels } from '../db/schema/index.js';
 import { GrantService, lockAccess } from './grant.service.js';
 
@@ -292,9 +293,9 @@ export class ChannelGroupService {
         await tx.delete(channelGroups).where(eq(channelGroups.id, id));
       })
         .catch((err: unknown) => {
-          const pg = (err as { cause?: { code?: unknown; table?: unknown; constraint?: unknown } }).cause ?? (err as { code?: unknown; table?: unknown; constraint?: unknown });
+          const pg = (err as { cause?: { table?: unknown; constraint?: unknown } }).cause ?? (err as { table?: unknown; constraint?: unknown });
           const fromAssignments = pg.table === 'assignment_groups' || (typeof pg.constraint === 'string' && pg.constraint.startsWith('assignment_groups_'));
-          if (pg.code === '23503' && fromAssignments) {
+          if (pgCode(err) === PG_ERROR.FOREIGN_KEY_VIOLATION && fromAssignments) {
             throw new ServiceError('CONFLICT', 'This group is the scope of an assignment; change those assignments first');
           }
           throw err;

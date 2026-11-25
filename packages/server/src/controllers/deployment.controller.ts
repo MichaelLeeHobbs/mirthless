@@ -163,7 +163,7 @@ export class DeploymentController {
     const id = req.params['id'] as string;
     const { content } = req.body as { content: string };
     // Refused first: the record below counts a row against an API key's day.
-    const taken = await DeploymentService.checkTakesMessages(id);
+    const taken = DeploymentService.checkTakesMessages(id);
     if (!taken.ok) {
       refuseSend(res, id, taken.error);
       return;

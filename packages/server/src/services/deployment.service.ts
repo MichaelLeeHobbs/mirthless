@@ -483,8 +483,8 @@ export class DeploymentService {
   }
 
   /** As `sendMessage` would refuse a message now. Nothing is recorded or sent. */
-  static async checkTakesMessages(channelId: string): Promise<Result<void>> {
-    const taking = await getEngine().takingMessages(channelId);
+  static checkTakesMessages(channelId: string): Result<void> {
+    const taking = getEngine().takingMessages(channelId);
     return taking.ok ? { ok: true, value: undefined, error: null } : taking;
   }
 

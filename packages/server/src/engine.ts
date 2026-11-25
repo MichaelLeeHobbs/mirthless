@@ -1042,8 +1042,8 @@ export class EngineManager {
   }
 
   /** NOT_FOUND when not deployed, CONFLICT when not STARTED; the send-message API maps them to HTTP statuses. */
-  async takingMessages(channelId: string): Promise<Result<DeployedChannel>> {
-    return tryCatch(async () => {
+  takingMessages(channelId: string): Result<DeployedChannel> {
+    return tryCatch(() => {
       const deployed = this.runtimes.get(channelId);
       if (!deployed) {
         throw new ServiceError('NOT_FOUND', `Channel ${channelId} is not deployed`);
@@ -1059,7 +1059,7 @@ export class EngineManager {
   /** Refused as `takingMessages` refuses, and CONFLICT when not processed. */
   async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return tryCatch(async () => {
-      const deployed = await this.takingMessages(channelId);
+      const deployed = this.takingMessages(channelId);
       if (!deployed.ok) throw deployed.error;
       const result = await deployed.value.processMessage(content);
       if (!result.ok) {
