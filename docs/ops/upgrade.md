@@ -440,6 +440,10 @@ With `smtp.auth_user` set and `smtp.secure` off, alert email now requires STARTT
 
 The receiver never read it: an email arrives as the mail server holds it, attachments included, with the box ticked or not. If you left it off to keep attachments out of message storage, they have been stored all along (#369). A saved channel that has `includeAttachments` keeps deploying; validation drops the key, whatever its value. Nothing in the database is rewritten.
 
+## The Email source keeps every byte of an email (#369)
+
+An email that is not valid UTF-8, such as one in ISO-8859-1 with 8-bit parts, had those bytes replaced by U+FFFD. It is now read with each byte as the character of its number, and `charset` in the source map says `latin1` instead of `utf-8` (D-388). A script that worked around U+FFFD in such emails sees the characters now. With the post-action `DELETE` such an email is marked read, as before. `attachmentCount`, which was always 0, is the number of attachments (null for an email that is made of too much to count). Messages already stored keep their U+FFFD.
+
 ## Messages of deleted channels (#202)
 
 Deleting a channel has always kept its messages, and the data pruner left them alone. It no longer does: a channel deleted from now on goes on being pruned by the settings it had (30 days when it had pruning on and no age), at the next scheduled run or **Run Now**. Turn its pruning off before you delete a channel whose messages are to stay; nobody can change its settings afterwards. Messages that are not processed or wait on a queue are not pruned.
