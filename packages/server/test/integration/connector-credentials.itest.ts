@@ -1,5 +1,5 @@
 // Connector credentials go unmasked only to someone who may change that
-// channel (D-345).
+// channel (D-346).
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';

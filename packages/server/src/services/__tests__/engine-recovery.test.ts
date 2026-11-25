@@ -38,6 +38,7 @@ const ms = vi.hoisted(() => ({
   markProcessed: vi.fn(),
   resetPending: vi.fn(),
   initializeMessage: vi.fn(),
+  resetToReceived: vi.fn(),
   finalizeMessage: vi.fn(),
   createConnectorMessage: vi.fn(),
   enqueue: vi.fn(),
@@ -135,6 +136,8 @@ beforeEach(() => {
 const alerts = vi.fn();
 
 const RAW = 1;
+const SOURCE_MAP = 9;
+const FAILED = { ok: false, value: null, error: new Error('cannot decrypt') };
 const SENT = 5;
 const VARIABLES = 10;
 const ERROR = 11;
@@ -557,42 +560,145 @@ describe('EngineManager recovery', () => {
     });
   });
 
-  it.each([
-    ['before its destinations were recorded', []],
-    ['after its destinations were recorded, and before it was routed', [1]],
-  ])('closes the interrupted original when it runs the message again, pointing at the new one: %s', async (_when, destinations) => {
-    ms.getUnprocessedMessages.mockResolvedValue(ok([{ id: 7, channelId: CHANNEL_ID }]));
-    ms.getConnectorMessages.mockResolvedValue(ok([0, ...destinations].map((metaDataId) => ({ messageId: 7, metaDataId, status: 'RECEIVED', connectorName: nameOf(metaDataId) }))));
-    ms.loadContent.mockImplementation(stored({ [RAW]: 'payload' }));
-
-    const engine = await deployAndRecover();
-
-    // The original is no longer left looking like a message still being received.
-    const contents = ms.storeContent.mock.calls.map((c: unknown[]) => c.slice(0, 5));
-    for (const metaDataId of [0, ...destinations]) {
-      expect(ms.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL_ID, 7, metaDataId, 'ERROR', undefined);
-      expect(contents).toContainEqual([CHANNEL_ID, 7, metaDataId, PROCESSING_ERROR, expect.stringContaining('message 99')]);
+  describe('a message that was not routed when the server stopped', () => {
+    function unrouted(...destinations: readonly number[]): Map<number, string> {
+      const statuses = unfinished([0, 'RECEIVED'], ...destinations.map((id) => [id, 'RECEIVED'] as const));
+      ms.resetToReceived.mockImplementation(async () => {
+        for (const id of destinations) statuses.delete(id);
+        return ok({ messageId: 7, correlationId: '00000000-0000-0000-0000-000000000007' });
+      });
+      ms.createConnectorMessage.mockImplementation(async (_c: string, _m: number, metaDataId: number, _n: string, status: string) => {
+        if (statuses.has(metaDataId)) return { ok: false, value: null, error: new Error('duplicate key') };
+        statuses.set(metaDataId, status);
+        return OK;
+      });
+      ms.loadContent.mockImplementation(stored({ [RAW]: 'payload' }));
+      return statuses;
     }
-    expect(contents.filter((c: unknown[]) => c[1] === 7)).toHaveLength(1 + destinations.length);
-    expect(ms.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 7);
-    // Counted once, as the new message: the original adds no error to the statistics, and no alert.
-    expect(ms.incrementStats).not.toHaveBeenCalledWith(CHANNEL_ID, expect.anything(), 'test-server', 'errored');
-    expect(alerts).not.toHaveBeenCalled();
-    await engine.dispose();
-  });
 
-  it('closes the source of a message it runs again even when its destinations cannot be read', async () => {
-    ms.getUnprocessedMessages.mockResolvedValue(ok([{ id: 7, channelId: CHANNEL_ID }]));
-    ms.getConnectorMessages
-      .mockResolvedValueOnce(ok([{ messageId: 7, metaDataId: 0, status: 'RECEIVED', connectorName: 'Source' }]))
-      .mockResolvedValue({ ok: false, value: null, error: new Error('db busy') });
-    ms.loadContent.mockImplementation(stored({ [RAW]: 'payload' }));
+    it.each([
+      ['before its destinations were recorded', []],
+      ['after its destinations were recorded', [1]],
+    ])('is run again as the same message: %s', async (_when, destinations) => {
+      const statuses = unrouted(...destinations);
 
-    const engine = await deployAndRecover();
+      const engine = await deployAndRecover();
 
-    expect(ms.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL_ID, 7, 0, 'ERROR', undefined);
-    expect(ms.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 7);
-    await engine.dispose();
+      expect(ms.resetToReceived).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, 7);
+      expect(mockSend).toHaveBeenCalledOnce();
+      expect(mockSend.mock.calls[0]![0]).toMatchObject({ messageId: 7, metaDataId: 1, content: 'payload', correlationId: '00000000-0000-0000-0000-000000000007' });
+      expect(statuses.get(1)).toBe('SENT');
+      expect(ms.finalizeMessage).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, 7, 'test-server');
+      // Neither a second message nor a second one received.
+      expect(ms.initializeMessage).not.toHaveBeenCalled();
+      expect(ms.incrementStats).not.toHaveBeenCalledWith(CHANNEL_ID, 0, 'test-server', expect.anything());
+      expect(alerts).not.toHaveBeenCalled();
+      await engine.dispose();
+    });
+
+    it.each<[string, (contentType: number) => unknown, string]>([
+      ['its raw content cannot be read', (t) => (t === RAW ? FAILED : ok(null)), 'cannot decrypt'],
+      ['its raw content is not stored', () => ok(null), 'not stored'],
+      ['its source map cannot be read', (t) => (t === SOURCE_MAP ? FAILED : ok('payload')), 'cannot decrypt'],
+      ['its source map is damaged', (t) => ok(t === SOURCE_MAP ? 'DOE^JANE' : 'payload'), 'not valid JSON'],
+    ])('is left as it was, and that is logged, when %s', async (_why, load, errMsg) => {
+      const logger = (await import('../../lib/logger.js')).default;
+      unrouted();
+      ms.loadContent.mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) => load(contentType));
+
+      const engine = await deployAndRecover();
+
+      expect(ms.resetToReceived).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, errMsg: expect.stringContaining(errMsg) }, expect.stringContaining('could not run a message again'));
+      expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('DOE');
+      await engine.dispose();
+    });
+
+    it('is run with the source map stored for it', async () => {
+      unrouted();
+      ms.loadContent.mockImplementation(stored({ [RAW]: 'payload', [SOURCE_MAP]: '{"file":"a.txt"}' }));
+
+      const engine = await deployAndRecover({ ...DEST, properties: { template: '${file}' } });
+
+      expect(mockSend.mock.calls[0]![0]).toMatchObject({ content: 'a.txt' });
+      await engine.dispose();
+    });
+
+    it('is not run, and that is logged, when it cannot be put back as it was received', async () => {
+      const logger = (await import('../../lib/logger.js')).default;
+      unrouted();
+      ms.resetToReceived.mockResolvedValue({ ok: false, value: null, error: new Error('it has been routed') });
+
+      const engine = await deployAndRecover();
+
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(ms.markProcessed).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledExactlyOnceWith({ channelId: CHANNEL_ID, messageId: 7, errMsg: 'it has been routed' }, expect.stringContaining('could not run a message again'));
+      await engine.dispose();
+    });
+
+    it.each(['stop', 'halt'] as const)('is not run when a %s comes while it is put back, but after the next start', async (action) => {
+      unrouted();
+      let reset: (result: unknown) => void = () => undefined;
+      ms.resetToReceived.mockImplementationOnce(() => new Promise((resolve) => { reset = resolve; }));
+      const engine = new EngineManager('test-server');
+      await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] })));
+      const deployed = engine.getRuntime(CHANNEL_ID)!;
+      await deployed.runtime.start();
+      const done = deployed.recoverOnce();
+      await vi.waitFor(() => { expect(ms.resetToReceived).toHaveBeenCalledOnce(); });
+
+      const ended = deployed.runtime[action]();
+      reset(ok({ messageId: 7, correlationId: '00000000-0000-0000-0000-000000000007' }));
+      await Promise.all([done, ended]);
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(ms.markProcessed).not.toHaveBeenCalled();
+
+      await deployed.runtime.start();
+      await deployed.recoverOnce();
+      expect(mockSend).toHaveBeenCalledOnce();
+      await engine.dispose();
+    });
+
+    it('is run once when the channel is deployed again while it is being run', async () => {
+      unrouted();
+      let record: (result: unknown) => void = () => undefined;
+      ms.createConnectorMessage.mockImplementationOnce(() => new Promise((resolve) => { record = resolve; }));
+      let finished = false;
+      ms.finalizeMessage.mockImplementation(async () => { finished = true; return OK; });
+      ms.getUnprocessedMessages.mockImplementation(async () => ok(finished ? [] : [{ id: 7, channelId: CHANNEL_ID }]));
+      const channel = makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] });
+      const engine = new EngineManager('test-server');
+      await engine.deploy(bundleOf(channel));
+      const first = engine.getRuntime(CHANNEL_ID)!;
+      await first.runtime.start();
+      const earlier = first.recoverOnce();
+      await vi.waitFor(() => { expect(ms.createConnectorMessage).toHaveBeenCalledOnce(); });
+      await first.runtime.halt();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const undeployed = engine.undeploy(CHANNEL_ID);
+        await vi.advanceTimersByTimeAsync(10_000);
+        await undeployed;
+      } finally {
+        vi.useRealTimers();
+      }
+      await engine.deploy(bundleOf(channel));
+      const second = engine.getRuntime(CHANNEL_ID)!;
+      await second.runtime.start();
+
+      const recovering = second.recoverOnce();
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+      expect(ms.getUnprocessedMessages).toHaveBeenCalledOnce();
+      record(OK);
+      await Promise.all([earlier, recovering]);
+
+      expect(ms.resetToReceived).toHaveBeenCalledOnce();
+      expect(mockSend).toHaveBeenCalledOnce();
+      expect(ms.updateConnectorMessageStatus).not.toHaveBeenCalledWith(CHANNEL_ID, 7, expect.anything(), 'ERROR', undefined);
+      await engine.dispose();
+    });
   });
 
   it('logs a store failure the pipeline reports', async () => {
@@ -828,13 +934,14 @@ describe('EngineManager recovery', () => {
       const ended = deployed.runtime[action]();
       loaded(ok('payload'));
       await Promise.all([done, ended]);
-      expect(ms.initializeMessage).not.toHaveBeenCalled();
+      expect(ms.resetToReceived).not.toHaveBeenCalled();
       expect(ms.markProcessed).not.toHaveBeenCalled();
 
       ms.loadContent.mockImplementation(stored({ [RAW]: 'payload' }));
+      ms.resetToReceived.mockResolvedValue(ok({ messageId: 7, correlationId: '00000000-0000-0000-0000-000000000007' }));
       await deployed.runtime.start();
       await deployed.recoverOnce();
-      expect(ms.initializeMessage).toHaveBeenCalledOnce();
+      expect(mockSend).toHaveBeenCalledOnce();
       await engine.dispose();
     });
   });

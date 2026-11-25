@@ -439,7 +439,11 @@ Importing a channel with `OVERWRITE`, or restoring a backup with it, used to cle
 
 Exports and backups now hold each channel's script timeout. Before, a channel imported as new, or restored onto a fresh server, got 30 seconds whatever it had. If you raised a channel's script timeout before such an import or restore, set it again. A file made before this version has no timeout: a channel it creates gets 30 seconds, and one it overwrites keeps its own.
 
-## More connector credentials are masked (D-345)
+## Crash recovery runs an interrupted message again as the same message (#401)
+
+Before, a server that stopped again while crash recovery was running a message left a second copy of it, and the next start ran and delivered both. The upgrade stops that from happening, and it can't tell copies that are already there apart: each one is run and delivered once at the first start. If the server has been restarting over and over, disable the affected channels before the upgrade (the API may answer only now and then, so try again), and delete the extra copies in the message browser before you enable and deploy them: they have the same content and read RECEIVED. Keep one, or none if a copy with that content already reads SENT.
+
+## More connector credentials are masked (D-346)
 
 Reads without `channels:write` on the channel, exports and backups now also mask the user name and password in a URL, a URL's query parameters named like a secret, the lines so named in headers saved as text, and settings whose name ends in `PW` or `pwd`. `PATCH /channels/:id/enabled` answers with credentials masked for everyone, and someone who may change other channels but only read this one sees them masked. Before, whoever could read a channel could read those credentials, and so could whoever was given an export or a backup file: replace the ones that matter.
 
