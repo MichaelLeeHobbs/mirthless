@@ -22,6 +22,7 @@ const { Status, StorageClass } = constants;
 const IMPLICIT = '1.2.840.10008.1.2';
 const EXPLICIT = '1.2.840.10008.1.2.1';
 const DEFLATED = '1.2.840.10008.1.2.1.99';
+const BIG_ENDIAN = '1.2.840.10008.1.2.2';
 const JPEG_BASELINE = '1.2.840.10008.1.2.4.50';
 const UNDEFINED = 0xffffffff;
 const SOP_CLASS = StorageClass.MrImageStorage;
@@ -100,11 +101,26 @@ const ENCAPSULATED = Buffer.concat([
   encode(ELEMENTS, true),
   header([0x7fe0, 0x0010], 'OB', UNDEFINED), header(ITEM, null, 0), header(ITEM, null, 4), Buffer.from([0xff, 0xd8, 0xff, 0xd9]), header(SEQUENCE_END, null, 0),
 ]);
+/** Explicit VR big endian, of elements with short VRs. */
+function encodeBig(elements: readonly (readonly [number, number, string, string])[]): Buffer {
+  return Buffer.concat(elements.map(([group, element, vr, value]) => {
+    const bytes = Buffer.alloc(8);
+    bytes.writeUInt16BE(group, 0);
+    bytes.writeUInt16BE(element, 2);
+    bytes.write(vr, 4, 'latin1');
+    bytes.writeUInt16BE(value.length, 6);
+    return Buffer.concat([bytes, Buffer.from(value, 'latin1')]);
+  }));
+}
+const BIG_ENDIAN_BYTES = encodeBig([
+  [0x0008, 0x0016, 'UI', `${SOP_CLASS}\0`], [0x0008, 0x0018, 'UI', SOP_INSTANCE], [0x0009, 0x0010, 'LO', 'ACME 1.0'], [0x0009, 0x1001, 'DS', '0.10'], [0x0018, 0x0050, 'DS', '1.50'],
+]);
 const DATASETS: readonly (readonly [string, string, Buffer])[] = [
   ['explicit VR', EXPLICIT, EXPLICIT_BYTES],
   ['implicit VR', IMPLICIT, encode(NATIVE, false)],
   ['compressed', JPEG_BASELINE, ENCAPSULATED],
   ['deflated', DEFLATED, deflateRawSync(EXPLICIT_BYTES)],
+  ['big endian', BIG_ENDIAN, BIG_ENDIAN_BYTES],
 ];
 
 let dir: string;
@@ -200,10 +216,17 @@ describe('a received image', () => {
     expect(received[0]?.instance.dataset).toMatchObject({ SOPInstanceUID: SOP_INSTANCE, SliceThickness: 1.5 });
   });
 
-  it('is refused as not understood when its dataset cannot be read, and the next one is stored', async () => {
+  it.each([
+    ['is not deflated although it should be', DEFLATED, EXPLICIT_BYTES],
+    ['is no dataset', EXPLICIT, Buffer.from('some text that is no dataset')],
+    ['is of another transfer syntax', EXPLICIT, encode(NATIVE, false)],
+    ['has no SOP Instance UID', EXPLICIT, encode(NATIVE.filter(({ tag }) => tag[1] !== 0x0018), true)],
+    // In a file they would be read as more of its header.
+    ['starts with file meta information', EXPLICIT, Buffer.concat([encode([{ tag: [0x0002, 0x0010], vr: 'UI', value: JPEG_BASELINE }], true), EXPLICIT_BYTES])],
+  ])('is refused as not understood when its dataset %s, and the next one is stored', async (_case, transferSyntax, bytes) => {
     await startListener();
 
-    expect(await store([[DEFLATED, EXPLICIT_BYTES], [EXPLICIT, EXPLICIT_BYTES]])).toEqual([0xc000, Status.Success]);
+    expect(await store([[transferSyntax, bytes], [IMPLICIT, encode(NATIVE, false)]])).toEqual([0xc000, Status.Success]);
 
     expect(await fs.readdir(path.join(dir, 'in'))).toEqual([`${SOP_INSTANCE}.dcm`]);
   });
@@ -233,6 +256,7 @@ describe('a sent image', () => {
     ['compressed', JPEG_BASELINE, ENCAPSULATED, [EXPLICIT, IMPLICIT]],
     ['deflated', DEFLATED, deflateRawSync(EXPLICIT_BYTES), [EXPLICIT, IMPLICIT]],
     ['implicit VR', IMPLICIT, encode(NATIVE, false), [EXPLICIT]],
+    ['big endian', BIG_ENDIAN, BIG_ENDIAN_BYTES, [EXPLICIT, IMPLICIT]],
   ] as const)('is refused, with the reason, rather than changed: %s, at an archive that does not take it', async (_name, transferSyntax, bytes, accepts) => {
     const outcome = await send(bytes, transferSyntax, accepts);
 
@@ -241,18 +265,25 @@ describe('a sent image', () => {
   });
 
   it.each([
-    ['is not DICOM', Buffer.from('not a DICOM file')],
-    ['names no transfer syntax', Buffer.concat([Buffer.alloc(128), Buffer.from('DICM')])],
-    ['has no SOP instance', null],
-  ])('is an error when the file %s', async (_case, content) => {
+    ['is not DICOM', Buffer.from('not a DICOM file'), 'no DICM'],
+    ['names no transfer syntax', Buffer.concat([Buffer.alloc(128), Buffer.from('DICM')]), 'no transfer syntax'],
+    ['has no SOP instance', null, 'no SOP Instance UID'],
+  ])('is an error when the file %s', async (_case, content, message) => {
     scp = await startFakeScp({ answer: 0x0000 });
     const sender = createDimseSender({ host: '127.0.0.1', port: scp.port, calledAETitle: 'A', callingAETitle: 'B', maxRetries: 0, retryDelayMs: 0, timeoutMs: 10_000 });
     if (!sender.ok) throw sender.error;
     const file = await fileOf(encode([{ tag: [0x0010, 0x0010], vr: 'PN', value: 'DOE^' }], true), EXPLICIT);
     if (content) await fs.writeFile(file, content);
 
-    expect((await sender.value.send([file])).ok).toBe(false);
+    const result = await sender.value.send([file]);
+
+    expect(result.ok ? 'sent' : result.error.message).toContain(message);
     expect(scp.stores()).toBe(0);
+  });
+
+  it('is an error when it has to be put in implicit VR and cannot be read', async () => {
+    expect(await send(EXPLICIT_BYTES.subarray(0, EXPLICIT_BYTES.length - 1), EXPLICIT, [IMPLICIT])).toContain('cut short');
+    expect(scp?.stores()).toBe(0);
   });
 });
 
@@ -273,6 +304,28 @@ describe('explicitToImplicit', () => {
     expect(explicitToImplicit(empty).equals(Buffer.concat([
       header([0x0008, 0x1140], null, 0), header([0x0009, 0x1002], null, UNDEFINED), header(ITEM, null, 0), header(SEQUENCE_END, null, 0),
     ]))).toBe(true);
+  });
+
+  // A VR of a later standard has a four-byte length, which read as two bytes swallows the value.
+  it('refuses a value representation it does not know', () => {
+    const later = Buffer.from('110001105a5a0000040000000102' + '0000', 'hex');
+    expect(() => explicitToImplicit(later)).toThrow('unknown value representation');
+  });
+
+  it('refuses zero bytes after the last element', () => {
+    expect(() => explicitToImplicit(Buffer.concat([EXPLICIT_BYTES, Buffer.alloc(16)]))).toThrow('unknown value representation');
+  });
+
+  it.each([
+    ['a value', Buffer.concat([header([0x0009, 0x1002], 'SQ', 18), header(ITEM, null, 10), header([0x0009, 0x1004], 'LO', 4), Buffer.from('abcd')])],
+    ['an item', Buffer.concat([header([0x0009, 0x1002], 'SQ', 8), header(ITEM, null, 12), header([0x0009, 0x1004], 'LO', 4), Buffer.from('abcd')])],
+  ])('refuses %s that overruns what holds it', (_case, bytes) => {
+    expect(() => explicitToImplicit(bytes)).toThrow('cut short');
+  });
+
+  it('keeps an element number 0 that is not a group length', () => {
+    const other = Buffer.concat([header([0x0009, 0x0000], 'LO', 2), Buffer.from('ab')]);
+    expect(explicitToImplicit(other).length).toBe(10);
   });
 
   it('leaves out group lengths, which count the bytes of the other encoding', () => {

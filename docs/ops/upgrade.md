@@ -494,7 +494,7 @@ A DICOM Listener answered success before the message was stored. In `PER_FILE` m
 
 ## DICOM images pass byte for byte (#410)
 
-The DICOM Listener and Sender read and rewrote every dataset, which dropped private attributes and tags the library does not know and rewrote numbers as text (`1.50` became `1.5`). The Listener now stores the dataset as it came, and the Sender sends the stored bytes ([DICOM](../user/connector-reference.md#dicom), D-354). Images received before the upgrade stay as they were stored.
+The DICOM Listener and Sender read and rewrote every dataset, which dropped private attributes and tags the library does not know and rewrote numbers as text (`1.50` became `1.5`). The Listener now stores the dataset as it came, and the Sender sends the stored bytes ([DICOM](../user/connector-reference.md#dicom), D-354). Images received before the upgrade stay as they were stored. An instance without a SOP Class UID or SOP Instance UID in its dataset is now refused, where it was stored under a made-up UID.
 
 An image in a transfer syntax the archive does not take is now an ERROR that names it. A compressed one never went out uncompressed (it was not sent, and read SENT); one in explicit VR big endian or in implicit VR was rewritten in the archive's, with that loss, and no longer is.
 

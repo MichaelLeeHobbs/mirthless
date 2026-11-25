@@ -6,12 +6,16 @@ import { inflateRawSync } from 'node:zlib';
 
 const PREAMBLE_BYTES = 128;
 const MAGIC = 'DICM';
+const CUT_SHORT = 'The dataset is cut short';
 const META_GROUP = 0x0002;
 const TRANSFER_SYNTAX = 0x0010;
 const DEFLATED = '1.2.840.10008.1.2.1.99';
 
 /** PS3.5 7.1.2: these value representations have a four-byte length after two reserved bytes. */
 const LONG_VRS: ReadonlySet<string> = new Set(['OB', 'OD', 'OF', 'OL', 'OV', 'OW', 'SQ', 'SV', 'UC', 'UN', 'UR', 'UT', 'UV']);
+const SHORT_VRS: ReadonlySet<string> = new Set([
+  'AE', 'AS', 'AT', 'CS', 'DA', 'DS', 'DT', 'FD', 'FL', 'IS', 'LO', 'LT', 'PN', 'SH', 'SL', 'SS', 'ST', 'TM', 'UI', 'UL', 'US',
+]);
 
 export interface DicomFile {
   readonly transferSyntax: string;
@@ -30,12 +34,18 @@ interface ElementHeader {
 
 /** One element's header in explicit VR little endian. */
 function explicitHeader(bytes: Buffer, at: number): ElementHeader {
+  if (at + 8 > bytes.length) throw new Error(CUT_SHORT);
   const group = bytes.readUInt16LE(at);
   const element = bytes.readUInt16LE(at + 2);
   // Items and delimiters have no value representation.
   if (group === 0xfffe) return { group, element, vr: '', length: bytes.readUInt32LE(at + 4), start: at + 8 };
   const vr = bytes.toString('latin1', at + 4, at + 6);
-  if (LONG_VRS.has(vr)) return { group, element, vr, length: bytes.readUInt32LE(at + 8), start: at + 12 };
+  if (LONG_VRS.has(vr)) {
+    if (at + 12 > bytes.length) throw new Error(CUT_SHORT);
+    return { group, element, vr, length: bytes.readUInt32LE(at + 8), start: at + 12 };
+  }
+  // Without knowing the VR, the size of its length is a guess, and a wrong one reads a value as elements.
+  if (!SHORT_VRS.has(vr)) throw new Error('The dataset has an element of an unknown value representation');
   return { group, element, vr, length: bytes.readUInt16LE(at + 6), start: at + 8 };
 }
 
@@ -49,6 +59,11 @@ const MAX_INFLATED_BYTES = 256 * 1024 * 1024;
 /** The dataset as a reader of its elements needs it: one transfer syntax deflates the whole of it. */
 export function readableDataset(dataset: Buffer, transferSyntax: string): Buffer {
   return transferSyntax === DEFLATED ? inflateRawSync(dataset, { maxOutputLength: MAX_INFLATED_BYTES }) : dataset;
+}
+
+/** Whether a dataset starts with elements that belong in a file's header, in either byte order. */
+export function startsWithFileMeta(dataset: Buffer): boolean {
+  return dataset.length >= 2 && (dataset.readUInt16LE(0) === META_GROUP || dataset.readUInt16BE(0) === META_GROUP);
 }
 
 /** Read a DICOM file, or throw when it is not one. */
@@ -158,23 +173,26 @@ export function explicitToImplicit(dataset: Buffer): Buffer {
     if (at >= dataset.length) break;
     const { group, element, vr, length, start } = explicitHeader(dataset, at);
     const isItem = group === ITEM_GROUP;
+    const within = open.reduce((end, container) => Math.min(end, container.end), dataset.length);
     if (isItem && element !== ITEM) {
       open.pop();
       out.push(implicitHeader(group, element, 0));
       at = start;
     } else if (length !== 0 && (isItem || vr === 'SQ')) {
-      open.push({ end: length === UNDEFINED_LENGTH ? Infinity : start + length, delimiter: isItem ? ITEM_END : SEQUENCE_END });
+      const end = length === UNDEFINED_LENGTH ? Infinity : start + length;
+      if (end !== Infinity && end > within) throw new Error(CUT_SHORT);
+      open.push({ end, delimiter: isItem ? ITEM_END : SEQUENCE_END });
       out.push(implicitHeader(group, element, UNDEFINED_LENGTH));
       at = start;
     } else {
       const end = length === UNDEFINED_LENGTH ? unknownEnd(dataset, start, vr) : start + length;
-      if (end > dataset.length) throw new Error('The dataset is cut short');
+      if (end > within) throw new Error(CUT_SHORT);
       // A group length counts the bytes of explicit VR headers.
-      if (element !== 0x0000) out.push(implicitHeader(group, element, length), dataset.subarray(start, end));
+      if (element !== 0x0000 || vr !== 'UL' || length !== 4) out.push(implicitHeader(group, element, length), dataset.subarray(start, end));
       at = end;
     }
   }
-  if (open.length > 0) throw new Error('The dataset is cut short');
+  if (open.length > 0) throw new Error(CUT_SHORT);
   return Buffer.concat(out);
 }
 

@@ -30,7 +30,7 @@ export class StoredDataset extends Dataset {
 
   /** What the library transcodes from. There is nothing to transcode, and without this it would send two elements as the image. */
   override getElements(): never {
-    throw new Error('The stored dataset is sent as it is');
+    throw new Error('A stored image is not transcoded');
   }
 
   /** The same elements and values for an AE that takes only implicit VR, or null when they cannot be put so. */
