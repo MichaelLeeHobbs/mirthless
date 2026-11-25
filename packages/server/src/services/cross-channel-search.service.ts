@@ -9,6 +9,8 @@ export interface SearchItem {
   readonly messageId: number;
   readonly channelId: string;
   readonly channelName: string;
+  /** Its messages are kept. */
+  readonly channelDeleted: boolean;
   readonly receivedAt: string;
   readonly processed: boolean;
   readonly status: string | null;
@@ -98,6 +100,7 @@ export class CrossChannelSearchService {
           messageId: messages.id,
           channelId: messages.channelId,
           channelName: sql<string>`coalesce(${channels.name}, 'Unknown')`,
+          channelDeleted: sql<boolean>`${channels.deletedAt} is not null`,
           receivedAt: messages.receivedAt,
           processed: messages.processed,
           status: pickStatus,
@@ -117,6 +120,7 @@ export class CrossChannelSearchService {
         messageId: row.messageId,
         channelId: row.channelId,
         channelName: row.channelName,
+        channelDeleted: row.channelDeleted,
         receivedAt: row.receivedAt.toISOString(),
         processed: row.processed,
         status: row.status ?? null,

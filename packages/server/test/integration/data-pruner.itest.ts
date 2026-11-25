@@ -129,17 +129,21 @@ describeIntegration('DataPruner (real Postgres)', () => {
     expect(await remainingIds(channelId)).toEqual([resent]);
   });
 
-  it('counts only messages it would actually prune in the statistics', async () => {
-    const { db, schema, eq, DataPrunerService } = mods;
+  async function insertChannel(settings: { readonly pruningEnabled: boolean; readonly pruningMaxAgeDays?: number }): Promise<string> {
+    const { db, schema } = mods;
     const [channel] = await db
       .insert(schema.channels)
       .values({
         name: `itest-prune-${randomUUID().slice(0, 8)}`, sourceConnectorType: 'HTTP', sourceConnectorProperties: {},
-        inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
-        pruningEnabled: true, pruningMaxAgeDays: 30,
+        inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', ...settings,
       } as never)
       .returning({ id: schema.channels.id });
-    const channelId = channel!.id;
+    return channel!.id;
+  }
+
+  it('counts only messages it would actually prune in the statistics', async () => {
+    const { db, schema, eq, DataPrunerService } = mods;
+    const channelId = await insertChannel({ pruningEnabled: true, pruningMaxAgeDays: 30 });
     await seedMessage(channelId, 40);
     await seedMessage(channelId, 40, { destinationStatus: 'QUEUED' });
     await seedMessage(channelId, 1);
@@ -151,5 +155,34 @@ describeIntegration('DataPruner (real Postgres)', () => {
     expect(all.failedChannelIds).toEqual([]);
     expect(await remainingIds(channelId)).toHaveLength(2);
     await db.delete(schema.channels).where(eq(schema.channels.id, channelId));
+  });
+
+  it('goes on pruning a deleted channel by the settings it had (#202)', async () => {
+    const { db, schema, eq, ChannelService, DataPrunerService } = mods;
+    const ten = await insertChannel({ pruningEnabled: true, pruningMaxAgeDays: 10 });
+    const noAge = await insertChannel({ pruningEnabled: true });
+    const off = await insertChannel({ pruningEnabled: false, pruningMaxAgeDays: 10 });
+    try {
+      const kept: Record<string, number[]> = {};
+      for (const id of [ten, noAge, off]) {
+        const old = await seedMessage(id, 40);
+        const inBetween = await seedMessage(id, 20);
+        const recent = await seedMessage(id, 5);
+        const unfinished = [await seedMessage(id, 40, { processed: false }), await seedMessage(id, 40, { destinationStatus: 'QUEUED' })];
+        kept[id] = id === off ? [old, inBetween, recent, ...unfinished] : id === ten ? [recent, ...unfinished] : [inBetween, recent, ...unfinished];
+        unwrap(await ChannelService.delete(id));
+      }
+
+      const stats = new Map(unwrap(await DataPrunerService.getStatistics()).map((s) => [s.channelId, s.prunableCount]));
+      expect([ten, noAge, off].map((id) => stats.get(id))).toEqual([2, 1, undefined]);
+      expect(unwrap(await DataPrunerService.pruneAll()).failedChannelIds).toEqual([]);
+
+      for (const id of [ten, noAge, off]) expect(await remainingIds(id)).toEqual(kept[id]);
+    } finally {
+      for (const id of [ten, noAge, off]) {
+        await db.delete(schema.messages).where(eq(schema.messages.channelId, id));
+        await db.delete(schema.channels).where(eq(schema.channels.id, id));
+      }
+    }
   });
 });

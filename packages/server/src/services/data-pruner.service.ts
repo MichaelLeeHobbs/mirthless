@@ -1,5 +1,5 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, isNull, sql, type SQL } from 'drizzle-orm';
+import { eq, and, sql, type SQL } from 'drizzle-orm';
 import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
@@ -60,6 +60,14 @@ function prunableWhere(channelId: string, cutoffDate: Date): SQL {
   `;
 }
 
+/** Deleted ones too: their messages are kept as long as before (#202). */
+function prunedChannels(scope: ChannelScope): Promise<ReadonlyArray<{ readonly id: string; readonly pruningMaxAgeDays: number | null }>> {
+  return db
+    .select({ id: channels.id, pruningMaxAgeDays: channels.pruningMaxAgeDays })
+    .from(channels)
+    .where(and(eq(channels.pruningEnabled, true), channelIdIn(channels.id, scope)));
+}
+
 /** Bounded batches, so the work never depends on how many messages there are. */
 async function deleteOldMessages(
   channelId: string,
@@ -115,18 +123,7 @@ export class DataPrunerService {
     budgetMs: number = SWEEP_BUDGET_MS.SCHEDULED,
   ): Promise<Result<PruneAllResult>> {
     return tryCatch(async () => {
-      const prunableChannels = await db
-        .select({
-          id: channels.id,
-          pruningMaxAgeDays: channels.pruningMaxAgeDays,
-        })
-        .from(channels)
-        .where(
-          and(
-            eq(channels.pruningEnabled, true),
-            isNull(channels.deletedAt),
-          ),
-        );
+      const prunableChannels = await prunedChannels(ALL_CHANNELS);
 
       let totalDeleted = 0;
       let channelsPruned = 0;
@@ -178,19 +175,7 @@ export class DataPrunerService {
   static async getStatistics(scope: ChannelScope = ALL_CHANNELS): Promise<Result<ReadonlyArray<PrunableChannelStats>>> {
     return tryCatch(async () => {
       // `scope`: the reader's settings:read channels (D-310).
-      const prunableChannels = await db
-        .select({
-          id: channels.id,
-          pruningMaxAgeDays: channels.pruningMaxAgeDays,
-        })
-        .from(channels)
-        .where(
-          and(
-            eq(channels.pruningEnabled, true),
-            isNull(channels.deletedAt),
-            channelIdIn(channels.id, scope),
-          ),
-        );
+      const prunableChannels = await prunedChannels(scope);
 
       const results: PrunableChannelStats[] = [];
 

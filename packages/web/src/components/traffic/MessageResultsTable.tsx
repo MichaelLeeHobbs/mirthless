@@ -9,6 +9,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
 import Link from '@mui/material/Link';
+import Chip from '@mui/material/Chip';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import IconButton from '@mui/material/IconButton';
@@ -74,6 +75,7 @@ export function MessageResultsTable({
             ) : (
               items.map((item) => {
                 const key = `${item.channelId}-${String(item.messageId)}`;
+                const reprocessTitle = item.channelDeleted ? 'The channel is deleted: its messages cannot be reprocessed' : 'Reprocess this message';
                 return (
                   <TableRow key={key} hover>
                     <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.8125rem' }}>{item.messageId}</TableCell>
@@ -81,6 +83,7 @@ export function MessageResultsTable({
                       <Link component="button" variant="body2" onClick={() => { navigate(`/channels/${item.channelId}/messages`); }} sx={{ textDecoration: 'none' }}>
                         {item.channelName}
                       </Link>
+                      {item.channelDeleted ? <Chip label="Deleted" size="small" variant="outlined" sx={{ ml: 1 }} /> : null}
                     </TableCell>
                     <TableCell sx={HIDE_ON_PHONE}>{item.connectorName ?? '-'}</TableCell>
                     <TableCell>{item.status ? <MessageStatusChip status={item.status} /> : '-'}</TableCell>
@@ -95,12 +98,12 @@ export function MessageResultsTable({
                                 <OpenInNewIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                            <Tooltip title="Reprocess this message">
+                            <Tooltip title={reprocessTitle}>
                               <span>
                                 <IconButton
                                   size="small"
                                   aria-label="Reprocess"
-                                  disabled={reprocessingKey === key}
+                                  disabled={reprocessingKey === key || item.channelDeleted}
                                   onClick={() => { onReprocess?.(item.channelId, item.messageId); }}
                                 >
                                   <ReplayIcon fontSize="small" />
@@ -115,12 +118,12 @@ export function MessageResultsTable({
                                 Open
                               </Button>
                             </Tooltip>
-                            <Tooltip title="Reprocess this message">
+                            <Tooltip title={reprocessTitle}>
                               <span>
                                 <Button
                                   size="small"
                                   startIcon={<ReplayIcon />}
-                                  disabled={reprocessingKey === key}
+                                  disabled={reprocessingKey === key || item.channelDeleted}
                                   onClick={() => { onReprocess?.(item.channelId, item.messageId); }}
                                 >
                                   Reprocess

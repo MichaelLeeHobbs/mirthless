@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { MessageStatus } from '@galvanigraph/core-models';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import { deleteTestChannel, describeIntegration, insertTestChannel, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('CrossChannelSearchService (real Postgres)', () => {
   let mods: ServerModules;
@@ -95,5 +95,27 @@ describeIntegration('CrossChannelSearchService (real Postgres)', () => {
     }));
     expect(result.total).toBe(1);
     expect(result.items[0]!.channelId).toBe(chA);
+  });
+
+  it('lists the messages of a deleted channel, and says that it is deleted (#202)', async () => {
+    const live = randomUUID();
+    const deleted = randomUUID();
+    const noRow = randomUUID();
+    channelIds.push(live, deleted, noRow);
+    for (const id of [live, deleted]) await insertTestChannel(mods, id);
+    try {
+      for (const id of [live, deleted, noRow]) await seedMessage(id, [{ metaDataId: 1, name: 'dest', status: 'ERROR' }]);
+      unwrap(await mods.ChannelService.delete(deleted));
+
+      const { items } = unwrap(await mods.CrossChannelSearchService.search({ channelIds: `${live},${deleted},${noRow}`, limit: 50, offset: 0 }));
+
+      expect(new Map(items.map((i) => [i.channelId, [i.channelName, i.channelDeleted]]))).toEqual(new Map([
+        [live, [`itest-${live}`, false]],
+        [deleted, [`itest-${deleted}`, true]],
+        [noRow, ['Unknown', false]],
+      ]));
+    } finally {
+      for (const id of [live, deleted]) await deleteTestChannel(mods, id);
+    }
   });
 });
