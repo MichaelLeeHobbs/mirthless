@@ -40,7 +40,6 @@ export interface EmailMessage {
   readonly to: string;
   readonly date: string;
   readonly source: Buffer;
-  readonly attachmentCount: number;
   /** True when the email already carries {@link DISPATCHED_KEYWORD} or one of {@link LEGACY_DISPATCHED_KEYWORDS}. */
   readonly dispatched: boolean;
   /** True when the email carries {@link ERROR_KEYWORD}. */
@@ -174,7 +173,6 @@ function toEmail({ uid, source, envelope, flags }: ImapFlowFetchMessage): EmailM
     to: envelope?.to?.[0]?.address ?? '',
     date: dateText(envelope?.date),
     source,
-    attachmentCount: 0,
     dispatched: hasDispatchedKeyword(flags),
     held: hasErrorKeyword(flags),
   };
