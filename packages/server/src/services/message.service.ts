@@ -74,6 +74,11 @@ async function lockUnrouted(tx: Parameters<Parameters<typeof db.transaction>[0]>
   return message;
 }
 
+function mustBeThere(updated: readonly unknown[], messageId: number, metaDataId: number): void {
+  if (updated.length > 0) return;
+  throw new ServiceError('NOT_FOUND', `Message ${String(messageId)} is no longer stored for connector ${String(metaDataId)}`);
+}
+
 export class MessageService {
   static async createMessage(
     channelId: string,
@@ -134,7 +139,7 @@ export class MessageService {
       if (errorCode !== undefined) {
         updates['errorCode'] = errorCode;
       }
-      await db
+      const updated = await db
         .update(connectorMessages)
         .set(updates)
         .where(
@@ -143,7 +148,9 @@ export class MessageService {
             eq(connectorMessages.messageId, messageId),
             eq(connectorMessages.metaDataId, metaDataId),
           ),
-        );
+        )
+        .returning({ messageId: connectorMessages.messageId });
+      mustBeThere(updated, messageId, metaDataId);
     });
   }
 
@@ -233,7 +240,7 @@ export class MessageService {
     metaDataId: number,
   ): Promise<Result<void>> {
     return tryCatch(async () => {
-      await db
+      const queued = await db
         .update(connectorMessages)
         .set({ status: 'QUEUED' })
         .where(
@@ -242,7 +249,9 @@ export class MessageService {
             eq(connectorMessages.messageId, messageId),
             eq(connectorMessages.metaDataId, metaDataId),
           ),
-        );
+        )
+        .returning({ messageId: connectorMessages.messageId });
+      mustBeThere(queued, messageId, metaDataId);
     });
   }
 
@@ -481,16 +490,16 @@ export class MessageService {
   /**
    * Puts a message that stopped before it was routed back as it was when it was received, so
    * running it again cannot leave a second message to deliver. Refused once it was routed, and
-   * for a message that is finished or gone. Takes its locks in the order a message's deletion does.
+   * for a message that is finished or gone. Locks its connectors first, as a message's deletion does.
    */
   static async resetToReceived(channelId: string, messageId: number): Promise<Result<CreateMessageResult>> {
     return tryCatch(() => db.transaction(async (tx) => {
       const ofMessage = <T extends typeof messageCustomMetadata | typeof messageContent | typeof connectorMessages>(table: T) =>
         and(eq(table.channelId, channelId), eq(table.messageId, messageId));
+      const message = await lockUnrouted(tx, channelId, messageId);
       await tx.delete(messageCustomMetadata).where(ofMessage(messageCustomMetadata));
       const received = and(eq(messageContent.metaDataId, 0), inArray(messageContent.contentType, [CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP]));
       await tx.delete(messageContent).where(and(ofMessage(messageContent), not(received!)));
-      const message = await lockUnrouted(tx, channelId, messageId);
       await tx.delete(connectorMessages).where(and(ofMessage(connectorMessages), gt(connectorMessages.metaDataId, 0)));
       await tx.update(connectorMessages).set({ status: 'RECEIVED' }).where(and(ofMessage(connectorMessages), eq(connectorMessages.metaDataId, 0)));
       return message;

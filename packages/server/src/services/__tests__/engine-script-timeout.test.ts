@@ -70,12 +70,7 @@ vi.mock('../config-map.service.js', () => ({
 }));
 
 vi.mock('../alert.service.js', () => ({
-  AlertService: {
-    list: vi.fn().mockResolvedValue({
-      ok: true, value: { data: [], pagination: { page: 1, pageSize: 1000, total: 0, totalPages: 0 } }, error: null,
-    }),
-    getByIds: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
-  },
+  AlertService: { listEnabled: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }), onChange: vi.fn() },
 }));
 
 vi.mock('../email.service.js', () => ({

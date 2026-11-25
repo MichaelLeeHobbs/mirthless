@@ -35,10 +35,7 @@ vi.mock('../global-map.service.js', () => ({
 }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) } }));
 vi.mock('../alert.service.js', () => ({
-  AlertService: {
-    list: vi.fn().mockResolvedValue({ ok: true, value: { data: [], pagination: { page: 1, pageSize: 1000, total: 0, totalPages: 0 } }, error: null }),
-    getByIds: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
-  },
+  AlertService: { listEnabled: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }), onChange: vi.fn() },
 }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn(), emitAuditEvent: vi.fn() }));

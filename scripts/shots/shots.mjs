@@ -34,6 +34,7 @@ const PAGES = {
   'destination-dicom': { url: '/channels/c5', click: 'Destinations', scrollTo: 'Connector Settings' },
   'destination-sftp': { url: '/channels/c7', click: 'Destinations', scrollTo: 'Connector Settings' },
   'message-browser': '/channels/c1/messages',
+  'message-delete': { url: '/channels/c1/messages', click: ['48210', 'Delete'] },
   traffic: '/messages',
   alerts: '/alerts',
   users: '/users',
