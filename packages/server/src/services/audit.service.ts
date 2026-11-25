@@ -11,12 +11,13 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { and, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { AuditListQuery } from '@galvanigraph/core-models';
 import { errorInfo } from '@galvanigraph/core-util';
+import { config } from '../config/index.js';
 import { db } from '../lib/db.js';
 import logger from '../lib/logger.js';
 import { ServiceError } from '../lib/service-error.js';
 import { auditLog } from '../db/schema/index.js';
 
-export const AUDIT_WRITE_TIMEOUT_MS = 2000;
+export const AUDIT_WRITE_TIMEOUT_MS = config.AUDIT_WRITE_TIMEOUT_MS;
 
 /** Never put message content, a token or a secret in `attributes`. */
 export interface AuditRecordInput {

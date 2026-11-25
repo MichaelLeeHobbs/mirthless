@@ -17,6 +17,6 @@ export default defineConfig({
     hookTimeout: INTEGRATION_LIMIT_MS,
     expect: { poll: { timeout: INTEGRATION_WAIT_MS } },
     // The child processes the suites start take it too.
-    env: { DATABASE_CONNECT_TIMEOUT_MS: String(INTEGRATION_WAIT_MS) },
+    env: { DATABASE_CONNECT_TIMEOUT_MS: String(INTEGRATION_WAIT_MS), AUDIT_WRITE_TIMEOUT_MS: String(INTEGRATION_WAIT_MS) },
   },
 });

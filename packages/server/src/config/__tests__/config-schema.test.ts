@@ -83,14 +83,14 @@ describe('configSchema', () => {
     expect(configSchema.safeParse({ ...base, DATABASE_STATEMENT_TIMEOUT_MS: '-1' }).success).toBe(false);
   });
 
-  it('waits 5 seconds for a connection unless told otherwise', () => {
-    expect(configSchema.parse(base).DATABASE_CONNECT_TIMEOUT_MS).toBe(5_000);
-    expect(configSchema.parse({ ...base, DATABASE_CONNECT_TIMEOUT_MS: '60000' }).DATABASE_CONNECT_TIMEOUT_MS).toBe(60_000);
+  it.each([['DATABASE_CONNECT_TIMEOUT_MS', 5_000], ['AUDIT_WRITE_TIMEOUT_MS', 2_000]] as const)('reads %s as milliseconds, %i unless told otherwise', (name, byDefault) => {
+    expect(configSchema.parse(base)[name]).toBe(byDefault);
+    expect(configSchema.parse({ ...base, [name]: '60000' })[name]).toBe(60_000);
   });
 
-  it('rejects a connection time limit that is none, or that a timer cannot keep', () => {
+  it.each(['DATABASE_CONNECT_TIMEOUT_MS', 'AUDIT_WRITE_TIMEOUT_MS'])('rejects a %s that is no limit, or that a timer cannot keep', (name) => {
     for (const bad of ['0', '-1', '1.5', 'soon', '2147483648']) {
-      expect(refused({ ...base, DATABASE_CONNECT_TIMEOUT_MS: bad })).toEqual(['DATABASE_CONNECT_TIMEOUT_MS']);
+      expect(refused({ ...base, [name]: bad })).toEqual([name]);
     }
   });
 

@@ -58,6 +58,8 @@ export const configSchema = z.object({
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(120_000),
   // Longest wait for a connection, from the pool or to the database, in milliseconds.
   DATABASE_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().max(MAX_TIMER_DELAY_MS).default(5_000),
+  // Longest wait for an audit record, in milliseconds, before a request that needs one is refused.
+  AUDIT_WRITE_TIMEOUT_MS: z.coerce.number().int().positive().max(MAX_TIMER_DELAY_MS).default(2_000),
 
   // Per client address per minute. Read by the rate limiter; declared here so a
   // bad value stops the server at startup instead of being ignored.

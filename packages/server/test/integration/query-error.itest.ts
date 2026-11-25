@@ -95,7 +95,7 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     unwrap(await deployment.DeploymentService.deploy(channel.id, actor));
     if (engineMod.getEngine().getRuntime(channel.id)!.runtime.getState() !== 'STARTED') unwrap(await deployment.DeploymentService.start(channel.id, actor));
     try {
-      await apiCall(base, token, 'POST', `/channels/${channel.id}/send-message`, { content: 'hello' });
+      expect((await apiCall(base, token, 'POST', `/channels/${channel.id}/send-message`, { content: 'hello' })).status).toBeLessThan(300);
       await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, WAIT);
       expect(logged).toContain('Message store write failed');
       const destination = async (): Promise<unknown> => (await mods.pool.query(
