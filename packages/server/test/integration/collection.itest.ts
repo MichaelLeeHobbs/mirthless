@@ -122,7 +122,7 @@ describeIntegration('CollectionService (real Postgres)', () => {
       expect(unwrap(await CollectionService.find(name, { ...query({ k: 'a' }), limit: 2 })).map((r) => r.payload)).toEqual(['lives on']);
     });
 
-    it.each([['over at this very moment', 0, 0], ['not over for a millisecond', -1, 1]])('is one whose life is %s: %i ms ago', async (_what, agoMs, found) => {
+    it.each([['is', 'ends at this very moment', 0, 0], ['is not', 'ends in a millisecond', -1, 1]])('%s one whose life %s', async (_is, _what, agoMs, found) => {
       const { CollectionService } = mods;
       const { name } = await makeCollection(['k']);
       const now = Date.parse('2026-11-25T12:00:00.000Z');

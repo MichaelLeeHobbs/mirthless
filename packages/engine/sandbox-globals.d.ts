@@ -133,7 +133,7 @@ interface CollectionHandle {
       order?: 'asc' | 'desc';
     },
   ): Promise<CollectionRecord[]>;
-  /** Null when it no longer exists, or has expired and "expireAt" is not null or later than now. */
+  /** Null when it no longer exists, or has expired, unless "expireAt" is null or later than now. */
   update(
     id: string,
     changes: { fields?: Record<string, string | number | boolean>; payload?: string; expireAt?: string | null },

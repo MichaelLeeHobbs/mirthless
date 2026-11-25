@@ -610,14 +610,14 @@ FROM collections c JOIN collection_records r ON r.collection_id = c.id
 GROUP BY c.id ORDER BY c.name;
 ```
 
-To keep expired records found, give them a new life: one at a time on the records page, or in the database, for example 30 days for all of a collection's. Take a database backup first: a JSON server backup has no collections in it.
+To keep expired records found, give them a new life. No older record of a key may outlive a newer one, or `latest` returns the older one: so give a new life to every record of the collection that expires sooner, not to the expired ones alone, and one that is no longer than the collection's default TTL (make the default longer first). Take a database backup first: a JSON server backup has no collections in it.
 
 ```sql
 UPDATE collection_records SET expire_at = now() + interval '30 days'
-WHERE collection_id = '<id>' AND expire_at <= now();
+WHERE collection_id = '<id>' AND expire_at < now() + interval '30 days';
 ```
 
-Do not set it to `NULL` (never) where newer records of the same key expire: the old record would be the newest match once they have. Clear the collection's default TTL first then, and the expiry of all its records, and remember that they and the PHI in them are kept until someone deletes them.
+The same goes for a single record that you give a new life on the records page. Records that scripts stored with a life of their own need a look each. Set an expiry to `NULL` (never) only for all of a collection's records together, after clearing its default TTL; they and the PHI in them are then kept until someone deletes them.
 
 ## Database values, timeouts and marked rows (#411)
 
