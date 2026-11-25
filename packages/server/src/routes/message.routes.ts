@@ -1,17 +1,17 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { messageSearchQuerySchema, messageExportQuerySchema } from '@galvanigraph/core-models';
+import { messageSearchQuerySchema, messageExportQuerySchema, idSchema } from '@galvanigraph/core-models';
 import { MessageController } from '../controllers/message.controller.js';
 import { MessageExportController } from '../controllers/message-export.controller.js';
 import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const channelIdParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
 
 const messageParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   msgId: z.coerce.number().int().positive(),
 });
 

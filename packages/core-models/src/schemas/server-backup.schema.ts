@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import { channelExportEntrySchema } from './channel-export.schema.js';
 import { updateGlobalScriptsSchema } from './global-script.schema.js';
+import { idSchema } from './id.schema.js';
 
 const BACKUP_COLLISION_MODE = {
   SKIP: 'SKIP',
@@ -12,7 +13,7 @@ export { BACKUP_COLLISION_MODE };
 export type { BackupCollisionMode };
 
 const backupUserSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   username: z.string(),
   email: z.string(),
   firstName: z.string().nullable(),
@@ -35,16 +36,16 @@ const backupSettingSchema = z.object({
 });
 
 const backupCodeTemplateLibrarySchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   name: z.string(),
   description: z.string().nullable(),
   /** Absent in backups made before libraries could be scoped: every channel. */
-  channelIds: z.array(z.string().uuid()).nullable().optional(),
+  channelIds: z.array(idSchema).nullable().optional(),
 });
 
 const backupCodeTemplateSchema = z.object({
-  id: z.string().uuid(),
-  libraryId: z.string().uuid(),
+  id: idSchema,
+  libraryId: idSchema,
   name: z.string(),
   description: z.string().nullable(),
   type: z.string(),
@@ -59,7 +60,7 @@ const backupAlertActionSchema = z.object({
 });
 
 const backupAlertSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   name: z.string(),
   description: z.string().nullable(),
   enabled: z.boolean(),
@@ -70,7 +71,7 @@ const backupAlertSchema = z.object({
     // NO_MESSAGES triggers; absent in backups made before that trigger existed.
     windowMinutes: z.number().int().nullable().optional(),
   }),
-  channelIds: z.array(z.string().uuid()),
+  channelIds: z.array(idSchema),
   actions: z.array(backupAlertActionSchema),
   subjectTemplate: z.string().nullable(),
   bodyTemplate: z.string().nullable(),
@@ -88,7 +89,7 @@ const backupGlobalScriptsSchema = z.object({
 });
 
 const backupResourceSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   name: z.string(),
   description: z.string().nullable(),
   mimeType: z.string().nullable(),
@@ -96,20 +97,20 @@ const backupResourceSchema = z.object({
 });
 
 const backupChannelGroupSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   name: z.string(),
   description: z.string().nullable(),
 });
 
 const backupTagSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   name: z.string(),
   color: z.string().nullable(),
 });
 
 const backupChannelDependencySchema = z.object({
-  channelId: z.string().uuid(),
-  dependsOnChannelId: z.string().uuid(),
+  channelId: idSchema,
+  dependsOnChannelId: idSchema,
 });
 
 const backupConfigMapEntrySchema = z.object({
@@ -126,13 +127,13 @@ const backupGlobalMapEntrySchema = z.object({
 });
 
 const backupGroupMembershipSchema = z.object({
-  channelGroupId: z.string().uuid(),
-  channelId: z.string().uuid(),
+  channelGroupId: idSchema,
+  channelId: idSchema,
 });
 
 const backupTagAssignmentSchema = z.object({
-  tagId: z.string().uuid(),
-  channelId: z.string().uuid(),
+  tagId: idSchema,
+  channelId: idSchema,
 });
 
 export const serverBackupSchema = z.object({

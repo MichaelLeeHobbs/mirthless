@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { idSchema } from './id.schema.js';
 
 export const channelRevisionSummarySchema = z.object({
-  id: z.string().uuid(),
-  channelId: z.string().uuid(),
+  id: idSchema,
+  channelId: idSchema,
   revision: z.number().int().positive(),
-  userId: z.string().uuid().nullable(),
+  userId: idSchema.nullable(),
   comment: z.string().nullable(),
   createdAt: z.string(),
 });
@@ -18,6 +19,6 @@ export const channelRevisionDetailSchema = channelRevisionSummarySchema.extend({
 export type ChannelRevisionDetail = z.infer<typeof channelRevisionDetailSchema>;
 
 export const channelRevisionParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   rev: z.coerce.number().int().positive(),
 });

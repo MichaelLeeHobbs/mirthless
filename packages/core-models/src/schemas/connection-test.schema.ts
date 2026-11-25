@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { CONNECTOR_TYPES } from '../constants.js';
+import { idSchema } from './id.schema.js';
 
 const CONNECTOR_MODE_VALUES = [
   'SOURCE',
@@ -11,7 +12,7 @@ export const connectionTestSchema = z.object({
   mode: z.enum(CONNECTOR_MODE_VALUES),
   properties: z.record(z.string(), z.unknown()),
   /** The channel the test is for; required of a deployer scoped to some groups (D-310). */
-  channelId: z.string().uuid().optional(),
+  channelId: idSchema.optional(),
 });
 
 export type ConnectionTestInput = z.infer<typeof connectionTestSchema>;

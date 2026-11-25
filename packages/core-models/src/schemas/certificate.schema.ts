@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const CERTIFICATE_TYPE = {
   CA: 'CA',
@@ -45,5 +46,5 @@ export const certificateListQuerySchema = z.object({
 export type CertificateListQuery = z.infer<typeof certificateListQuerySchema>;
 
 export const certificateUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });

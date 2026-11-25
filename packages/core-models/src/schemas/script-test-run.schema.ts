@@ -2,6 +2,7 @@
 
 import { z } from 'zod/v4';
 import { codeTemplateContextSchema } from './code-template.schema.js';
+import { idSchema } from './id.schema.js';
 
 export const SCRIPT_TEST_KINDS = ['filter', 'transformer', 'script'] as const;
 
@@ -21,7 +22,7 @@ export const scriptTestRunSchema = z.object({
   /** True for source filters and transformers, which see destinationSet. */
   destinationSet: z.boolean().default(false),
   /** The channel being edited: scopes templates, names destinations and sets the timeout. */
-  channelId: z.string().uuid().optional(),
+  channelId: idSchema.optional(),
 });
 
 export type ScriptTestRunInput = z.infer<typeof scriptTestRunSchema>;

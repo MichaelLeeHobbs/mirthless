@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const createTagSchema = z.object({
   name: z.string().min(1).max(100),
@@ -15,16 +16,16 @@ export const updateTagSchema = z.object({
 export type UpdateTagInput = z.infer<typeof updateTagSchema>;
 
 export const assignTagSchema = z.object({
-  channelId: z.string().uuid(),
+  channelId: idSchema,
 });
 
 export type AssignTagInput = z.infer<typeof assignTagSchema>;
 
 export const tagUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
 
 export const tagChannelParamSchema = z.object({
-  id: z.string().uuid(),
-  channelId: z.string().uuid(),
+  id: idSchema,
+  channelId: idSchema,
 });

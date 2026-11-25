@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { scriptLanguageSchema } from './script-language.schema.js';
+import { idSchema } from './id.schema.js';
 
 export const FILTER_RULE_TYPES = ['JAVASCRIPT', 'RULE_BUILDER'] as const;
 export const FILTER_OPERATORS = ['AND', 'OR'] as const;
@@ -21,7 +22,7 @@ export const filterRuleInputSchema = z.object({
 export type FilterRuleInput = z.infer<typeof filterRuleInputSchema>;
 
 export const filterInputSchema = z.object({
-  connectorId: z.string().uuid().nullable().default(null),
+  connectorId: idSchema.nullable().default(null),
   // null: the source's filter; a number: destination array index + 1, resolving connectorId when destinations are reinserted.
   metaDataId: z.number().int().positive().nullable().default(null),
   rules: z.array(filterRuleInputSchema).default([]),

@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { regexError } from '../regex-error.js';
+import { idSchema } from './id.schema.js';
 
 export const ALERT_TRIGGER_TYPES = ['CHANNEL_ERROR', 'NO_MESSAGES'] as const;
 
@@ -50,7 +51,7 @@ export const alertActionInputSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('CHANNEL'),
-    channelId: z.string().uuid(),
+    channelId: idSchema,
     recipients: z.array(z.string()).default([]),
   }),
 ]);
@@ -62,7 +63,7 @@ export const createAlertSchema = z.object({
   description: z.string().default(''),
   enabled: z.boolean().default(true),
   trigger: alertTriggerSchema,
-  channelIds: z.array(z.string().uuid()).default([]),
+  channelIds: z.array(idSchema).default([]),
   actions: z.array(alertActionInputSchema).default([]),
   subjectTemplate: z.string().nullable().default(null),
   bodyTemplate: z.string().nullable().default(null),
@@ -92,5 +93,5 @@ export const patchAlertEnabledSchema = z.object({
 export type PatchAlertEnabledInput = z.infer<typeof patchAlertEnabledSchema>;
 
 export const alertUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });

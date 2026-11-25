@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import { toScriptLanguage } from './script-language.schema.js';
 import { channelPropertiesSchema, sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
+import { idSchema } from './id.schema.js';
 
 // Script languages and response transformers are optional so files exported
 // before they were included still import (as JavaScript, with no response transformer).
@@ -91,7 +92,7 @@ const channelExportMetadataColumnSchema = z.object({
 });
 
 export const channelExportEntrySchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   name: z.string(),
   description: z.string().nullable(),
   enabled: z.boolean(),
@@ -168,7 +169,7 @@ export const channelImportSchema = z.object({
   channels: z.array(channelExportEntrySchema.superRefine(checkImportConnectorTypes)),
   collisionMode: z.enum(['SKIP', 'OVERWRITE', 'CREATE_NEW']),
   /** The group new channels join; see GrantService.placeNewChannel (D-310). */
-  groupId: z.string().uuid().optional(),
+  groupId: idSchema.optional(),
 });
 
 export type ChannelImportInput = z.infer<typeof channelImportSchema>;

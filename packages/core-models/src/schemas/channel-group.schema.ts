@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const createChannelGroupSchema = z.object({
   name: z.string().min(1).max(255),
@@ -22,8 +23,7 @@ export type UpdateChannelGroupInput = z.infer<typeof updateChannelGroupSchema>;
 export const SET_CHANNEL_GROUPS_MAX = 1000;
 
 export const setChannelGroupsSchema = z.object({
-  // Lowercased so an id matches the stored group and the repeat check sees an upper/lower pair as one.
-  groupIds: z.array(z.string().uuid().transform((id) => id.toLowerCase()))
+  groupIds: z.array(idSchema)
     .max(SET_CHANNEL_GROUPS_MAX)
     .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not repeat a group' }),
 });
@@ -31,5 +31,5 @@ export const setChannelGroupsSchema = z.object({
 export type SetChannelGroupsInput = z.infer<typeof setChannelGroupsSchema>;
 
 export const channelGroupUuidParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });

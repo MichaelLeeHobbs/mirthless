@@ -1,3 +1,4 @@
+export * from './id.schema.js';
 export * from './alert.schema.js';
 export * from './channel-export.schema.js';
 export * from './channel.schema.js';

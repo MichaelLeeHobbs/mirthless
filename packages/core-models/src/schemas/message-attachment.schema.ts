@@ -1,14 +1,15 @@
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 export const attachmentListParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   msgId: z.string().regex(/^\d+$/),
 });
 
 export type AttachmentListParams = z.infer<typeof attachmentListParamsSchema>;
 
 export const attachmentGetParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
   msgId: z.string().regex(/^\d+$/),
   attachmentId: z.string().min(1).max(255),
 });

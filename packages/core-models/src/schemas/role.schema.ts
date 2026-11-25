@@ -2,6 +2,7 @@
 
 import { z } from 'zod/v4';
 import { PERMISSIONS, type Permission } from '../constants.js';
+import { idSchema } from './id.schema.js';
 
 const PERMISSION_VALUES = Object.values(PERMISSIONS) as [Permission, ...Permission[]];
 
@@ -16,7 +17,7 @@ export const createRoleSchema = z.strictObject({
   description: z.string().max(1000).default(''),
   permissions: rolePermissionsSchema,
   /** Recorded in the audit log. */
-  clonedFrom: z.string().uuid().optional(),
+  clonedFrom: idSchema.optional(),
 });
 
 export const updateRoleSchema = z.strictObject({
@@ -26,7 +27,7 @@ export const updateRoleSchema = z.strictObject({
 });
 
 export const roleIdParamSchema = z.object({
-  id: z.string().uuid(),
+  id: idSchema,
 });
 
 /** A person has a handful of jobs. */
@@ -34,8 +35,8 @@ export const MAX_ASSIGNMENTS_PER_USER = 50;
 
 /** `groupIds` null: every channel, chosen explicitly (plan section 1). */
 export const assignmentInputSchema = z.strictObject({
-  roleId: z.string().uuid(),
-  groupIds: z.array(z.string().uuid()).min(1).max(100)
+  roleId: idSchema,
+  groupIds: z.array(idSchema).min(1).max(100)
     .refine((list) => new Set(list).size === list.length, 'A group is listed twice.')
     .nullable(),
   expiresAt: z.string().datetime({ offset: true }).nullable().default(null),

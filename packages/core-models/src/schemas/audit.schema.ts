@@ -1,6 +1,7 @@
 // The protected audit log (D-312). Operational events stay in the events table (event.schema.ts).
 
 import { z } from 'zod/v4';
+import { idSchema } from './id.schema.js';
 
 /** Written to audit_log only, never to events. */
 export const AUDIT_ACTION = {
@@ -77,8 +78,8 @@ export const auditListQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(25),
   action: z.string().optional(),
   outcome: z.enum(['SUCCESS', 'FAILURE']).optional(),
-  userId: z.string().uuid().optional(),
-  channelId: z.string().uuid().optional(),
+  userId: idSchema.optional(),
+  channelId: idSchema.optional(),
   startDate: z.string().datetime({ offset: true }).optional(),
   endDate: z.string().datetime({ offset: true }).optional(),
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MESSAGE_STATUS } from '../constants.js';
+import { idSchema } from './id.schema.js';
 
 const messageStatusValues = Object.values(MESSAGE_STATUS) as [string, ...string[]];
 
@@ -7,7 +8,8 @@ export const crossChannelSearchQuerySchema = z.object({
   status: z.enum(messageStatusValues).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-  channelIds: z.string().optional(),
+  // Lower case, as ids are stored: the search is recorded with its filters.
+  channelIds: z.string().toLowerCase().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional().default(25),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
@@ -17,7 +19,7 @@ export type CrossChannelSearchQuery = z.infer<typeof crossChannelSearchQuerySche
 export const crossChannelSearchResultSchema = z.object({
   items: z.array(z.object({
     messageId: z.number(),
-    channelId: z.string().uuid(),
+    channelId: idSchema,
     channelName: z.string(),
     receivedAt: z.string(),
     processed: z.boolean(),
