@@ -29,7 +29,7 @@ interface ServerClient {
 }
 
 interface ServerSession {
-  on(event: 'session' | 'sftp', handler: (accept: () => unknown) => void): void;
+  on(event: 'sftp', handler: (accept: () => unknown, refuse: () => void) => void): void;
 }
 
 interface Attrs {
@@ -80,6 +80,8 @@ export interface SftpServerRules {
   denyDotfiles?: boolean;
   /** Called before a rename is carried out. */
   onRename?: (from: string, to: string) => Promise<void> | void;
+  /** Called when a signed-in client asks for the SFTP subsystem, which is then not started: refused, or left unanswered. */
+  onSubsystem?: (refuse: () => void) => void;
 }
 
 export interface TestSftpServer {
@@ -240,7 +242,10 @@ export async function startSftpServer(...dirs: readonly string[]): Promise<TestS
     client.on('error', () => { /* A client that leaves mid-request is part of the tests. */ });
     client.on('close', () => { clients.delete(client); });
     client.on('session', (accept: () => ServerSession) => {
-      accept().on('sftp', (acceptSftp) => { server.serve(acceptSftp() as SftpStream); });
+      accept().on('sftp', (acceptSftp, refuse) => {
+        if (server.rules.onSubsystem) server.rules.onSubsystem(refuse);
+        else server.serve(acceptSftp() as SftpStream);
+      });
     });
   });
   await new Promise<void>((resolve) => { ssh.listen(0, '127.0.0.1', resolve); });
