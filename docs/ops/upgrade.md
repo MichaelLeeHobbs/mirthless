@@ -439,6 +439,12 @@ Importing a channel with `OVERWRITE`, or restoring a backup with it, used to cle
 
 Exports and backups now hold each channel's script timeout. Before, a channel imported as new, or restored onto a fresh server, got 30 seconds whatever it had. If you raised a channel's script timeout before such an import or restore, set it again. A file made before this version has no timeout: a channel it creates gets 30 seconds, and one it overwrites keeps its own.
 
+## More connector credentials are masked (D-345)
+
+Reads without `channels:write` on the channel, exports and backups now also mask the user name and password in a URL, a URL's query parameters named like a secret, the lines so named in headers saved as text, and settings whose name ends in `PW` or `pwd`. `PATCH /channels/:id/enabled` answers with credentials masked for everyone, and someone who may change other channels but only read this one sees them masked. Before, whoever could read a channel could read those credentials, and so could whoever was given an export or a backup file: replace the ones that matter.
+
+An import with `OVERWRITE` keeps a credential in a URL or in text headers when the file changes nothing else in that setting ([Credentials](api-automation.md#credentials)). Otherwise, and for a new channel, a masked URL is left out and the connector does not deploy until you enter it.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

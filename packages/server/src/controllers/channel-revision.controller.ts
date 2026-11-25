@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
-import { AUDIT_ACTION, holdsPermission } from '@galvanigraph/core-models';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { recordReadBestEffort } from '../lib/audited-read.js';
+import { holdsOnRouteChannel } from '../lib/channel-scope.js';
 import { ChannelRevisionService } from '../services/channel-revision.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
@@ -33,8 +34,8 @@ export class ChannelRevisionController {
     }
 
     // A snapshot carries the full connector config; readers without
-    // channels:write get credentials masked exactly as on GET /channels/:id.
-    const canWrite = holdsPermission(req.user?.permissions, 'channels:write');
+    // channels:write on this channel get credentials masked exactly as on GET /channels/:id.
+    const canWrite = holdsOnRouteChannel(req, 'channels:write');
     const data = canWrite
       ? result.value
       : { ...result.value, snapshot: redactChannelDetail(result.value.snapshot) };

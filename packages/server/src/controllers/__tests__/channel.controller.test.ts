@@ -187,8 +187,8 @@ describe('ChannelController', () => {
 
       const req = makeReq({
         params: { id: '00000000-0000-0000-0000-000000000001' } as Request['params'],
-        user: { id: 'u1', permissions: ['channels:read'] } as unknown as NonNullable<Request['user']>,
-      });
+        principal: { userId: 'u1', grants: standingFor({ id: 'u1', role: 'viewer' }).grants },
+      } as Partial<Request>);
       const res = makeRes();
 
       await ChannelController.getById(req, res);
@@ -204,7 +204,12 @@ describe('ChannelController', () => {
       expect(dprops['host']).toBe('sftp.local');
     });
 
-    it('returns real connector credentials for a caller with channels:write', async () => {
+    it.each([
+      ['on every channel', undefined, undefined, 'super-secret'],
+      ['in the channel\'s group', ['group-a'], ['group-a'], 'super-secret'],
+      ['only in another group', ['group-b'], ['group-a'], '__REDACTED__'],
+      ['in some group, for a channel in none', ['group-b'], [], '__REDACTED__'],
+    ])('shows connector credentials by the channel: channels:write %s', async (_where, groups, channelScope, password) => {
       const channel = makeChannelDetail({
         sourceConnectorProperties: { host: 'db.local', password: 'super-secret' },
       });
@@ -213,14 +218,16 @@ describe('ChannelController', () => {
       const req = makeReq({
         params: { id: '00000000-0000-0000-0000-000000000001' } as Request['params'],
         user: { id: 'u1', permissions: ['channels:read', 'channels:write'] } as unknown as NonNullable<Request['user']>,
-      });
+        principal: { userId: 'u1', grants: standingFor({ id: 'u1', role: 'channel-developer', ...(groups ? { groups } : {}) }).grants },
+        ...(channelScope ? { channelScope } : {}),
+      } as Partial<Request>);
       const res = makeRes();
 
       await ChannelController.getById(req, res);
 
       const data = ((res.json as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>)['data'] as Record<string, unknown>;
       const src = data['sourceConnectorProperties'] as Record<string, unknown>;
-      expect(src['password']).toBe('super-secret');
+      expect(src['password']).toBe(password);
     });
   });
 
@@ -369,8 +376,8 @@ describe('ChannelController', () => {
   });
 
   describe('setEnabled', () => {
-    it('returns channel detail after toggling enabled', async () => {
-      const channel = makeChannelDetail({ enabled: true });
+    it('returns channel detail, its credentials masked, after toggling enabled', async () => {
+      const channel = makeChannelDetail({ enabled: true, sourceConnectorProperties: { host: 'db.local', password: 'super-secret' } });
 
       mockService.setEnabled.mockResolvedValue({ ok: true, value: channel, error: null });
 
@@ -387,6 +394,7 @@ describe('ChannelController', () => {
 
       const data = response['data'] as Record<string, unknown>;
       expect(data['enabled']).toBe(true);
+      expect(data['sourceConnectorProperties']).toEqual({ host: 'db.local', password: '__REDACTED__' });
     });
   });
 

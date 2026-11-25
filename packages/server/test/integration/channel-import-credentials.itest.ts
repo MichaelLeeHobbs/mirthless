@@ -152,6 +152,23 @@ describeIntegration('OVERWRITE import and stored credentials (real Postgres)', (
     expect(destinations.get(2)).toEqual(amqp);
   });
 
+  it('keeps the credentials in a URL and in headers saved as text, until the file changes the rest of them', async () => {
+    const { db, eq, schema } = mods;
+    const http = { url: 'https://svc:url-secret@api.example.org/in?token=query-secret', headers: 'Accept: text/plain\nAuthorization: Bearer text-secret' };
+    await db.update(schema.channelConnectors).set({ connectorType: 'HTTP', properties: http }).where(eq(schema.channelConnectors.channelId, channelId));
+    file = await exportedFile();
+    expect(JSON.stringify(file.destinations)).not.toMatch(/url-secret|query-secret|text-secret/);
+    await importFile(file);
+    expect((await stored()).destinations).toEqual(new Map<number, Properties>([[1, http], [2, http]]));
+
+    const url = String(file.destinations[0]!.properties['url']).replace('api.example.org', 'attacker.example');
+    await importFile(withDestination(1, { url }));
+    const { destinations } = await stored();
+    // Without a URL the deploy is refused, so the mask is never sent and no credential is left out unnoticed.
+    expect(destinations.get(1)).toEqual({ headers: 'Accept: text/plain' });
+    expect(destinations.get(2)).toEqual(http);
+  });
+
   it.each([
     ['port', { port: 18_082 }],
     ['user name', { auth: { type: 'BASIC', username: 'other', password: '__REDACTED__' } }],

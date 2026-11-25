@@ -6,7 +6,7 @@ import type {
   PatchChannelEnabledInput,
   ChannelAccessQuery,
 } from '@galvanigraph/core-models';
-import { AUDIT_ACTION, can, holdsPermission } from '@galvanigraph/core-models';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { deny, DENY_REASON } from '../middleware/permission.middleware.js';
 import { ChannelService } from '../services/channel.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
@@ -14,7 +14,7 @@ import { recordReadBestEffort } from '../lib/audited-read.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 import { getEngine } from '../engine.js';
-import { channelScopeOf } from '../lib/channel-scope.js';
+import { channelScopeOf, holdsOnRouteChannel } from '../lib/channel-scope.js';
 import { assertCertificatesInScope } from '../services/connector-tls-resolver.js';
 import { GrantService } from '../services/grant.service.js';
 import { db } from '../lib/db.js';
@@ -30,7 +30,7 @@ import { errorInfo } from '@galvanigraph/core-util';
  */
 async function enabledChangeAllowed(req: Request, res: Response, id: string, input: UpdateChannelInput): Promise<boolean> {
   if (input.enabled === undefined) return true;
-  if (req.principal && can(req.principal.grants, 'channels:deploy', { groupIds: req.channelScope ?? [] })) return true;
+  if (holdsOnRouteChannel(req, 'channels:deploy')) return true;
   const current = await ChannelService.getById(id);
   if (!current.ok) {
     // The update answers a missing channel; any other failure refuses the save.
@@ -96,8 +96,8 @@ export class ChannelController {
       return;
     }
 
-    // Connector credentials are unmasked only for a caller who could edit them anyway.
-    const canWrite = holdsPermission(req.user?.permissions, 'channels:write');
+    // Connector credentials are unmasked only for a caller who could edit them on this channel.
+    const canWrite = holdsOnRouteChannel(req, 'channels:write');
     const data = canWrite
       ? result.value
       : redactChannelDetail(result.value as unknown as Record<string, unknown>);
@@ -200,6 +200,7 @@ export class ChannelController {
     }
 
     logger.info({ channelId: id, enabled }, 'Channel enabled toggled');
-    res.json({ success: true, data: result.value });
+    // Needs no channels:write, and records no credential read.
+    res.json({ success: true, data: redactChannelDetail(result.value as unknown as Record<string, unknown>) });
   }
 }

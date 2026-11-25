@@ -18,7 +18,7 @@ Paths are under `packages/server/src` unless they start with `packages/`, `docs/
 ### Guards and secrets
 
 - Guards read a flat list from `req.user`. A refusal is logged at debug level only, so production records nothing (`middleware/permission.middleware.ts`, #158).
-- Connector secrets are unmasked for anyone holding `channels:write` on any channel (`controllers/channel.controller.ts`). Clone reads its source unredacted (`services/channel.service.ts`).
+- Connector secrets are unmasked for anyone holding `channels:write` on any channel (`controllers/channel.controller.ts`). Fixed 2026-11-24: only for someone holding it on that channel (D-345). Clone reads its source unredacted (`services/channel.service.ts`).
 - The route walk (`public-routes.test.ts`, D-299) proves every non-public route refuses a caller without a session. Nothing walks the routes per role: the role test mocks `authenticate` and mounts some of the routers (`routes/__tests__/role-access.test.ts`, #155).
 
 ### Channels, groups and libraries
