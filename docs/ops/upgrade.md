@@ -443,6 +443,10 @@ Exports and backups now hold each channel's script timeout. Before, a channel im
 
 Before, a server that stopped again while crash recovery was running a message left a second copy of it, and the next start ran and delivered both. The upgrade stops that from happening, and it can't tell copies that are already there apart: each one is run and delivered once at the first start. If the server has been restarting over and over, disable the affected channels before the upgrade (the API may answer only now and then, so try again), and delete the extra copies in the message browser before you enable and deploy them: they have the same content and read RECEIVED. Keep one, or none if a copy with that content already reads SENT.
 
+## The log no longer holds the parameters of a failed statement (D-347)
+
+When a database statement failed, the server logged its parameters: connector passwords when saving a channel failed, and message content when storing it failed, for example during a database restart. The log line now names the statement and the database's error code. Logs written before may hold them, and so may alert emails: treat those as you treat the database, and replace the passwords they show. The log pages of the web UI did not show them.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

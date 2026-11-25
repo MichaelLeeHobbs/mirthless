@@ -13,6 +13,7 @@ import * as schema from '../schema/index.js';
 import { defaultSettings } from './settings.js';
 import { demoDataEnabled } from './seed-options.js';
 import { hashPassword } from '../../lib/password.js';
+import '../../lib/query-error.js';
 
 loadEnv({ path: '../../.env', quiet: true });
 loadEnv({ path: '.env', quiet: true });
