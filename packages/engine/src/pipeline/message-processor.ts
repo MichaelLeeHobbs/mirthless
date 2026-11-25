@@ -350,12 +350,7 @@ export class MessageProcessor {
       } catch (parseErr) {
         const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
         // Use inline error-out since errorOut helper isn't defined yet
-        await this.saved(messageId, 0, 'the ERROR status of a failed message', [
-          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, `Invalid ${dataType}: ${parseMsg}`, 'TEXT'),
-          this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
-          this.store.incrementStats(channelId, 0, serverId, 'errored'),
-          this.store.markProcessed(channelId, messageId),
-        ]);
+        await this.recordSourceError(messageId, `Invalid ${dataType}: ${parseMsg}`);
         mark('parseInbound');
         if (this.config.onError) {
           await this.config.onError({
@@ -368,12 +363,7 @@ export class MessageProcessor {
       }
 
       const errorOut = async (stage: string, errMsg: string): Promise<ProcessedMessage> => {
-        await this.saved(messageId, 0, 'the ERROR status of a failed message', [
-          this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, errMsg, 'TEXT'),
-          this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
-          this.store.incrementStats(channelId, 0, serverId, 'errored'),
-          this.store.markProcessed(channelId, messageId),
-        ]);
+        await this.recordSourceError(messageId, errMsg);
         mark(stage);
         if (this.config.onError) {
           await this.config.onError({
@@ -618,17 +608,26 @@ export class MessageProcessor {
 
   /** Finish a message that failed with an error no stage handled. */
   private async failUnexpected(messageId: number, reason: string): Promise<void> {
-    const { channelId, serverId } = this.config;
+    const { channelId } = this.config;
     const errorMessage = `Unexpected error while processing: ${reason}`;
-    await this.saved(messageId, 0, 'the ERROR status of a failed message', [
-      this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, errorMessage, 'TEXT'),
-      this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
-      this.store.incrementStats(channelId, 0, serverId, 'errored'),
-      this.store.markProcessed(channelId, messageId),
-    ]);
+    await this.recordSourceError(messageId, errorMessage);
     if (this.config.onError) {
       await this.config.onError({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage, timestamp: Date.now() });
     }
+  }
+
+  private async recordSourceError(messageId: number, reason: string): Promise<void> {
+    const { channelId, serverId } = this.config;
+    await Promise.all([
+      this.saved(messageId, 0, 'why a message failed', [
+        this.store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, reason, 'TEXT'),
+      ]),
+      this.saved(messageId, 0, 'the ERROR status of a failed message', [
+        this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+        this.store.incrementStats(channelId, 0, serverId, 'errored'),
+        this.store.markProcessed(channelId, messageId),
+      ]),
+    ]);
   }
 
   /** The destinations' connector rows must already exist. */
@@ -840,10 +839,14 @@ export class MessageProcessor {
     errMsg: string,
   ): Promise<DestinationResult> {
     const { channelId, serverId } = this.config;
-    await this.saved(messageId, dest.metaDataId, 'the ERROR status of a failed destination', [
-      this.store.storeContent(channelId, messageId, dest.metaDataId, CONTENT_TYPE.PROCESSING_ERROR, `Script error in ${stage}: ${errMsg}`, 'TEXT'),
-      this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
-      this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
+    await Promise.all([
+      this.saved(messageId, dest.metaDataId, 'why a destination failed', [
+        this.store.storeContent(channelId, messageId, dest.metaDataId, CONTENT_TYPE.PROCESSING_ERROR, `Script error in ${stage}: ${errMsg}`, 'TEXT'),
+      ]),
+      this.saved(messageId, dest.metaDataId, 'the ERROR status of a failed destination', [
+        this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
+        this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
+      ]),
     ]);
     return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
   }

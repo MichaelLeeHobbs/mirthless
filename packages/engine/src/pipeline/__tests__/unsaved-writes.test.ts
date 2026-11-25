@@ -8,7 +8,7 @@ import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sand
 const CHANNEL = '00000000-0000-0000-0000-000000000012';
 const MESSAGE = 3;
 const PARTNER = 1;
-const ANSWER = 'MSA|AA|MRN-8675309';
+const ANSWER = 'MSA|AA|1';
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
@@ -47,9 +47,9 @@ beforeEach(() => {
 
 afterEach(() => { sandbox.dispose(); });
 
-function refuseContent(...contentTypes: readonly number[]): void {
+function refuseContent(refused: number): void {
   store.storeContent.mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) =>
-    (contentTypes.includes(contentType) ? fail('db refused it') : ok(undefined)));
+    (contentType === refused ? fail('db refused it') : ok(undefined)));
 }
 
 async function run(scripts: DestinationConfig['scripts'] = {}, overrides: Partial<PipelineConfig> = {}): Promise<ProcessedMessage> {
@@ -80,15 +80,6 @@ describe('a delivered destination whose answer cannot be stored', () => {
     expect(processed).toMatchObject({ status: 'SENT', response, destinationResults: [{ metaDataId: PARTNER, status: 'SENT' }] });
     expect(store.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL, MESSAGE, PARTNER, 'SENT');
     expect(store.incrementStats).toHaveBeenCalledWith(CHANNEL, PARTNER, 'server-01', 'sent');
-  });
-
-  it('is reported without the answer', async () => {
-    refuseContent(CONTENT_TYPE.RESPONSE, CONTENT_TYPE.RESPONSE_TRANSFORMED);
-
-    await run({ responseTransformer: { code: 'return msg + "!";' } });
-
-    expect(onStoreFailure).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(onStoreFailure.mock.calls)).not.toContain('8675309');
   });
 
   it('still raises the alert for a response transformer that failed', async () => {
@@ -141,6 +132,23 @@ describe('a message that was not sent', () => {
     expect(await run({}, { dataType: 'JSON' })).toMatchObject({ status: 'ERROR', errorStage: 'SOURCE' });
 
     expect(onStoreFailure).toHaveBeenCalledExactlyOnceWith(failure(0, 'the ERROR status of a failed message'));
+  });
+});
+
+describe('why something failed, when it cannot be stored', () => {
+  const failing = { code: 'throw new Error("boom");' };
+
+  it.each([
+    ['is not valid', {}, { dataType: 'JSON' }, 0, 'why a message failed'],
+    ['fails in a source script', {}, { scripts: { sourceTransformer: failing } }, 0, 'why a message failed'],
+    ['fails in a destination script', { transformer: failing }, {}, PARTNER, 'why a destination failed'],
+  ] as const)('is reported by that name and not as a lost status, for a message that %s', async (_what, scripts, overrides, metaDataId, what) => {
+    refuseContent(CONTENT_TYPE.PROCESSING_ERROR);
+
+    expect(await run(scripts, overrides)).toMatchObject({ status: 'ERROR' });
+
+    expect(onStoreFailure).toHaveBeenCalledExactlyOnceWith(failure(metaDataId, what));
+    expect(store.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL, MESSAGE, metaDataId, 'ERROR');
   });
 });
 

@@ -220,8 +220,21 @@ describe('QueueConsumer', () => {
         expect(store.release).toHaveBeenCalledExactlyOnceWith(CH, 12, 1, 'SENT');
         expect(reported()).toEqual([failure('the response of a delivered destination')]);
         expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-          errorMessage: 'Queued destination 1 delivered message 12, but its response could not be saved: db down. The message shows no response.',
+          errorMessage: 'Queued destination 1 delivered message 12, but its response could not be saved: db down. A response the message shows is from an earlier attempt.',
         }));
+      });
+
+      it('alerts only that the message is sent again when neither its answer nor its SENT status was saved, and reports both', async () => {
+        const store = refuse('storeContent');
+        (store.release as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
+        const onError = vi.fn().mockResolvedValue(undefined);
+        queue(store, 0);
+
+        consumer = new QueueConsumer(makeConfig({ onError, onStoreFailure }), store, makeSendFn());
+        await consumer.poll();
+
+        expect(reported()).toEqual([failure('the response of a delivered destination'), failure('the SENT status of a delivered destination')]);
+        expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errorMessage: expect.stringMatching(/could not save SENT.*PENDING/) as unknown as string }));
       });
 
       it('still ends as SENT when the count was not saved, which is reported, and tells the source', async () => {
@@ -277,17 +290,17 @@ describe('QueueConsumer', () => {
       });
 
       it.each([
-        ['SENT', 'release', 0, ok({ status: 'SENT' as const, content: 'MRN-8675309' })],
-        ['ERROR', 'release', 3, fail('partner said MRN-8675309')],
-        ['QUEUED', 'updateConnectorMessageStatus', 0, fail('partner said MRN-8675309')],
-      ] as const)('reports a %s status that was not saved, without what the partner said', async (status, write, sendAttempts, answer) => {
+        ['the SENT status of a delivered destination', 'release', 0, ok({ status: 'SENT' as const, content: 'MRN-8675309' })],
+        ['the ERROR status of a failed destination', 'release', 3, fail('partner said MRN-8675309')],
+        ['the QUEUED status of a destination', 'updateConnectorMessageStatus', 0, fail('partner said MRN-8675309')],
+      ] as const)('reports %s that was not saved, without what the partner said', async (what, write, sendAttempts, answer) => {
         const store = refuse(write);
         queue(store, sendAttempts);
 
         consumer = new QueueConsumer(makeConfig({ retryCount: 3, onStoreFailure }), store, vi.fn().mockResolvedValue(answer));
         await consumer.poll();
 
-        expect(reported()).toEqual([failure(`the ${status} status of a queued destination`)]);
+        expect(reported()).toEqual([failure(what)]);
       });
 
       it.each([
