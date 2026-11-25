@@ -3,6 +3,7 @@ import pg from 'pg';
 import { config } from '../config/index.js';
 import * as schema from '../db/schema/index.js';
 import logger from './logger.js';
+import './query-error.js';
 
 /** Verifies the server certificate unless explicitly opted out: the link carries PHI. */
 export function buildDbSslConfig(): false | { rejectUnauthorized: boolean; ca?: string } {

@@ -56,7 +56,7 @@ const permissionCheckSelectors = [
   { selector: 'CallExpression[callee.property.name=/^(includes|indexOf|has)$/][callee.object.name="permissions"]', message: 'Check a permission with holdsPermission or can from @galvanigraph/core-models (authz).' },
   { selector: 'CallExpression[callee.property.name=/^(includes|indexOf)$/][callee.object.property.name="permissions"]', message: 'Check a permission with holdsPermission or can from @galvanigraph/core-models (authz).' },
 ];
-// Postgres returns a UUID in lower case and the server compares ids as text, so an id kept as typed misses checks (D-347).
+// Postgres returns a UUID in lower case and the server compares ids as text, so an id kept as typed misses checks (D-348).
 const idSchemaSelectors = [
   { selector: 'CallExpression[callee.property.name=/^(uuid|uuidv[0-9]+|guid)$/]', message: 'Read an id with idSchema from @galvanigraph/core-models (schemas/id.schema.ts), which lowercases it.' },
 ];

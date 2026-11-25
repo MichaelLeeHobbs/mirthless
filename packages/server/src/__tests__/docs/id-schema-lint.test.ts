@@ -1,4 +1,4 @@
-// The eslint.config.js rule that reads every id with idSchema (D-347).
+// The eslint.config.js rule that reads every id with idSchema (D-348).
 
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';

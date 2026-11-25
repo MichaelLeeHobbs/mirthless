@@ -1,4 +1,4 @@
-// Ids are lower case from the boundary on (D-347). What a miss did is in
+// Ids are lower case from the boundary on (D-348). What a miss did is in
 // packages/server/test/integration/id-case.itest.ts.
 
 import { describe, it, expect } from 'vitest';
