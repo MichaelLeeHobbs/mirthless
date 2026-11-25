@@ -1,5 +1,7 @@
 import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { answerText } from '../answer.js';
+import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { redirectMessage } from '../redirect.js';
 import { refuseQuotedCredentials } from '../request-credentials.js';
 
@@ -35,10 +37,12 @@ export interface FhirDispatcherConfig {
 
 export class FhirDispatcher implements DestinationConnectorRuntime {
   private readonly config: FhirDispatcherConfig;
+  private readonly logger: ConnectorLogger;
   private started = false;
 
-  constructor(config: FhirDispatcherConfig) {
+  constructor(config: FhirDispatcherConfig, logger?: ConnectorLogger) {
     this.config = config;
+    this.logger = logger ?? createConnectorLogger('FHIR');
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -90,7 +94,11 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
         redirect: 'manual',
       });
 
-      const responseBody = await response.text();
+      const responseBody = answerText({
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      }, message, this.logger);
 
       if (response.status >= 300 && response.status < 400) {
         return {
