@@ -129,7 +129,7 @@ describe('TcpMllpDispatcher', () => {
     const result = await dispatcher.send(makeMessage({ content: 'PID|1||DO\u010dEK' }), AbortSignal.timeout(5_000));
 
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toBe('The message holds the character U+010D, which the charset latin1 does not have. Nothing was sent; change the charset of the destination, or the text.');
+    expect(result.error?.message).toBe('The text holds the character U+010D, which the charset latin1 does not have');
     const next = await dispatcher.send(makeMessage({ content: 'PID|1||DO\u00dfEK' }), AbortSignal.timeout(5_000));
     expect(next.value?.status).toBe('SENT');
     expect(connections).toBe(1);

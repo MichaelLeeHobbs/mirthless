@@ -165,7 +165,8 @@ system, either use a destination connector or have the server administrator list
 `SCRIPT_HTTP_ALLOWED_HOSTS` (comma separated host names or IP addresses, matched exactly).
 Listed hosts are reachable although their address is private; redirects are still not
 followed and the size cap still applies. `body` is the answer's text in the charset its
-Content-Type declares, else UTF-8; what could not be read is U+FFFD, and a warning in the log
+Content-Type declares, else UTF-8 (a byte order mark wins over both and is left out). What could
+not be read is U+FFFD and a compressed answer is not decompressed; a warning in the log then
 names the host.
 
 | Function | Signature | Description |

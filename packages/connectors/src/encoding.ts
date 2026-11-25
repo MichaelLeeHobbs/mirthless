@@ -86,22 +86,41 @@ export function strictDecoder(charset: string, keepBom: boolean): CharsetDecoder
 }
 
 export function declaredCharset(contentType: string | null | undefined): string | undefined {
-  return /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType ?? '')?.[1];
+  return /;\s*charset\s*=\s*"?([^",;\s]+)"?/i.exec(contentType ?? '')?.[1];
 }
 
-export interface DecodedAnswer {
+export interface AnswerHeaders {
+  readonly contentType: string | null;
+  /** Of a body that was not decompressed. */
+  readonly contentEncoding?: string | undefined;
+}
+
+interface DecodedAnswer {
   readonly text: string;
   /** Why the text may not be what was sent; null when it is. */
   readonly problem: string | null;
 }
 
+function bomCharset(bytes: Uint8Array): string | undefined {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return 'utf-8';
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return 'utf-16be';
+  return bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le' : undefined;
+}
+
 /**
- * The body of an HTTP answer: in the charset its Content-Type declares, else UTF-8 without a
- * byte order mark, as fetch reads it. Never refused, since the request was handled by then.
+ * The body of an HTTP answer, in the charset of its byte order mark, which is left out, else the
+ * one its Content-Type declares, else UTF-8. Never refused: the request was handled by then.
  */
-export function decodeAnswer(bytes: Uint8Array, contentType: string | null | undefined): DecodedAnswer {
+export function decodeAnswer(bytes: Uint8Array, headers: AnswerHeaders): DecodedAnswer {
+  const decoded = decodeText(bytes, headers.contentType);
+  const coding = headers.contentEncoding?.trim().toLowerCase() ?? 'identity';
+  if (bytes.length === 0 || coding === 'identity') return decoded;
+  return { ...decoded, problem: `it is compressed (${coding}) and was not decompressed` };
+}
+
+function decodeText(bytes: Uint8Array, contentType: string | null): DecodedAnswer {
   if (bytes.length === 0) return { text: '', problem: null };
-  const declared = strictDecoder(declaredCharset(contentType) ?? 'utf-8', false);
+  const declared = strictDecoder(bomCharset(bytes) ?? declaredCharset(contentType) ?? 'utf-8', false);
   const { encoding, decode } = declared ?? strictDecoder('utf-8', false)!;
   const unknown = declared === null ? 'its charset is not known, so it was read as utf-8' : null;
   try {
@@ -120,7 +139,7 @@ export function encodeText(text: string, charset: BufferEncoding): Buffer {
   let at = 0;
   while (written[at] === text[at]) at += 1;
   const character = `U+${text.codePointAt(at)!.toString(16).toUpperCase().padStart(4, '0')}`;
-  throw new Error(`The message holds the character ${character}, which the charset ${charset} does not have. Nothing was sent; change the charset of the destination, or the text.`);
+  throw new Error(`The text holds the character ${character}, which the charset ${charset} does not have`);
 }
 
 export function unknownEncodingMessage(charset: string): string {

@@ -389,6 +389,22 @@ describe('TcpMllpReceiver answer charset (#415)', () => {
   });
 });
 
+describe('TcpMllpReceiver ACK of a message whose delimiters are not characters', () => {
+  it('answers, or the sender would send a recorded message again', async () => {
+    const { logger, errors } = makeLogger();
+    receiver = new TcpMllpReceiver(makeConfig(), logger);
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    // The field separator is half of a surrogate pair, which UTF-8 cannot hold.
+    const answer = await connectAndSend(TEST_PORT, 'MSH\ud83d\ude00^~\\&\ud83d\ude00A\ud83d\ude00B');
+
+    expect(answer).toContain('AA');
+    expect(errors).toEqual([]);
+  });
+});
+
 describe('TcpMllpReceiver stop', () => {
   /** Open a connection that stays open, as real HL7 senders do. */
   async function openPersistent(port: number): Promise<{ client: net.Socket; acks: string[]; closed: Promise<void> }> {

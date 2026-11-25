@@ -167,8 +167,12 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
           res.on('data', (chunk: Buffer) => { chunks.push(chunk); });
           res.on('end', () => {
             const status = res.statusCode ?? 0;
-            const contentType = res.headers['content-type'] ?? null;
-            const responseBody = answerText({ status, contentType, bytes: Buffer.concat(chunks) }, message, this.logger);
+            const responseBody = answerText({
+              status,
+              contentType: res.headers['content-type'] ?? null,
+              contentEncoding: res.headers['content-encoding'],
+              bytes: Buffer.concat(chunks),
+            }, message, this.logger);
             if (status >= 200 && status < 300) {
               resolve({ status: 'SENT', content: responseBody });
               return;

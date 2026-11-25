@@ -1,20 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import type * as http from 'node:http';
-import type * as util from 'node:util';
 import { PassThrough } from 'node:stream';
 import { Decompressor } from '../decompression.js';
 import { readRequestBody } from '../request-body.js';
 
 /** Node 22.20 and 24.13 decode windows-1252 as Latin-1, with and without `fatal`, and say nothing (#391). */
-vi.mock('node:util', async (importOriginal) => {
-  const original = await importOriginal<typeof util>();
-  class WrongTextDecoder extends original.TextDecoder {
-    override decode(...args: Parameters<util.TextDecoder['decode']>): string {
-      return this.encoding === 'windows-1252' ? Buffer.from(args[0] as Uint8Array).toString('latin1') : super.decode(...args);
-    }
+class WrongTextDecoder extends TextDecoder {
+  override decode(...args: Parameters<InstanceType<typeof TextDecoder>['decode']>): string {
+    return this.encoding === 'windows-1252' ? Buffer.from(args[0] as Uint8Array).toString('latin1') : super.decode(...args);
   }
-  return { ...original, TextDecoder: WrongTextDecoder };
-});
+}
+
+beforeAll(() => { vi.stubGlobal('TextDecoder', WrongTextDecoder); });
+afterAll(() => { vi.unstubAllGlobals(); });
 
 async function readDeclared(charset: string, bytes: Buffer): Promise<string> {
   const sender = Object.assign(new PassThrough(), { headers: { 'content-type': `text/plain; charset=${charset}` } });

@@ -96,7 +96,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `maxConnections` | No | Size of the connection pool. |
 | `responseTimeout` | No | Milliseconds to wait for the acknowledgement before the send is an ERROR. |
 | `acquireTimeoutMs` | No | Milliseconds a message waits for a connection, a free pooled one or a new one. A queued message waits at most 30 seconds. While the partner refuses connections, each connection in the pool is tried again after a second (or a quarter of this, if that is shorter), and the outage is logged once. A stop waits for the messages that wait; a halt ends their sends at once. |
-| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. A message with a character the charset does not have is an ERROR that names the character, and nothing is sent: a queued destination waits behind it, as behind any failed send, until the charset or the message changes. |
+| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. A message with a character the charset does not have is an ERROR that names the character, and nothing is sent. A queued destination retries it like any failed send, with the message as it is stored: a new charset helps it, a changed transformer does not. |
 | `frameStart` | No | Start bytes in hex. API or Mirth import only. |
 | `frameEnd` | No | End bytes in hex. API or Mirth import only. |
 | `tls.cert` | No | Client certificate, PEM, for mutual TLS. Any `tls` object turns TLS on. Needs `tls.key`. |
@@ -129,7 +129,7 @@ The source keeps a body whole or refuses it, and a refused body is never stored 
 
 The source map keeps the request headers as sent, so a `content-encoding` there does not mean the message is still compressed.
 
-The destination sends each message as the request body. A 2xx response is SENT. A 3xx is an ERROR because redirects are not followed, and any other status is an ERROR with the status in the message. The response is read in the charset its Content-Type declares (ISO-8859-1 and US-ASCII as Windows-1252, as in browsers), else as UTF-8. One that is not valid in it, or declares a charset the server does not know, changes nothing about the status: it is stored with U+FFFD for what could not be read, and a warning in the log names the message.
+The destination sends each message as the request body. A 2xx response is SENT. A 3xx is an ERROR because redirects are not followed, and any other status is an ERROR with the status in the message. The response is read in the charset its Content-Type declares (ISO-8859-1 and US-ASCII as Windows-1252, as in browsers), else as UTF-8; a byte order mark wins over both and is left out. One that is not valid in its charset, declares one the server does not know, or is compressed although the send goes over the certificates below, changes nothing about the status: it is stored as far as it could be read, with U+FFFD for the rest, and a warning in the log names the message.
 
 ### HTTP security
 

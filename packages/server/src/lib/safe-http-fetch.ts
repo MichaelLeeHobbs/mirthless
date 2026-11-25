@@ -60,7 +60,7 @@ function readCapped(res: http.IncomingMessage): Promise<Buffer> {
 
 function bodyText(bytes: Buffer, res: http.IncomingMessage, host: string): string {
   const contentType = res.headers['content-type'] ?? null;
-  const { text, problem } = decodeAnswer(bytes, contentType);
+  const { text, problem } = decodeAnswer(bytes, { contentType, contentEncoding: res.headers['content-encoding'] });
   if (problem !== null) {
     logger.warn(
       { host, status: res.statusCode ?? 0, contentType, problem },

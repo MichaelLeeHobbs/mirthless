@@ -324,6 +324,25 @@ describe('HttpDispatcher', () => {
     expect(result.value).toEqual({ status: 'SENT', content: 'M\u00fcl' });
   });
 
+  it('says that a compressed answer over node:https was not decompressed', async () => {
+    const { logger, warnings } = makeMockLogger();
+    mockHttpsServer = {
+      server: https.createServer({ cert: TEST_CERT_PEM, key: TEST_KEY_PEM }, (_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=ISO-8859-1', 'Content-Encoding': 'gzip' });
+        res.end(Buffer.from([0x1f, 0x8b]));
+      }),
+      close: () => new Promise<void>((resolve) => { mockHttpsServer!.server.close(() => { resolve(); }); }),
+    };
+    await new Promise<void>((resolve) => { mockHttpsServer!.server.listen(DEST_HTTPS_PORT, '127.0.0.1', () => { resolve(); }); });
+    dispatcher = new HttpDispatcher(makeConfig({ url: httpsUrl, tls: { rejectUnauthorized: false } }), logger);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.value?.status).toBe('SENT');
+    expect(warnings.map((w) => w.obj['problem'])).toEqual(['it is compressed (gzip) and was not decompressed']);
+  });
+
   it('rejects a self-signed HTTPS server when no TLS options are provided', async () => {
     await startHttpsServer();
 

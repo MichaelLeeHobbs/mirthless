@@ -31,7 +31,11 @@ export { DEFAULT_MAX_FRAME_BYTES };
 
 /** Throws when the charset cannot hold the message. */
 export function wrapMllp(message: string, charset: BufferEncoding = 'utf-8', framing: Framing = MLLP_FRAMING): Buffer {
-  return Buffer.concat([framing.start, encodeText(message, charset), framing.end]);
+  return frameBytes(encodeText(message, charset), framing);
+}
+
+export function frameBytes(payload: Buffer, framing: Framing = MLLP_FRAMING): Buffer {
+  return Buffer.concat([framing.start, payload, framing.end]);
 }
 
 export class MllpParser {

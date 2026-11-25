@@ -462,7 +462,7 @@ describe('FileDispatcher', () => {
       const result = await dispatcher.send(makeMessage({ content: 'PID|1||DOE\u2019S' }), AbortSignal.timeout(5_000));
 
       expect(result.ok).toBe(false);
-      expect(result.error?.message).toBe('The message holds the character U+2019, which the charset latin1 does not have. Nothing was sent; change the charset of the destination, or the text.');
+      expect(result.error?.message).toBe('The text holds the character U+2019, which the charset latin1 does not have');
       expect(mockMkdir).not.toHaveBeenCalled();
       expect(mockWriteFile).not.toHaveBeenCalled();
       expect(mockAppendFile).not.toHaveBeenCalled();

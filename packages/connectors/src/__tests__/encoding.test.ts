@@ -81,22 +81,46 @@ describe('decodeAnswer (#415)', () => {
   it.each([
     ['ISO-8859-1', 'text/plain; charset=ISO-8859-1', [0x4d, 0xfc, 0x6c], 'Mül'],
     ['a quoted charset in any case', 'text/xml; Charset="iso-8859-1"; x=y', [0xe9], 'é'],
-    ['Windows-1252, whatever TextDecoder does with it', 'text/plain;charset=windows-1252', [0x93, 0x41, 0x94], '“A”'],
+    ['Windows-1252', 'text/plain;charset=windows-1252', [0x93, 0x41, 0x94], '“A”'],
     ['UTF-16', 'text/plain; charset=utf-16le', [0xff, 0xfe, 0x41, 0x00, 0x7c, 0x20], 'A⁼'],
     ['UTF-8 declared', 'application/json; charset=UTF-8', [...Buffer.from('Mül')], 'Mül'],
     ['UTF-8 when no charset is declared', 'application/json', [...Buffer.from('Mül')], 'Mül'],
     ['UTF-8 with no Content-Type', null, [...Buffer.from('Mül')], 'Mül'],
-    ['UTF-8 without its byte order mark, as fetch reads it', undefined, [0xef, 0xbb, 0xbf, 0x7b, 0x7d], '{}'],
+    ['UTF-8 without its byte order mark', null, [0xef, 0xbb, 0xbf, 0x7b, 0x7d], '{}'],
+    ['UTF-16 with a byte order mark that says big-endian', 'text/xml; charset=UTF-16', [0xfe, 0xff, 0x00, 0x41, 0x00, 0xfc], 'A\u00fc'],
+    ['UTF-8 with a byte order mark, whatever it declares, as browsers do', 'text/plain; charset=ISO-8859-1', [0xef, 0xbb, 0xbf, ...Buffer.from('M\u00fcl')], 'M\u00fcl'],
+    ['the first of two Content-Types that fetch joined', 'text/plain; charset=ISO-8859-1, text/plain', [0xfc], '\u00fc'],
     ['an empty answer in a charset nobody knows', 'text/plain; charset=x-none', [], ''],
   ])('reads %s', (_name, contentType, bytes, text) => {
-    expect(decodeAnswer(Buffer.from(bytes), contentType)).toEqual({ text, problem: null });
+    expect(decodeAnswer(Buffer.from(bytes), { contentType })).toEqual({ text, problem: null });
   });
 
   it('says what it could not read, and keeps what it could', () => {
-    expect(decodeAnswer(Buffer.from([0x4d, 0xfc, 0x6c]), 'text/plain')).toEqual({ text: 'M�l', problem: 'it is not valid utf-8' });
-    expect(decodeAnswer(Buffer.from([0x41, 0x82]), 'text/plain; charset=shift_jis')).toEqual({ text: 'A�', problem: 'it is not valid shift_jis' });
-    expect(decodeAnswer(Buffer.from('Mül'), 'text/plain; charset=x-none')).toEqual({ text: 'Mül', problem: 'its charset is not known, so it was read as utf-8' });
-    expect(decodeAnswer(Buffer.from([0x4d, 0xfc]), 'text/plain; charset=x-none')).toEqual({ text: 'M�', problem: 'its charset is not known, so it was read as utf-8, which it is not' });
+    expect(decodeAnswer(Buffer.from([0x4d, 0xfc, 0x6c]), { contentType: 'text/plain' })).toEqual({ text: 'M�l', problem: 'it is not valid utf-8' });
+    expect(decodeAnswer(Buffer.from([0x41, 0x82]), { contentType: 'text/plain; charset=shift_jis' })).toEqual({ text: 'A�', problem: 'it is not valid shift_jis' });
+    expect(decodeAnswer(Buffer.from('Mül'), { contentType: 'text/plain; charset=x-none' })).toEqual({ text: 'Mül', problem: 'its charset is not known, so it was read as utf-8' });
+    expect(decodeAnswer(Buffer.from([0x4d, 0xfc]), { contentType: 'text/plain; charset=x-none' })).toEqual({ text: 'M�', problem: 'its charset is not known, so it was read as utf-8, which it is not' });
+  });
+});
+
+describe('decodeAnswer of a compressed answer', () => {
+  it('says that it was not decompressed, whatever charset it declares', () => {
+    const contentType = 'text/plain; charset=ISO-8859-1';
+    expect(decodeAnswer(Buffer.from([0x1f, 0x8b]), { contentType, contentEncoding: 'gzip' })).toEqual({ text: '\u001f\u2039', problem: 'it is compressed (gzip) and was not decompressed' });
+    expect(decodeAnswer(Buffer.from('ok'), { contentType, contentEncoding: 'Identity' })).toEqual({ text: 'ok', problem: null });
+  });
+});
+
+describe('decodeAnswer on a Node that decodes windows-1252 as Latin-1 (#391)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('reads a declared Windows-1252 right', () => {
+    vi.stubGlobal('TextDecoder', class extends TextDecoder {
+      override decode(...args: Parameters<InstanceType<typeof TextDecoder>['decode']>): string {
+        return this.encoding === 'windows-1252' ? Buffer.from(args[0] as Uint8Array).toString('latin1') : super.decode(...args);
+      }
+    });
+    expect(decodeAnswer(Buffer.from([0x93, 0x41]), { contentType: 'text/plain; charset=windows-1252' })).toEqual({ text: '\u201cA', problem: null });
   });
 });
 
@@ -119,7 +143,7 @@ describe('encodeText (#415)', () => {
     ['ascii', 'café', 'U+00E9'],
     ['utf-8', 'x\ud83dy', 'U+D83D'],
   ] as const)('refuses text that %s cannot hold (%j)', (charset, text, character) => {
-    expect(() => encodeText(text, charset)).toThrow(`The message holds the character ${character}, which the charset ${charset} does not have`);
+    expect(() => encodeText(text, charset)).toThrow(`The text holds the character ${character}, which the charset ${charset} does not have`);
   });
 
   it('quotes no more of the text than that character', () => {
