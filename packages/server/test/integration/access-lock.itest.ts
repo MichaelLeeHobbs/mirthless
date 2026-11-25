@@ -472,14 +472,14 @@ describeIntegration('the access lock (real Postgres)', () => {
   async function allAnswered(requests: Readonly<Record<string, Promise<{ readonly status: number }>>>): Promise<void> {
     const pending = new Set(Object.keys(requests));
     const failed: string[] = [];
+    let lastAnswer = Date.now();
     const answers = Object.entries(requests).map(async ([name, answer]) => {
-      const { status: got } = await answer.finally(() => { pending.delete(name); });
+      const { status: got } = await answer.finally(() => { pending.delete(name); lastAnswer = Date.now(); });
       if (got >= 500) failed.push(`${name}: ${String(got)}`);
     });
     const all = Promise.all(answers);
-    for (let left = pending.size; left > 0; left = pending.size) {
-      if (await settleWithin(all, STUCK_MS)) break;
-      if (pending.size === left) throw new Error(await whatIsStuck([...pending]));
+    while (!await settleWithin(all, 1_000)) {
+      if (Date.now() - lastAnswer >= STUCK_MS) throw new Error(await whatIsStuck([...pending]));
     }
     await all;
     expect(failed).toEqual([]);
