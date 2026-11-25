@@ -16,6 +16,7 @@ import { authenticate } from './middleware/auth.middleware.js';
 import { requirePermission } from './middleware/permission.middleware.js';
 import { getHealthStatus, getReadiness, healthHttpStatus } from './services/health.service.js';
 import { registry } from './lib/metrics.js';
+import { readMetrics } from './services/metrics.service.js';
 import { metricsMiddleware } from './middleware/metrics.middleware.js';
 
 // Use createRequire for proper ESM/CJS interop with CJS packages
@@ -70,7 +71,7 @@ app.get('/health/full', authenticate, requirePermission('system:info'), async (_
 
 const metricsHandler = async (_req: Request, res: Response): Promise<void> => {
   res.set('Content-Type', registry.contentType);
-  res.send(await registry.metrics());
+  res.send(await readMetrics());
 };
 
 if (config.METRICS_PUBLIC) {

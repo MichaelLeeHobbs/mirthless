@@ -212,6 +212,8 @@ export interface PipelineConfig {
   readonly onTiming?: TimingCallback | undefined;
   /** Called when a message store write fails after the point where the message can still be failed cleanly. */
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
+  /** For the log: a message store read failed, and the message was not failed for it. */
+  readonly onReadFailure?: ((failure: StoreReadFailure) => void) | undefined;
   /** Absent: the first destination that returned a response. */
   readonly responseSource?: ResponseSource | undefined;
   /** Absent: no destination uses any. */
@@ -238,6 +240,15 @@ export interface StoreFailure {
   readonly metaDataId: number;
   /** In words a log reader can act on. */
   readonly what: string;
+  readonly errorMessage: string;
+}
+
+export interface StoreReadFailure {
+  readonly channelId: string;
+  /** Absent when it was not for one destination. */
+  readonly metaDataId?: number | undefined;
+  /** Absent when it was a queue. */
+  readonly messageId?: number | undefined;
   readonly errorMessage: string;
 }
 
@@ -598,14 +609,12 @@ export class MessageProcessor {
     if (delivered.ok) return delivered.value;
     // If the queue already delivered and saw the message unfinished, nobody
     // finishes it: its source keeps its input and its content stays. Say so.
+    const { channelId } = this.config;
+    const errorMessage = `Message ${String(messageId)} has a queued destination, and whether it has delivered could not be read: ` +
+      `${delivered.error.message}. If it has, the source's after-processing action and content removal will not run.`;
+    this.config.onReadFailure?.({ channelId, messageId, errorMessage });
     if (this.config.onError) {
-      await this.config.onError({
-        channelId: this.config.channelId,
-        errorType: 'DESTINATION_CONNECTOR',
-        errorMessage: `Message ${String(messageId)} has a queued destination, and whether it has delivered could not be read: ` +
-          `${delivered.error.message}. If it has, the source's after-processing action and content removal will not run.`,
-        timestamp: Date.now(),
-      });
+      await this.config.onError({ channelId, errorType: 'DESTINATION_CONNECTOR', errorMessage, timestamp: Date.now() });
     }
     return false;
   }
