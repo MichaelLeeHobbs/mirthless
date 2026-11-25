@@ -30,6 +30,7 @@ vi.mock('@galvanigraph/engine', async (importOriginal) => {
 });
 
 const { safeHttpFetch, MAX_RESPONSE_BYTES } = await import('../safe-http-fetch.js');
+const { default: logger } = await import('../logger.js');
 
 let server: http.Server;
 let port = 0;
@@ -38,6 +39,8 @@ beforeAll(async () => {
   server = http.createServer((req, res) => {
     if (req.url === '/redirect') { res.writeHead(302, { location: 'http://169.254.169.254/' }); res.end(); return; }
     if (req.url === '/huge') { res.writeHead(200); res.end(Buffer.alloc(MAX_RESPONSE_BYTES + 1, 'a')); return; }
+    if (req.url === '/latin1') { res.writeHead(200, { 'content-type': 'text/plain; charset=ISO-8859-1' }); res.end(Buffer.from([0x4d, 0xfc, 0x6c])); return; }
+    if (req.url === '/undeclared') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(Buffer.from([0x4d, 0xfc, 0x6c])); return; }
     let body = '';
     req.on('data', (c: Buffer) => { body += c.toString(); });
     req.on('end', () => {
@@ -54,6 +57,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   policy.narrow = false;
   resolveTo.address = '127.0.0.1';
 });
@@ -101,6 +105,23 @@ describe('safeHttpFetch — transport', () => {
     expect(res.status).toBe(201);
     expect(res.headers['x-echo-method']).toBe('POST');
     expect(res.body).toBe('k|{"a":1}');
+  });
+
+  it('reads the body in the charset the answer declares (#415)', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    const res = await safeHttpFetch(`http://api.test:${String(port)}/latin1`, {});
+    expect(res.body).toBe('M\u00fcl');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('logs a body it cannot read, with the host and never the body or the path (#415)', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    const res = await safeHttpFetch(`http://api.test:${String(port)}/undeclared`, {});
+    expect(res.body).toBe('M\ufffdl');
+    expect(warn.mock.calls).toEqual([[
+      { host: `api.test:${String(port)}`, status: 200, contentType: 'text/plain', problem: 'it is not valid utf-8' },
+      expect.stringContaining('U+FFFD'),
+    ]]);
   });
 
   it('returns a redirect to the script instead of following it', async () => {

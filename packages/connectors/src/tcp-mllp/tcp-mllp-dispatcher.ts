@@ -17,6 +17,11 @@ interface Run {
   readonly halted: AbortController;
 }
 
+interface OutgoingFrame {
+  readonly frame: Buffer;
+  readonly controlId: SentControlId | undefined;
+}
+
 /** Longest wait after a failed connect, so a remote that is down is not hammered. */
 const MAX_CONNECT_PAUSE_MS = 1_000;
 
@@ -150,9 +155,10 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
       // Not every send is given the channel's halt signal.
       const ending = AbortSignal.any([signal, halted.signal]);
 
+      const frame = wrapMllp(message.content, this.config.charset, this.config.framing);
       const socket = await this.acquireSocket(pool, ending);
       try {
-        const response = await this.sendAndReceive(socket, message.content, ending);
+        const response = await this.sendAndReceive(socket, { frame, controlId: controlIdOf(message.content) }, ending);
         await pool.release(socket);
         return response;
       } catch (err) {
@@ -274,13 +280,12 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
 
   private async sendAndReceive(
     socket: net.Socket,
-    content: string,
+    outgoing: OutgoingFrame,
     signal: AbortSignal,
   ): Promise<ConnectorResponse> {
     return new Promise<ConnectorResponse>((resolve, reject) => {
       const parser = new MllpParser({ charset: this.config.charset, ...(this.config.framing ? { framing: this.config.framing } : {}) });
       const timeout = this.config.responseTimeout;
-      const sentControlId = controlIdOf(content);
 
       const timer = setTimeout(() => {
         cleanup();
@@ -303,7 +308,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
         }
         if (msgs.length > 0) {
           cleanup();
-          resolve(toResponse(msgs[0]!, sentControlId));
+          resolve(toResponse(msgs[0]!, outgoing.controlId));
         }
       };
 
@@ -337,7 +342,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
       socket.once('error', onError);
       socket.once('close', onClose);
 
-      socket.write(wrapMllp(content, this.config.charset, this.config.framing));
+      socket.write(outgoing.frame);
     });
   }
 }

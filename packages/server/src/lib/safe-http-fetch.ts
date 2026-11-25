@@ -7,7 +7,9 @@ import * as dns from 'node:dns';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import type { LookupFunction } from 'node:net';
+import { decodeAnswer } from '@galvanigraph/connectors';
 import { isAllowedHost, isBlockedAddress, isBlockedHostname, type HttpFetchOptions, type HttpFetchResult } from '@galvanigraph/engine';
+import logger from './logger.js';
 
 export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
@@ -39,7 +41,7 @@ function vetUrl(url: string, allowedHosts: ReadonlyArray<string>): URL {
   return parsed;
 }
 
-function readCapped(res: http.IncomingMessage): Promise<string> {
+function readCapped(res: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -51,9 +53,21 @@ function readCapped(res: http.IncomingMessage): Promise<string> {
       }
       chunks.push(chunk);
     });
-    res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    res.on('end', () => resolve(Buffer.concat(chunks)));
     res.on('error', reject);
   });
+}
+
+function bodyText(bytes: Buffer, res: http.IncomingMessage, host: string): string {
+  const contentType = res.headers['content-type'] ?? null;
+  const { text, problem } = decodeAnswer(bytes, { contentType, contentEncoding: res.headers['content-encoding'] });
+  if (problem !== null) {
+    logger.warn(
+      { host, status: res.statusCode ?? 0, contentType, problem },
+      'The answer to an httpFetch could not be read as it was sent; bytes that could not be read are U+FFFD',
+    );
+  }
+  return text;
 }
 
 function toHeaders(res: http.IncomingMessage): Record<string, string> {
@@ -81,9 +95,8 @@ export function safeHttpFetch(
       signal: AbortSignal.timeout(options.timeout ?? DEFAULT_TIMEOUT_MS),
     }, (res) => {
       readCapped(res).then(
-        (body) => resolve({ status: res.statusCode ?? 0, statusText: res.statusMessage ?? '', headers: toHeaders(res), body }),
-        reject,
-      );
+        (bytes) => resolve({ status: res.statusCode ?? 0, statusText: res.statusMessage ?? '', headers: toHeaders(res), body: bodyText(bytes, res, parsed.host) }),
+      ).catch(reject);
     });
     req.on('error', reject);
     if (options.body !== undefined) req.write(options.body);
