@@ -1,6 +1,6 @@
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import { useParams, useNavigate, useBlocker } from 'react-router';
+import { useNavigate, useBlocker } from 'react-router';
 import { useForm, Controller } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -20,6 +20,7 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
+import { useAddressId } from '../hooks/use-address-id.js';
 import { useAlert, useCreateAlert, useUpdateAlert } from '../hooks/use-alerts.js';
 import { TriggerSection, buildTriggerPayload, type TriggerFormValues } from '../components/alerts/TriggerSection.js';
 import { ChannelsSection } from '../components/alerts/ChannelsSection.js';
@@ -54,7 +55,7 @@ const DEFAULT_TEMPLATES: TemplateFormValues = {
 };
 
 export function AlertEditorPage(): ReactNode {
-  const { id } = useParams<{ id: string }>();
+  const id = useAddressId();
   const navigate = useNavigate();
   const isEditMode = id !== undefined;
 

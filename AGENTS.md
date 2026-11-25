@@ -68,7 +68,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `regexError` in `core-models/src/regex-error.ts`: why a pattern does not compile, or null. The alert schema, the engine and the web use it.
   - `createThrottle` in `core-util/src/throttle.ts`: run a function at most once per interval, at once for the first call and once at the window's end for the calls after it (D-306). The server coalesces live socket events with it (`emitToRoomCoalesced` in `server/src/lib/socket.ts`) and the web throttles their refetches (`useThrottledSocketEvent` in `web/src/hooks/use-socket.ts`).
   - `withoutDefaults` in `core-models/src/schemas/without-defaults.ts`: a create schema without its defaults, for the schema of an update. `.partial()` alone fills a default in for each field the request leaves out (D-360); `update-schemas.test.ts` fails on a default, transform, preprocess or catch in a core-models schema named `update…`, `upsert…`, `set…` or `patch…`, but for `setAssignmentsSchema`. It does not see a schema inside a server route.
-  - `idSchema` in `core-models/src/schemas/id.schema.ts`: an id from outside the server (a path, query, body, socket message or file), in lower case as Postgres returns it (D-349). Lint fails `.uuid()` and `.guid()`.
+  - `idSchema` in `core-models/src/schemas/id.schema.ts`: an id from outside the server (a path, query, body, socket message or file), in lower case as Postgres returns it (D-349). Lint fails `.uuid()` and `.guid()`. `useAddressId` and `useAddressQueryId` in `web/src/hooks/use-address-id.ts`: the same for an id in the web's address (D-368). Lint fails another `useParams`.
   - `decodeWindows1252` in `core-util/src/windows-1252.ts`: bytes as Windows-1252, the same on every Node. Never decode it with `TextDecoder`, whose labels `latin1`, `iso-8859-1` and `us-ascii` mean it too (D-351). `strictDecoder` and `declaredCharset` in `connectors/src/encoding.ts` read bytes in a charset a Content-Type declares with it, `decodeAnswer` there (exported from `@galvanigraph/connectors`) an HTTP answer, and `answerText` in `connectors/src/answer.ts` the answer to a message. `encodeText` in `encoding.ts` writes text in a connector's charset, or throws when the charset cannot hold it (D-358).
   - `settleWithin` in `core-util/src/settle-within.ts`: wait for work to end either way, but no longer than a time or until a signal, and whether it did.
   - `parseStoredVariables`, `sendFailureReason` and `reportUnsaved` in `engine/src/pipeline/` (a destination's stored variables, the text for a send that failed, and store writes that can no longer fail the message): the pipeline, the queue consumer and crash recovery use them. `variableNames` in `connectors/src/base.ts` is the names `fillVariables` looks up, and `globalsNamed` in `engine/src/sandbox/script-compiler.ts` which of some globals a compiled script names (D-343).
@@ -166,7 +166,7 @@ Tests are mandatory, not optional. This is healthcare software.
 | connectors | 93 | 90 | 91 | 95 |
 | server | 57 | 58 | 71 | 57 |
 | core-models | 79 | 87 | 90 | 79 |
-| web | 26 | 29 | 23 | 26 |
+| web | 50 | 49 | 45 | 51 |
 
 The server number is low because the controllers, `engine.ts` and several services have few unit tests (the Postgres integration and Playwright suites exercise some of that code but are not counted here). The web number is low because most pages have no component tests. Raising both is on `docs/progress/ROADMAP.md`.
 

@@ -1,6 +1,6 @@
 import type { Result } from '@galvanigraph/core-util';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
-import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler, StoreFailure } from '../pipeline/message-processor.js';
+import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler, StoreFailure, StoreReadFailure } from '../pipeline/message-processor.js';
 import { reportUnsaved } from '../pipeline/report-unsaved.js';
 import { sendFailureReason } from '../pipeline/send-failure.js';
 import { parseStoredVariables } from '../pipeline/stored-variables.js';
@@ -28,6 +28,8 @@ export interface QueueConsumerConfig {
   readonly onError?: AlertEventHandler | undefined;
   /** For the log: a store write for one message that failed, whether or not it raises an alert too. */
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
+  /** For the log: the queue, or what is stored with a message on it, could not be read. */
+  readonly onReadFailure?: ((failure: StoreReadFailure) => void) | undefined;
   /**
    * Called once a delivery leaves the whole message delivered (every connector
    * SENT or FILTERED, per `MessageStore.isFullyDelivered`), with the raw
@@ -53,6 +55,9 @@ const STATUS_OF = {
   QUEUED: 'the QUEUED status of a destination',
 } as const;
 
+/** What is tried again is reported at most this often: the queue is polled every second. */
+const READ_FAILURE_REPEAT_MS = 60_000;
+
 export class QueueConsumer {
   private readonly config: QueueConsumerConfig;
   private readonly store: MessageStore;
@@ -65,6 +70,8 @@ export class QueueConsumer {
   private retryNotBefore = 0;
   private queueReadFailing = false;
   private failureAlerted = false;
+  /** When each failure that is tried again was last reported. */
+  private readonly readFailuresReported = new Map<string | number, number>();
 
   constructor(
     config: QueueConsumerConfig,
@@ -123,10 +130,12 @@ export class QueueConsumer {
     );
 
     if (!dequeueResult.ok) {
+      const errorMessage = `Queued destination ${String(this.config.metaDataId)} could not read its queue: ${dequeueResult.error.message}`;
+      this.reportRetriedRead('queue', errorMessage);
       // Alert on the first failure of a streak, not on every poll.
       if (!this.queueReadFailing) {
         this.queueReadFailing = true;
-        await this.alert(`Queued destination ${String(this.config.metaDataId)} could not read its queue: ${dequeueResult.error.message}`);
+        await this.alert(errorMessage);
       }
       return;
     }
@@ -177,7 +186,9 @@ export class QueueConsumer {
       await this.poll();
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      await this.alert(`Queued destination ${String(this.config.metaDataId)} poll failed: ${message}`).catch(() => undefined);
+      const errorMessage = `Queued destination ${String(this.config.metaDataId)} poll failed: ${message}`;
+      this.reportRetriedRead('poll', errorMessage);
+      await this.alert(errorMessage).catch(() => undefined);
     }
   }
 
@@ -192,7 +203,7 @@ export class QueueConsumer {
       // The store could not be read just now. That says nothing about the
       // message: put it back untouched and try again after the retry interval.
       await this.putBack([msg]);
-      await this.alertOnce(
+      await this.reportUnread(msg,
         `Queued destination ${String(msg.metaDataId)} could not load message ${String(msg.messageId)} ` +
         `to deliver it: ${contentResult.error.message}. It stays queued and is retried.`,
       );
@@ -208,7 +219,7 @@ export class QueueConsumer {
     const variablesResult = await this.store.loadContent(msg.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.CHANNEL_MAP);
     if (!variablesResult.ok) {
       await this.putBack([msg]);
-      await this.alertOnce(
+      await this.reportUnread(msg,
         `Queued destination ${String(msg.metaDataId)} could not load the variables of message ${String(msg.messageId)}: ` +
         `${variablesResult.error.message}. It stays queued and is retried.`,
       );
@@ -306,13 +317,13 @@ export class QueueConsumer {
     const what = `delivered message ${String(msg.messageId)}, but the source's after-processing action`;
     const delivered = await this.store.isFullyDelivered(this.config.channelId, msg.messageId);
     if (!delivered.ok) {
-      await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} did not run: the message's state could not be read: ${delivered.error.message}`);
+      await this.reportActionNotRun(msg, `Queued destination ${String(msg.metaDataId)} ${what} did not run: the message's state could not be read: ${delivered.error.message}`);
       return;
     }
     if (!delivered.value) return;
     const raw = await this.store.loadContent(this.config.channelId, msg.messageId, 0, CONTENT_TYPE.RAW);
     if (!raw.ok) {
-      await this.alert(`Queued destination ${String(msg.metaDataId)} ${what} did not run: ${raw.error.message}`);
+      await this.reportActionNotRun(msg, `Queued destination ${String(msg.metaDataId)} ${what} did not run: ${raw.error.message}`);
       return;
     }
     // Gone: the pipeline saw the message finished too, ran the action itself
@@ -354,6 +365,32 @@ export class QueueConsumer {
 
   private storeReason(msg: QueuedMessage, reason: string): Promise<Result<void>> {
     return this.saved(msg, 'why a destination failed', this.store.storeContent(this.config.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.ERROR, reason, 'TEXT'));
+  }
+
+  private async reportUnread(msg: QueuedMessage, errorMessage: string): Promise<void> {
+    this.reportRetriedRead(msg.messageId, errorMessage, msg.messageId);
+    await this.alertOnce(errorMessage);
+  }
+
+  /** Not tried again, so each one is reported. */
+  private async reportActionNotRun(msg: QueuedMessage, errorMessage: string): Promise<void> {
+    this.reportRead(errorMessage, msg.messageId);
+    await this.alert(errorMessage);
+  }
+
+  private reportRetriedRead(of: string | number, errorMessage: string, messageId?: number): void {
+    const now = Date.now();
+    for (const [key, at] of this.readFailuresReported) {
+      if (now - at >= READ_FAILURE_REPEAT_MS) this.readFailuresReported.delete(key);
+    }
+    if (this.readFailuresReported.has(of)) return;
+    this.readFailuresReported.set(of, now);
+    this.reportRead(errorMessage, messageId);
+  }
+
+  private reportRead(errorMessage: string, messageId?: number): void {
+    const { channelId, metaDataId, onReadFailure } = this.config;
+    onReadFailure?.({ channelId, metaDataId, messageId, errorMessage });
   }
 
   private async alertOnce(errorMessage: string): Promise<void> {

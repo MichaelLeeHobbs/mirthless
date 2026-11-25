@@ -24,6 +24,7 @@ export type {
   StageTiming,
   TimingCallback,
   StoreFailure,
+  StoreReadFailure,
 } from './pipeline/message-processor.js';
 export { ChannelRuntime } from './runtime/channel-runtime.js';
 export type {
