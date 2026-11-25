@@ -11,6 +11,8 @@ if (!/_test$/i.test(new URL(databaseUrl || 'postgresql://x/none').pathname)) {
 }
 
 export const SCENARIO_API_PORT = 3100;
+/** Shorter than a wait, so that a wait still sees what the server refused. */
+const SERVER_LIMIT_MS = INTEGRATION_WAIT_MS / 2;
 
 export default defineConfig({
   testDir: './e2e/scenarios',
@@ -20,7 +22,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: INTEGRATION_LIMIT_MS,
-  // Every expect.poll: no scenario gives one a shorter time (D-374).
+  // Every expect.poll: no scenario gives one a time of its own (D-374).
   expect: { timeout: INTEGRATION_WAIT_MS },
   reporter: [['list'], ['json', { outputFile: 'tmp/feature-climb/results.json' }]],
   webServer: {
@@ -38,8 +40,8 @@ export default defineConfig({
       JWT_SECRET: 'scenario-suite-jwt-secret-not-for-production-use',
       LOG_LEVEL: 'warn',
       API_RATE_LIMIT_MAX: '100000',
-      DATABASE_CONNECT_TIMEOUT_MS: String(INTEGRATION_WAIT_MS),
-      AUDIT_WRITE_TIMEOUT_MS: String(INTEGRATION_WAIT_MS),
+      DATABASE_CONNECT_TIMEOUT_MS: String(SERVER_LIMIT_MS),
+      AUDIT_WRITE_TIMEOUT_MS: String(SERVER_LIMIT_MS),
       FILE_CONNECTOR_ROOTS: SCENARIO_FILE_ROOT,
     },
   },

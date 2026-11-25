@@ -5,6 +5,7 @@ import { expect, request } from '@playwright/test';
 import { channelExport, httpListener, tcpSender } from './support/mirth-xml.js';
 import { MllpSink } from './support/net.js';
 import { scenario, mirthId } from './support/scenario.js';
+import { INTEGRATION_WAIT_MS } from '../../packages/server/test/time-budgets.js';
 
 const PORT = 16605;
 const SINK = 16655;
@@ -38,7 +39,7 @@ scenario('S05 JSON report is sent as an ORU to the configuration-map host', asyn
       }],
     }), ['S05 Report Processor']);
 
-    const ctx = await request.newContext();
+    const ctx = await request.newContext({ timeout: INTEGRATION_WAIT_MS });
     const res = await ctx.post(`http://127.0.0.1:${String(PORT)}/`, {
       data: { site: 'SITE5', accession: 'ACC005', mrn: 'MRN005', procedure: '71020^CHEST 2V', impression: 'Normal study' },
     });

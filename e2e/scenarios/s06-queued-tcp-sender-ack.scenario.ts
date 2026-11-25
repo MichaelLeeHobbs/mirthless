@@ -32,8 +32,8 @@ scenario('S06 queued TCP sender delivers after an outage and errors on a NACK', 
   };
 
   expect(await sendMllp(PORT, oru('S06A'))).toContain('MSA|AA|S06A');
-  // PENDING is a queued message in an attempt, which lasts as long as the sender waits for a connection.
-  await expect.poll(() => destStatus(0)).toMatch(/^(QUEUED|PENDING)$/);
+  // The queue has taken it and the sender waits for a connection, which nothing accepts yet.
+  await expect.poll(() => destStatus(0)).toBe('PENDING');
 
   const sink = new MllpSink(SINK);
   await sink.listen();
@@ -43,6 +43,7 @@ scenario('S06 queued TCP sender delivers after an outage and errors on a NACK', 
 
     sink.ackCode = 'AE';
     expect(await sendMllp(PORT, oru('S06B'))).toContain('MSA|AA|S06B');
+    await expect.poll(() => sink.received.some((m) => m.includes('|S06B|'))).toBe(true);
     await expect.poll(() => destStatus(1)).toMatch(/ERROR|QUEUED/);
     expect(await destStatus(1)).not.toBe('SENT');
   } finally {

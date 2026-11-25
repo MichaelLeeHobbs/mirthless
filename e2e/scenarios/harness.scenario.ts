@@ -8,6 +8,7 @@ import { Api } from './support/api.js';
 import { MllpSink, HttpSink, sendMllp } from './support/net.js';
 import { sql } from './support/db.js';
 import { MAIL, mailSubjects, withSftp, SFTP } from './support/scenario.js';
+import { INTEGRATION_WAIT_MS } from '../../packages/server/test/time-budgets.js';
 
 test('HARNESS MLLP sink and sender talk to each other', async () => {
   const sink = new MllpSink(16690);
@@ -42,7 +43,7 @@ test('HARNESS GreenMail inbox reader sees a mail sent over SMTP', async () => {
 
 test('HARNESS SFTP, MySQL and partner Postgres are reachable', async () => {
   await withSftp(async (c) => { expect(await c.exists(SFTP.base)).toBeTruthy(); });
-  const conn = await mysql.createConnection({ host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner' });
+  const conn = await mysql.createConnection({ host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner', connectTimeout: INTEGRATION_WAIT_MS });
   await conn.end();
   expect(await sql('SELECT 1 AS one')).toEqual([{ one: 1 }]);
 });

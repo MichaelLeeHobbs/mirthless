@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import { ImapFlow } from 'imapflow';
 import SftpClient from 'ssh2-sftp-client';
+import { INTEGRATION_WAIT_MS } from '../../../packages/server/test/time-budgets.js';
 import { Api } from './api.js';
 
 /** The title must start with its id ("S07 ..."): the scorer matches results to weights in manifest.ts by that id. */
@@ -25,7 +26,7 @@ export function mirthId(scenarioNo: number, slot = 1): string {
 export const MAIL = { smtpPort: 3025, imapPort: 3143, user: 'mirth', password: 'mirthpw', address: 'mirth@example.com' } as const;
 
 export async function mailSubjects(needle: string): Promise<string[]> {
-  const client = new ImapFlow({ host: '127.0.0.1', port: MAIL.imapPort, secure: false, auth: { user: MAIL.user, pass: MAIL.password }, logger: false });
+  const client = new ImapFlow({ host: '127.0.0.1', port: MAIL.imapPort, secure: false, auth: { user: MAIL.user, pass: MAIL.password }, logger: false, greetingTimeout: INTEGRATION_WAIT_MS });
   await client.connect();
   try {
     const lock = await client.getMailboxLock('INBOX');
@@ -52,7 +53,7 @@ export const SFTP = { host: '127.0.0.1', port: 2222, username: 'mirth', password
 
 export async function withSftp<T>(fn: (c: SftpClient) => Promise<T>): Promise<T> {
   const c = new SftpClient();
-  await c.connect({ host: SFTP.host, port: SFTP.port, username: SFTP.username, password: SFTP.password });
+  await c.connect({ host: SFTP.host, port: SFTP.port, username: SFTP.username, password: SFTP.password, readyTimeout: INTEGRATION_WAIT_MS });
   try {
     return await fn(c);
   } finally {

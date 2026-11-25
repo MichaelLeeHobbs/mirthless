@@ -6,9 +6,10 @@ import mysql from 'mysql2/promise';
 import { channelExport, tcpListener, dbWriter } from './support/mirth-xml.js';
 import { sendMllp } from './support/net.js';
 import { scenario, mirthId } from './support/scenario.js';
+import { INTEGRATION_WAIT_MS } from '../../packages/server/test/time-budgets.js';
 
 const PORT = 16615;
-const MYSQL = { host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner' } as const;
+const MYSQL = { host: '127.0.0.1', port: 3307, user: 'mirth', password: 'mirthpw', database: 'partner', connectTimeout: INTEGRATION_WAIT_MS } as const;
 
 async function mysqlQuery<T>(text: string): Promise<T[]> {
   const conn = await mysql.createConnection(MYSQL);

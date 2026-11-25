@@ -1,7 +1,7 @@
 // Every call fails the scenario on a non-2xx with the response body, so a failing scenario says why.
 
 import { expect, request, type APIRequestContext } from '@playwright/test';
-import { INTEGRATION_LIMIT_MS } from '../../../packages/server/test/time-budgets.js';
+import { INTEGRATION_WAIT_MS } from '../../../packages/server/test/time-budgets.js';
 
 export const API_BASE = 'http://localhost:3100/api/v1';
 export const ADMIN = { username: 'admin', password: 'Admin123!' } as const;
@@ -39,7 +39,7 @@ export class Api {
   private constructor(readonly ctx: APIRequestContext) {}
 
   static async login(): Promise<Api> {
-    const loginCtx = await request.newContext({ timeout: INTEGRATION_LIMIT_MS });
+    const loginCtx = await request.newContext({ timeout: INTEGRATION_WAIT_MS });
     const res = await loginCtx.post(`${API_BASE}/auth/login`, { data: ADMIN });
     expect(res.ok(), `admin login failed: ${String(res.status())}`).toBeTruthy();
     const { accessToken } = (await res.json() as Envelope<{ accessToken: string }>).data;
@@ -48,8 +48,7 @@ export class Api {
     // closing fails with ECONNRESET (#126, #203), so each request gets its own.
     const ctx = await request.newContext({
       extraHTTPHeaders: { Authorization: `Bearer ${accessToken}`, Connection: 'close' },
-      // Longer than the server's own limits, so that a scenario sees its answer.
-      timeout: INTEGRATION_LIMIT_MS,
+      timeout: INTEGRATION_WAIT_MS,
     });
     return new Api(ctx);
   }
