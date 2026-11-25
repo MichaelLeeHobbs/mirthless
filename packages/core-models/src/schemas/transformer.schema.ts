@@ -6,7 +6,7 @@ export const TRANSFORMER_STEP_TYPES = ['JAVASCRIPT', 'MAPPER', 'MESSAGE_BUILDER'
 
 export const transformerStepInputSchema = z.object({
   enabled: z.boolean().default(true),
-  name: z.string().max(255).optional(),
+  name: z.string().max(255).nullish(),
   type: z.enum(TRANSFORMER_STEP_TYPES),
   script: z.string().nullable().default(null),
   /** Create stores JavaScript when it is left out; update requires it with a script (D-294). */

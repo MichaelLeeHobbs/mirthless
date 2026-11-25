@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { regexError } from '../regex-error.js';
+import { withoutDefaults } from './without-defaults.js';
 
 export const ALERT_TRIGGER_TYPES = ['CHANNEL_ERROR', 'NO_MESSAGES'] as const;
 
@@ -72,7 +73,8 @@ export const createAlertSchema = z.object({
 
 export type CreateAlertInput = z.infer<typeof createAlertSchema>;
 
-export const updateAlertSchema = createAlertSchema.partial().extend({
+export const updateAlertSchema = withoutDefaults(createAlertSchema).partial().extend({
+  trigger: z.discriminatedUnion('type', [withoutDefaults(channelErrorTriggerSchema), noMessagesTriggerSchema]).optional(),
   revision: z.number().int().positive(),
 });
 

@@ -1,8 +1,9 @@
 import { z } from 'zod/v4';
 import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } from '../constants.js';
-import { destinationRefSchema, filterInputSchema } from './filter.schema.js';
-import { transformerInputSchema } from './transformer.schema.js';
+import { connectorRefFields, destinationRefSchema, filterInputSchema, filterRuleInputSchema } from './filter.schema.js';
+import { transformerInputSchema, transformerStepInputSchema } from './transformer.schema.js';
 import { scriptLanguageSchema } from './script-language.schema.js';
+import { withoutDefaults } from './without-defaults.js';
 
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
 
@@ -125,24 +126,41 @@ function updateScripts(input: z.infer<typeof updateChannelBaseSchema>): Readonly
 }
 
 /**
- * Which destination each one is cannot be guessed: what waits on its queue goes by it (#395). Nor
- * can whether it is on, since switching one on sends its queue.
+ * Which destination each one is cannot be guessed: what waits on its queue goes by it (#395). `enabled`
+ * is required too, for a new one: switching it on is for the request to say.
  */
-const updateDestinationInputSchema = destinationInputSchema.extend({
-  id: destinationRefSchema,
-  enabled: z.boolean(),
+const updateDestinationInputSchema = withoutDefaults(destinationInputSchema)
+  .partial({ queueMode: true, retryCount: true, retryIntervalMs: true, rotateQueue: true, queueThreadCount: true, waitForPrevious: true })
+  .extend({ id: destinationRefSchema });
+
+export type UpdateDestinationInput = z.infer<typeof updateDestinationInputSchema>;
+
+// Filters, transformers and metadata columns are replaced, and nothing says which stored rule or step one
+// is, so what the request leaves out of them cannot be kept. They are given whole (D-349).
+const updateFilterInputSchema = withoutDefaults(filterInputSchema).extend({
+  metaDataId: connectorRefFields.metaDataId,
+  rules: z.array(withoutDefaults(filterRuleInputSchema)),
+});
+
+const updateTransformerInputSchema = withoutDefaults(transformerInputSchema).extend({
+  metaDataId: connectorRefFields.metaDataId,
+  steps: z.array(withoutDefaults(transformerStepInputSchema)),
 });
 
 // Groups change through PUT /channels/:id/groups, which judges the grant.
-const updateChannelBaseSchema = createChannelSchema.omit({ groupId: true }).partial().extend({
+const updateChannelBaseSchema = withoutDefaults(createChannelSchema.omit({ groupId: true })).partial().extend({
+  properties: withoutDefaults(channelPropertiesSchema).partial().optional(),
+  scripts: withoutDefaults(channelScriptsSchema).partial().optional(),
   destinations: z.array(updateDestinationInputSchema).optional(),
+  metadataColumns: z.array(withoutDefaults(metadataColumnInputSchema)).optional(),
+  filters: z.array(updateFilterInputSchema).optional(),
+  transformers: z.array(updateTransformerInputSchema).optional(),
   revision: z.number().int().positive(),
 });
 
 /**
- * Update replaces rules and steps by position, so it cannot keep a stored
- * language the request leaves out; defaulting would turn TypeScript into
- * JavaScript and switch off its deploy type check (D-294).
+ * Update replaces rules and steps by position, so it cannot keep what the request leaves out of one;
+ * a default language would turn TypeScript into JavaScript and switch off its deploy type check (D-294, D-349).
  */
 export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
   for (const s of updateScripts(input)) {

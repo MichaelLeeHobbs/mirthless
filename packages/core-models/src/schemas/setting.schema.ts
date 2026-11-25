@@ -11,12 +11,13 @@ export const SETTING_TYPE = {
 
 export type SettingType = (typeof SETTING_TYPE)[keyof typeof SETTING_TYPE];
 
+/** What is left out keeps what is stored; a new setting is a string in the category general (D-349). */
 export const upsertSettingSchema = z.object({
   key: z.string().min(1).max(255),
-  value: z.string().nullable().default(null),
-  type: z.enum(['string', 'number', 'boolean', 'json', 'password']).default('string'),
-  description: z.string().nullable().default(null),
-  category: z.string().max(100).default('general'),
+  value: z.string().nullable(),
+  type: z.enum(['string', 'number', 'boolean', 'json', 'password']).optional(),
+  description: z.string().nullable().optional(),
+  category: z.string().max(100).optional(),
 });
 
 export type UpsertSettingInput = z.infer<typeof upsertSettingSchema>;

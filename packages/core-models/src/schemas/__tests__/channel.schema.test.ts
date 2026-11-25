@@ -281,22 +281,73 @@ describe('updateChannelSchema', () => {
     expect(result2.success).toBe(false);
   });
 
-  it('accepts partial updates with only revision', () => {
-    const payload = {
-      name: 'Just rename',
-      revision: 5,
-    };
+  // #400: what it fills in, the server writes over what is stored.
+  it.each([
+    {}, { name: 'Just rename' }, { properties: {} }, { properties: { pruningEnabled: true } }, { scripts: {} }, { scripts: { deploy: 'return;' } },
+    { scripts: { languages: { undeploy: 'TYPESCRIPT' } } }, { destinations: [{ id: 'new-1', name: 'D', enabled: true, connectorType: 'HTTP', properties: {} }] },
+  ])('fills nothing in: %j', (body) => {
+    expect(updateChannelSchema.parse({ revision: 5, ...body })).toEqual({ revision: 5, ...body });
+  });
 
-    const result = updateChannelSchema.safeParse(payload);
+  it('does not take a group, which changes through its own route', () => {
+    expect(updateChannelSchema.parse({ revision: 5, groupId: '550e8400-e29b-41d4-a716-446655440000' })).toEqual({ revision: 5 });
+  });
+});
 
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.name).toBe('Just rename');
-    expect(result.data.revision).toBe(5);
-    // description has .default('') on createChannelSchema; .partial() makes it optional
-    // but when provided, Zod still applies the default. When omitted entirely, it remains undefined.
-    // However, since the base schema has .default(''), partial still applies it.
-    expect(result.data.description).toBe('');
+describe('filters, transformers and metadata columns on update, which are replaced (#400)', () => {
+  const rule = { enabled: false, operator: 'OR', type: 'JAVASCRIPT', script: null, field: null, condition: null, values: null };
+  const step = { enabled: false, type: 'MAPPER', script: null, sourceField: null, targetField: null, defaultValue: null, mapping: null };
+  const filter = { connectorId: null, rules: [rule] };
+  const transformer = {
+    connectorId: null, inboundDataType: 'JSON', outboundDataType: 'XML', inboundProperties: {}, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null, steps: [step],
+  };
+  const column = { name: 'PatientId', dataType: 'STRING', mappingExpression: null };
+
+  function without(whole: Record<string, unknown>, key: string): Record<string, unknown> {
+    const { [key]: _left, ...rest } = whole;
+    return rest;
+  }
+
+  function issues(body: Record<string, unknown>): ReadonlyArray<readonly PropertyKey[]> {
+    return updateChannelSchema.safeParse({ revision: 1, ...body }).error?.issues.map((i) => i.path) ?? [];
+  }
+
+  it('accepts them whole', () => {
+    expect(issues({ filters: [filter], transformers: [transformer], metadataColumns: [column] })).toEqual([]);
+  });
+
+  it.each(Object.keys(rule))('refuses a rule without its %s', (key) => {
+    expect(issues({ filters: [{ ...filter, rules: [rule, without(rule, key)] }] })).toEqual([['filters', 0, 'rules', 1, key]]);
+  });
+
+  it.each(Object.keys(filter))('refuses a filter without its %s', (key) => {
+    expect(issues({ filters: [filter, without(filter, key)] })).toEqual([['filters', 1, key]]);
+  });
+
+  it.each(Object.keys(step))('refuses a step without its %s', (key) => {
+    expect(issues({ transformers: [{ ...transformer, steps: [step, without(step, key)] }] })).toEqual([['transformers', 0, 'steps', 1, key]]);
+  });
+
+  it.each(Object.keys(transformer))('refuses a transformer without its %s', (key) => {
+    expect(issues({ transformers: [without(transformer, key)] })).toEqual([['transformers', 0, key]]);
+  });
+
+  it('refuses a metadata column without its mapping', () => {
+    expect(issues({ metadataColumns: [without(column, 'mappingExpression')] })).toEqual([['metadataColumns', 0, 'mappingExpression']]);
+  });
+
+  it('takes a rule and a step without a name as a read returns them', () => {
+    expect(issues({ filters: [{ ...filter, rules: [{ ...rule, name: null }] }], transformers: [{ ...transformer, steps: [{ ...step, name: null }] }] })).toEqual([]);
+  });
+
+  it('create needs none of it', () => {
+    const { data } = createChannelSchema.safeParse({
+      name: 'C', inboundDataType: 'RAW', outboundDataType: 'RAW', sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {},
+      filters: [{ rules: [{ type: 'JAVASCRIPT', script: 'return true;' }] }], transformers: [{ steps: [{ type: 'MAPPER' }] }], metadataColumns: [{ name: 'PatientId', dataType: 'STRING' }],
+    });
+    expect(data?.filters?.[0]?.rules[0]).toMatchObject({ enabled: true, operator: 'AND' });
+    expect(data?.transformers?.[0]).toMatchObject({ inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', steps: [{ enabled: true }] });
+    expect(data?.metadataColumns?.[0]).toMatchObject({ mappingExpression: null });
   });
 });
 
@@ -655,7 +706,7 @@ describe('destinations on update', () => {
   });
 
   it('reads ids in capitals as the stored ids, which are in lower case', () => {
-    const { destinations, filters } = updateChannelSchema.parse({ revision: 1, destinations: [{ ...dest, id: dest.id.toUpperCase() }], filters: [{ connectorId: dest.id.toUpperCase() }] });
+    const { destinations, filters } = updateChannelSchema.parse({ revision: 1, destinations: [{ ...dest, id: dest.id.toUpperCase() }], filters: [{ connectorId: dest.id.toUpperCase(), rules: [] }] });
     expect([destinations![0]!.id, filters![0]!.connectorId]).toEqual([dest.id, dest.id]);
   });
 
@@ -671,7 +722,9 @@ describe('destinations on update', () => {
   });
 
   it('refuses a filter or transformer that names its destination by a place in the list', () => {
-    expect(issues({ destinations: [dest], filters: [{ rules: [] }, { metaDataId: 1, rules: [] }], transformers: [{ metaDataId: 1 }] }))
+    const filter = { connectorId: null, rules: [] };
+    const transformer = { connectorId: null, inboundDataType: 'RAW', outboundDataType: 'RAW', inboundProperties: {}, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null, steps: [] };
+    expect(issues({ destinations: [dest], filters: [filter, { ...filter, metaDataId: 1 }], transformers: [{ ...transformer, metaDataId: 1 }] }))
       .toEqual([['filters', 1, 'metaDataId'], ['transformers', 0, 'metaDataId']]);
   });
 });
@@ -679,19 +732,20 @@ describe('destinations on update', () => {
 // #183: a client that leaves languages out must not turn TypeScript scripts into
 // JavaScript on save, which would switch off their deploy type check.
 describe('script languages on update', () => {
-  const rule = { type: 'JAVASCRIPT', script: 'return true;' };
-  const step = { type: 'JAVASCRIPT', script: 'msg = msg;' };
+  const rule = { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;', field: null, condition: null, values: null };
+  const step = { enabled: true, type: 'JAVASCRIPT', script: 'msg = msg;', sourceField: null, targetField: null, defaultValue: null, mapping: null };
+  const transformer = { connectorId: null, inboundDataType: 'RAW', outboundDataType: 'RAW', inboundProperties: {}, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null };
   const dest = { id: 'new', name: 'D', enabled: true, connectorType: 'HTTP', properties: {} };
 
   it('refuses a filter rule script with no language', () => {
-    const result = updateChannelSchema.safeParse({ revision: 1, filters: [{ rules: [rule] }] });
+    const result = updateChannelSchema.safeParse({ revision: 1, filters: [{ connectorId: null, rules: [rule] }] });
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues[0]?.path).toEqual(['filters', 0, 'rules', 0, 'language']);
   });
 
   it('refuses a transformer step script with no language', () => {
-    const result = updateChannelSchema.safeParse({ revision: 1, transformers: [{ steps: [step] }] });
+    const result = updateChannelSchema.safeParse({ revision: 1, transformers: [{ ...transformer, steps: [step] }] });
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues[0]?.path).toEqual(['transformers', 0, 'steps', 0, 'language']);
@@ -707,8 +761,8 @@ describe('script languages on update', () => {
   it('accepts items with no script and no language', () => {
     const result = updateChannelSchema.safeParse({
       revision: 1,
-      filters: [{ rules: [{ type: 'RULE_BUILDER', field: 'PID.3', condition: 'EXISTS' }] }],
-      transformers: [{ steps: [{ type: 'MAPPER', sourceField: 'a', targetField: 'b' }] }],
+      filters: [{ connectorId: null, rules: [{ ...rule, type: 'RULE_BUILDER', script: null, field: 'PID.3', condition: 'EXISTS' }] }],
+      transformers: [{ ...transformer, steps: [{ ...step, type: 'MAPPER', script: null, sourceField: 'a', targetField: 'b' }] }],
       destinations: [dest],
     });
     expect(result.success).toBe(true);
@@ -717,8 +771,8 @@ describe('script languages on update', () => {
   it('accepts scripts that carry their language', () => {
     const result = updateChannelSchema.safeParse({
       revision: 1,
-      filters: [{ rules: [{ ...rule, language: 'TYPESCRIPT' }] }],
-      transformers: [{ steps: [{ ...step, language: 'TYPESCRIPT' }] }],
+      filters: [{ connectorId: null, rules: [{ ...rule, language: 'TYPESCRIPT' }] }],
+      transformers: [{ ...transformer, steps: [{ ...step, language: 'TYPESCRIPT' }] }],
       destinations: [{ ...dest, responseTransformer: 'x;', responseTransformerLanguage: 'TYPESCRIPT' }],
     });
     expect(result.success).toBe(true);
@@ -728,7 +782,7 @@ describe('script languages on update', () => {
     const result = updateChannelSchema.safeParse({ revision: 1, scripts: { deploy: 'return;' } });
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect(result.data.scripts?.languages.deploy).toBeUndefined();
+    expect(result.data.scripts).toEqual({ deploy: 'return;' });
   });
 
   it('still lets create leave languages out (the service stores JavaScript)', () => {

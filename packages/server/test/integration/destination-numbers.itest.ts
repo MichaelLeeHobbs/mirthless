@@ -27,7 +27,9 @@ describeIntegration('Destination numbers across saves (real Postgres)', () => {
 
   const writer = (name: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
     ({ name, enabled: true, connectorType: 'JAVASCRIPT', properties: { script: `return '${name}';` }, ...extra });
-  const rejecting = (script: string): Record<string, unknown> => ({ rules: [{ type: 'JAVASCRIPT', script, language: 'JAVASCRIPT' }] });
+  const rejecting = (script: string): Record<string, unknown> => ({
+    rules: [{ enabled: true, operator: 'AND', type: 'JAVASCRIPT', script, language: 'JAVASCRIPT', field: null, condition: null, values: null }],
+  });
 
   function base(): Record<string, unknown> {
     return {
@@ -68,7 +70,7 @@ describeIntegration('Destination numbers across saves (real Postgres)', () => {
     expect(numbered(second)).toEqual([[1, 'Other'], [2, 'Clinic']]);
   });
 
-  it('updates a destination in place: its row and its scripts stay, and what the save leaves out is reset', async () => {
+  it('updates a destination in place: its row, its scripts and what the save leaves out stay (#400)', async () => {
     const first = await createChannel({
       destinations: [writer('Lab', { queueMode: 'ALWAYS', retryCount: 7, responseTransformer: 'return 1;', responseTransformerLanguage: 'TYPESCRIPT' }), writer('Clinic')],
       filters: [{ metaDataId: 2, ...rejecting('return true;') }],
@@ -80,7 +82,7 @@ describeIntegration('Destination numbers across saves (real Postgres)', () => {
 
     expect(second.destinations.map((d) => d.id)).toEqual([clinic.id, first.destinations[0]!.id]);
     expect(second.filters).toEqual(first.filters);
-    expect(second.destinations[1]).toMatchObject({ queueMode: 'NEVER', retryCount: 0, responseTransformer: null, responseTransformerLanguage: 'JAVASCRIPT' });
+    expect(second.destinations[1]).toMatchObject({ queueMode: 'ALWAYS', retryCount: 7, responseTransformer: 'return 1;', responseTransformerLanguage: 'TYPESCRIPT' });
   });
 
   it('a removed destination takes its filter with it', async () => {
@@ -93,7 +95,10 @@ describeIntegration('Destination numbers across saves (real Postgres)', () => {
     const second = await update(first, {
       destinations: [writer('Clinic', { id: 'new-1' }), sent(first, 'Lab')],
       filters: [{ connectorId: 'new-1', ...rejecting('return true;') }, { connectorId: null, ...rejecting('return false;') }],
-      transformers: [{ connectorId: first.destinations[0]!.id, steps: [{ type: 'JAVASCRIPT', script: 'msg = msg;', language: 'JAVASCRIPT' }] }],
+      transformers: [{
+        connectorId: first.destinations[0]!.id, inboundDataType: 'RAW', outboundDataType: 'RAW', inboundProperties: {}, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null,
+        steps: [{ enabled: true, type: 'JAVASCRIPT', script: 'msg = msg;', language: 'JAVASCRIPT', sourceField: null, targetField: null, defaultValue: null, mapping: null }],
+      }],
     });
     const [clinic, lab] = second.destinations;
     expect(second.filters.map((f) => f.connectorId).sort()).toEqual([clinic!.id, null].sort());

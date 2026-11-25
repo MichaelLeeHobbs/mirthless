@@ -71,6 +71,7 @@ async function clearPasswordOfChangedHost(tx: Tx, inputs: readonly UpsertSetting
   return clearPassword(tx);
 }
 
+/** Drizzle skips what is undefined: a stored setting keeps it, a new one takes the column's default. */
 async function upsertRow(tx: Tx, input: UpsertSettingInput): Promise<SettingDetail> {
   const { key, value, type, description, category } = input;
   const [row] = await tx
