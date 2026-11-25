@@ -13,14 +13,14 @@ export interface RuntimeConnector {
 }
 
 export interface RuntimeSourceConnector extends RuntimeConnector {
-  setDispatcher(dispatcher: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>): void;
+  setDispatcher(dispatcher: (raw: { content: string; sourceMap: Record<string, unknown>; onStored?: ((stored: { readonly recoverable: boolean }) => void) | undefined }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>): void;
 }
 
 export interface ChannelRuntimeConfig {
   readonly channelId: string;
   readonly source: RuntimeSourceConnector;
   readonly destinations: ReadonlyMap<number, RuntimeConnector>;
-  readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string; queued?: boolean; destinationFailed?: boolean }>>;
+  readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown>; onStored?: ((stored: { readonly recoverable: boolean }) => void) | undefined }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string; queued?: boolean; destinationFailed?: boolean }>>;
 }
 
 type Action = 'start' | 'stop' | 'halt' | 'pause' | 'resume';

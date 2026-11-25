@@ -293,7 +293,7 @@ describe('EngineManager.deploy passes the File roots to the connectors it builds
   it('gives the source and each destination FILE_CONNECTOR_ROOTS and the server directories', async () => {
     const { createSourceConnector, createDestinationConnector } = await import('@galvanigraph/connectors');
     const { INSTALL_ROOT } = await import('../../lib/file-roots.js');
-    const env = { fileRoots: { allowed: ['/srv/files'], denied: [INSTALL_ROOT, process.cwd()] } };
+    const env = { fileRoots: { allowed: ['/srv/files'], denied: [INSTALL_ROOT, process.cwd()] }, channelId: CHANNEL_ID };
 
     await new EngineManager('test-server').deploy(bundleOf(makeChannel({
       sourceConnectorType: 'FILE',

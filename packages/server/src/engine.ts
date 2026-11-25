@@ -640,7 +640,7 @@ export class EngineManager {
       }
       sourceProperties = resolved.value;
     }
-    const connectorEnv = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS) };
+    const connectorEnv = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS), channelId: channel.id };
     const source = createSourceConnector(
       channel.sourceConnectorType,
       sourceProperties,
@@ -840,14 +840,14 @@ export class EngineManager {
 
     // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
-    const processOne = async (rawContent: string, sourceMap?: Record<string, unknown>, received?: ReceivedMessage): Promise<Result<SourceDispatchOutcome>> => {
+    const processOne = async (rawContent: string, sourceMap?: Record<string, unknown>, received?: ReceivedMessage, onStored?: () => void): Promise<Result<SourceDispatchOutcome>> => {
       activity.lastAt = Date.now();
       // Channel-to-channel routing sets it.
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
         : undefined;
       const result = await processor.processMessage(
-        { rawContent, sourceMap: sourceMap ?? {}, correlationId, received },
+        { rawContent, sourceMap: sourceMap ?? {}, correlationId, received, onStored },
         // Aborted by a halt, which cancels the scripts and sends in progress.
         // There is no deadline for the message as a whole: each script is
         // limited by the channel's script timeout and each send by its
@@ -869,7 +869,7 @@ export class EngineManager {
       destinations,
       onMessage: async (raw) => (batched
         ? processBatch(splitHl7Batch, raw.content, (part) => processMessage(part, raw.sourceMap))
-        : processMessage(raw.content, raw.sourceMap)),
+        : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) })))),
     };
 
     // Taken before the channel can receive anything: every unprocessed message
