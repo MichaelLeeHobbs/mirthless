@@ -4,7 +4,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { CONTENT_TYPE, createChannelSchema, updateChannelSchema, type CreateChannelInput, type MessageStatus } from '@galvanigraph/core-models';
-import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, WAIT, type ServerModules, type TestActor } from './_setup.js';
 import { databaseDestination } from './_database-destination.js';
 
 describeIntegration('What crash recovery sends (real Postgres, real database destination)', () => {
@@ -89,7 +89,7 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     const messageId = await interrupted('ON_FAILURE', { mrn: '123' });
 
     await recover();
-    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, 10_000);
+    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, WAIT);
 
     expect(await partnerRows()).toEqual([{ messageId, mrn: '123' }]);
     expect(await statuses(messageId)).toEqual({ 0: 'SENT', 1: 'SENT' });
@@ -100,7 +100,7 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     const messageId = await interrupted('NEVER', null);
 
     await recover();
-    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, 10_000);
+    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, WAIT);
 
     expect(await partnerRows()).toEqual([]);
     expect(await statuses(messageId)).toEqual({ 0: 'ERROR', 1: 'ERROR' });
@@ -115,7 +115,7 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     unwrap(await mods.ChannelService.update(channelId!, updateChannelSchema.parse({ revision, enabled: true, destinations }), actor));
 
     await recover();
-    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, 10_000);
+    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, WAIT);
 
     expect(await partnerRows()).toEqual([]);
     expect(await statuses(messageId)).toEqual({ 0: 'ERROR', 1: 'ERROR' });
@@ -126,7 +126,7 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     const messageId = await interrupted('NEVER', null, `INSERT INTO ${TABLE} VALUES (\${messageId}::bigint, \${content})`);
 
     await recover();
-    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, 10_000);
+    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, WAIT);
 
     expect(await partnerRows()).toEqual([{ messageId, mrn: 'MSH|payload' }]);
     expect(await statuses(messageId)).toEqual({ 0: 'SENT', 1: 'SENT' });
@@ -137,13 +137,13 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     const messageId = await interrupted('ON_FAILURE', { mrn: '123' });
 
     await recover();
-    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, 10_000);
+    await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, WAIT);
     expect((await statuses(messageId))[0]).toBe('SENT');
     expect(['QUEUED', 'PENDING']).toContain((await statuses(messageId))[1]);
     expect(await content(messageId, CONTENT_TYPE.ERROR)).toContain('refuses');
 
     await mods.pool.query(`ALTER TABLE ${TABLE} DROP CONSTRAINT refuses`);
-    await vi.waitFor(async () => { expect(await statuses(messageId)).toEqual({ 0: 'SENT', 1: 'SENT' }); }, 15_000);
+    await vi.waitFor(async () => { expect(await statuses(messageId)).toEqual({ 0: 'SENT', 1: 'SENT' }); }, WAIT);
     expect(await partnerRows()).toEqual([{ messageId, mrn: '123' }]);
     expect(await content(messageId, CONTENT_TYPE.ERROR)).toBeNull();
     expect(unwrap(await mods.MessageService.isFullyDelivered(channelId!, messageId))).toBe(true);
@@ -153,7 +153,7 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     const messageId = await interrupted('ALWAYS', { mrn: '123' });
 
     await recover();
-    await vi.waitFor(async () => { expect(await statuses(messageId)).toEqual({ 0: 'SENT', 1: 'SENT' }); }, 15_000);
+    await vi.waitFor(async () => { expect(await statuses(messageId)).toEqual({ 0: 'SENT', 1: 'SENT' }); }, WAIT);
 
     expect(await partnerRows()).toEqual([{ messageId, mrn: '123' }]);
   });

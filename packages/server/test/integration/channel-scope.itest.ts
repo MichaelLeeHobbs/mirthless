@@ -3,9 +3,8 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { describeIntegration, insertTestChannel, deleteTestChannel, loadServerModules, type ServerModules } from './_setup.js';
+import { closeServer, deleteTestChannel, describeIntegration, insertTestChannel, listen, loadServerModules, type ServerModules } from './_setup.js';
 
 describeIntegration('channel scope on channel routes (real Postgres)', () => {
   let mods: ServerModules;
@@ -63,12 +62,11 @@ describeIntegration('channel scope on channel routes (real Postgres)', () => {
     scopedToken = await userWith('deployer', labGroup);
     allToken = await userWith('deployer', null);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     if (users.length > 0) await mods.pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
     await mods.pool.query('DELETE FROM channel_groups WHERE id = ANY($1::uuid[])', [[labGroup, radGroup]]);
     await deleteTestChannel(mods, LAB_CHANNEL);

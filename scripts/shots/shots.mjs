@@ -32,6 +32,7 @@ const PAGES = {
   'source-http': { url: '/channels/c4', click: 'Source', scrollTo: 'Connector Settings' },
   'source-dicom': { url: '/channels/c5', click: 'Source', scrollTo: 'Connector Settings' },
   'destination-dicom': { url: '/channels/c5', click: 'Destinations', scrollTo: 'Connector Settings' },
+  'destination-sftp': { url: '/channels/c7', click: 'Destinations', scrollTo: 'Connector Settings' },
   'message-browser': '/channels/c1/messages',
   traffic: '/messages',
   alerts: '/alerts',

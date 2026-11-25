@@ -4,11 +4,11 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { ChannelAccessView, IssuedApiKey } from '@galvanigraph/core-models';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
-  apiCall, describeIntegration, insertTestGroup, loadServerModules, unwrap, userWithRole, type ApiAnswer, type ServerModules, type TestUser,
+  apiCall, closeServer, describeIntegration, insertTestGroup, listen, loadServerModules, unwrap, userWithRole,
+  type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
 
 const caps = (id: string): string => id.toUpperCase();
@@ -97,12 +97,11 @@ describeIntegration('ids sent in capitals (real Postgres, real engine)', () => {
     // The rows above went in directly, so the replay starts from a baseline after them.
     await mods.pool.query(`SELECT public.record_grant_baseline('id-case itest')`);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     for (const id of channelIds) {
       if (engineMod.getEngine().getRuntime(id) === undefined) continue;
       await deployment.DeploymentService.stop(id);

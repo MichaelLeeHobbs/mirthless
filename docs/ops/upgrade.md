@@ -364,7 +364,7 @@ WHERE source_connector_type = 'SFTP'
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'SFTP'
   AND k NOT IN ('host','port','username','password','privateKey','passphrase','remoteDirectory','strictHostKey','hostKey',
-                'fileNameTemplate','appendMode','template');
+                'fileNameTemplate','tempFileEnabled','appendMode','template');
 ```
 
 **KAFKA** and **AMQP** come last. They have had a core-models schema since they shipped, but it dropped a key it did not list instead of refusing it; now it refuses it, like every other type. Their forms have saved the same keys since they reached `main` on 2026-11-15, and the importer never creates them, so channels saved by the editor keep deploying. Nothing in the database is rewritten. The Kafka destination's record key has always been `messageKey` on `main`; a channel saved with `key` on the pre-release branch now fails and needs it renamed.
@@ -471,6 +471,27 @@ The migration builds the index of waiting messages again, which reads the whole 
 - Messages that wait for a destination that is switched off, has its queue off or was removed, or that are not known to be for the one with their number, are reported at the first start, also those left there long ago. Nothing is sent or deleted. Look for `QUEUE_HELD` on the Events page.
 - `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
 - An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
+
+## File and SFTP: temporary names, moves and changed files (#412)
+
+**An SFTP destination now writes under a temporary name** (`.galvanigraph-<uuid>.tmp` in the same folder) and renames the file, as a FILE destination does. Every SFTP destination without append is affected, with no change to the channel. Turn **Use Temp File** off on one whose server allows uploads but no renames, allows overwriting but no new files, or refuses names that start with a dot or end in `.tmp`, where each send now ends in an ERROR that points to the setting, and on one whose server takes each upload as a file the moment it closes (a mailbox, a transfer workflow), which would take the temporary name. A file that replaces another is a new one: its owner, permissions and access list are the server's defaults, and a name that is a link is replaced by the file instead of written through. Ask the partner before you upgrade; these are the destinations:
+
+```sql
+SELECT channel_id, name, properties->>'host' AS host, properties->>'remoteDirectory' AS directory FROM channel_connectors
+WHERE connector_type = 'SFTP' AND COALESCE(properties->>'appendMode', 'false') <> 'true';
+```
+
+A FILE destination's temporary file has the same form of name; it was the file's name plus `.<uuid>.tmp`.
+
+**A FILE source's `MOVE` no longer replaces a file of the same name** in the target folder; SFTP already failed on most servers. The file stays in the source folder, is delivered once, and is in the quarantine list with an ERROR in the log. A sender that uses the same name every day, such as `results.hl7`, needs another after-processing action, or something that clears the target folder.
+
+**An SFTP source asks the server for each file's size and time (STAT) before it reads it**, after, and before it deletes or moves it. A server that answers the listing and refuses that gives an ERROR in the log for each file at each poll, and the files stay.
+
+**A source that finds a file changed while its message was processed leaves it and reads it again.** Before, it deleted or moved the changed file unread. A file that grows by appending is delivered again whole, so set its minimum age longer than the sender's pauses.
+
+**A stop of an SFTP source waits for a file it has downloaded** until that is processed and deleted, moved or quarantined, as a FILE source's does.
+
+**An SFTP write that the server stops taking part-way, such as on a full disk, is an ERROR.** Before, the message read SENT and the file was cut short. If a partner's disk or quota ran full, files from that time may be incomplete although their messages read SENT.
 
 ## A DICOM Sender reads SENT only for a stored image (#410)
 

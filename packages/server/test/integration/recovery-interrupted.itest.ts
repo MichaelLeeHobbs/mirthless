@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { CONTENT_TYPE, createChannelSchema } from '@galvanigraph/core-models';
-import { adminActor, describeIntegration, loadServerModules, unwrap, waitForBlocked, type ServerModules, type TestActor } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, waitForBlocked, WAIT, type ServerModules, type TestActor } from './_setup.js';
 
 const CHILD = fileURLToPath(new URL('./support/starting-server-child.ts', import.meta.url));
 const SERVER = fileURLToPath(new URL('../..', import.meta.url));
@@ -121,7 +121,7 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
     for (let i = 0; i < more; i += 1) await startAndDie();
     expect(await restart()).toBeNull();
 
-    await vi.waitFor(async () => { expect(await messagesOf(id)).not.toContainEqual(expect.objectContaining({ processed: false })); }, 20_000);
+    await vi.waitFor(async () => { expect(await messagesOf(id)).not.toContainEqual(expect.objectContaining({ processed: false })); }, WAIT);
     expect(await connectorsOf(id)).toEqual([{ message: messageId, connector: 0, status: 'SENT' }, { message: messageId, connector: 1, status: 'SENT' }]);
     expect(unwrap(await mods.MessageService.loadContent(id, messageId, 1, CONTENT_TYPE.SENT))).toBe('ran:order');
     const { rows } = await mods.pool.query('SELECT received::int, sent::int, errored::int FROM message_statistics WHERE channel_id = $1 AND meta_data_id = 0', [id]);

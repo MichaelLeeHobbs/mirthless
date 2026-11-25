@@ -52,6 +52,8 @@ export type SftpSourceProperties = z.infer<typeof sftpSourceObjectSchema>;
 export const sftpDestinationObjectSchema = z.strictObject({
   ...connection,
   fileNameTemplate: requiredTextSchema.default('${messageId}.dat'),
+  /** Write under a temporary name, then rename; not for an append. */
+  tempFileEnabled: z.boolean().default(true),
   appendMode: z.boolean().default(false),
   ...destinationCommonProperties,
 });

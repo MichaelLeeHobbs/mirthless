@@ -2,11 +2,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { ApiKeyView, ChannelAccessView, IssuedApiKey } from '@galvanigraph/core-models';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  apiCall, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, loadServerModules, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, userWithRole,
   type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -28,12 +27,17 @@ describeIntegration('API keys (real Postgres)', () => {
     return made;
   }
 
-  async function holderOf(permissions: readonly string[], until?: Date): Promise<TestUser> {
+  async function roleOf(permissions: readonly string[]): Promise<{ readonly id: string; readonly name: string }> {
     const name = `itest-keys-${randomUUID().slice(0, 8)}`;
     const role = await mods.pool.query<{ id: string }>('INSERT INTO roles (name) VALUES ($1) RETURNING id', [name]);
-    roles.push(role.rows[0]!.id);
-    for (const p of permissions) await mods.pool.query('INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2)', [role.rows[0]!.id, p]);
-    const holder = await user(name, null);
+    const id = role.rows[0]!.id;
+    roles.push(id);
+    for (const p of permissions) await mods.pool.query('INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2)', [id, p]);
+    return { id, name };
+  }
+
+  async function holderOf(permissions: readonly string[], until?: Date): Promise<TestUser> {
+    const holder = await user((await roleOf(permissions)).name, null);
     if (until) await mods.pool.query('UPDATE assignments SET expires_at = $2 WHERE user_id = $1', [holder.id, until]);
     return holder;
   }
@@ -61,12 +65,11 @@ describeIntegration('API keys (real Postgres)', () => {
     await mods.pool.query('INSERT INTO channel_group_members (channel_group_id, channel_id) VALUES ($1, $2), ($3, $4)', [lab, LAB_CHANNEL, rad, RAD_CHANNEL]);
     admin = await user('admin', null);
     const app = (await import('../../src/app.js')).default;
-    await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    ({ server, base } = await listen(app));
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => { server?.close(() => { resolve(); }); });
+    await closeServer(server);
     // Keys first: their issuer is one of these users. A key's user cascades its key and assignment.
     await mods.pool.query(`DELETE FROM users WHERE id IN (SELECT user_id FROM api_keys WHERE issued_by = ANY($1::uuid[]))`, [users]);
     await mods.pool.query(`DELETE FROM roles WHERE key_role AND NOT EXISTS (SELECT 1 FROM assignments a WHERE a.role_id = roles.id)`);
@@ -230,10 +233,25 @@ describeIntegration('API keys (real Postgres)', () => {
   });
 
   describe('the cap: within the issuer, now and until the key ends', () => {
-    it('refuses permissions or a scope the issuer does not hold', async () => {
+    it('refuses permissions the issuer does not hold', async () => {
       const manager = await holderOf(['api_keys:manage', 'channels:read']);
       expect((await issue(manager, { name: 'Over', permissions: ['channels:write'], groupIds: [lab], expiresAt: inDays(1) })).status).toBe(403);
       expect((await issue(manager, { name: 'Ok', permissions: ['channels:read'], groupIds: [lab], expiresAt: inDays(1) })).status).toBe(201);
+    });
+
+    it('refuses a scope the issuer does not hold the permissions over', async () => {
+      const reader = await roleOf(['channels:read']);
+      const manager = await holderOf(['api_keys:manage']);
+      const { rows } = await mods.pool.query<{ id: string }>('INSERT INTO assignments (user_id, role_id, all_channels) VALUES ($1, $2, false) RETURNING id', [manager.id, reader.id]);
+      await mods.pool.query('INSERT INTO assignment_groups (assignment_id, channel_group_id) VALUES ($1, $2)', [rows[0]!.id, lab]);
+      const over = (groupIds: readonly string[] | null): ReturnType<typeof issue> => issue(manager, { name: 'Scope', permissions: ['channels:read'], groupIds, expiresAt: inDays(1) });
+
+      for (const groupIds of [[rad], [lab, rad], null]) {
+        const refused = await over(groupIds);
+        expect(refused.status).toBe(403);
+        expect(refused.message).toMatch(/Missing: channels:read/);
+      }
+      expect((await over([lab])).status).toBe(201);
     });
 
     it('refuses a key that would outlast the issuer\'s own access', async () => {

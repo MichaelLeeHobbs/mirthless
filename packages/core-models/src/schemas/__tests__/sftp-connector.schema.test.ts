@@ -12,7 +12,7 @@ const SOURCE_SAVED = {
   moveToDirectory: '', minFileAgeMs: 1000, charset: 'utf-8', strictHostKey: true,
 };
 const DEST_SAVED = {
-  ...LOGIN, port: 22, privateKey: '', passphrase: '', fileNameTemplate: '${messageId}.dat', appendMode: false, strictHostKey: true,
+  ...LOGIN, port: 22, privateKey: '', passphrase: '', fileNameTemplate: '${messageId}.dat', tempFileEnabled: true, appendMode: false, strictHostKey: true,
 };
 
 describe('sftpSourcePropertiesSchema', () => {
@@ -68,6 +68,7 @@ describe('sftpDestinationPropertiesSchema', () => {
   it.each([
     [{ ...DEST_SAVED, fileNameTemplate: '' }, 'fileNameTemplate'],
     [{ ...DEST_SAVED, appendMode: 'true' }, 'appendMode'],
+    [{ ...DEST_SAVED, tempFileEnabled: 'false' }, 'tempFileEnabled'],
     [{ ...DEST_SAVED, outputPattern: 'x' }, 'outputPattern'],
     [{ ...DEST_SAVED, port: 0 }, 'port'],
   ])('rejects %j, naming %s', (props, key) => {

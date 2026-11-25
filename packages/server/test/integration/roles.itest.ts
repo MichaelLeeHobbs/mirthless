@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { describeIntegration } from './_setup.js';
+import { closeServer, describeIntegration, listen } from './_setup.js';
 
 describeIntegration('roles and grant rules (real Postgres)', () => {
   let GrantService: typeof import('../../src/services/grant.service.js').GrantService;
@@ -211,12 +211,11 @@ describeIntegration('roles and grant rules (real Postgres)', () => {
     beforeAll(async () => {
       process.env['API_RATE_LIMIT_MAX'] = '1000000';
       const app = (await import('../../src/app.js')).default;
-      await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
-      base = `http://127.0.0.1:${String((server.address() as import('node:net').AddressInfo).port)}`;
+      ({ server, base } = await listen(app));
     });
 
     afterAll(async () => {
-      await new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
+      await closeServer(server);
     });
 
     async function tokenFor(userId: string): Promise<string> {

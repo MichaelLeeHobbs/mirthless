@@ -118,16 +118,13 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(err.message).toBe('Authentication required');
     });
 
-    it('rejects connection when token is expired', () => {
-      const expiredToken = jwt.sign(
-        { userId: 'user-1', type: 'access' },
-        mockConfig.JWT_SECRET,
-        { expiresIn: '-1s' },
-      );
+    it('rejects connection when token is expired', async () => {
+      const claims = { userId: 'user-1', sessionId: 's1', type: 'access' };
+      const expiredToken = jwt.sign(claims, mockConfig.JWT_SECRET, { expiresIn: '-1s' });
       const socket = createMockSocket(expiredToken);
       const next = vi.fn();
 
-      authMiddleware(socket, next);
+      await authMiddleware(socket, next);
 
       expect(next).toHaveBeenCalledTimes(1);
       const err = next.mock.calls[0]![0] as Error;
@@ -135,16 +132,12 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(err.message).toBe('Authentication required');
     });
 
-    it('rejects connection when token is a refresh token', () => {
-      const refreshToken = jwt.sign(
-        { userId: 'user-1', type: 'refresh' },
-        mockConfig.JWT_SECRET,
-        { expiresIn: '7d' },
-      );
+    it('rejects connection when token is a refresh token', async () => {
+      const refreshToken = createValidToken({ userId: 'user-1', sessionId: 's1', type: 'refresh' });
       const socket = createMockSocket(refreshToken);
       const next = vi.fn();
 
-      authMiddleware(socket, next);
+      await authMiddleware(socket, next);
 
       expect(next).toHaveBeenCalledTimes(1);
       const err = next.mock.calls[0]![0] as Error;

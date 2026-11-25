@@ -1,11 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { fillPlaceholders, placeholderNames, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
-import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
-import { resolveWithinRoots, type FileRoots } from './file-roots.js';
+import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { tempFileName } from '../temp-file.js';
+import { isMissing, resolveWithinRoots, type FileRoots } from './file-roots.js';
 
 export interface FileDispatcherConfig {
   readonly directory: string;
@@ -109,11 +109,11 @@ export class FileDispatcher implements DestinationConnectorRuntime {
       const outputPath = await resolveWithinRoots(path.join(directory, filename), this.config.roots);
 
       if (this.config.appendMode) {
-        await this.appendToFile(outputPath, message.content);
+        await this.naming(outputPath, this.appendToFile(outputPath, message.content));
       } else if (this.config.tempFileEnabled) {
         await this.writeViaTempFile(outputPath, message.content);
       } else {
-        await this.writeFile(outputPath, message.content);
+        await this.naming(outputPath, this.writeFile(outputPath, message.content));
       }
 
       return { status: 'SENT' as const, content: outputPath };
@@ -138,11 +138,34 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /** Unique temp name per write: two messages resolving to one file name must not share a temp file. */
+  /** Node's error for a write that stops part-way (a full disk) does not name the file. */
+  private async naming(outputPath: string, written: Promise<void>): Promise<void> {
+    try {
+      await written;
+    } catch (err) {
+      // Not opened, so nothing is in it.
+      if (!(err instanceof Error) || ('syscall' in err && err.syscall === 'open')) throw err;
+      throw new Error(`${err.message}; ${outputPath} may hold part of this message`, { cause: err });
+    }
+  }
+
   private async writeViaTempFile(outputPath: string, content: string): Promise<void> {
-    const tmpPath = `${outputPath}.${randomUUID()}.tmp`;
-    await this.writeFile(tmpPath, content);
-    await fs.rename(tmpPath, outputPath);
+    const tmpPath = path.join(path.dirname(outputPath), tempFileName());
+    try {
+      await this.writeFile(tmpPath, content);
+      await fs.rename(tmpPath, outputPath);
+    } catch (err) {
+      await this.removeTempFile(tmpPath);
+      throw err;
+    }
+  }
+
+  private async removeTempFile(tmpPath: string): Promise<void> {
+    try {
+      await fs.unlink(tmpPath);
+    } catch (err) {
+      if (!isMissing(err)) this.logger.warn({ ...errorInfo(err), file: tmpPath }, 'Temporary file could not be removed');
+    }
   }
 
   private encodeForWrite(content: string): {

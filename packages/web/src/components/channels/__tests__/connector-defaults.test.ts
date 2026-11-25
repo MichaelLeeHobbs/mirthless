@@ -64,7 +64,7 @@ const SFTP_SOURCE_KEYS = [
 
 const SFTP_DEST_KEYS = [
   'host', 'port', 'username', 'password', 'privateKey', 'passphrase',
-  'remoteDirectory', 'fileNameTemplate', 'appendMode', 'strictHostKey', 'hostKey',
+  'remoteDirectory', 'fileNameTemplate', 'tempFileEnabled', 'appendMode', 'strictHostKey', 'hostKey',
 ];
 
 describe('SFTP source defaults', () => {
@@ -96,6 +96,7 @@ describe('SFTP destination defaults', () => {
     expect(SFTP_DEST_DEFAULTS['port']).toBe(22);
     expect(SFTP_DEST_DEFAULTS['fileNameTemplate']).toBe('${messageId}.dat');
     expect(SFTP_DEST_DEFAULTS['appendMode']).toBe(false);
+    expect(SFTP_DEST_DEFAULTS['tempFileEnabled']).toBe(true);
     expect(SFTP_DEST_DEFAULTS['strictHostKey']).toBe(true);
   });
 

@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module';
+import type { Writable } from 'node:stream';
+import type { FileVersion } from '../quarantine-ledger.js';
 
 // The package is ESM, so a bare `require` is undefined at runtime (vitest
 // injects one, which hid this). Load the CJS client library through createRequire.
@@ -37,12 +39,17 @@ export interface SftpClient {
   connect(): Promise<void>;
   list(remoteDirectory: string): Promise<readonly SftpFileInfo[]>;
   get(remotePath: string): Promise<Buffer>;
-  /** Overwrites. */
-  put(data: Buffer, remotePath: string): Promise<void>;
-  /** Creates the file if absent. */
-  append(data: Buffer, remotePath: string): Promise<void>;
+  /** `null` when the server answers that the file is not there, or only that it failed, which the library reads as the same. */
+  stat(remotePath: string): Promise<FileVersion | null>;
+  /** Overwrites. `onOpen` runs once the server has opened the file, so from when part of the data may be in it. */
+  put(data: Buffer, remotePath: string, onOpen?: () => void): Promise<void>;
+  /** Creates the file if absent. `onOpen` as for {@link put}. */
+  append(data: Buffer, remotePath: string, onOpen?: () => void): Promise<void>;
   delete(remotePath: string): Promise<void>;
+  /** Whether an existing `to` is replaced is up to the server. */
   rename(from: string, to: string): Promise<void>;
+  /** Renames over an existing `to` in one step. False, with nothing done, on a server that cannot. */
+  replace(from: string, to: string): Promise<boolean>;
   /** Recursive; no-op if it already exists. */
   mkdir(remoteDirectory: string): Promise<void>;
   /** A link counts as what it points to. */
@@ -96,13 +103,13 @@ export interface Ssh2ClientInstance {
   connect(options: Record<string, unknown>): Promise<unknown>;
   list(remoteDir: string): Promise<readonly Ssh2FileInfo[]>;
   get(remotePath: string): Promise<Buffer>;
-  put(input: Buffer, remotePath: string): Promise<string>;
-  append(input: Buffer, remotePath: string): Promise<string>;
+  createWriteStream(remotePath: string, options: { readonly flags: 'w' | 'a' }): Writable;
   delete(remotePath: string): Promise<string>;
   rename(from: string, to: string): Promise<string>;
+  posixRename(from: string, to: string): Promise<string>;
   mkdir(remoteDir: string, recursive: boolean): Promise<string>;
   exists(remotePath: string): Promise<false | string>;
-  stat(remotePath: string): Promise<{ readonly isDirectory: boolean }>;
+  stat(remotePath: string): Promise<{ readonly isDirectory: boolean; readonly size: number; readonly modifyTime: number }>;
   end(): Promise<boolean>;
 }
 
@@ -130,14 +137,80 @@ export function buildConnectOptions(options: SftpConnectionOptions): Record<stri
 }
 
 export function createSsh2SftpClient(options: SftpConnectionOptions): SftpClient {
-  const Ctor = require('ssh2-sftp-client') as new () => Ssh2ClientInstance;
-  return wrapSsh2Client(new Ctor(), options);
+  const Ctor = require('ssh2-sftp-client') as new (name: string, callbacks: object) => Ssh2ClientInstance;
+  // Without callbacks of its own it prints a lost connection with console.log; the next operation rejects either way.
+  return wrapSsh2Client(new Ctor('sftp', {}), options);
+}
+
+/**
+ * Not the library's put() and append(): they answer success when the server refuses a
+ * write part-way (a full disk), because the stream is destroyed before its error is seen.
+ */
+function writeAll(stream: Writable, data: Buffer, onOpen: (() => void) | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.on('error', reject);
+    stream.once('open', () => onOpen?.());
+    stream.once('close', resolve);
+    stream.write(data, (err) => {
+      if (err) reject(err);
+      else stream.end();
+    });
+  });
+}
+
+/** SSH_FX_OP_UNSUPPORTED, from a server that names the extension and does not carry it out. */
+const OP_UNSUPPORTED = 8;
+
+function lacksExtension(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  // ssh2's own error, before anything is sent, has no code.
+  return err.message.includes('does not support this extended request') || ('code' in err && err.code === OP_UNSUPPORTED);
+}
+
+async function replace(client: Ssh2ClientInstance, from: string, to: string): Promise<boolean> {
+  try {
+    await client.posixRename(from, to);
+    return true;
+  } catch (err) {
+    if (lacksExtension(err)) return false;
+    throw err;
+  }
+}
+
+async function stat(client: Ssh2ClientInstance, remotePath: string): Promise<FileVersion | null> {
+  try {
+    const { modifyTime, size } = await client.stat(remotePath);
+    return { modifyTime, size };
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+function makePathKind(client: Ssh2ClientInstance): SftpClient['pathKind'] {
+  return async (remotePath) => toPathKind(await client.exists(remotePath), async () => (await client.stat(remotePath)).isDirectory);
+}
+
+type FileChanges = Pick<SftpClient, 'put' | 'append' | 'delete' | 'rename' | 'replace'>;
+
+function fileChanges(client: Ssh2ClientInstance): FileChanges {
+  return {
+    put: (data, remotePath, onOpen) => writeAll(client.createWriteStream(remotePath, { flags: 'w' }), data, onOpen),
+    append: (data, remotePath, onOpen) => writeAll(client.createWriteStream(remotePath, { flags: 'a' }), data, onOpen),
+    async delete(remotePath: string): Promise<void> {
+      await client.delete(remotePath);
+    },
+    async rename(from: string, to: string): Promise<void> {
+      await client.rename(from, to);
+    },
+    replace: (from, to) => replace(client, from, to),
+  };
 }
 
 export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnectionOptions): SftpClient {
-  const pathKind = async (remotePath: string): Promise<SftpPathKind> =>
-    toPathKind(await client.exists(remotePath), async () => (await client.stat(remotePath)).isDirectory);
+  const pathKind = makePathKind(client);
   return {
+    ...fileChanges(client),
     async connect(): Promise<void> {
       await client.connect(buildConnectOptions(options));
     },
@@ -150,20 +223,9 @@ export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnecti
         isFile: e.type === '-',
       }));
     },
+    stat: (remotePath) => stat(client, remotePath),
     async get(remotePath: string): Promise<Buffer> {
       return client.get(remotePath);
-    },
-    async put(data: Buffer, remotePath: string): Promise<void> {
-      await client.put(data, remotePath);
-    },
-    async append(data: Buffer, remotePath: string): Promise<void> {
-      await client.append(data, remotePath);
-    },
-    async delete(remotePath: string): Promise<void> {
-      await client.delete(remotePath);
-    },
-    async rename(from: string, to: string): Promise<void> {
-      await client.rename(from, to);
     },
     async mkdir(remoteDirectory: string): Promise<void> {
       // ssh2-sftp-client's mkdir refuses a link to a directory as "already
