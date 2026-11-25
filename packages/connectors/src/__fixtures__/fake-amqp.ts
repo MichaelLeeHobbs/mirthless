@@ -1,4 +1,4 @@
-// Prefetch 1. Losing the connection returns the unacknowledged message to the head, marked
+// Prefetch 1, for each connection. Losing the connection returns the unacknowledged message to the head, marked
 // redelivered, as RabbitMQ does.
 
 import type { AmqpConsume, AmqpConsumer, AmqpDelivery, AmqpOutbound, AmqpPublisher } from '../amqp/amqp-client.js';
@@ -17,7 +17,13 @@ export class FakeAmqpQueue {
   failConnects = 0;
   /** Put a nacked-with-requeue message at the tail, as a quorum queue may, instead of the head. */
   requeueAtTail = false;
-  private outstanding: QueuedMessage | null = null;
+  /** The broker never answers a close. */
+  hangCloses = false;
+  /** A connect waits for it. */
+  connecting: Promise<void> = Promise.resolve();
+  /** Unacknowledged, by the connection each was delivered on. */
+  private readonly outstanding = new Map<FakeConsumer, QueuedMessage>();
+  /** The one new messages go to. */
   private connection: FakeConsumer | null = null;
   private readonly consumers: FakeConsumer[] = [];
 
@@ -32,17 +38,18 @@ export class FakeAmqpQueue {
       this.failConnects -= 1;
       throw new Error('ECONNREFUSED broker down');
     }
+    await this.connecting;
     this.connection = new FakeConsumer(this, onDelivery);
     this.consumers.push(this.connection);
-    queueMicrotask(() => { this.deliverNext(); });
+    // With the answer to consume, so before the caller has the consumer.
+    this.deliverNext();
     return this.connection;
   };
 
   disconnect(): void {
     const connection = this.connection;
     if (!connection) return;
-    this.connection = null;
-    this.returnOutstanding();
+    this.closed(connection);
     connection.lose(new Error('ECONNRESET connection to broker lost'));
   }
 
@@ -54,8 +61,7 @@ export class FakeAmqpQueue {
   cancel(): void {
     const connection = this.connection;
     if (!connection) return;
-    this.connection = null;
-    this.returnOutstanding();
+    this.closed(connection);
     connection.lose(new Error('Consumer cancelled by the broker'), { connectionOpen: true });
   }
 
@@ -69,27 +75,24 @@ export class FakeAmqpQueue {
 
   /** Called by a consumer closing its connection. */
   closed(connection: FakeConsumer): void {
-    if (this.connection !== connection) return;
-    this.connection = null;
-    this.returnOutstanding();
-  }
-
-  private returnOutstanding(): void {
-    if (!this.outstanding) return;
-    this.outstanding.redelivered = true;
-    this.messages.unshift(this.outstanding);
-    this.outstanding = null;
+    if (this.connection === connection) this.connection = null;
+    const returned = this.outstanding.get(connection);
+    this.outstanding.delete(connection);
+    if (!returned) return;
+    returned.redelivered = true;
+    this.messages.unshift(returned);
+    queueMicrotask(() => { this.deliverNext(); });
   }
 
   private deliverNext(): void {
     const connection = this.connection;
-    if (!connection || this.outstanding) return;
+    if (!connection || this.outstanding.has(connection)) return;
     const next = this.messages.shift();
     if (!next) return;
-    this.outstanding = next;
+    this.outstanding.set(connection, next);
     const settle = (action: () => void): void => {
-      if (this.connection !== connection || this.outstanding !== next) throw new Error('Channel closed');
-      this.outstanding = null;
+      if (this.outstanding.get(connection) !== next) throw new Error('Channel closed');
+      this.outstanding.delete(connection);
       action();
       queueMicrotask(() => { this.deliverNext(); });
     };
@@ -136,7 +139,8 @@ class FakeConsumer implements AmqpConsumer {
     this.settle(error);
   }
 
-  async close(): Promise<void> {
+  async close(timeoutMs: number): Promise<void> {
+    if (this.queue.hangCloses) await new Promise((resolve) => { setTimeout(resolve, timeoutMs); });
     this.connectionOpen = false;
     this.queue.closed(this);
     this.settle(new Error('closed by client'));

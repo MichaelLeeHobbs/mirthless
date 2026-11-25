@@ -43,6 +43,23 @@ async function start(queue: FakeAmqpQueue, dispatch: Dispatch) {
   return { log, started };
 }
 
+/** Started on a queue with a message, whose dispatch is held until it is let go. */
+async function startHeld(queue: FakeAmqpQueue, recoverable = true): Promise<{
+  readonly offered: string[];
+  readonly letGo: (result: Result<DispatchResult>) => void;
+}> {
+  const offered: string[] = [];
+  let letGo = (result: Result<DispatchResult>): void => { void result; };
+  const answer = new Promise<Result<DispatchResult>>((resolve) => { letGo = resolve; });
+  await start(queue, async (raw) => {
+    offered.push(raw.content);
+    raw.onStored?.({ recoverable });
+    return answer;
+  });
+  await vi.waitFor(() => { expect(offered).toHaveLength(1); });
+  return { offered, letGo: (result) => { letGo(result); } };
+}
+
 describe('onDeploy', () => {
   it.each([
     [{ host: '' }, 'Host'],
@@ -214,10 +231,10 @@ describe('a message the pipeline never stores', () => {
       if (connections > 1) return consumer;
       return {
         closed: consumer.closed,
-        close: async () => {
+        close: async (timeoutMs) => {
           closing = true;
           await new Promise<void>((resolve) => { releaseClose = resolve; });
-          await consumer.close();
+          await consumer.close(timeoutMs);
         },
       };
     };
@@ -317,19 +334,21 @@ describe('a delivery that throws', () => {
     await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
   });
 
-  it('a start does not wait behind a dispatch that hung before a halt', async () => {
+  it('a start does not wait behind a dispatch that a halt left in hand, whose message stays with the broker', async () => {
     const queue = new FakeAmqpQueue();
     queue.publish('MSH|1');
-    let calls = 0;
-    await start(queue, async () => {
-      calls += 1;
-      if (calls === 1) return new Promise<Result<DispatchResult>>(() => undefined);
-      return stored(calls);
+    const offered: string[] = [];
+    await start(queue, async (raw) => {
+      offered.push(raw.content);
+      if (offered.length === 1) return new Promise<Result<DispatchResult>>(() => undefined);
+      return stored(offered.length);
     });
-    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await vi.waitFor(() => { expect(offered).toHaveLength(1); });
     await receiver?.onHalt();
     await receiver?.onStart();
-    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|2']); });
+    expect(offered).toEqual(['MSH|1', 'MSH|2']);
   });
 });
 
@@ -406,16 +425,143 @@ describe('stop and halt', () => {
     receiver = null;
   });
 
-  it('halt disconnects at once and the message in progress goes back to the queue', async () => {
+  it('a stop waits for the message in progress however long it takes, and takes none after it (#413)', async () => {
     const queue = new FakeAmqpQueue();
     queue.publish('MSH|1');
-    let entered = false;
-    await start(queue, async () => { entered = true; return new Promise<Result<DispatchResult>>(() => undefined); });
-    await vi.waitFor(() => { expect(entered).toBe(true); });
+    queue.publish('MSH|2');
+    const held = await startHeld(queue);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let stopped = false;
+      const stopping = receiver?.onStop().then(() => { stopped = true; });
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(stopped).toBe(false);
+      held.letGo(stored(1));
+      await stopping;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(queue.acked).toEqual(['MSH|1']);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|2']);
+    expect(held.offered).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('a halt does not wait, and a message recorded by then is acknowledged, not delivered again (#413)', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    queue.publish('MSH|2');
+    const held = await startHeld(queue);
+
     expect((await receiver?.onHalt())?.ok).toBe(true);
-    expect(queue.connected).toBe(false);
+    expect(queue.acked).toEqual([]);
+    held.letGo(stored(1));
+    await vi.waitFor(() => { expect(queue.openConnections).toBe(0); });
+
+    expect(queue.acked).toEqual(['MSH|1']);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|2']);
+    expect(held.offered).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('a halt returns a message that was not recorded to the queue', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    const held = await startHeld(queue);
+
+    await receiver?.onHalt();
+    held.letGo(notStored('cancelled by the halt'));
+    await vi.waitFor(() => { expect(queue.openConnections).toBe(0); });
+
     expect(queue.messages.map((m) => [m.body, m.redelivered])).toEqual([['MSH|1', true]]);
     receiver = null;
+  });
+
+  it.each([
+    ['is rejected, as one stored with an error is, when the channel keeps its content', true, ['MSH|1'], []],
+    ['returns to the queue when the channel does not', false, [], ['MSH|1']],
+  ] as const)('a message that a halt ended with an error %s', async (_what, recoverable, deadLettered, left) => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    const held = await startHeld(queue, recoverable);
+
+    await receiver?.onHalt();
+    held.letGo(stored(1, DISPATCH_STATUS.ERROR));
+    await vi.waitFor(() => { expect(queue.openConnections).toBe(0); });
+
+    expect(queue.deadLettered).toEqual(deadLettered);
+    expect(queue.messages.map((m) => m.body)).toEqual(left);
+    receiver = null;
+  });
+
+  it.each(['onStop', 'onHalt', 'onUndeploy'] as const)('a start that an %s overtakes while it connects takes nothing and closes', async (action) => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let connected = (): void => undefined;
+    queue.connecting = new Promise((resolve) => { connected = resolve; });
+    const p = pipeline();
+    receiver = new AmqpReceiver(config, queue.consume, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+
+    const starting = receiver.onStart();
+    await receiver[action]();
+    connected();
+
+    expect((await starting).ok).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(p.offered).toEqual([]);
+    expect(queue.openConnections).toBe(0);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('a message whose destination the halt failed behind an early answer returns to the queue when the channel does not keep its content', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    const held = await startHeld(queue, false);
+
+    await receiver?.onHalt();
+    held.letGo({ ok: true, value: { messageId: 1, destinationFailed: true }, error: null });
+    await vi.waitFor(() => { expect(queue.openConnections).toBe(0); });
+
+    expect(queue.acked).toEqual([]);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('a halt ends a stop that waits', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    const held = await startHeld(queue);
+
+    const stopping = receiver?.onStop();
+    await receiver?.onHalt();
+    expect((await stopping)?.ok).toBe(true);
+    held.letGo(stored(1));
+    await vi.waitFor(() => { expect(queue.openConnections).toBe(0); });
+
+    expect(queue.acked).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it.each([
+    ['halt', 'onHalt', 2_000],
+    ['stop', 'onStop', 10_000],
+  ] as const)('a %s ends although the broker never answers the close (#413)', async (_what, action, withinMs) => {
+    const queue = new FakeAmqpQueue();
+    queue.hangCloses = true;
+    await start(queue, pipeline().dispatch);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const ending = receiver?.[action]();
+      await vi.advanceTimersByTimeAsync(withinMs);
+      expect((await ending)?.ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      receiver = null;
+    }
   });
 });
 
