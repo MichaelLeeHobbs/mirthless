@@ -118,10 +118,6 @@ export default tseslint.config(
           message: 'No hard-coded colours. Use a theme palette path or add a token in styles/tokens.ts.',
         },
         {
-          selector: 'CallExpression[callee.name="useParams"]',
-          message: 'Read an id in the address with useAddressId (hooks/use-address-id.ts), which lowercases it (D-368).',
-        },
-        {
           selector: 'Property[key.name="fontFamily"] > Literal',
           message: 'No inline font stacks. Use FONT_FAMILY_MONO from styles/tokens.ts, or the theme typography.',
         },
@@ -129,6 +125,11 @@ export default tseslint.config(
           // Without the pair, a screen reader (and getByLabel) names the Select by its value, not its label.
           selector: 'JSXOpeningElement[name.name="InputLabel"]:not(:has(JSXAttribute[name.name="id"]))',
           message: 'Give the InputLabel an id and its Select a matching labelId, so the select is named by its label.',
+        },
+        // Not a visual one, but a block of its own would replace this one's list.
+        {
+          selector: 'ImportSpecifier[imported.name="useParams"]',
+          message: 'Read an id in the address with useAddressId (hooks/use-address-id.ts), which lowercases it (D-368).',
         },
         ...sharedHelperSelectors,
       ],

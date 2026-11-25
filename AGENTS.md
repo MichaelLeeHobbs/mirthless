@@ -165,7 +165,7 @@ Tests are mandatory, not optional. This is healthcare software.
 | connectors | 93 | 90 | 91 | 95 |
 | server | 57 | 58 | 71 | 57 |
 | core-models | 79 | 87 | 90 | 79 |
-| web | 26 | 29 | 23 | 26 |
+| web | 50 | 49 | 45 | 51 |
 
 The server number is low because the controllers, `engine.ts` and several services have few unit tests (the Postgres integration and Playwright suites exercise some of that code but are not counted here). The web number is low because most pages have no component tests. Raising both is on `docs/progress/ROADMAP.md`.
 

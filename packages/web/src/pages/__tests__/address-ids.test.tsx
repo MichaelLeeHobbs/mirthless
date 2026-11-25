@@ -122,13 +122,14 @@ describe('the channel editor at an address in capitals', () => {
 
     const failed = await screen.findByRole('link', { name: 'View 4 failed messages' });
     expect(failed.getAttribute('href')).toBe(`/channels/${ID}/messages?status=ERROR`);
-    expect(screen.getByText('Started')).toBeTruthy();
+    expect(await screen.findByText('Started')).toBeTruthy();
   });
 
   it('sends, links and caches the id as the server writes it', async () => {
     const client = open('/channels/:id', `/channels/${TYPED}`, <ChannelEditorPage />);
 
-    await waitFor(() => { expect((screen.getByLabelText('Channel ID') as HTMLInputElement).value).toBe(ID); });
+    await screen.findByText(/^In 2 groups: Lab, Radiology/);
+    expect((screen.getByLabelText('Channel ID') as HTMLInputElement).value).toBe(ID);
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Channel Group' }));
     fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Radiology' }));
     await waitFor(() => {
