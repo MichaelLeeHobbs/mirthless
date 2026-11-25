@@ -1,6 +1,6 @@
 // PER_ASSOCIATION answers each image as it arrives and makes the message when the association
 // ends. Until that message is stored, the list of what was answered is kept beside the images, so
-// an abort, a crash or a failed store loses none of them (#410, D-352).
+// an abort, a crash or a failed store loses none of them (#410, D-353).
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
