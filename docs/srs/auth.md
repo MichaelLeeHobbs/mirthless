@@ -19,7 +19,7 @@ How people and programs prove who they are: accounts and passwords, sign-in and 
 | AUTH-USR-11 | The system shall change a user's own password only when the user gives the current one, and shall refuse a reset aimed at the caller's own account. | P1 | Test | Proposed |
 
 - AUTH-USR-01: source: docs/user/capabilities.md "Local user accounts with passwords"; docs/user/access-control.md "What is supported and what is not"; #148 (automatic creation is an opt-in setting). Who holds the permission is ACC's.
-- AUTH-USR-02: source: docs/ops/hipaa-security-checklist.md "Unique user identification"; docs/user/access-control.md "Cutting someone off" (Delete the user: the row stays); docs/testing/11-users.md (duplicate username and email refused). That a deleted account's username stays taken is stated only by the code.
+- AUTH-USR-02: source: docs/ops/hipaa-security-checklist.md "Unique user identification"; docs/user/access-control.md "Cutting someone off" (Delete the user: the row stays); docs/testing/11-users.md (duplicate username and email refused). D-379 (the email address). The row does not say whether an email address that differs only in letter case is the same one; the product takes it for another.
 - AUTH-USR-03: source: #210, #209, ROADMAP V4, capabilities.md "Password rules" (Partial). conflict: capabilities.md and access-control.md say 8 characters with a letter and a digit, not configurable; #210 says a configurable minimum, 15 by default, with composition rules optional and off; intent (#210) kept. The floor of 8 is today's rule carried over; #210 names no floor. By #209 and #210 a stricter rule applies the next time a password is set and does not stop an existing password from signing in. conflict: docs/design/06-web-admin.md lists password expiry as a setting; #210 does not carry it over, so there is no row for it. #210's rule against a password equal to the username and its optional change at next sign-in, and #209's strength rule for inbound connector credentials, have no row.
 - AUTH-USR-04: source: access-control.md "Password rules" (8 to 128 characters).
 - AUTH-USR-05: source: #362; D-147 (the first administrator); access-control.md "Forced password change"; capabilities.md "Password rules" (an admin reset does not force a change today).
@@ -155,7 +155,7 @@ How people and programs prove who they are: accounts and passwords, sign-in and 
 | AUTH-KEY-07 | When an API key is replaced, the system shall stop accepting the old secret at once, except that the key's own issuer may keep it working for at most 7 days and never past the key's end. | P1 | Test | Proposed |
 | AUTH-KEY-08 | The system shall let an API key read at most a set number of rows (messages and collection records, not messages it submits) in a UTC day, 5,000 by default and counted across restarts, and shall refuse a read that would pass the limit, or whose day's count it cannot determine, before it sends any row. | P1 | Test | Proposed |
 | AUTH-KEY-09 | The system shall hold an API key's daily row limit in total across reads sent at the same time. | P1 | Test | Proposed |
-| AUTH-KEY-10 | When access an API key's issuer lost only by the passing of time is given back, the system shall accept the key again. | P1 | Test | Proposed |
+| AUTH-KEY-10 | When access an API key's issuer lost only by the passing of time is given back, the system shall accept the key again if it is given back at least until the key's end, and shall otherwise disable the key. | P1 | Test | Proposed |
 | AUTH-KEY-11 | An API key disabled because an edit narrowed its issuer's access shall stay disabled until a person enables it. | P1 | Test | Proposed |
 | AUTH-KEY-12 | The system shall send an alert, at most hourly per key, when a request carries the correct secret of an ended, revoked, disabled or uncovered key that worked in the last 7 days. | P2 | Test | Proposed |
 
@@ -168,7 +168,7 @@ How people and programs prove who they are: accounts and passwords, sign-in and 
 - AUTH-KEY-07: source: access-control.md "API keys" (replace); D-322.
 - AUTH-KEY-08: source: srs-debate 2026-11-24, finding A18 (Domain 3; Scope agrees). conflict: access-control.md counts sends as rows, because a send's answer carries message content (D-321); as written there, result 5,001 of the day waits until midnight. Decision D-A4. Replaces AUTH-KEY-06: when this row is accepted, that row becomes Superseded by AUTH-KEY-08.
 - AUTH-KEY-09: source: srs-debate 2026-11-24, finding A18 (Tester 7).
-- AUTH-KEY-10: source: srs-debate 2026-11-24, finding A19 (Contractor 9, split by Tester). Adds the return that AUTH-KEY-03 left unstated.
+- AUTH-KEY-10: source: srs-debate 2026-11-24, finding A19 (Contractor 9, split by Tester). Adds the return that AUTH-KEY-03 left unstated. Reworded in place 2026-11-25 to say for how long the access must come back (#419, decided by the developer).
 - AUTH-KEY-11: source: srs-debate 2026-11-24, finding A19 (Contractor 9, split by Tester).
 - AUTH-KEY-12: source: srs-debate 2026-11-24, finding A20 (Domain 3, reworded by Tester; Scope against). Decision D-A5.
 

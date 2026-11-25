@@ -2,6 +2,7 @@
 
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { INTEGRATION_WAIT_MS } from '../../../packages/server/test/time-budgets.js';
 
 interface DimseClient {
   addRequest(request: unknown): void;
@@ -26,6 +27,6 @@ export function cStore(port: number, file: string, callingAe: string, calledAe: 
     client.on('associationRejected', () => { failure = new Error(`DICOM association to port ${String(port)} was rejected`); });
     client.on('networkError', (e) => { failure = e instanceof Error ? e : new Error(String(e)); });
     client.on('closed', () => { if (failure) reject(failure); else resolvePromise(); });
-    client.send('127.0.0.1', port, callingAe, calledAe, { connectTimeout: 10_000, associationTimeout: 10_000, pduTimeout: 10_000 });
+    client.send('127.0.0.1', port, callingAe, calledAe, { connectTimeout: INTEGRATION_WAIT_MS, associationTimeout: INTEGRATION_WAIT_MS, pduTimeout: INTEGRATION_WAIT_MS });
   });
 }

@@ -34,9 +34,9 @@ scenario('S14 Database Reader turns new rows into HL7 and marks them sent', asyn
       destinations: [{ name: 'RIS', ...tcpSender('127.0.0.1', String(SINK), undefined, '${hl7}') }],
     }), ['S14 Order Poller']);
 
-    await expect.poll(() => sink.received.length, { timeout: 20_000 }).toBe(2);
+    await expect.poll(() => sink.received.length).toBe(2);
     expect(sink.received.map((m) => m.split('ORC|NW|')[1])).toEqual(['ACC-S14-1', 'ACC-S14-2']);
-    await expect.poll(async () => (await sql<{ status: string }>('SELECT status FROM partner.s14_orders ORDER BY id')).map((r) => r.status), { timeout: 10_000 })
+    await expect.poll(async () => (await sql<{ status: string }>('SELECT status FROM partner.s14_orders ORDER BY id')).map((r) => r.status))
       .toEqual(['SENT', 'SENT']);
   } finally {
     await sink.close();

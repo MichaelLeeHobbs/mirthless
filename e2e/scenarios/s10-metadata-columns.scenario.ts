@@ -39,7 +39,7 @@ scenario('S10 messages are found by their ACCESSION metadata column', async (api
 
   await sendMllp(PORT, orm('ACC-S10-1'));
   await sendMllp(PORT, orm('ACC-S10-2'));
-  await expect.poll(async () => (await api.messages(channelId)).total, { timeout: 15_000 }).toBe(2);
+  await expect.poll(async () => (await api.messages(channelId)).total).toBe(2);
 
   const found = await api.get<{ items: Array<{ messageId: number; metaData?: Record<string, unknown> }>; total: number }>(
     `/channels/${channelId}/messages?metaDataColumn=ACCESSION&metaDataValue=ACC-S10-2`,

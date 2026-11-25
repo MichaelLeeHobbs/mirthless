@@ -38,7 +38,7 @@ scenario('S19 Delimited CSV rows are read by column name', async (api) => {
     }), ['S19 Census CSV']);
 
     drop(dir, 'census.csv', 'MRN19,DOE,JOHN\n');
-    await expect.poll(() => sink.received.length, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     expect(sink.received[0]).toContain('PID|||MRN19||DOE^JOHN');
   } finally {
     await sink.close();

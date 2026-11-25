@@ -42,7 +42,7 @@ scenario('S03 transformer edits HL7 fields and deletes a segment', async (api) =
     }), ['S03 Message Router']);
 
     expect(await sendMllp(PORT, ORU)).toContain('MSA|AA|S03CTL');
-    await expect.poll(() => sink.received.length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => sink.received.length).toBe(1);
     const out = sink.received[0]!;
     expect(out).not.toContain('ZBD|');
     expect(out).toContain('PID|||MRN003^^^SITE3||SMITH^anna');
