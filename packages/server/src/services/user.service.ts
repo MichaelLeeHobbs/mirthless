@@ -50,7 +50,7 @@ function assertKeepsEmail(target: UserDetails & { readonly enabled: boolean }, i
 
 type StoredUser = UserDetails & { readonly id: string };
 
-/** Takes the row as stored, which is not always what was sent: Postgres replaces an unpaired surrogate. */
+/** Takes the row as stored, which is not always what was sent: UTF-8 has no unpaired surrogate. */
 async function recordDetailChanges(tx: DbExecutor, before: UserDetails, stored: StoredUser, actor: GrantActor): Promise<void> {
   const changed = DETAILS.filter((detail) => stored[detail] !== before[detail]);
   if (changed.length === 0) return;
