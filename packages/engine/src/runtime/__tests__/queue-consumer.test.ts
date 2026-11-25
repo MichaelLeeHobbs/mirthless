@@ -886,7 +886,7 @@ describe('QueueConsumer', () => {
       expect((store.release as Mock).mock.calls.map((c: unknown[]) => c.slice(1))).toEqual([[10, 1, 'SENT']]);
     });
 
-    it('gives a send 30 seconds', async () => {
+    it('gives a send no time limit of its own: one that takes long is delivered', async () => {
       const store = makeStore();
       (store.dequeue as Mock).mockResolvedValueOnce(ok([{ channelId: 'ch', messageId: 10, metaDataId: 1, sendAttempts: 0 }]));
       const expiry = new AbortController();
@@ -894,15 +894,14 @@ describe('QueueConsumer', () => {
       try {
         const sendFn = vi.fn(async (...[, , , signal]: Parameters<SendToDestination>) => {
           expiry.abort();
-          return fail(signal.aborted ? 'expired' : 'still going');
+          return signal.aborted ? fail('expired') : ok({ status: 'SENT' as const, content: 'ACK' });
         });
         consumer = new QueueConsumer(makeConfig(), store, sendFn);
         await consumer.poll();
-        expect(timeout).toHaveBeenCalledWith(30_000);
       } finally {
         timeout.mockRestore();
       }
-      expect((store.storeContent as Mock).mock.calls.map((c: unknown[]) => c[4])).toEqual(['expired']);
+      expect((store.release as Mock).mock.calls.map((c: unknown[]) => c.slice(1))).toEqual([[10, 1, 'SENT']]);
     });
 
     it('a stop does not end the send in flight, and a start after a halt sends again', async () => {
