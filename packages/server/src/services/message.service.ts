@@ -1,5 +1,5 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, sql, gt, inArray, lte, asc, max, not } from 'drizzle-orm';
+import { eq, and, sql, gt, inArray, lte, asc, max, not, type SQL } from 'drizzle-orm';
 import { CONTENT_TYPE, SOCKET_EVENT, type ContentType, type MessageStatus } from '@galvanigraph/core-models';
 import { db } from '../lib/db.js';
 import { emitToRoomCoalesced } from '../lib/socket.js';
@@ -27,6 +27,13 @@ export interface ChannelStatistics {
   readonly entries: readonly MessageStatistic[];
 }
 
+export interface WaitingMessages {
+  readonly metaDataId: number;
+  readonly waiting: number;
+  /** Those of them that are not known to be for the destination. */
+  readonly notKnown: number;
+}
+
 type StatField = 'received' | 'filtered' | 'sent' | 'errored';
 
 // Both events are coalesced per room (D-306): listeners only refetch, so the payload
@@ -38,6 +45,16 @@ function emitMessageNew(channelId: string): void {
 
 function emitStatsUpdate(): void {
   emitToRoomCoalesced('dashboard', SOCKET_EVENT.STATS_UPDATE, {});
+}
+
+/**
+ * Whether a `connector_messages` row is for the destination that has its number now; see `OldNumbers`.
+ * Not true when that is not known.
+ */
+function isForItsNumber(channelId: string): SQL {
+  const old = sql`(SELECT old_numbers FROM channels WHERE id = ${channelId})`;
+  return sql`(connector_messages.number_kept AND connector_messages.message_id > COALESCE((${old} ->> 'upTo')::bigint, 0)
+    OR connector_messages.connector_name = ${old} -> 'names' ->> connector_messages.meta_data_id::text)`;
 }
 
 export class MessageService {
@@ -214,7 +231,8 @@ export class MessageService {
 
   /**
    * Rows go QUEUED to PENDING in the same statement, so a concurrent poll cannot dequeue an
-   * in-flight message and dispatch it twice. SKIP LOCKED lets consumers claim disjoint batches
+   * in-flight message and dispatch it twice. One that is not known to be for the destination stays
+   * on the queue. SKIP LOCKED lets consumers claim disjoint batches
    * without blocking each other. Columns are aliased to camelCase so the rows match the
    * QueuedMessage shape the consumer reads.
    */
@@ -240,6 +258,7 @@ export class MessageService {
           WHERE channel_id = ${channelId}
             AND meta_data_id = ${metaDataId}
             AND status = 'QUEUED'
+            AND ${isForItsNumber(channelId)}
           ORDER BY ${order}
           LIMIT ${batchSize}
           FOR UPDATE SKIP LOCKED
@@ -471,6 +490,46 @@ export class MessageService {
             eq(connectorMessages.status, 'QUEUED'),
           ),
         );
+      return rows;
+    });
+  }
+
+  static async isForItsNumber(channelId: string, messageId: number, metaDataId: number): Promise<Result<boolean>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select({ its: sql<boolean | null>`${isForItsNumber(channelId)}` })
+        .from(connectorMessages)
+        .where(and(
+          eq(connectorMessages.channelId, channelId),
+          eq(connectorMessages.messageId, messageId),
+          eq(connectorMessages.metaDataId, metaDataId),
+        ));
+      return row?.its === true;
+    });
+  }
+
+  /**
+   * The messages on the queue of each destination, whether the channel still has it or not. Steps from
+   * one number to the next: the index starts with channel and number, so counting by status alone
+   * would read every message of the channel.
+   */
+  static async waitingByDestination(channelId: string, reader: Pick<typeof db, 'execute'> = db): Promise<Result<readonly WaitingMessages[]>> {
+    return tryCatch(async () => {
+      const next = (after: SQL): SQL => sql`SELECT min(meta_data_id) FROM connector_messages WHERE channel_id = ${channelId} AND meta_data_id > ${after}`;
+      const { rows } = await reader.execute<{ metaDataId: number; waiting: number; notKnown: number }>(sql`
+        WITH RECURSIVE numbers(n) AS (
+          (${next(sql`0`)})
+          UNION ALL
+          SELECT (${next(sql`numbers.n`)}) FROM numbers WHERE numbers.n IS NOT NULL
+        )
+        SELECT n AS "metaDataId", queue.waiting, queue."notKnown"
+        FROM numbers CROSS JOIN LATERAL (
+          SELECT count(*)::int AS waiting, (count(*) FILTER (WHERE ${isForItsNumber(channelId)} IS NOT TRUE))::int AS "notKnown"
+          FROM connector_messages
+          WHERE channel_id = ${channelId} AND meta_data_id = n AND status IN ('QUEUED', 'PENDING')
+        ) AS queue
+        WHERE queue.waiting > 0
+      `);
       return rows;
     });
   }

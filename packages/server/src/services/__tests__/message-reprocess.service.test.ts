@@ -35,8 +35,13 @@ function mockSelectSequence(...results: unknown[]): void {
 }
 
 const mockVariablesUsed = vi.fn();
-function deployedWithDests(state: string, destinations: { metaDataId: number; queueMode: string }[]) {
-  return { runtime: { getState: () => state }, config: { destinations }, variablesUsed: mockVariablesUsed };
+const mockIsForItsNumber = vi.fn();
+vi.mock('../message.service.js', () => ({
+  MessageService: { isForItsNumber: (...args: unknown[]): unknown => mockIsForItsNumber(...args) },
+}));
+function deployedWithDests(state: string, destinations: { metaDataId: number; queueMode: string; enabled?: boolean }[]) {
+  const named = destinations.map((d) => ({ name: 'Lab', enabled: true, ...d }));
+  return { runtime: { getState: () => state }, config: { destinations: named }, variablesUsed: mockVariablesUsed };
 }
 
 function mockUpdateCapture(): { set: ReturnType<typeof vi.fn> } {
@@ -61,6 +66,7 @@ beforeEach(() => {
   mockGetRuntime.mockReset();
   mockTxExecute.mockReset();
   mockVariablesUsed.mockReset().mockReturnValue([]);
+  mockIsForItsNumber.mockReset().mockResolvedValue({ ok: true, value: true, error: null });
   mockTxExecute.mockResolvedValue({ rows: [], rowCount: 0 });
 });
 
@@ -299,6 +305,29 @@ describe('MessageReprocessService.resendDestination', () => {
     const result = await MessageReprocessService.resendDestination('ch-001', 5, 1);
 
     expect(result).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('(mrn, dob)') } });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it('refuses to resend to a destination that is switched off, whose queue is held', async () => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS', enabled: false }]));
+    const { set } = mockUpdateCapture();
+
+    expect(await MessageReprocessService.resendDestination('ch-001', 5, 1)).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('"Lab" is switched off') } });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['is not known to be for the destination that has its number now', { ok: true, value: false, error: null }, { code: 'CONFLICT', message: expect.stringMatching(/^Message 5 cannot be resent: .* not known to be for "Lab"/) }],
+    ['cannot be told whether it is', { ok: false, value: null, error: new Error('db down') }, { message: 'db down' }],
+  ])('refuses to resend a message that %s', async (_what, its, error) => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
+    mockIsForItsNumber.mockResolvedValue(its);
+    mockSelectSequence([{ status: 'ERROR' }]);
+    const { set } = mockUpdateCapture();
+
+    expect(await MessageReprocessService.resendDestination('ch-001', 5, 1)).toMatchObject({ ok: false, error });
+
+    expect(mockIsForItsNumber).toHaveBeenCalledExactlyOnceWith('ch-001', 5, 1);
     expect(set).not.toHaveBeenCalled();
   });
 

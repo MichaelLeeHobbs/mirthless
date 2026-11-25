@@ -8,7 +8,10 @@ export const channelConnectors = pgTable('channel_connectors', {
   channelId: uuid('channel_id')
     .notNull()
     .references(() => channels.id, { onDelete: 'cascade' }),
+  /** Kept for as long as the destination exists, and not given to another (`channels.nextMetaDataId`). */
   metaDataId: integer('meta_data_id').notNull(),
+  /** Its place in the channel's list, from 1. */
+  position: integer('position').notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   enabled: boolean('enabled').notNull().default(true),
   connectorType: varchar('connector_type', { length: 50 }).notNull(),

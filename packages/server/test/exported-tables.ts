@@ -31,14 +31,16 @@ export const EXPORTED_TABLES = {
       updatedAt: NEW_ROW,
       deletedAt: 'a deleted channel is not exported',
       lastDeployedAt: 'an import does not deploy',
+      nextMetaDataId: 'past each number of the file and of the channel it replaces',
+      oldNumbers: 'about the messages stored on one server',
     },
   },
   channelConnectors: {
     table: channelConnectors,
     fields: entry.destinations.element.shape,
     notExported: {
-      id: 'metaDataId names the destination',
       channelId: PARENT,
+      position: ORDER,
       chainId: 'nothing sets or reads it',
       orderInChain: 'nothing sets or reads it',
       createdAt: NEW_ROW,

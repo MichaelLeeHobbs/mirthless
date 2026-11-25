@@ -84,6 +84,7 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   isNull: vi.fn((_col: unknown) => ({ type: 'isNull' })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
+  inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
   sql: vi.fn((strings: TemplateStringsArray) => ({ type: 'sql', text: strings.join('?') })),
@@ -198,7 +199,7 @@ beforeEach(() => {
   // Awaited directly (delete/setEnabled) and chained with .returning() (update's optimistic lock).
   mockUpdateWhere.mockImplementation(() =>
     Object.assign(Promise.resolve(undefined), {
-      returning: vi.fn().mockResolvedValue([{ id: CHANNEL_ID }]),
+      returning: vi.fn().mockResolvedValue([{ id: CHANNEL_ID, nextMetaDataId: 1 }]),
     }),
   );
   mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
@@ -592,17 +593,32 @@ describe('ChannelService', () => {
       },
     ];
 
-    it('syncs destinations via delete-and-reinsert on update', async () => {
+    it('updates the destinations it has in place, adds the new ones and deletes the others', async () => {
       const channel = makeChannel();
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([{ id: 'd1', metaDataId: 1 }, { id: 'd2', metaDataId: 2 }]);
       setupGetByIdMocks(updatedChannel, { destinations: DEST_ROWS });
 
       const result = await ChannelService.update(CHANNEL_ID, {
         revision: 1,
         destinations: [
           {
+            id: 'new-1',
+            name: 'Dest 3',
+            enabled: false,
+            connectorType: 'TCP_MLLP' as const,
+            properties: { host: 'ward', port: 6661 },
+            queueMode: 'NEVER' as const,
+            retryCount: 0,
+            retryIntervalMs: 10000,
+            rotateQueue: false,
+            queueThreadCount: 1,
+            waitForPrevious: false,
+          },
+          {
+            id: 'd1',
             name: 'Dest 1',
             enabled: true,
             connectorType: 'TCP_MLLP' as const,
@@ -620,9 +636,10 @@ describe('ChannelService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.destinations).toHaveLength(1);
-      expect(result.value.destinations[0]!.name).toBe('Dest 1');
-      expect(mockDelete).toHaveBeenCalled();
-      expect(mockInsert).toHaveBeenCalled();
+      expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ name: 'Dest 1', position: 2, responseTransformer: null }));
+      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ channelId: CHANNEL_ID, metaDataId: 3, position: 1, name: 'Dest 3', enabled: false }));
+      expect(mockDeleteWhere).toHaveBeenCalledWith({ type: 'inArray', vals: ['d2'] });
+      expect(mockSet).toHaveBeenCalledWith({ nextMetaDataId: 4 });
     });
 
     it('removes all destinations when empty array provided', async () => {
@@ -630,6 +647,7 @@ describe('ChannelService', () => {
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([{ id: 'd1', metaDataId: 1 }]);
       setupGetByIdMocks(updatedChannel);
 
       const result = await ChannelService.update(CHANNEL_ID, {
@@ -1073,6 +1091,7 @@ describe('ChannelService', () => {
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([]);
       setupGetByIdMocks(updatedChannel, {
         filters: [{ id: 'f1', connectorId: null }],
         filterRulesData: [
@@ -1119,6 +1138,7 @@ describe('ChannelService', () => {
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([]);
       setupGetByIdMocks(updatedChannel, {
         transformers: [{
           id: 't1', connectorId: null,
@@ -1176,6 +1196,7 @@ describe('ChannelService', () => {
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([]);
       setupGetByIdMocks(updatedChannel);
 
       const result = await ChannelService.update(CHANNEL_ID, {
@@ -1194,6 +1215,7 @@ describe('ChannelService', () => {
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([]);
       setupGetByIdMocks(updatedChannel);
 
       const result = await ChannelService.update(CHANNEL_ID, {
@@ -1212,6 +1234,7 @@ describe('ChannelService', () => {
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([]);
       setupGetByIdMocks(updatedChannel, {
         filters: [{ id: 'f1', connectorId: null }],
         filterRulesData: [],
@@ -1239,6 +1262,7 @@ describe('ChannelService', () => {
       const updatedChannel = makeChannel({ revision: 2 });
 
       pushResponse([channel]);
+      pushResponse([]);
       setupGetByIdMocks(updatedChannel, {
         transformers: [{
           id: 't1', connectorId: null,

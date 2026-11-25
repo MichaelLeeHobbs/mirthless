@@ -240,12 +240,14 @@ describeIntegration('Channel export and import (real Postgres)', () => {
 
   // Exported, but an import gives the channel its own. (An import keeps the stored enabled flag too, #225.)
   const OWN_ON_IMPORT: readonly string[] = ['id', 'revision'];
+  // The exported channel is still here, so its destinations have their ids (destination-numbers.itest.ts has the rest).
+  const TAKEN_HERE: readonly string[] = ['id'];
 
   /** What a file carries: every column but those with a reason not to be in it. */
   function carried(stored: StoredTables, ownChannelColumns: readonly string[] = OWN_ON_IMPORT): StoredTables {
     const tables: Partial<Record<ExportedTableName, readonly Row[]>> = {};
     for (const [name, { notExported }] of Object.entries<ExportedTable>(EXPORTED_TABLES)) {
-      const own = [...Object.keys(notExported), ...(name === 'channels' ? ownChannelColumns : [])];
+      const own = [...Object.keys(notExported), ...(name === 'channels' ? ownChannelColumns : []), ...(name === 'channelConnectors' ? TAKEN_HERE : [])];
       tables[name as ExportedTableName] = stored[name as ExportedTableName]
         .map((row) => Object.fromEntries(Object.entries(row).filter(([column]) => !own.includes(column))));
     }
@@ -281,7 +283,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
       responseMode: 'DESTINATION', responseConnectorName: 'To EHR',
     }).where(eq(s.channels.id, id));
     const [destination] = await db.insert(s.channelConnectors).values({
-      channelId: id, metaDataId: 7, name: 'To EHR', enabled: false, connectorType: 'CHANNEL', properties: { targetChannelId: id },
+      channelId: id, metaDataId: 7, position: 1, name: 'To EHR', enabled: false, connectorType: 'CHANNEL', properties: { targetChannelId: id },
       responseTransformer: 'return msg;', responseTransformerLanguage: 'TYPESCRIPT', queueMode: 'ALWAYS', retryCount: 3,
       retryIntervalMs: 500, rotateQueue: true, queueThreadCount: 4, waitForPrevious: true,
     }).returning();

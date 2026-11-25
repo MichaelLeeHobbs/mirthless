@@ -18,7 +18,7 @@
 | 5.5  | Create with destinations         | Create channel, add 2 destinations (TCP/MLLP + HTTP), fill settings, Save  | Both destinations visible after reload with correct properties         |        |       |
 | 5.6  | Edit destinations                | Open channel, modify destination name and port, Save                       | Changes persist after reload                                           |        |       |
 | 5.7  | Remove destination               | Open channel, remove one destination, Save                                 | Only remaining destination visible after reload                        |        |       |
-| 5.8  | Reorder destinations             | Move destination 2 to position 1, Save                                     | Order persists (metaDataId reassigned)                                 |        |       |
+| 5.8  | Reorder destinations             | Move destination 2 to position 1, Save                                     | Order persists, and each destination keeps its number (`e2e/destination-numbers.spec.ts`) |        |       |
 | 5.9  | Queue settings persist           | Set queue mode to ON_FAILURE, retry 3, interval 5000, Save                 | Queue settings visible after reload                                    |        |       |
 
 ## Data Round-Trip — Scripts

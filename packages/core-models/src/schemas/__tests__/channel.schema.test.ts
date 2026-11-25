@@ -644,12 +644,44 @@ describe('createChannelSchema — destinations array', () => {
   });
 });
 
+// #395: what waits on a destination's queue goes by which destination it is.
+describe('destinations on update', () => {
+  const dest = { id: '550e8400-e29b-41d4-a716-446655440000', name: 'D', enabled: false, connectorType: 'HTTP', properties: {} };
+  const issues = (input: Record<string, unknown>): unknown[] => updateChannelSchema.safeParse({ revision: 1, ...input }).error?.issues.map((i) => i.path) ?? [];
+
+  it('accepts the stored ones and new ones, each with an id of its own', () => {
+    const { destinations } = updateChannelSchema.parse({ revision: 1, destinations: [dest, { ...dest, id: 'new-1' }] });
+    expect(destinations!.map((d) => [d.id, d.enabled])).toEqual([[dest.id, false], ['new-1', false]]);
+  });
+
+  it('reads ids in capitals as the stored ids, which are in lower case', () => {
+    const { destinations, filters } = updateChannelSchema.parse({ revision: 1, destinations: [{ ...dest, id: dest.id.toUpperCase() }], filters: [{ connectorId: dest.id.toUpperCase() }] });
+    expect([destinations![0]!.id, filters![0]!.connectorId]).toEqual([dest.id, dest.id]);
+  });
+
+  it.each(['id', 'enabled'])('refuses one without its %s, which cannot be guessed', (key) => {
+    const { [key as 'id']: _left, ...rest } = dest;
+    expect(issues({ destinations: [dest, rest] })).toEqual([['destinations', 1, key]]);
+  });
+
+  it('create needs neither', () => {
+    const { id: _id, enabled: _enabled, ...rest } = dest;
+    const input = createChannelSchema.parse({ name: 'C', inboundDataType: 'RAW', outboundDataType: 'RAW', sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {}, destinations: [rest] });
+    expect(input.destinations).toEqual([expect.objectContaining({ name: 'D', enabled: true })]);
+  });
+
+  it('refuses a filter or transformer that names its destination by a place in the list', () => {
+    expect(issues({ destinations: [dest], filters: [{ rules: [] }, { metaDataId: 1, rules: [] }], transformers: [{ metaDataId: 1 }] }))
+      .toEqual([['filters', 1, 'metaDataId'], ['transformers', 0, 'metaDataId']]);
+  });
+});
+
 // #183: a client that leaves languages out must not turn TypeScript scripts into
 // JavaScript on save, which would switch off their deploy type check.
 describe('script languages on update', () => {
   const rule = { type: 'JAVASCRIPT', script: 'return true;' };
   const step = { type: 'JAVASCRIPT', script: 'msg = msg;' };
-  const dest = { name: 'D', connectorType: 'HTTP', properties: {} };
+  const dest = { id: 'new', name: 'D', enabled: true, connectorType: 'HTTP', properties: {} };
 
   it('refuses a filter rule script with no language', () => {
     const result = updateChannelSchema.safeParse({ revision: 1, filters: [{ rules: [rule] }] });

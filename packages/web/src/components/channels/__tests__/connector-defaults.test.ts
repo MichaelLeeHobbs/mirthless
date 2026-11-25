@@ -235,7 +235,22 @@ describe('SMTP dest runtime option defaults (rank-4 surfacing)', () => {
 
 describe('createDefaultDestination', () => {
   it('includes an empty response transformer script', () => {
-    const dest = createDefaultDestination(0);
+    const dest = createDefaultDestination([]);
     expect(dest.responseTransformer).toBe('');
+  });
+
+  it.each([
+    ['the first', [], 'Destination 1'],
+    ['one more', ['Lab', 'Clinic'], 'Destination 3'],
+    ['one more after a removal', ['Destination 2'], 'Destination 3'],
+    ['one more, past those that have a default name', ['Destination 2', 'Destination 3'], 'Destination 4'],
+  ])('names %s as none of the others is', (_what, names, expected) => {
+    expect(createDefaultDestination(names.map((name) => ({ name }))).name).toBe(expected);
+  });
+
+  it('gives each an id of its own, and no number until it is saved', () => {
+    const [a, b] = [createDefaultDestination([]), createDefaultDestination([])];
+    expect(a!.id).not.toBe(b!.id);
+    expect([a!.metaDataId, b!.metaDataId]).toEqual([null, null]);
   });
 });

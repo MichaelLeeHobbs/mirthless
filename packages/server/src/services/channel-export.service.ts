@@ -44,6 +44,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
       language: toScriptLanguage(s.language),
     })),
     destinations: detail.destinations.map((d) => ({
+      id: d.id,
       metaDataId: d.metaDataId,
       name: d.name,
       enabled: d.enabled,

@@ -146,11 +146,19 @@ export interface DestinationIdentity {
   readonly name: string;
 }
 
+/** Whether the two differ in their credentials at most. A masked one in the file counts as the stored one. */
+export function sameSettings(direction: ConnectorDirection, imported: ConnectorSettings, stored: ConnectorSettings): boolean {
+  if (imported.connectorType !== stored.connectorType) return false;
+  const credentials = new Set(keysOf(direction, imported.connectorType)?.credentials ?? []);
+  const merged = stripRedactedProperties(imported.properties, stored.properties);
+  return isDeepStrictEqual(withoutKeys(merged, credentials), withoutKeys(stored.properties, credentials));
+}
+
 /**
- * The stored destination at the file's id and name. A metaDataId alone does not
- * say which one it is: every save from the editor renumbers the destinations by
- * position. Nor does a name that two of them have. Whoever saved the channel
- * since the export may have put another credential there, which is then kept.
+ * The stored destination with the file's number and name. A number alone does
+ * not say which one it is: until #395 a save renumbered the destinations by
+ * position, and another server may have given the number to another. Nor does
+ * a name that two of them have.
  */
 export function sameDestination<T extends DestinationIdentity>(
   imported: DestinationIdentity, inFile: readonly DestinationIdentity[], stored: readonly T[],
@@ -160,7 +168,10 @@ export function sameDestination<T extends DestinationIdentity>(
   return named.find((d) => d.metaDataId === imported.metaDataId);
 }
 
-/** `stored` is the connector the file's one replaces: the source, or its sameDestination. */
+/**
+ * `stored` is the connector the file's one replaces. Whoever saved the channel since the export may
+ * have put another credential there, which is then kept.
+ */
 export function overwriteProperties(
   direction: ConnectorDirection, imported: ConnectorSettings, stored: ConnectorSettings | undefined,
 ): Record<string, unknown> {

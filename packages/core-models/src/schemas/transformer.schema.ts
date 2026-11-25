@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { connectorRefFields } from './filter.schema.js';
 import { scriptLanguageSchema } from './script-language.schema.js';
 
 export const TRANSFORMER_STEP_TYPES = ['JAVASCRIPT', 'MAPPER', 'MESSAGE_BUILDER'] as const;
@@ -20,9 +21,7 @@ export const transformerStepInputSchema = z.object({
 export type TransformerStepInput = z.infer<typeof transformerStepInputSchema>;
 
 export const transformerInputSchema = z.object({
-  connectorId: z.string().uuid().nullable().default(null),
-  // Resolves connectorId when destinations are reinserted.
-  metaDataId: z.number().int().positive().nullable().default(null),
+  ...connectorRefFields,
   inboundDataType: z.string().max(50).default('HL7V2'),
   outboundDataType: z.string().max(50).default('HL7V2'),
   inboundProperties: z.record(z.string(), z.unknown()).default({}),

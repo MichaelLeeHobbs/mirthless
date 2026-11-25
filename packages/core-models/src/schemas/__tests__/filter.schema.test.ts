@@ -112,11 +112,15 @@ describe('filterInputSchema', () => {
     expect(result.data.connectorId).toBe('550e8400-e29b-41d4-a716-446655440000');
   });
 
-  it('rejects invalid connectorId format', () => {
-    const result = filterInputSchema.safeParse({
-      connectorId: 'not-a-uuid',
-      rules: [],
-    });
-    expect(result.success).toBe(false);
+  it('accepts the id a request gives a destination that is not saved yet', () => {
+    expect(filterInputSchema.parse({ connectorId: 'new-1' }).connectorId).toBe('new-1');
+  });
+
+  it.each([[''], ['x'.repeat(65)], [7]])('rejects %j as a connectorId', (connectorId) => {
+    expect(filterInputSchema.safeParse({ connectorId }).success).toBe(false);
+  });
+
+  it.each([[0], [-1], [1.5], ['1']])('rejects %j as a place in the list', (metaDataId) => {
+    expect(filterInputSchema.safeParse({ metaDataId }).success).toBe(false);
   });
 });

@@ -135,7 +135,7 @@ interface MetadataColumnDefinition {
 | Aspect | Connect | GalvaniGraph |
 |---|---|---|
 | Mutability | All mutable | All `readonly` |
-| MetaDataId assignment | Auto-increment counter on Channel | Each connector has its own `ConnectorId`; `metaDataId` is assigned at deployment time |
+| MetaDataId assignment | Auto-increment counter on Channel | The same: a destination gets the next number when it is first saved and keeps it (D-348) |
 | Scripts | Raw strings, no types | Nullable strings, validated at save time |
 | Properties | Mixed into ChannelProperties blob | Separated: `ChannelProperties` + `ChannelScripts` |
 | Tags | `Set<String>` channelIds on Tag | `ReadonlyArray<TagId>` on Channel |
