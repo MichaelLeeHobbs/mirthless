@@ -95,6 +95,43 @@ describeIntegration('API keys: narrowing, Replace and offboarding (real Postgres
     });
   });
 
+  describe('an issuer whose access ended by itself', () => {
+    const DAY_MS = 86_400_000;
+    const at = (days: number): string => new Date(Date.now() + days * DAY_MS).toISOString();
+
+    async function lapsed(): Promise<{ readonly key: IssuedApiKey; readonly giveBack: (until: string | null) => Promise<void> }> {
+      const { user, roleId } = await holderOf(MANAGER);
+      const key = await issue(user, ['channels:read']);
+      await mods.pool.query(`UPDATE assignments SET expires_at = now() - interval '1 minute' WHERE user_id = $1`, [user.id]);
+      expect(await works(key.token)).toBe(401);
+      expect((await view(key.key.id)).status).toBe('active');
+      return {
+        key,
+        giveBack: async (expiresAt) => {
+          expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}/assignments`, { assignments: [{ roleId, groupIds: null, expiresAt }] })).status).toBe(200);
+        },
+      };
+    }
+
+    it.each([['with no end', null], ['until after the key ends', at(365)]])('brings the key back when it is given back %s', async (_for, until) => {
+      const { key, giveBack } = await lapsed();
+
+      await giveBack(until);
+
+      expect((await view(key.key.id)).status).toBe('active');
+      expect(await works(key.token)).toBe(200);
+    });
+
+    it('disables the key when it is given back for less time than the key has left (#419)', async () => {
+      const { key, giveBack } = await lapsed();
+
+      await giveBack(at(1));
+
+      expect((await view(key.key.id)).status).toBe('disabled');
+      expect(await works(key.token)).toBe(401);
+    });
+  });
+
   describe('offboarding: a leaver\'s keys stop with them (D-322)', () => {
     const offboarded = async (issuerId: string): Promise<unknown[]> => (await mods.pool.query<{ a: unknown }>(
       `SELECT attributes AS a FROM audit_log WHERE action = 'API_KEYS_OFFBOARDED' AND attributes->>'issuerId' = $1`, [issuerId],

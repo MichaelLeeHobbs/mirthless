@@ -32,7 +32,7 @@ A connector's properties are checked when the channel deploys. Every type reject
 
 | Property | Required | Notes |
 |---|---|---|
-| `processBatch` | No | Off by default. Split an inbound HL7 batch into one message per `MSH` segment. The Mirth importer sets it; the editor has no field for it. |
+| `processBatch` | No | Off by default. Split an inbound HL7 batch into one message per `MSH` segment, processed in order. A message recorded with an error does not stop the ones after it, and the batch is an error to the source. A message that could not be recorded at all (the database is down) ends the batch, and the source treats it as it treats a message that was not recorded: a polling source reads it again, Kafka and AMQP up to `maxStoreAttempts` times, and MLLP and HTTP answer an error. Offered again, the messages before that one are processed and sent again; a sender that does not offer it again has the rest of the batch to send. A JavaScript source, which never offers a batch again, goes on with the next message. A batch in which a message holds U+0000 is not taken at all by a channel that stores raw content without encryption, because it could never be recorded (a JavaScript source loses only that message). The log says which messages were not recorded, and an alert is raised. The Mirth importer sets it; the editor has no field for it. |
 
 ### Every destination
 

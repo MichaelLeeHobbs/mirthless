@@ -34,6 +34,12 @@ const EARLIER_ENDS_MS = 10_000;
 /** How long a stop waits for work in the background to end. */
 const BACKGROUND_ENDS_MS = 10_000;
 
+/** A connector that throws must not leave those after it running. */
+async function haltConnector(connector: RuntimeConnector): Promise<Result<void>> {
+  const called = await tryCatch(() => connector.onHalt());
+  return called.ok ? called.value : called;
+}
+
 export class ChannelRuntime {
   private state: ChannelState = 'UNDEPLOYED';
   private config: ChannelRuntimeConfig | null = null;
@@ -203,13 +209,18 @@ export class ChannelRuntime {
       this.abortController = new AbortController();
       this.runController?.abort();
 
-      await this.config.source.onHalt();
-
-      for (const [, dest] of this.config.destinations) {
-        await dest.onHalt();
+      const connectors: ReadonlyArray<readonly [string, RuntimeConnector]> = [
+        ['Source', this.config.source],
+        ...[...this.config.destinations].map(([id, dest]) => [`Destination ${String(id)}`, dest] as const),
+      ];
+      const failures: string[] = [];
+      for (const [name, connector] of connectors) {
+        const result = await haltConnector(connector);
+        if (!result.ok) failures.push(`${name} halt failed: ${result.error.message}`);
       }
 
       this.state = 'STOPPED';
+      if (failures.length > 0) throw new Error(failures.join('; '));
     });
   }
 

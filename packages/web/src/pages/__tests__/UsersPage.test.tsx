@@ -38,8 +38,10 @@ let myId = 'me';
 vi.mock('../../stores/auth.store.js', () => ({
   useAuthStore: (pick: (s: { user: { id: string; grants: readonly Record<string, unknown>[] } }) => unknown) => pick({ user: { id: myId, grants } }),
 }));
+const reloadKeys = vi.fn();
+vi.mock('../../hooks/use-channel-groups.js', () => ({ useChannelGroups: () => ({ data: [] }) }));
 vi.mock('../../hooks/use-api-keys.js', () => ({
-  useApiKeys: (enabled: boolean) => ({ data: enabled ? issuedKeys : undefined }),
+  useApiKeys: (enabled: boolean) => ({ data: enabled ? issuedKeys : undefined, refetch: reloadKeys }),
 }));
 
 vi.mock('../../hooks/use-users.js', () => ({
@@ -68,6 +70,7 @@ beforeEach(() => {
   issuedKeys = [];
   grants = [];
   myId = 'me';
+  reloadKeys.mockReset();
   updateMutate.mockReset();
   deleteMutate.mockReset();
   // The server answers an update with the saved user.
@@ -231,6 +234,18 @@ describe('UsersPage enabled switch', () => {
     fireEvent.click(screen.getByLabelText('Take ownership of Lab feed'));
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
     expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1', takeOwnership: ['k1'] }, expect.anything());
+  });
+
+  it('reads the keys again when it asks, so when each was last used is not from hours ago', () => {
+    renderPage([...ALL, 'api_keys:read']);
+    expect(reloadKeys).not.toHaveBeenCalled();
+    fireEvent.click(switchFor('Disable jmorales'));
+    expect(reloadKeys).toHaveBeenCalledOnce();
+    cleanup();
+    reloadKeys.mockReset();
+    renderPage();
+    fireEvent.click(switchFor('Disable jmorales'));
+    expect(reloadKeys).not.toHaveBeenCalled();
   });
 
   it('keeps the dialog open with the server\'s reason when the disable is refused', () => {

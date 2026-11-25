@@ -12,6 +12,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
 import { useChannelGroups, useGroupMemberships, useSetChannelGroups } from '../../hooks/use-channel-groups.js';
 import { useNotification } from '../../stores/notification.store.js';
+import { groupNamer } from '../../lib/channel-access.js';
 import { errorMessage } from '../../lib/error-message.js';
 import { isSameGroupSet, multiGroupNote } from '../../lib/group-membership.js';
 
@@ -60,7 +61,7 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
   }, [nextGroupIds, channelId, setGroups, notify, onClose]);
 
   const isLoading = groupsQuery.isLoading || membershipsQuery.isLoading;
-  const currentNames = currentGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? id);
+  const currentNames = currentGroupIds.map(groupNamer(groups));
   const helperText = multiGroupNote(currentNames);
 
   return (

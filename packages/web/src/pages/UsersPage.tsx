@@ -66,7 +66,7 @@ export function UsersPage(): ReactNode {
   // Reading a leaver's keys needs api_keys:read; taking one over needs api_keys:manage too.
   const canReadKeys = has(PERMISSION.API_KEYS_READ);
   const canManageKeys = has(PERMISSION.API_KEYS_MANAGE) && canReadKeys;
-  const { data: keys } = useApiKeys(canReadKeys);
+  const { data: keys, refetch: reloadKeys } = useApiKeys(canReadKeys);
   const grants = useAuthStore((s) => s.user?.grants);
   const myId = useAuthStore((s) => s.user?.id);
   // The tokens of keys taken over, shown one at a time, once.
@@ -149,6 +149,8 @@ export function UsersPage(): ReactNode {
   const handleToggleEnabled = (user: UserSummary): void => {
     if (user.enabled) {
       setDisableTarget(user);
+      // When each key was last used decides what to do with it, and the page may have been open for hours.
+      if (canReadKeys) void reloadKeys();
     } else {
       updateUser.mutate({ id: user.id, input: { enabled: true } });
     }

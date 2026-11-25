@@ -230,6 +230,7 @@ const apiKey = (id, name, over) => ({
 const apiKeys = [
   apiKey('k1', 'Lab results feed', { permissions: ['channels:read', 'messages:read'], groupIds: ['g1'] }),
   apiKey('k2', 'CI deploys', { permissions: ['channels:deploy', 'channels:read'], issuedBy: { id: 'u3', username: 'kpatel' }, previousSecretUntil: new Date(Date.now() + 5 * DAY).toISOString() }),
+  apiKey('k5', 'Cardiology results to the regional warehouse', { permissions: ['channels:read', 'messages:read', 'messages:reprocess'], groupIds: ['g1', 'g2'], issuedBy: { id: 'u3', username: 'kpatel' }, lastUsedAt: null }),
   apiKey('k3', 'Old billing export', { status: 'revoked', revokedAt: new Date(Date.now() - 2 * DAY).toISOString(), revokeReason: 'Leaked in a build log', lastUsedAt: null }),
   apiKey('k4', 'Nightly extract', { status: 'disabled', permissions: ['messages:read'], reason: 'Nightly warehouse load' }),
 ];

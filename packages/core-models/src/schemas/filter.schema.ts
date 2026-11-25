@@ -6,7 +6,7 @@ export const FILTER_OPERATORS = ['AND', 'OR'] as const;
 
 export const filterRuleInputSchema = z.object({
   enabled: z.boolean().default(true),
-  name: z.string().max(255).optional(),
+  name: z.string().max(255).nullish(),
   operator: z.enum(FILTER_OPERATORS).default('AND'),
   type: z.enum(FILTER_RULE_TYPES),
   script: z.string().nullable().default(null),
