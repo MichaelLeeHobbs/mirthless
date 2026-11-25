@@ -21,6 +21,8 @@ export const EVENT_NAME = {
   // First start after the upgrade that added deployment records: the saved
   // configuration was deployed and recorded as the channel's deployment (#225).
   CHANNEL_DEPLOYMENT_ADOPTED: 'CHANNEL_DEPLOYMENT_ADOPTED',
+  // After a channel's start: messages wait for a destination that is switched off, gone or does not queue (D-348).
+  QUEUE_HELD: 'QUEUE_HELD',
   SETTINGS_CHANGED: 'SETTINGS_CHANGED',
   CODE_TEMPLATE_UPDATED: 'CODE_TEMPLATE_UPDATED',
   GLOBAL_SCRIPT_UPDATED: 'GLOBAL_SCRIPT_UPDATED',

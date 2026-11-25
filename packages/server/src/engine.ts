@@ -52,7 +52,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvanigraph/connectors';
-import { AUDIT_ACTION, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, EVENT_NAME, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvanigraph/core-models';
 import { MessageService } from './services/message.service.js';
 import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
@@ -476,6 +476,13 @@ const MAX_ROUTE_DEPTH = 25;
 
 const routeDepthStore = new AsyncLocalStorage<number>();
 
+/** Why nothing on the destination's queue is sent, or null. */
+function whyQueueHeld(dest: ChannelDetail['destinations'][number] | undefined): string | null {
+  if (!dest) return 'which the channel no longer has';
+  if (!dest.enabled) return 'which is switched off';
+  return dest.queueMode === 'NEVER' ? 'whose queue is off' : null;
+}
+
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
@@ -794,7 +801,7 @@ export class EngineManager {
 
     const queueConsumers: QueueConsumer[] = [];
     for (const dest of channel.destinations) {
-      if (dest.queueMode === 'NEVER') continue;
+      if (whyQueueHeld(dest) !== null) continue;
       const queueConfig: QueueConsumerConfig = {
         channelId: channel.id,
         metaDataId: dest.metaDataId,
@@ -883,24 +890,30 @@ export class EngineManager {
     const resetClaimsOnce = async (): Promise<void> => {
       if (claimsReset) return;
       claimsReset = true;
-      for (const dest of channel.destinations) {
-        if (dest.queueMode === 'NEVER') continue;
-        const reset = await MessageService.resetPending(channel.id, dest.metaDataId);
+      const queues = await MessageService.waitingByDestination(channel.id);
+      if (!queues.ok) {
+        logger.error({ channelId: channel.id, errMsg: queues.error.message }, 'Could not read which destinations messages wait for');
+      }
+      for (const { metaDataId } of queues.ok ? queues.value : channel.destinations) {
+        const reset = await MessageService.resetPending(channel.id, metaDataId);
         if (!reset.ok) {
-          logger.error({ channelId: channel.id, metaDataId: dest.metaDataId, errMsg: reset.error.message }, 'Failed to reset PENDING messages');
+          logger.error({ channelId: channel.id, metaDataId, errMsg: reset.error.message }, 'Failed to reset PENDING messages');
         }
       }
     };
 
+    let heldReported = false;
     let recovered = false;
     let recovering = Promise.resolve();
     const recoverOnce = (): Promise<void> => {
       const { runSignal, haltSignal } = runtime;
       const run = async (): Promise<void> => {
-        if (recovered || !(await this.earlierWorkEnds(channel.id, earlierWork, { runSignal, raiseAlert }))) return;
-        recovered = await this.recoverChannel({
+        if ((recovered && heldReported) || !(await this.earlierWorkEnds(channel.id, earlierWork, { runSignal, raiseAlert }))) return;
+        recovered ||= await this.recoverChannel({
           channel, store, runAgain: (message, raw, sourceMap) => processOne(raw, sourceMap, message), sendFn, destinations: destConfigs, variablesUsed, raiseAlert, horizon: recoveryHorizon, runSignal, haltSignal,
         });
+        // Only then: recovery, and what an earlier deployment was sending, may have put some on a queue.
+        heldReported ||= recovered && await this.reportHeldQueues(channel, raiseAlert);
       };
       // An interrupted one may still be ending its sends.
       recovering = this.track(channel.id, recovering.then(run, run));
@@ -910,6 +923,37 @@ export class EngineManager {
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, variablesUsed, recoverOnce, resetClaimsOnce, activity });
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
+  }
+
+  /**
+   * Their messages are kept, and the data pruner leaves them alone; nobody would otherwise hear that
+   * they wait. False when that could not be read.
+   */
+  private async reportHeldQueues(channel: ChannelDetail, raiseAlert: AlertEventHandler): Promise<boolean> {
+    const queues = await MessageService.waitingByDestination(channel.id);
+    if (!queues.ok) {
+      logger.error({ channelId: channel.id, errMsg: queues.error.message }, 'Could not read whether messages wait on a queue that nothing is sent from');
+      return false;
+    }
+    const held: string[] = [];
+    for (const { metaDataId, waiting, notKnown } of queues.value) {
+      const destination = channel.destinations.find((d) => d.metaDataId === metaDataId);
+      const queueHeld = whyQueueHeld(destination);
+      const count = queueHeld === null ? notKnown : waiting;
+      if (count === 0) continue;
+      const why = queueHeld ?? 'put there before destinations kept their numbers, so it is not known that they are for it';
+      held.push(`${String(count)} for ${destination ? `"${destination.name}"` : `destination ${String(metaDataId)}`}, ${why}`);
+      logger.error({ channelId: channel.id, metaDataId, waiting: count, why }, 'Messages wait on a queue and are kept, not sent');
+      emitEvent({
+        level: 'WARN', name: EVENT_NAME.QUEUE_HELD, outcome: 'SUCCESS', userId: null, channelId: channel.id,
+        serverId: null, ipAddress: null, attributes: { metaDataId, waiting: count, destination: destination?.name ?? null, why },
+      });
+    }
+    // One alert: an alert is sent at most once a minute.
+    if (held.length > 0) {
+      await raiseAlert({ channelId: channel.id, errorType: 'DESTINATION_CONNECTOR', errorMessage: `Messages wait on a queue and are kept, not sent: ${held.join('; ')}`, timestamp: Date.now() });
+    }
+    return true;
   }
 
   private track<T>(channelId: string, work: Promise<T>): Promise<T> {
@@ -1166,13 +1210,15 @@ export class EngineManager {
     return !interrupted;
   }
 
-  private redispatcherFor({ channel, store, sendFn, destinations, variablesUsed, raiseAlert, runSignal, haltSignal }: ChannelRecovery): DestinationRedispatcher {
+  private redispatcherFor(recovery: ChannelRecovery): DestinationRedispatcher {
+    const { channel, store, sendFn, destinations, variablesUsed, raiseAlert, runSignal, haltSignal } = recovery;
     return new DestinationRedispatcher({
       channelId: channel.id,
       serverId: this.serverId,
       store,
       send: sendFn,
       destinations,
+      isForItsNumber: (messageId, metaDataId) => MessageService.isForItsNumber(channel.id, messageId, metaDataId),
       variablesUsed,
       runSignal,
       haltSignal,

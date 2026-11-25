@@ -20,7 +20,7 @@ afterEach(() => { cleanup(); });
 
 const SAME = 'return msg;';
 const destination = (name: string): DestinationFormValues => ({
-  ...createDefaultDestination(0), name, connectorType: 'JAVASCRIPT', properties: { ...JAVASCRIPT_DEST_DEFAULTS, script: SAME },
+  ...createDefaultDestination([]), name, connectorType: 'JAVASCRIPT', properties: { ...JAVASCRIPT_DEST_DEFAULTS, script: SAME },
 });
 
 let current: readonly DestinationFormValues[] = [];

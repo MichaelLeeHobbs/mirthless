@@ -1,6 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
-import { eq, isNull, and, sql } from 'drizzle-orm';
+import { eq, inArray, isNull, and, ne, sql } from 'drizzle-orm';
 import {
   PERMISSIONS,
   can,
@@ -14,13 +14,16 @@ import {
 } from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
+import logger from '../lib/logger.js';
 import { PartitionManagerService } from './partition-manager.service.js';
 import { GrantService } from './grant.service.js';
 import { assertCertificatesInScope } from './connector-tls-resolver.js';
 import { queryUserStanding } from '../lib/principal.js';
 import { QueryError } from '../lib/query-error.js';
 import { stripRedactedProperties } from '../lib/secret-redaction.js';
-import { overwriteProperties, sameDestination } from '../lib/stored-credentials.js';
+import { numberError, planImport, type ImportedRow, type ImportPlan, type ImportTarget, type StoredDestination } from '../lib/import-destinations.js';
+import { overwriteProperties } from '../lib/stored-credentials.js';
+import { MessageService } from './message.service.js';
 import {
   channels,
   channelScripts,
@@ -112,8 +115,8 @@ async function importSingleChannel(
   mode: CollisionMode,
   run: ImportRun,
 ): Promise<ImportOutcome> {
-  const directionError = connectorDirectionError(entry);
-  if (directionError) return directionError;
+  const unusable = connectorDirectionError(entry) ?? numberError(entry);
+  if (unusable) return unusable;
   try {
     const [existing] = await db
       .select({ id: channels.id })
@@ -123,7 +126,7 @@ async function importSingleChannel(
     if (existing) {
       if (mode === 'SKIP') return 'skipped';
       if (mode === 'OVERWRITE') return await overwriteChannel(entry, run);
-      return await createChannel({ ...entry, id: randomUUID() }, run);
+      return await createChannel({ ...entry, id: randomUUID(), destinations: entry.destinations.map(({ id: _id, ...d }) => d) }, run);
     }
 
     return await createChannel(entry, run);
@@ -173,16 +176,18 @@ async function createChannel(
   const now = new Date();
 
   await db.transaction(async (tx) => {
+    const plan = importPlan(entry, { stored: [], next: 1, waiting: new Set(), takenIds: await idsOfOtherChannels(tx, entry) });
     await tx.insert(channels).values({
       ...importedColumns(entry),
       id: entry.id,
       enabled: entry.enabled,
+      nextMetaDataId: plan.next,
       revision: 1,
       createdAt: now,
       updatedAt: now,
     });
 
-    await insertRelations(tx, entry.id, entry);
+    await insertRelations(tx, entry, plan.rows);
     if (run.placement !== 'restore') {
       await GrantService.placeNewChannel(tx, entry.id, run.placement.groupId, { userId: run.context?.userId ?? null, ipAddress: run.context?.ipAddress ?? null });
     }
@@ -221,25 +226,59 @@ async function overwriteRefusal(tx: ImportTx, channelId: string, run: ImportRun)
   return live ? null : 'it was deleted while the import waited for it';
 }
 
-/** The entry with the stored credentials it may keep (D-335). Needs the lock overwriteRefusal takes, or a save under way would be undone. */
-async function withStoredCredentials(tx: ImportTx, entry: ChannelExportEntry): Promise<ChannelExportEntry> {
-  const [source] = await tx
-    .select({ connectorType: channels.sourceConnectorType, properties: channels.sourceConnectorProperties })
-    .from(channels).where(eq(channels.id, entry.id));
+async function idsOfOtherChannels(tx: ImportTx, entry: ChannelExportEntry): Promise<ReadonlySet<string>> {
+  const ids = entry.destinations.flatMap((d) => d.id ?? []);
+  if (ids.length === 0) return new Set();
+  const rows = await tx.select({ id: channelConnectors.id }).from(channelConnectors)
+    .where(and(inArray(channelConnectors.id, ids), ne(channelConnectors.channelId, entry.id)));
+  return new Set(rows.map((r) => r.id));
+}
+
+function importPlan(entry: ChannelExportEntry, target: ImportTarget): ImportPlan {
+  const plan = planImport(entry, target);
+  if (typeof plan === 'string') throw new Error(plan);
+  return plan;
+}
+
+interface Overwritten {
+  readonly source: { readonly connectorType: string; readonly properties: Record<string, unknown> };
+  readonly destinations: readonly StoredDestination[];
+  readonly next: number;
+}
+
+/** Needs the lock overwriteRefusal takes, or a save under way would be undone. */
+async function readOverwritten(tx: ImportTx, channelId: string): Promise<Overwritten> {
+  const [channel] = await tx
+    .select({ connectorType: channels.sourceConnectorType, properties: channels.sourceConnectorProperties, next: channels.nextMetaDataId })
+    .from(channels).where(eq(channels.id, channelId));
+  if (!channel) throw new Error('the channel to overwrite could not be read');
   const destinations = await tx
     .select({
-      metaDataId: channelConnectors.metaDataId, name: channelConnectors.name,
+      id: channelConnectors.id, metaDataId: channelConnectors.metaDataId, name: channelConnectors.name,
       connectorType: channelConnectors.connectorType, properties: channelConnectors.properties,
     })
-    .from(channelConnectors).where(eq(channelConnectors.channelId, entry.id));
+    .from(channelConnectors).where(eq(channelConnectors.channelId, channelId));
+  const { next, ...source } = channel;
+  return { source, destinations, next };
+}
+
+/** The entry with the stored credentials it may keep (D-335). */
+function withStoredCredentials(entry: ChannelExportEntry, { source }: Overwritten, rows: readonly ImportedRow[]): ChannelExportEntry {
   const importedSource = { connectorType: entry.sourceConnectorType, properties: entry.sourceConnectorProperties };
   return {
     ...entry,
     sourceConnectorProperties: overwriteProperties('source', importedSource, source),
-    destinations: entry.destinations.map((d) => ({
-      ...d, properties: overwriteProperties('destination', d, sameDestination(d, entry.destinations, destinations)),
-    })),
+    destinations: entry.destinations.map((d, i) => ({ ...d, properties: overwriteProperties('destination', d, rows[i]?.stored) })),
   };
+}
+
+async function numbersWaitedFor(tx: ImportTx, channelId: string): Promise<ReadonlySet<number>> {
+  const waiting = await MessageService.waitingByDestination(channelId, tx);
+  if (!waiting.ok) {
+    logger.error({ channelId, errMsg: waiting.error.message }, 'An import could not read whether messages wait for the channel\'s destinations');
+    throw new Error('whether messages wait for its destinations could not be read');
+  }
+  return new Set(waiting.value.filter((w) => w.waiting > w.notKnown).map((w) => w.metaDataId));
 }
 
 async function overwriteChannel(file: ChannelExportEntry, run: ImportRun): Promise<ImportOutcome> {
@@ -248,12 +287,18 @@ async function overwriteChannel(file: ChannelExportEntry, run: ImportRun): Promi
   return db.transaction(async (tx) => {
     const refusal = await overwriteRefusal(tx, file.id, run);
     if (refusal !== null) return `Channel "${file.name}": not imported; ${refusal}`;
-    const entry = await withStoredCredentials(tx, file);
+    const overwritten = await readOverwritten(tx, file.id);
+    const plan = importPlan(file, {
+      stored: overwritten.destinations, next: overwritten.next,
+      waiting: await numbersWaitedFor(tx, file.id), takenIds: await idsOfOtherChannels(tx, file),
+    });
+    const entry = withStoredCredentials(file, overwritten, plan.rows);
     // An import keeps the stored enabled flag, which is deploy control (#225);
     // a restore sets it. The revision goes up so an editor opened before gets a conflict.
     await tx.update(channels).set({
       ...importedColumns(entry),
       ...(run.placement === 'restore' ? { enabled: entry.enabled } : {}),
+      nextMetaDataId: plan.next,
       revision: sql`${channels.revision} + 1`,
       updatedAt: now,
     }).where(eq(channels.id, entry.id));
@@ -264,7 +309,7 @@ async function overwriteChannel(file: ChannelExportEntry, run: ImportRun): Promi
     await tx.delete(channelFilters).where(eq(channelFilters.channelId, entry.id));
     await tx.delete(channelTransformers).where(eq(channelTransformers.channelId, entry.id));
 
-    await insertRelations(tx, entry.id, entry);
+    await insertRelations(tx, entry, plan.rows);
     return 'updated';
   });
 }
@@ -289,11 +334,9 @@ export function resolveConnectorId(ref: ConnectorRef, destIdByMetaDataId: Readon
   throw new Error(`${what} names its destination only by a connector id from another server; export the channel again`);
 }
 
-async function insertRelations(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  channelId: string,
-  entry: ChannelExportEntry,
-): Promise<void> {
+/** `rows`: the file's destinations, in its order. */
+async function insertRelations(tx: ImportTx, entry: ChannelExportEntry, rows: readonly ImportedRow[]): Promise<void> {
+  const channelId = entry.id;
   if (entry.scripts.length > 0) {
     await tx.insert(channelScripts).values(
       entry.scripts.map((s) => ({
@@ -305,12 +348,13 @@ async function insertRelations(
     );
   }
 
-  const destIdByMetaDataId = new Map<number, string>();
   if (entry.destinations.length > 0) {
-    const insertedDestinations = await tx.insert(channelConnectors).values(
-      entry.destinations.map((d) => ({
+    await tx.insert(channelConnectors).values(
+      entry.destinations.map((d, i) => ({
+        id: rows[i]!.id,
         channelId,
-        metaDataId: d.metaDataId,
+        metaDataId: rows[i]!.metaDataId,
+        position: i + 1,
         name: d.name,
         enabled: d.enabled,
         connectorType: d.connectorType,
@@ -324,9 +368,10 @@ async function insertRelations(
         responseTransformer: d.responseTransformer ?? null,
         responseTransformerLanguage: toScriptLanguage(d.responseTransformerLanguage),
       })),
-    ).returning({ id: channelConnectors.id, metaDataId: channelConnectors.metaDataId });
-    for (const row of insertedDestinations) destIdByMetaDataId.set(row.metaDataId, row.id);
+    );
   }
+  // The file's filters and transformers go by its own numbers.
+  const destIdByMetaDataId = new Map(entry.destinations.map((d, i) => [d.metaDataId, rows[i]!.id]));
   const connectorFor = (ref: ConnectorRef, what: string): string | null =>
     resolveConnectorId(ref, destIdByMetaDataId, `${what} of "${entry.name}"`);
 

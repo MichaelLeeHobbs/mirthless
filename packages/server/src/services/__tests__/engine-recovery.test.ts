@@ -37,6 +37,8 @@ const ms = vi.hoisted(() => ({
   incrementStats: vi.fn(),
   markProcessed: vi.fn(),
   resetPending: vi.fn(),
+  waitingByDestination: vi.fn(),
+  isForItsNumber: vi.fn(),
   initializeMessage: vi.fn(),
   resetToReceived: vi.fn(),
   finalizeMessage: vi.fn(),
@@ -75,6 +77,9 @@ vi.mock('../alert.service.js', () => ({
 vi.mock('../email.service.js', () => ({
   EmailService: { sendMail: vi.fn() },
 }));
+
+const mockEmitEvent = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: mockEmitEvent, emitAuditEvent: vi.fn() }));
 
 vi.mock('../../lib/logger.js', () => ({
   default: {
@@ -127,6 +132,8 @@ beforeEach(() => {
   mockVariablesUsed.mockReturnValue([]);
   for (const fn of Object.values(ms)) fn.mockResolvedValue(OK);
   ms.getLatestMessageId.mockResolvedValue(ok(40));
+  ms.waitingByDestination.mockResolvedValue(ok([]));
+  ms.isForItsNumber.mockResolvedValue(ok(true));
   ms.getUnprocessedMessages.mockResolvedValue(ok([]));
   ms.getConnectorMessages.mockResolvedValue(ok([]));
   ms.loadContent.mockResolvedValue(ok(null));
@@ -257,14 +264,26 @@ describe('EngineManager recovery', () => {
       await engine.dispose();
     });
 
-    it('is not sent when a save has given its number to another destination', async () => {
+    it('is sent to a destination that was renamed since', async () => {
       const statuses = ready();
 
-      const engine = await deployAndRecover({ ...DEST, name: 'Clinic' });
+      const engine = await deployAndRecover({ ...DEST, name: 'Laboratory' });
 
+      expect(mockSend).toHaveBeenCalledOnce();
+      expect(statuses).toEqual(new Map([[0, 'SENT'], [1, 'SENT']]));
+      await engine.dispose();
+    });
+
+    it('is not sent when it comes from when a save renumbered the destinations, and is not known to be for this one', async () => {
+      ms.isForItsNumber.mockResolvedValue(ok(false));
+      const statuses = ready();
+
+      const engine = await deployAndRecover();
+
+      expect(ms.isForItsNumber).toHaveBeenCalledExactlyOnceWith(CHANNEL_ID, 7, 1);
       expect(mockSend).not.toHaveBeenCalled();
       expect(statuses).toEqual(new Map([[0, 'ERROR'], [1, 'ERROR']]));
-      expect(storedFor(1)).toEqual([[PROCESSING_ERROR, expect.stringContaining('now "Clinic"')]]);
+      expect(storedFor(1)).toEqual([[PROCESSING_ERROR, expect.stringContaining('not known to be for this one')]]);
       await engine.dispose();
     });
 
@@ -428,6 +447,21 @@ describe('EngineManager recovery', () => {
 
       expect(mockSend).toHaveBeenCalledTimes(2);
       expect(statuses).toEqual(new Map([[0, 'SENT'], [1, 'SENT']]));
+      await engine.dispose();
+    });
+
+    it('is said to wait, when it ends on a queue that nothing is sent from', async () => {
+      const { engine, answer, live } = await redeployedDuringASend();
+      const deployed = engine.getRuntime(CHANNEL_ID)!;
+      await deployed.resetClaimsOnce();
+      const recovering = deployed.recoverOnce();
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+      ms.waitingByDestination.mockResolvedValue(ok([{ metaDataId: 1, waiting: 1, notKnown: 0 }]));
+
+      answer(ok({ status: 'SENT', content: 'ACK' }));
+      await Promise.all([live, recovering]);
+
+      expect(mockEmitEvent).toHaveBeenCalledWith(expect.objectContaining({ name: 'QUEUE_HELD', attributes: { metaDataId: 1, waiting: 1, destination: 'Lab', why: 'whose queue is off' } }));
       await engine.dispose();
     });
 
@@ -981,7 +1015,8 @@ describe('EngineManager recovery', () => {
     await engine.dispose();
   });
 
-  it('releases stale queue claims once, separately from recovery', async () => {
+  it('releases stale queue claims once, separately from recovery, also of destinations it no longer has', async () => {
+    ms.waitingByDestination.mockResolvedValue(ok([{ metaDataId: 1, waiting: 1 }, { metaDataId: 4, waiting: 1 }]));
     const engine = new EngineManager('test-server');
     await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [{ ...DEST, queueMode: 'ALWAYS' }] })));
     const deployed = engine.getRuntime(CHANNEL_ID)!;
@@ -991,8 +1026,73 @@ describe('EngineManager recovery', () => {
     await deployed.runtime.start();
     await deployed.recoverOnce();
 
-    expect(ms.resetPending).toHaveBeenCalledTimes(1);
-    expect(ms.resetPending).toHaveBeenCalledWith(CHANNEL_ID, 1);
+    expect(ms.resetPending.mock.calls).toEqual([[CHANNEL_ID, 1], [CHANNEL_ID, 4]]);
+    await engine.dispose();
+  });
+
+  it('releases the claims of its own destinations when it cannot read where messages wait', async () => {
+    ms.waitingByDestination.mockResolvedValue({ ok: false, value: null, error: new Error('db busy') });
+    const engine = new EngineManager('test-server');
+    await engine.deploy(bundleOf(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [DEST] })));
+
+    await engine.getRuntime(CHANNEL_ID)!.resetClaimsOnce();
+
+    expect(ms.resetPending.mock.calls).toEqual([[CHANNEL_ID, 1]]);
+    await engine.dispose();
+  });
+
+  it('says once, with one alert, which messages wait on a queue that does not send them, and why', async () => {
+    const logger = (await import('../../lib/logger.js')).default;
+    ms.waitingByDestination.mockResolvedValue(ok([1, 2, 3, 4, 5].map((metaDataId) => ({ metaDataId, waiting: metaDataId + 1, notKnown: metaDataId === 5 ? 2 : 0 }))));
+    const queues = { ...DEST, queueMode: 'ALWAYS' };
+    const engine = new EngineManager('test-server');
+    await engine.deploy(bundleOf(makeChannel({
+      inboundDataType: 'RAW', outboundDataType: 'RAW',
+      destinations: [queues, { ...queues, id: 'd2', metaDataId: 2, name: 'Clinic', enabled: false }, { ...DEST, id: 'd3', metaDataId: 3, name: 'Ward' }, { ...queues, id: 'd5', metaDataId: 5, name: 'Archive' }],
+    })));
+    const deployed = engine.getRuntime(CHANNEL_ID)!;
+    vi.spyOn(deployed.alertManager, 'handleEvent').mockImplementation(async (event) => { alerts(event.errorType, event.errorMessage); });
+    ms.getUnprocessedMessages.mockResolvedValueOnce({ ok: false, value: null, error: new Error('db gone') });
+
+    await deployed.runtime.start();
+    await deployed.recoverOnce();
+    expect(mockEmitEvent).not.toHaveBeenCalled();
+    await deployed.recoverOnce();
+
+    expect(ms.getUnprocessedMessages).toHaveBeenCalledTimes(2);
+    expect(ms.waitingByDestination.mock.invocationCallOrder[0]!).toBeGreaterThan(ms.getUnprocessedMessages.mock.invocationCallOrder[0]!);
+    const old ='put there before destinations kept their numbers, so it is not known that they are for it';
+    expect(alerts.mock.calls).toEqual([['DESTINATION_CONNECTOR', 'Messages wait on a queue and are kept, not sent: '
+      + `3 for "Clinic", which is switched off; 4 for "Ward", whose queue is off; 5 for destination 4, which the channel no longer has; 2 for "Archive", ${old}`]]);
+    const held = [
+      { metaDataId: 2, waiting: 3, destination: 'Clinic', why: 'which is switched off' },
+      { metaDataId: 3, waiting: 4, destination: 'Ward', why: 'whose queue is off' },
+      { metaDataId: 4, waiting: 5, destination: null, why: 'which the channel no longer has' },
+      { metaDataId: 5, waiting: 2, destination: 'Archive', why: old },
+    ];
+    expect(vi.mocked(logger.error).mock.calls.map(([about]) => about).filter((about) => (about as Record<string, unknown>)['waiting'] !== undefined))
+      .toEqual(held.map(({ destination: _d, ...about }) => ({ channelId: CHANNEL_ID, ...about })));
+    expect(mockEmitEvent.mock.calls.map(([event]) => [event.name, event.level, event.attributes])).toEqual(held.map((about) => ['QUEUE_HELD', 'WARN', about]));
+    await engine.dispose();
+  });
+
+  it('recovers when it cannot read which queues messages wait on, says so in the log, and reads it at the next start', async () => {
+    const logger = (await import('../../lib/logger.js')).default;
+    ms.waitingByDestination.mockResolvedValue({ ok: false, value: null, error: new Error('db busy') });
+
+    const engine = await deployAndRecover();
+
+    expect(logger.error).toHaveBeenCalledWith({ channelId: CHANNEL_ID, errMsg: 'db busy' }, 'Could not read whether messages wait on a queue that nothing is sent from');
+    expect(ms.getUnprocessedMessages).toHaveBeenCalledOnce();
+
+    ms.waitingByDestination.mockResolvedValue(ok([{ metaDataId: 1, waiting: 1, notKnown: 0 }]));
+    const deployed = engine.getRuntime(CHANNEL_ID)!;
+    await deployed.runtime.stop();
+    await deployed.runtime.start();
+    await deployed.recoverOnce();
+
+    expect(mockEmitEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'QUEUE_HELD' }));
+    expect(ms.getUnprocessedMessages).toHaveBeenCalledOnce();
     await engine.dispose();
   });
 });

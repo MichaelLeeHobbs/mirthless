@@ -2,6 +2,10 @@ import type { ScriptLanguageCode } from '@galvanigraph/core-models';
 import type { FilterFormValues, TransformerFormValues } from '../source/types.js';
 
 export interface DestinationFormValues {
+  /** What the channel's filters and transformers name it by; the server's id, or one of the form's own for a new one. */
+  id: string;
+  /** Null until it is saved. */
+  metaDataId: number | null;
   name: string;
   enabled: boolean;
   connectorType: string;

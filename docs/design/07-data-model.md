@@ -107,6 +107,10 @@ export const channels = pgTable('channels', {
   responseMode: varchar('response_mode', { length: 30 }).notNull().default('AUTO_AFTER_DESTINATIONS'),
   responseConnectorName: varchar('response_connector_name', { length: 255 }), // For DESTINATION mode
 
+  // Destination numbers (D-348)
+  nextMetaDataId: integer('next_meta_data_id').notNull().default(1),
+  oldNumbers: jsonb('old_numbers').$type<OldNumbers>(), // about messages from before they were kept
+
   // Timestamps
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -121,7 +125,8 @@ export const channels = pgTable('channels', {
 export const channelConnectors = pgTable('channel_connectors', {
   id: uuid('id').primaryKey().defaultRandom(),        // ConnectorId
   channelId: uuid('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
-  metaDataId: integer('meta_data_id').notNull(),      // 1-based index (0 = source)
+  metaDataId: integer('meta_data_id').notNull(),      // From 1 (0 = source); kept, and never given to another (D-348)
+  position: integer('position').notNull(),            // Place in the list
   name: varchar('name', { length: 255 }).notNull(),
   enabled: boolean('enabled').notNull().default(true),
   connectorType: varchar('connector_type', { length: 50 }).notNull(),
@@ -462,10 +467,11 @@ export const connectorMessages = pgTable('connector_messages', {
   chainId: integer('chain_id').notNull().default(0),
   orderId: integer('order_id').notNull().default(0),
   receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  numberKept: boolean('number_kept').notNull().default(true), // false: from before D-348
 }, (table) => [
   primaryKey({ columns: [table.channelId, table.messageId, table.metaDataId] }),
   index('connector_messages_status').on(table.channelId, table.metaDataId, table.status),
-  index('connector_messages_queued').on(table.channelId, table.metaDataId, table.status)
+  index('connector_messages_queued').on(table.channelId, table.metaDataId, table.messageId)
     .where(sql`status = 'QUEUED'`), // Partial index for queue consumer
 ]);
 // PARTITION BY LIST (channel_id)

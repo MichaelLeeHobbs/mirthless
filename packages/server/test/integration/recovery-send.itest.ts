@@ -3,8 +3,9 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { CONTENT_TYPE, createChannelSchema, type CreateChannelInput, type MessageStatus } from '@galvanigraph/core-models';
+import { CONTENT_TYPE, createChannelSchema, updateChannelSchema, type CreateChannelInput, type MessageStatus } from '@galvanigraph/core-models';
 import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
+import { databaseDestination } from './_database-destination.js';
 
 describeIntegration('What crash recovery sends (real Postgres, real database destination)', () => {
   const TABLE = 'itest_recovery_send';
@@ -40,17 +41,6 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     await mods?.pool.end();
   });
 
-  function destination(queueMode: string, query: string, name = 'Partner'): Record<string, unknown> {
-    const url = new URL(process.env['DATABASE_URL'] ?? '');
-    return {
-      name, connectorType: 'DATABASE', queueMode, retryIntervalMs: 100,
-      properties: {
-        host: url.hostname, port: Number(url.port || 5432), database: url.pathname.replace(/^\//, ''),
-        username: decodeURIComponent(url.username), password: decodeURIComponent(url.password), query,
-      },
-    };
-  }
-
   function channelInput(destinations: readonly Record<string, unknown>[]): CreateChannelInput {
     return createChannelSchema.parse({
       name: `itest-390-${randomUUID()}`, enabled: true, inboundDataType: 'RAW', outboundDataType: 'RAW',
@@ -61,7 +51,7 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
 
   /** A channel, and one message of it as a server stop leaves it: routed, and ready to send. */
   async function interrupted(queueMode: string, variables: Record<string, unknown> | null, query = `INSERT INTO ${TABLE} VALUES (\${messageId}::bigint, \${mrn})`): Promise<number> {
-    const channel = unwrap(await mods.ChannelService.create(channelInput([destination(queueMode, query)]), actor));
+    const channel = unwrap(await mods.ChannelService.create(channelInput([databaseDestination('Partner', queueMode, query)]), actor));
     channelId = channel.id;
     const { MessageService } = mods;
     const { messageId } = unwrap(await MessageService.createMessage(channel.id, 'itest'));
@@ -117,19 +107,19 @@ describeIntegration('What crash recovery sends (real Postgres, real database des
     expect(await content(messageId, CONTENT_TYPE.PROCESSING_ERROR)).toContain('(mrn)');
   });
 
-  it('sends nothing to a destination that a save gave the number of the one it was prepared for', async () => {
+  it('sends nothing to the destination that replaced the one it was prepared for', async () => {
     const insert = `INSERT INTO ${TABLE} VALUES (\${messageId}::bigint, \${content})`;
     const messageId = await interrupted('NEVER', null, insert);
     const { revision } = unwrap(await mods.ChannelService.getById(channelId!));
-    const { destinations } = channelInput([destination('NEVER', insert, 'Clinic')]);
-    unwrap(await mods.ChannelService.update(channelId!, { revision, destinations }, actor));
+    const destinations = [{ ...databaseDestination('Partner', 'NEVER', insert), id: 'new' }];
+    unwrap(await mods.ChannelService.update(channelId!, updateChannelSchema.parse({ revision, enabled: true, destinations }), actor));
 
     await recover();
     await vi.waitFor(async () => { expect(await isProcessed(messageId)).toBe(true); }, 10_000);
 
     expect(await partnerRows()).toEqual([]);
     expect(await statuses(messageId)).toEqual({ 0: 'ERROR', 1: 'ERROR' });
-    expect(await content(messageId, CONTENT_TYPE.PROCESSING_ERROR)).toContain('"Partner", and this is now "Clinic"');
+    expect(await content(messageId, CONTENT_TYPE.PROCESSING_ERROR)).toContain('no longer has the destination');
   });
 
   it('sends without variables when the query uses none', async () => {

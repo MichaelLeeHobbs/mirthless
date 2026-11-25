@@ -435,7 +435,7 @@ An alert whose regex filter does not compile never fired, and nothing said so. S
 
 ## Imports keep stored credentials and script timeouts (#334)
 
-Importing a channel with `OVERWRITE`, or restoring a backup with it, used to clear every connector credential the target had, because the file masks them. It now keeps a stored credential while the connector is the same one (a destination must have kept its name and position) and still goes to the same place as the same user, and clears it otherwise ([Credentials](api-automation.md#credentials)). A pipeline that puts the credentials back after each import can stop doing so. A connector an earlier import or restore left without its credential still needs it entered: look for destinations that deploy without one, such as HTTP with an `Authorization` header.
+Importing a channel with `OVERWRITE`, or restoring a backup with it, used to clear every connector credential the target had, because the file masks them. It now keeps a stored credential while the connector is the same one and still goes to the same place as the same user, and clears it otherwise ([Credentials](api-automation.md#credentials)). A pipeline that puts the credentials back after each import can stop doing so. A connector an earlier import or restore left without its credential still needs it entered: look for destinations that deploy without one, such as HTTP with an `Authorization` header.
 
 Exports and backups now hold each channel's script timeout. Before, a channel imported as new, or restored onto a fresh server, got 30 seconds whatever it had. If you raised a channel's script timeout before such an import or restore, set it again. A file made before this version has no timeout: a channel it creates gets 30 seconds, and one it overwrites keeps its own.
 
@@ -454,6 +454,23 @@ An import with `OVERWRITE` keeps a credential in a URL or in text headers when t
 ## The log no longer holds the parameters of a failed statement (D-347)
 
 When a database statement failed, for example during a database restart, its parameters were in the error's text: passwords when saving a channel, a setting or a certificate failed (with the certificate's private key), and message content when storing it failed. The server logged that text. Alerts, events, the errors stored with a message (from a script's use of a collection) and a few API answers (a backup restore's, for one) could carry it too. It now names the statement and the database's error code. What was written before stays: treat those logs as you treat the database, and replace the passwords and keys they show. The log pages of the web UI did not show them.
+
+## Destinations keep their numbers (#395)
+
+Saving a channel used to number its destinations again from 1, in their order, while queued messages, Resend and `destinationSet` go by the number. After a destination was removed or moved, what waited for one partner could be sent to another. From migration 0028 a destination keeps its number, and no other destination of the channel gets it ([Every destination](../user/connector-reference.md#every-destination), D-348). The numbers channels have now stay as they are.
+
+**Before upgrading**, let the queues empty of any channel whose destinations were renamed, moved, removed or replaced since messages were put on them, or that has two destinations with the same name. Then deploy the channel's saved changes, or undo them. Don't deploy them while messages wait: the version you are upgrading from can send those to another destination. Stop the server before the migration runs (the Docker upgrade does): an old one that goes on saving or deploying channels renumbers them as before.
+
+The number of a message stored before the upgrade does not say which destination it was for, so the migration notes the name that each number has in the deployed version of the channel (in the saved one, if none is recorded). Such a message is sent from a queue, by Resend or after a crash only if it was prepared under that name and no other destination has the name. Renaming a destination after the upgrade changes nothing. A message on a queue that fails this stays there and is reported: reprocess it, then delete it. One the server stopped on while sending it ends in ERROR. For a channel with saved changes that are not deployed, the same goes for messages stored until you deploy them, and they are then sent only to destinations the changes left as they were: same number, name, connector type and settings. A message that is run again after a crash goes to the destinations it is routed to then, unless it was stored before such a deploy.
+
+The migration builds the index of waiting messages again, which reads the whole `connector_messages` table.
+
+**After upgrading:**
+
+- A destination that is switched off no longer sends what is on its queue. Switch it on, or let its queue empty first, if it should be sent.
+- Messages that wait for a destination that is switched off, has its queue off or was removed, or that are not known to be for the one with their number, are reported at the first start, also those left there long ago. Nothing is sent or deleted. Look for `QUEUE_HELD` on the Events page.
+- `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
+- An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
 
 ## Standard upgrade (Docker)
 
@@ -536,6 +553,7 @@ Nothing in the code depends on the database name; keep using the old one:
 ## Standard upgrade (local / non-Docker)
 
 ```bash
+# Stop the server first: an old one must not work on a migrated database.
 git pull
 pnpm install
 pnpm db:migrate     # apply new migrations to the running Postgres

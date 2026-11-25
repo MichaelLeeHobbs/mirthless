@@ -294,6 +294,7 @@ async function insertHeadlineDestination(db: Db, channelId: string): Promise<str
     .values({
       channelId,
       metaDataId: 1,
+      position: 1,
       name: 'HL7 Writer',
       enabled: true,
       connectorType: 'JAVASCRIPT',

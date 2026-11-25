@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } from '../constants.js';
-import { filterInputSchema } from './filter.schema.js';
+import { destinationRefSchema, filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
 import { scriptLanguageSchema } from './script-language.schema.js';
 
@@ -25,6 +25,11 @@ export const channelPropertiesSchema = z.object({
 });
 
 export const destinationInputSchema = z.object({
+  /**
+   * On update, the id of the destination this is, or other text that is not a UUID for a new one, for
+   * its filter and transformer to name it by. On create every destination is new.
+   */
+  id: destinationRefSchema.optional(),
   name: z.string().min(1).max(255),
   enabled: z.boolean().default(true),
   connectorType: destinationConnectorTypeSchema,
@@ -119,21 +124,37 @@ function updateScripts(input: z.infer<typeof updateChannelBaseSchema>): Readonly
   return found;
 }
 
+/**
+ * Which destination each one is cannot be guessed: what waits on its queue goes by it (#395). Nor
+ * can whether it is on, since switching one on sends its queue.
+ */
+const updateDestinationInputSchema = destinationInputSchema.extend({
+  id: destinationRefSchema,
+  enabled: z.boolean(),
+});
+
 // Groups change through PUT /channels/:id/groups, which judges the grant.
 const updateChannelBaseSchema = createChannelSchema.omit({ groupId: true }).partial().extend({
+  destinations: z.array(updateDestinationInputSchema).optional(),
   revision: z.number().int().positive(),
 });
 
 /**
- * Update replaces rules, steps and destinations by position, so it cannot keep
- * a stored language the request leaves out; defaulting would turn TypeScript
- * into JavaScript and switch off its deploy type check (D-294).
+ * Update replaces rules and steps by position, so it cannot keep a stored
+ * language the request leaves out; defaulting would turn TypeScript into
+ * JavaScript and switch off its deploy type check (D-294).
  */
 export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
   for (const s of updateScripts(input)) {
     if (s.script !== null && s.script !== undefined && s.language === undefined) {
       ctx.addIssue({ code: 'custom', path: [...s.path], message: 'Give the script\'s language (JAVASCRIPT or TYPESCRIPT) when updating a channel' });
     }
+  }
+  for (const key of ['filters', 'transformers'] as const) {
+    input[key]?.forEach((ref, i) => {
+      if (ref.metaDataId === null) return;
+      ctx.addIssue({ code: 'custom', path: [key, i, 'metaDataId'], message: 'Name the destination by its id, in connectorId, when updating a channel' });
+    });
   }
 });
 

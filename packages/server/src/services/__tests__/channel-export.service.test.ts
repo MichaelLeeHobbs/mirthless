@@ -177,7 +177,7 @@ describe('ChannelExportService.exportChannel', () => {
     }
   });
 
-  it('strips internal IDs from scripts and destinations', async () => {
+  it('strips internal IDs from scripts, and keeps those of destinations, which say which one each is', async () => {
     const detail = makeChannelDetail();
     mockGetById.mockResolvedValue({ ok: true, value: detail as never, error: null });
 
@@ -187,7 +187,9 @@ describe('ChannelExportService.exportChannel', () => {
     if (result.ok) {
       const exported = result.value.channels[0];
       expect(exported?.scripts[0]).not.toHaveProperty('id');
-      expect(exported?.destinations[0]).not.toHaveProperty('id');
+      const ids = (detail['destinations'] as ReadonlyArray<{ readonly id: string }>).map((d) => d.id);
+      expect(ids.length).toBeGreaterThan(0);
+      expect(exported?.destinations.map((d) => d.id)).toEqual(ids);
     }
   });
 

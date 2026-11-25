@@ -151,9 +151,18 @@ export function getDestDefaultProperties(connectorType: string): Record<string, 
   return { ...(DEFAULTS_MAP[connectorType] ?? {}) };
 }
 
-export function createDefaultDestination(index: number): DestinationFormValues {
+/** A counter, since crypto.randomUUID needs HTTPS. */
+let nextNewId = 0;
+
+/** `others`: the destinations it joins. Its name is none of theirs. */
+export function createDefaultDestination(others: ReadonlyArray<Pick<DestinationFormValues, 'name'>>): DestinationFormValues {
+  nextNewId += 1;
+  let n = others.length + 1;
+  while (others.some((d) => d.name === `Destination ${String(n)}`)) n += 1;
   return {
-    name: `Destination ${String(index + 1)}`,
+    id: `new-${String(nextNewId)}`,
+    metaDataId: null,
+    name: `Destination ${String(n)}`,
     enabled: true,
     connectorType: 'TCP_MLLP',
     properties: { ...TCP_MLLP_DEST_DEFAULTS },

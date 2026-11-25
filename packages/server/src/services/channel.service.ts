@@ -1,5 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
+import { eq, isNull, and, count, asc, inArray, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { ALL_CHANNELS, EVENT_NAME } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import {
@@ -10,11 +11,13 @@ import {
   type UpdateChannelInput,
   type ChannelListQuery,
   type DestinationConnectorType,
+  type DestinationInput,
   isSourceConnectorType,
   isDestinationConnectorType,
 } from '@galvanigraph/core-models';
 import { holdsRedacted, REDACTED } from '../lib/secret-redaction.js';
 import { ServiceError } from '../lib/service-error.js';
+import { connectorLookup, nextNumber, planDestinations, type ConnectorLookup, type DestinationRow } from '../lib/destination-numbers.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
@@ -232,7 +235,7 @@ async function fetchChannelRelations(id: string, reader: DbReader = db): Promise
       })
       .from(channelConnectors)
       .where(eq(channelConnectors.channelId, id))
-      .orderBy(asc(channelConnectors.metaDataId)),
+      .orderBy(asc(channelConnectors.position), asc(channelConnectors.metaDataId)),
     reader
       .select({
         id: channelMetadataColumns.id,
@@ -405,7 +408,7 @@ function assembleDetail(
 }
 
 /** A channel read with its credentials masked, then sent back, would lose them. */
-function refuseMaskedCredentials(input: Pick<UpdateChannelInput, 'sourceConnectorProperties' | 'destinations'>): void {
+function refuseMaskedCredentials(input: Pick<UpdateChannelInput, 'sourceConnectorProperties'> & { readonly destinations?: readonly DestinationInput[] | undefined }): void {
   const masked = [
     ...(holdsRedacted(input.sourceConnectorProperties ?? {}) ? ['The source'] : []),
     ...(input.destinations ?? []).filter((d) => holdsRedacted(d.properties)).map((d) => `Destination "${d.name}"`),
@@ -452,11 +455,10 @@ type CloneFilter = NonNullable<CreateChannelInput['filters']>[number];
 type CloneTransformer = NonNullable<CreateChannelInput['transformers']>[number];
 
 /**
- * `create` numbers destinations by position (index + 1), so a gap in the
- * source's metaDataIds is renumbered. Throws on an unknown connector rather than
- * silently moving a destination's filter or transformer onto the source.
+ * The destination's place in the list, as `create` takes it. Throws on an unknown connector rather
+ * than silently moving a destination's filter or transformer onto the source.
  */
-function cloneMetaDataId(source: ChannelDetail, connectorId: string | null): number | null {
+function clonePlace(source: ChannelDetail, connectorId: string | null): number | null {
   if (connectorId === null) return null;
   const index = source.destinations.findIndex((d) => d.id === connectorId);
   if (index < 0) {
@@ -468,7 +470,7 @@ function cloneMetaDataId(source: ChannelDetail, connectorId: string | null): num
 function buildCloneFilters(source: ChannelDetail): CloneFilter[] {
   return source.filters.map((f) => ({
     connectorId: null,
-    metaDataId: cloneMetaDataId(source, f.connectorId),
+    metaDataId: clonePlace(source, f.connectorId),
     rules: f.rules.map((r) => ({
       enabled: r.enabled,
       ...(r.name !== null ? { name: r.name } : {}),
@@ -486,7 +488,7 @@ function buildCloneFilters(source: ChannelDetail): CloneFilter[] {
 function buildCloneTransformers(source: ChannelDetail): CloneTransformer[] {
   return source.transformers.map((t) => ({
     connectorId: null,
-    metaDataId: cloneMetaDataId(source, t.connectorId),
+    metaDataId: clonePlace(source, t.connectorId),
     inboundDataType: t.inboundDataType,
     outboundDataType: t.outboundDataType,
     inboundProperties: t.inboundProperties,
@@ -545,23 +547,64 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
 
 type ChannelTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** Every column a save sets, so one it leaves out does not stay as it was. */
+function destinationColumns(dest: DestinationInput, position: number): Omit<typeof channelConnectors.$inferInsert, 'id' | 'channelId' | 'metaDataId'> {
+  return {
+    position,
+    name: dest.name,
+    enabled: dest.enabled,
+    connectorType: dest.connectorType,
+    properties: dest.properties,
+    queueMode: dest.queueMode,
+    retryCount: dest.retryCount,
+    retryIntervalMs: dest.retryIntervalMs,
+    rotateQueue: dest.rotateQueue,
+    queueThreadCount: dest.queueThreadCount,
+    waitForPrevious: dest.waitForPrevious,
+    responseTransformer: dest.responseTransformer ?? null,
+    responseTransformerLanguage: dest.responseTransformerLanguage ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
+  };
+}
+
+async function storedDestinations(tx: ChannelTx, channelId: string): Promise<DestinationRow[]> {
+  return tx
+    .select({ id: channelConnectors.id, metaDataId: channelConnectors.metaDataId })
+    .from(channelConnectors)
+    .where(eq(channelConnectors.channelId, channelId));
+}
+
+/** The channel row must be locked: `next` is its nextMetaDataId. */
+async function syncDestinations(
+  tx: ChannelTx,
+  channelId: string,
+  destinations: NonNullable<UpdateChannelInput['destinations']>,
+  next: number,
+): Promise<ConnectorLookup> {
+  const ids = destinations.map((d) => d.id);
+  const plan = planDestinations(ids, await storedDestinations(tx, channelId), next);
+  if (plan.removed.length > 0) await tx.delete(channelConnectors).where(inArray(channelConnectors.id, [...plan.removed]));
+  for (const [index, dest] of destinations.entries()) {
+    const { isNew, ...row } = plan.rows[index]!;
+    const columns = destinationColumns(dest, index + 1);
+    if (isNew) await tx.insert(channelConnectors).values({ ...columns, ...row, channelId });
+    else await tx.update(channelConnectors).set({ ...columns, updatedAt: new Date() }).where(eq(channelConnectors.id, row.id));
+  }
+  if (plan.next !== next) await tx.update(channels).set({ nextMetaDataId: plan.next }).where(eq(channels.id, channelId));
+  return connectorLookup(ids, plan.rows);
+}
+
 async function syncFilters(
   tx: ChannelTx,
   channelId: string,
   filters: NonNullable<CreateChannelInput['filters']>,
-  destIdByMetaDataId: ReadonlyMap<number, string>,
+  lookup: ConnectorLookup,
 ): Promise<void> {
   await tx.delete(channelFilters).where(eq(channelFilters.channelId, channelId));
 
   for (const filter of filters) {
-    let resolvedConnectorId: string | null = filter.connectorId ?? null;
-    if (resolvedConnectorId === null && filter.metaDataId !== undefined && filter.metaDataId !== null) {
-      resolvedConnectorId = destIdByMetaDataId.get(filter.metaDataId) ?? null;
-    }
-
     const [inserted] = await tx
       .insert(channelFilters)
-      .values({ channelId, connectorId: resolvedConnectorId })
+      .values({ channelId, connectorId: lookup(filter, 'A filter') })
       .returning({ id: channelFilters.id });
 
     if (inserted && filter.rules.length > 0) {
@@ -587,21 +630,16 @@ async function syncTransformers(
   tx: ChannelTx,
   channelId: string,
   transformers: NonNullable<CreateChannelInput['transformers']>,
-  destIdByMetaDataId: ReadonlyMap<number, string>,
+  lookup: ConnectorLookup,
 ): Promise<void> {
   await tx.delete(channelTransformers).where(eq(channelTransformers.channelId, channelId));
 
   for (const transformer of transformers) {
-    let resolvedConnectorId: string | null = transformer.connectorId ?? null;
-    if (resolvedConnectorId === null && transformer.metaDataId !== undefined && transformer.metaDataId !== null) {
-      resolvedConnectorId = destIdByMetaDataId.get(transformer.metaDataId) ?? null;
-    }
-
     const [inserted] = await tx
       .insert(channelTransformers)
       .values({
         channelId,
-        connectorId: resolvedConnectorId,
+        connectorId: lookup(transformer, 'A transformer'),
         inboundDataType: transformer.inboundDataType,
         outboundDataType: transformer.outboundDataType,
         inboundProperties: transformer.inboundProperties,
@@ -716,8 +754,11 @@ export class ChannelService {
     });
   }
 
-  /** `cloneOf`: the channel this one copies; the new channel joins its code template libraries. */
-  static async create(input: CreateChannelInput, context?: AuditContext, cloneOf?: string): Promise<Result<ChannelDetail>> {
+  /**
+   * `cloneOf`: the channel this one copies. The new channel joins its code template libraries, and its
+   * destinations have the same numbers, which the scripts may use.
+   */
+  static async create(input: CreateChannelInput, context?: AuditContext, cloneOf?: ChannelDetail): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       refuseMaskedCredentials(input);
       const [existing] = await db
@@ -760,6 +801,10 @@ export class ChannelService {
         }
       }
 
+      const destinations = input.destinations ?? [];
+      const rows = destinations.map((_dest, index) => ({ id: randomUUID(), metaDataId: cloneOf?.destinations[index]?.metaDataId ?? index + 1 }));
+      channelValues.nextMetaDataId = nextNumber(1, rows);
+
       const [created] = await db.transaction(async (tx) => {
         const inserted = await tx.insert(channels).values(channelValues).returning();
 
@@ -777,32 +822,10 @@ export class ChannelService {
 
         await tx.insert(channelScripts).values(scriptValues);
 
-        const destIdByMetaDataId = new Map<number, string>();
-        if (input.destinations && input.destinations.length > 0) {
-          const destValues = input.destinations.map((dest, index) => ({
-            channelId,
-            metaDataId: index + 1,
-            name: dest.name,
-            enabled: dest.enabled,
-            connectorType: dest.connectorType,
-            properties: dest.properties,
-            queueMode: dest.queueMode,
-            retryCount: dest.retryCount,
-            retryIntervalMs: dest.retryIntervalMs,
-            rotateQueue: dest.rotateQueue,
-            queueThreadCount: dest.queueThreadCount,
-            waitForPrevious: dest.waitForPrevious,
-            responseTransformer: dest.responseTransformer ?? null,
-            responseTransformerLanguage: dest.responseTransformerLanguage ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
-          }));
-          const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
-            id: channelConnectors.id,
-            metaDataId: channelConnectors.metaDataId,
-          });
-          for (const d of insertedDests) {
-            destIdByMetaDataId.set(d.metaDataId, d.id);
-          }
+        if (destinations.length > 0) {
+          await tx.insert(channelConnectors).values(destinations.map((dest, index) => ({ ...destinationColumns(dest, index + 1), ...rows[index]!, channelId })));
         }
+        const lookup = connectorLookup(destinations.map((d) => d.id), rows);
 
         if (input.metadataColumns && input.metadataColumns.length > 0) {
           const metaValues = input.metadataColumns.map((col) => ({
@@ -815,12 +838,12 @@ export class ChannelService {
         }
 
         if (input.filters && input.filters.length > 0) {
-          await syncFilters(tx, channelId, input.filters, destIdByMetaDataId);
+          await syncFilters(tx, channelId, input.filters, lookup);
         }
         if (input.transformers && input.transformers.length > 0) {
-          await syncTransformers(tx, channelId, input.transformers, destIdByMetaDataId);
+          await syncTransformers(tx, channelId, input.transformers, lookup);
         }
-        if (cloneOf !== undefined) await addCloneToLibraries(tx, cloneOf, channelId);
+        if (cloneOf !== undefined) await addCloneToLibraries(tx, cloneOf.id, channelId);
         // Into a group inside the creator's channels:write scope (D-310), or the
         // channel would be out of a scoped creator's own reach.
         await GrantService.placeNewChannel(tx, channelId, input.groupId, { userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null });
@@ -907,16 +930,15 @@ export class ChannelService {
       // destinations/filters/transformers deleted-but-not-reinserted. The UPDATE
       // carries the expected revision in its WHERE: 0 rows means a concurrent
       // writer won the race (409).
-      const destIdByMetaDataId = new Map<number, string>();
-
       await db.transaction(async (tx) => {
         const updatedRows = await tx
           .update(channels)
           .set(updateValues)
           .where(and(eq(channels.id, id), eq(channels.revision, input.revision)))
-          .returning({ id: channels.id });
+          .returning({ nextMetaDataId: channels.nextMetaDataId });
 
-        if (updatedRows.length === 0) {
+        const [updated] = updatedRows;
+        if (!updated) {
           throw new ServiceError('CONFLICT', 'Channel has been modified by another user', {
             providedRevision: input.revision,
           });
@@ -939,34 +961,12 @@ export class ChannelService {
           }
         }
 
+        let lookup: ConnectorLookup | null = null;
         if (input.destinations) {
-          await tx.delete(channelConnectors).where(eq(channelConnectors.channelId, id));
-
-          if (input.destinations.length > 0) {
-            const destValues = input.destinations.map((dest, index) => ({
-              channelId: id,
-              metaDataId: index + 1,
-              name: dest.name,
-              enabled: dest.enabled,
-              connectorType: dest.connectorType,
-              properties: dest.properties,
-              queueMode: dest.queueMode,
-              retryCount: dest.retryCount,
-              retryIntervalMs: dest.retryIntervalMs,
-              rotateQueue: dest.rotateQueue,
-              queueThreadCount: dest.queueThreadCount,
-              waitForPrevious: dest.waitForPrevious,
-              responseTransformer: dest.responseTransformer ?? null,
-              responseTransformerLanguage: dest.responseTransformerLanguage ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
-            }));
-            const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
-              id: channelConnectors.id,
-              metaDataId: channelConnectors.metaDataId,
-            });
-            for (const d of insertedDests) {
-              destIdByMetaDataId.set(d.metaDataId, d.id);
-            }
-          }
+          lookup = await syncDestinations(tx, id, input.destinations, updated.nextMetaDataId);
+        } else if (input.filters || input.transformers) {
+          const stored = await storedDestinations(tx, id);
+          lookup = connectorLookup(stored.map((s) => s.id), stored);
         }
 
         if (input.metadataColumns) {
@@ -983,8 +983,8 @@ export class ChannelService {
           }
         }
 
-        if (input.filters) await syncFilters(tx, id, input.filters, destIdByMetaDataId);
-        if (input.transformers) await syncTransformers(tx, id, input.transformers, destIdByMetaDataId);
+        if (input.filters && lookup) await syncFilters(tx, id, input.filters, lookup);
+        if (input.transformers && lookup) await syncTransformers(tx, id, input.transformers, lookup);
       });
 
       const channel = await findChannel(id);
@@ -1043,7 +1043,7 @@ export class ChannelService {
       }
 
       const input = { ...buildCloneInput(source, newName), ...(groupId === undefined ? {} : { groupId }) };
-      const createResult = await ChannelService.create(input, context, id);
+      const createResult = await ChannelService.create(input, context, source);
       if (!createResult.ok) throw createResult.error;
 
       emitEvent({

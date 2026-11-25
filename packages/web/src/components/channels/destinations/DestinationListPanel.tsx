@@ -66,6 +66,13 @@ export function DestinationListPanel({
 
                 secondary: { noWrap: true }
               }} />
+            {dest.metaDataId !== null ? (
+              <Tooltip describeChild title="This destination's number. It never changes; scripts can use it with destinationSet.">
+                <Typography variant="caption" sx={{ color: 'text.secondary', mx: 0.5, flexShrink: 0 }}>
+                  #{String(dest.metaDataId)}
+                </Typography>
+              </Tooltip>
+            ) : null}
             {!dest.enabled ? (
               <Typography
                 variant="caption"
