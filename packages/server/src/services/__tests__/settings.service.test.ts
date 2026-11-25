@@ -66,7 +66,11 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+const log = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+vi.mock('../../lib/logger.js', () => ({ default: log }));
+
 const { SettingsService } = await import('../settings.service.js');
+const { SCRIPT_LOG_SETTING, serverScriptLog } = await import('../../lib/script-log.js');
 
 const NOW = new Date('2026-03-01T12:00:00Z');
 const SETTING_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
@@ -270,6 +274,57 @@ describe('SettingsService', () => {
       if (!result.ok) return;
       expect(result.value).toHaveLength(2);
       expect(mockTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('applied (#164)', () => {
+    const stored = (value: string): unknown => [makeSettingRow({ key: SCRIPT_LOG_SETTING, value, type: 'boolean' })];
+
+    function scriptsLog(): boolean {
+      log.info.mockClear();
+      serverScriptLog({ channelId: 'c', script: 'Deploy' }).line({ level: 'INFO', time: 't', text: 'x' });
+      return log.info.mock.calls.length > 0;
+    }
+
+    it.each([['true', true], ['false', false], ['TRUE', false]])('puts what is stored into force: %s', async (value, on) => {
+      pushResponse(stored(value));
+      await SettingsService.applied();
+      expect(scriptsLog()).toBe(on);
+    });
+
+    it('reads once the read before has ended, so that the last change is the one in force', async () => {
+      let answer: (rows: unknown) => void = () => undefined;
+      selectResponses.push(() => new Promise((resolve) => { answer = resolve; }));
+      pushResponse(stored('false'));
+
+      const both = [SettingsService.applied(), SettingsService.applied()];
+      await new Promise((resolve) => { setImmediate(resolve); });
+      expect(mockSelectWhere).toHaveBeenCalledOnce();
+      answer(stored('true'));
+      await Promise.all(both);
+
+      expect(mockSelectWhere).toHaveBeenCalledTimes(2);
+      expect(scriptsLog()).toBe(false);
+    });
+
+    it('is off when it is not stored, or cannot be read, which is logged', async () => {
+      pushResponse(stored('true'));
+      await SettingsService.applied();
+      pushResponse([]);
+      await SettingsService.applied();
+      expect(scriptsLog()).toBe(false);
+
+      pushResponse(stored('true'));
+      await SettingsService.applied();
+      selectResponses.push(() => Promise.reject(new Error('connection terminated')));
+      await SettingsService.applied();
+      expect(scriptsLog()).toBe(false);
+      expect(log.error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ errMsg: 'connection terminated' }), expect.stringContaining('could not be read'));
+    });
+
+    it('is not read for a change of other settings', async () => {
+      await SettingsService.applied(['smtp.host']);
+      expect(mockSelectWhere).not.toHaveBeenCalled();
     });
   });
 

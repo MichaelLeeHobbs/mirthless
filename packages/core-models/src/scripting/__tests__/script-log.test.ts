@@ -37,7 +37,12 @@ describe('withScriptLogRun', () => {
 });
 
 describe('readScriptLog', () => {
-  it.each(['', 'text', '{}', '[]', '{"runs":[{"script":"x","lines":[{"level":"TRACE","time":"t","text":"x"}],"leftOut":0}],"earlierRuns":0}'])('is null for %j', (stored) => {
+  it.each([
+    '', 'text', '{}', '[]',
+    '{"runs":[{"script":"x","lines":[{"level":"TRACE","time":"t","text":"x"}],"leftOut":0}],"earlierRuns":0}',
+    '{"runs":[{"script":"x","lines":[],"leftOut":"many"}],"earlierRuns":0}',
+    '{"runs":[],"earlierRuns":-1}',
+  ])('is null for %j', (stored) => {
     expect(readScriptLog(stored)).toBeNull();
   });
 });

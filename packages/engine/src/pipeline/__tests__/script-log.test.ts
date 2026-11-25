@@ -26,7 +26,12 @@ function makeStore(calls: string[], overrides: Partial<MessageStore> = {}): Mess
     incrementStats: async () => ok(undefined),
     dequeue: async () => ok([]),
     release: async () => ok(undefined),
-    storeScriptLog: async (_c, _m, metaDataId, run) => { calls.push(`${String(metaDataId)} log ${run.script}: ${run.lines.map((l) => l.text).join(', ')}`); return ok(undefined); },
+    // Slow, so that what does not wait for it comes before it.
+    storeScriptLog: async (_c, _m, metaDataId, run) => {
+      await new Promise((resolve) => { setTimeout(resolve, 5); });
+      calls.push(`${String(metaDataId)} log ${run.script}: ${run.lines.map((l) => l.text).join(', ')}`);
+      return ok(undefined);
+    },
     ...overrides,
   };
 }
