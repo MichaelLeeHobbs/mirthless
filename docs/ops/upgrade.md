@@ -590,7 +590,7 @@ A script saved on a channel that was imported without that script is now stored.
 
 ## Test Connection checks the settings as a deploy does (#133)
 
-Test Connection refuses whatever a deploy would refuse, with the deploy's text, before it connects ([what it tests](../user/connector-reference.md#test-connection), D-380). A script that calls `POST /connectors/test` with only a host and a port gets 400 and has to send the connector's other settings too. References to the configuration map are filled, for someone who holds `config_map:read` or `channels:write` on the channel; anyone else gets 403 for settings that hold one. The test of a TCP/MLLP, HTTP or DICOM source, which always failed, checks the settings.
+Test Connection refuses whatever a deploy would refuse of a connector, with the deploy's text, before it connects ([what it tests](../user/connector-reference.md#test-connection), D-380). A script that calls `POST /connectors/test` with only part of a connector's settings gets 400 and has to send them all. References to the configuration map are filled, for someone who holds `config_map:read` or `channels:write` on the channel, and the read is recorded; anyone else gets 403 for settings that hold one. The test of a TCP/MLLP, HTTP or DICOM source checks the settings and connects to nothing; before, it failed unless the source was bound to an address of its own or took certificates. A redirect fails the test of an HTTPS destination too.
 
 ## Changed alerts are in force at once (#417)
 

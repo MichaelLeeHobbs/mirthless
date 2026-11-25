@@ -28,7 +28,7 @@ A connector's properties are checked when the channel deploys. Every type reject
 
 ### Test Connection
 
-**Test Connection** checks the settings in the form as a deploy checks them, with the references to the configuration map filled, and names every setting that a deploy refuses (D-380). So the rest of the form has to be filled in before a connection can be tested. It then connects, gives up after 10 seconds, and sends no message:
+**Test Connection** checks the settings in the form as a deploy checks them, with the references to the configuration map filled, and answers with the deploy's reason when a deploy would refuse them (D-380). So the rest of the form has to be filled in before a connection can be tested. Scripts are not compiled. It then connects, gives up after 10 seconds, and sends no message:
 
 | Connector | What is tested |
 |---|---|
@@ -36,16 +36,16 @@ A connector's properties are checked when the channel deploys. Every type reject
 | HTTP destination | A `HEAD` request. With `scheme` HTTPS it uses the certificates from the store. Any answer passes, an error status too; a redirect does not. |
 | HTTP source with `scheme` HTTPS | A TLS handshake on the server itself, with the certificate and its key. |
 | Other HTTP sources, TCP_MLLP and DICOM sources | The settings only. A listener connects to nothing: its port is opened when the channel starts. |
-| FILE | That the server can read the directory, and for a destination write to it. |
+| FILE | That the server can read the directory, and for a destination write to it. A directory that a destination would create has to be there. |
 | SFTP | Sign-in, and that the remote directory is there. A destination creates one that is not. |
 | DATABASE, SMTP | Sign-in. |
 | FHIR | `GET <baseUrl>/metadata`, without the credentials. |
 | KAFKA, AMQP | Sign-in, and that the topic, queue or exchange is there. A topic that holds `${...}` is not checked. |
 | JAVASCRIPT, CHANNEL | The settings only. |
 
-A `${...}` that names no entry of the configuration map is filled per message, so an HTTP URL whose server is such a reference cannot be tested. Loopback, link-local and other reserved addresses are refused, which a deployed channel may reach (D-262).
+A `${...}` that names no entry of the configuration map is left as it is, as at a deploy, so an HTTP URL whose server is filled per message cannot be tested. Loopback, link-local and other reserved addresses are refused, which a deployed channel may reach (D-262).
 
-To have references filled you need `config_map:read`, or `channels:write` on the channel the test is for, because the form says which server gets the values. Without it, settings that hold a reference to the map are refused (403).
+To have references filled you need `config_map:read`, or `channels:write` on the channel the test is for, because the form says which server gets the values. Without it, settings that hold a reference to the map are refused (403). Which entries were filled is recorded in the audit log, best effort (`CONFIG_MAP_READ`).
 
 ## Keys on every connector
 

@@ -395,10 +395,7 @@ describe('ConnectionTestService', () => {
     it('refuses a directory outside FILE_CONNECTOR_ROOTS without looking at it', async () => {
       const result = await ConnectionTestService.testConnection('FILE', 'SOURCE', { directory: '/etc' });
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.success).toBe(false);
-      expect(result.value.message).toMatch(/outside FILE_CONNECTOR_ROOTS/);
+      expect(result.error?.message).toMatch(/outside FILE_CONNECTOR_ROOTS/);
       expect(mockAccess).not.toHaveBeenCalled();
     });
 
@@ -406,10 +403,7 @@ describe('ConnectionTestService', () => {
       const { INSTALL_ROOT } = await import('../../lib/file-roots.js');
       const result = await ConnectionTestService.testConnection('FILE', 'SOURCE', { directory: INSTALL_ROOT });
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.success).toBe(false);
-      expect(result.value.message).toMatch(/server's own/);
+      expect(result.error?.message).toMatch(/server's own/);
       expect(mockAccess).not.toHaveBeenCalled();
     });
 
@@ -936,8 +930,41 @@ describe('ConnectionTestService', () => {
       for (const connect of [mockConnect, mockFetch, mockAccess, mockPoolCreate, mockTransportVerify, mockDnsLookup]) expect(connect).not.toHaveBeenCalled();
     });
 
-    it.each(cases)('%s %s: passes settings that deploy', async (type, mode, properties) => {
-      expect(validateConnectorProperties(type, mode === 'SOURCE' ? 'source' : 'destination', deployed(type, mode, properties)).error).toBeNull();
+    // The brokers' tests are in connection-test-queue.service.test.ts, where their clients are replaced.
+    it.each(cases.filter(([type]) => type !== 'KAFKA' && type !== 'AMQP'))('%s %s: tests settings that deploy', async (type, mode, properties) => {
+      setSftpClientFactory(() => ({ connect: async () => undefined, pathKind: async () => 'directory', end: async () => undefined }) as unknown as SftpClient);
+      createFakeSocket('connect');
+      mockFetch.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', headers: new Headers() });
+      mockTransportVerify.mockResolvedValue(true);
+      mockAccess.mockResolvedValue(undefined);
+
+      const result = await ConnectionTestService.testConnection(type, mode, properties);
+
+      expect(result.error).toBeNull();
+      expect(result.value?.success).toBe(true);
+    });
+
+    // What a deploy finds beyond the schema: building the connector, and its own check.
+    it.each<[string, 'SOURCE' | 'DESTINATION', Record<string, unknown>, RegExp]>([
+      ['DICOM', 'SOURCE', { port: 104, storageDir: '/elsewhere' }, /outside FILE_CONNECTOR_ROOTS/],
+      ['DICOM', 'SOURCE', { port: 104, storageDir: 'relative' }, /must be absolute/],
+      ['AMQP', 'DESTINATION', { host: 'rabbit.example.com' }, /The default exchange needs a routing key/],
+      ['FILE', 'DESTINATION', { directory: '/data/out', outputPattern: '${patientId}.txt' }, /patientId/],
+      ['SFTP', 'DESTINATION', { ...SFTP_PROPS, fileNameTemplate: '${patientId}.txt' }, /patientId/],
+      ['FILE', 'SOURCE', { directory: '/data/in', postAction: 'MOVE', moveToDirectory: '/elsewhere' }, /outside FILE_CONNECTOR_ROOTS/],
+      ['TCP_MLLP', 'SOURCE', { port: 6661, frameStart: 'zz', frameEnd: '1C0D' }, /must be hex pairs/],
+      ['TCP_MLLP', 'SOURCE', { port: 6661, tls: { cert: 'x' } }, /TLS/],
+      ['TCP_MLLP', 'DESTINATION', { host: 'example.com', port: 6661, frameStart: 'zz', frameEnd: '1C0D' }, /must be hex pairs/],
+      ['TCP_MLLP', 'DESTINATION', { host: 'example.com', port: 6661, tls: { cert: 'x' } }, /TLS/],
+      ['HTTP', 'DESTINATION', { url: 'not a url' }, /Invalid URL/],
+    ])('%s %s: refuses %j before it connects, as a deploy does', async (type, mode, properties, text) => {
+      expect(validateConnectorProperties(type, mode === 'SOURCE' ? 'source' : 'destination', properties).ok).toBe(true);
+
+      const result = await ConnectionTestService.testConnection(type, mode, properties);
+
+      expect(result.error?.message).toMatch(text);
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      for (const connect of [mockConnect, mockFetch, mockAccess, mockDnsLookup]) expect(connect).not.toHaveBeenCalled();
     });
 
     it('names every setting that is refused', async () => {
@@ -992,12 +1019,45 @@ describe('ConnectionTestService', () => {
       expect(mockConnect).not.toHaveBeenCalled();
     });
 
-    it.each(['https://${partnerHost}/api', '${partnerUrl}', '/api', 'file:///etc/hosts'])('an HTTP URL that names no server cannot be tested: %s', async (url) => {
-      const result = await ConnectionTestService.testConnection('HTTP', 'DESTINATION', { url });
+    it.each([
+      ['HTTP', { url: 'https://${partnerHost}/api' }, 'url'],
+      ['HTTP', { url: '${partnerUrl}' }, 'url'],
+      ['HTTP', { url: 'file:///etc/hosts' }, 'url'],
+      ['FHIR', { baseUrl: 'https://${partnerHost}/r4' }, 'baseUrl'],
+    ])('%s %j names no server that can be tested', async (type, properties, setting) => {
+      const result = await ConnectionTestService.testConnection(type, 'DESTINATION', properties);
 
-      expect(result.error?.message).toBe('url: names no server, or one that is filled per message, so there is none to test');
+      expect(result.error?.message).toBe(`${setting}: names no server that can be tested`);
       expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
       expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockDnsLookup).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['HTTP', { url: 'https://example.com/api' }],
+      ['FHIR', { baseUrl: 'https://fhir.example.com/r4' }],
+    ])('%s: fails on a redirect, which the destination does not follow', async (type, properties) => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 302, statusText: 'Found', headers: new Headers({ location: 'http://169.254.169.254/' }) });
+
+      const result = await ConnectionTestService.testConnection(type, 'DESTINATION', properties);
+
+      expect(result.value).toMatchObject({ success: false });
+      expect(result.value?.message).toContain('HTTP 302: the server redirected');
+      expect(mockFetch).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ redirect: 'manual' }));
+    });
+
+    it('SMTP: gives up on a server that does not answer', async () => {
+      vi.useFakeTimers();
+      try {
+        mockTransportVerify.mockReturnValue(new Promise(() => undefined));
+        const pending = ConnectionTestService.testConnection('SMTP', 'DESTINATION', SMTP);
+        await vi.advanceTimersByTimeAsync(_testing.TEST_TIMEOUT_MS);
+
+        expect((await pending).value).toMatchObject({ success: false });
+        expect(mockTransportClose).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

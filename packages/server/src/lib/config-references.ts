@@ -32,7 +32,7 @@ const CODE_OR_SQL_KEYS: ReadonlySet<string> = new Set(['script', 'query', 'selec
 /** A `${...}` that names no entry (a message variable such as `${oru}`) is left for the message to fill. */
 export function resolveConfigReferences(
   properties: Readonly<Record<string, unknown>>,
-  lookup: ReadonlyMap<string, string>,
+  lookup: Pick<ReadonlyMap<string, string>, 'get' | 'size'>,
 ): Record<string, unknown> {
   if (lookup.size === 0) return { ...properties };
   const replace = (text: string): string => fillPlaceholders(text, (name) => lookup.get(name));

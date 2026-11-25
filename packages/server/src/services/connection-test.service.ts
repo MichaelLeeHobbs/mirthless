@@ -14,8 +14,11 @@ import {
   testAmqpConnection,
   readQueueTls,
   withTimeout,
+  createDestinationConnector,
   createPool,
+  createSourceConnector,
   databaseTarget,
+  redirectMessage,
   toPoolConfig,
   createSsh2SftpClient,
   buildNodemailerOptions,
@@ -30,7 +33,7 @@ import {
 import { ServiceError } from '../lib/service-error.js';
 import { buildFileRoots } from '../lib/file-roots.js';
 import { config } from '../config/index.js';
-import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
+import { DESTINATION_TLS_RESOLVERS, SOURCE_TLS_RESOLVERS } from './connector-tls-resolver.js';
 import { DEST_SCHEMAS, SOURCE_SCHEMAS, validateConnectorProperties } from './connector-validation.service.js';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -123,11 +126,28 @@ async function assertHostAllowed(hostname: string): Promise<void> {
 }
 
 type Properties = Readonly<Record<string, unknown>>;
-type Tester = (properties: Properties) => Promise<ConnectionTestResult>;
+/** `resolved` has the certificates themselves where the properties name them. */
+type Tester = (properties: Properties, resolved: Properties) => Promise<ConnectionTestResult>;
 
 /** `run` gets the settings as a deploy reads them. */
-function tester<S extends z.ZodType>(schema: S, run: (settings: z.output<S>) => Promise<ConnectionTestResult>): Tester {
-  return (properties) => run(schema.parse(properties));
+function tester<S extends z.ZodType>(schema: S, run: (settings: z.output<S>, resolved: Properties) => Promise<ConnectionTestResult>): Tester {
+  return (properties, resolved) => run(schema.parse(properties), resolved);
+}
+
+/** A deploy gives a Channel Reader its own channel's id, which a new channel has not got. */
+const THIS_CHANNEL = 'this channel';
+
+/** As a deploy does before it starts anything: the certificates, and the connector's own checks. */
+async function asDeployed(type: string, mode: ConnectionTestInput['mode'], properties: Record<string, unknown>): Promise<Properties> {
+  const resolve = (mode === 'SOURCE' ? SOURCE_TLS_RESOLVERS : DESTINATION_TLS_RESOLVERS)[type];
+  const resolved = resolve === undefined ? null : await resolve(properties);
+  if (resolved !== null && !resolved.ok) throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
+  const ready = resolved?.value ?? properties;
+  const env = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS), channelId: THIS_CHANNEL };
+  const connector = mode === 'SOURCE' ? createSourceConnector(type, ready, env) : createDestinationConnector(type, ready, env);
+  const checked = await connector.onDeploy();
+  if (!checked.ok) throw new ServiceError('INVALID_INPUT', checked.error.message);
+  return ready;
 }
 
 function successResult(message: string, latencyMs: number): ConnectionTestResult {
@@ -147,7 +167,7 @@ interface Server {
 function hostnameOf(url: string, setting: string): string {
   const hostname = URL.canParse(url) ? new URL(url).hostname : '';
   if (hostname !== '' && !hostname.includes('${')) return hostname;
-  throw new ServiceError('INVALID_INPUT', `${setting}: names no server, or one that is filled per message, so there is none to test`);
+  throw new ServiceError('INVALID_INPUT', `${setting}: names no server that can be tested`);
 }
 
 const testListener = async (): Promise<ConnectionTestResult> =>
@@ -178,16 +198,17 @@ async function testTcpConnect({ host, port }: Server): Promise<ConnectionTestRes
   });
 }
 
+/** A destination never follows one. */
+function isRedirect(status: number): boolean {
+  return status >= 300 && status < 400;
+}
+
 /**
  * A real TLS (or mTLS) handshake with the resolved certificates, so a passing
  * test reflects the ca/cert/key/rejectUnauthorized the connector will deploy with.
  */
-async function testHttpsWithTls(url: string, props: Properties): Promise<ConnectionTestResult> {
-  const resolved = await resolveHttpDestinationTls(props);
-  if (!resolved.ok) {
-    throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
-  }
-  const tls = (resolved.value['tls'] as Record<string, unknown> | undefined) ?? {};
+async function testHttpsWithTls(url: string, resolved: Properties): Promise<ConnectionTestResult> {
+  const tls = (resolved['tls'] as Record<string, unknown> | undefined) ?? {};
   const start = performance.now();
 
   return new Promise<ConnectionTestResult>((resolve) => {
@@ -204,7 +225,10 @@ async function testHttpsWithTls(url: string, props: Properties): Promise<Connect
       (res) => {
         const latency = performance.now() - start;
         res.resume();
-        resolve(successResult(`HTTPS ${String(res.statusCode)} ${res.statusMessage ?? ''}`.trim(), latency));
+        const status = res.statusCode ?? 0;
+        resolve(isRedirect(status)
+          ? failureResult(redirectMessage(status, res.headers.location ?? null), latency)
+          : successResult(`HTTPS ${String(status)} ${res.statusMessage ?? ''}`.trim(), latency));
       },
     );
     req.on('timeout', () => { req.destroy(new Error('Connection timed out')); });
@@ -221,12 +245,8 @@ async function testHttpsWithTls(url: string, props: Properties): Promise<Connect
  * otherwise surface only at deploy: an unresolvable certificate, no private
  * key, or a cert and key that do not pair.
  */
-async function testHttpsSourceHandshake(props: Properties): Promise<ConnectionTestResult> {
-  const resolved = await resolveHttpSourceTls(props);
-  if (!resolved.ok) {
-    throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
-  }
-  const tls = (resolved.value['tls'] as Record<string, unknown> | undefined) ?? {};
+async function testHttpsSourceHandshake(resolved: Properties): Promise<ConnectionTestResult> {
+  const tls = (resolved['tls'] as Record<string, unknown> | undefined) ?? {};
   const cert = tls['cert'] as string;
   const key = tls['key'] as string;
   const start = performance.now();
@@ -272,12 +292,11 @@ async function testHttpsSourceHandshake(props: Properties): Promise<ConnectionTe
   });
 }
 
-async function testHttpDestination(settings: z.output<typeof DEST_SCHEMAS.HTTP>): Promise<ConnectionTestResult> {
-  const { url, scheme } = settings;
+async function testHttpDestination({ url, scheme }: z.output<typeof DEST_SCHEMAS.HTTP>, resolved: Properties): Promise<ConnectionTestResult> {
   await assertHostAllowed(hostnameOf(url, 'url'));
 
   if (scheme === 'HTTPS') {
-    return testHttpsWithTls(url, settings);
+    return testHttpsWithTls(url, resolved);
   }
 
   const start = performance.now();
@@ -287,10 +306,11 @@ async function testHttpDestination(settings: z.output<typeof DEST_SCHEMAS.HTTP>)
   try {
     const response = await fetch(url, {
       method: 'HEAD',
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal,
     });
     const latency = performance.now() - start;
+    if (isRedirect(response.status)) return failureResult(redirectMessage(response.status, response.headers.get('location')), latency);
     return successResult(`HTTP ${response.status} ${response.statusText}`, latency);
   } catch (err: unknown) {
     const latency = performance.now() - start;
@@ -349,7 +369,7 @@ async function testSmtp(settings: z.output<typeof DEST_SCHEMAS.SMTP>): Promise<C
   const transport = smtpTransportFactory({ ...buildNodemailerOptions(smtpDispatcherConfig(settings)), connectionTimeout: TEST_TIMEOUT_MS });
 
   try {
-    await transport.verify();
+    await withTimeout(transport.verify(), TEST_TIMEOUT_MS, 'SMTP connection test');
     const latency = performance.now() - start;
     return successResult(`SMTP server verified: ${host}:${port}`, latency);
   } catch (err: unknown) {
@@ -373,10 +393,11 @@ async function testFhir({ baseUrl }: z.output<typeof DEST_SCHEMAS.FHIR>): Promis
     const response = await fetch(metadataUrl, {
       method: 'GET',
       headers: { Accept: 'application/fhir+json' },
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal,
     });
     const latency = performance.now() - start;
+    if (isRedirect(response.status)) return failureResult(redirectMessage(response.status, response.headers.get('location')), latency);
     if (response.ok) {
       return successResult(`FHIR server responded: ${response.status}`, latency);
     }
@@ -444,14 +465,6 @@ async function testSftp(
   }
 }
 
-async function queueTls(props: Properties): Promise<ReturnType<typeof readQueueTls>> {
-  const resolved = await resolveQueueTls(props);
-  if (!resolved.ok) {
-    throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
-  }
-  return readQueueTls(resolved.value);
-}
-
 async function brokerCheck(label: string, check: () => Promise<string>): Promise<ConnectionTestResult> {
   const start = performance.now();
   try {
@@ -464,27 +477,28 @@ async function brokerCheck(label: string, check: () => Promise<string>): Promise
 }
 
 /** A topic that varies per message (`${...}`) is not checked. */
-async function testKafka(settings: z.output<typeof SOURCE_SCHEMAS.KAFKA> | z.output<typeof DEST_SCHEMAS.KAFKA>): Promise<ConnectionTestResult> {
+async function testKafka(settings: z.output<typeof SOURCE_SCHEMAS.KAFKA> | z.output<typeof DEST_SCHEMAS.KAFKA>, resolved: Properties): Promise<ConnectionTestResult> {
   for (const broker of settings.brokers.split(',')) {
     await assertHostAllowed(broker.trim().replace(/:\d+$/, ''));
   }
-  const tls = await queueTls(settings);
+  const tls = readQueueTls(resolved);
   const topic = settings.topic.includes('${') ? undefined : settings.topic;
   return brokerCheck('Kafka', () => testKafkaConnection({ ...settings, tls }, topic));
 }
 
 async function testAmqp(
   settings: z.output<typeof SOURCE_SCHEMAS.AMQP> | z.output<typeof DEST_SCHEMAS.AMQP>,
+  resolved: Properties,
   target: Parameters<typeof testAmqpConnection>[1],
 ): Promise<ConnectionTestResult> {
-  const tls = await queueTls(settings);
+  const tls = readQueueTls(resolved);
   await assertHostAllowed(settings.host);
   return brokerCheck('AMQP', () => testAmqpConnection({ ...settings, tls }, target));
 }
 
 const SOURCE_TESTERS: Readonly<Record<SourceConnectorType, Tester>> = {
   TCP_MLLP: tester(SOURCE_SCHEMAS.TCP_MLLP, testListener),
-  HTTP: tester(SOURCE_SCHEMAS.HTTP, (s) => (s.scheme === 'HTTPS' ? testHttpsSourceHandshake(s) : testListener())),
+  HTTP: tester(SOURCE_SCHEMAS.HTTP, (s, resolved) => (s.scheme === 'HTTPS' ? testHttpsSourceHandshake(resolved) : testListener())),
   FILE: tester(SOURCE_SCHEMAS.FILE, (s) => testFile(s.directory, fs.constants.R_OK)),
   DATABASE: tester(SOURCE_SCHEMAS.DATABASE, testDatabase),
   JAVASCRIPT: tester(SOURCE_SCHEMAS.JAVASCRIPT, testJavascript),
@@ -493,7 +507,7 @@ const SOURCE_TESTERS: Readonly<Record<SourceConnectorType, Tester>> = {
   EMAIL: tester(SOURCE_SCHEMAS.EMAIL, testTcpConnect),
   SFTP: tester(SOURCE_SCHEMAS.SFTP, (s) => testSftp('SOURCE', s)),
   KAFKA: tester(SOURCE_SCHEMAS.KAFKA, testKafka),
-  AMQP: tester(SOURCE_SCHEMAS.AMQP, (s) => testAmqp(s, { queue: s.queue })),
+  AMQP: tester(SOURCE_SCHEMAS.AMQP, (s, resolved) => testAmqp(s, resolved, { queue: s.queue })),
 };
 
 const DEST_TESTERS: Readonly<Record<DestinationConnectorType, Tester>> = {
@@ -508,7 +522,7 @@ const DEST_TESTERS: Readonly<Record<DestinationConnectorType, Tester>> = {
   DICOM: tester(DEST_SCHEMAS.DICOM, testTcpConnect),
   SFTP: tester(DEST_SCHEMAS.SFTP, (s) => testSftp('DESTINATION', s)),
   KAFKA: tester(DEST_SCHEMAS.KAFKA, testKafka),
-  AMQP: tester(DEST_SCHEMAS.AMQP, (s) => testAmqp(s, { exchange: s.exchange })),
+  AMQP: tester(DEST_SCHEMAS.AMQP, (s, resolved) => testAmqp(s, resolved, { exchange: s.exchange })),
 };
 
 export class ConnectionTestService {
@@ -518,14 +532,13 @@ export class ConnectionTestService {
     mode: ConnectionTestInput['mode'],
     given: Properties,
   ): Promise<Result<ConnectionTestResult>> {
-    // A deploy gives a Channel Reader its own channel's id, which a new channel has not got.
-    const properties = connectorType === 'CHANNEL' && mode === 'SOURCE' ? { ...given, channelId: 'this channel' } : { ...given };
+    const properties = connectorType === 'CHANNEL' && mode === 'SOURCE' ? { ...given, channelId: THIS_CHANNEL } : { ...given };
     const valid = validateConnectorProperties(connectorType, mode === 'SOURCE' ? 'source' : 'destination', properties);
     if (!valid.ok) return valid;
     const testers: Readonly<Record<string, Tester>> = mode === 'SOURCE' ? SOURCE_TESTERS : DEST_TESTERS;
 
     try {
-      const result = await testers[connectorType]!(properties);
+      const result = await testers[connectorType]!(properties, await asDeployed(connectorType, mode, properties));
       return { ok: true, value: result, error: null };
     } catch (err: unknown) {
       if (err instanceof ServiceError) {

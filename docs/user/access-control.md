@@ -160,6 +160,7 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 | Reprocess and resend to destinations | `messages:reprocess` | admin, deployer | Yes: `MESSAGE_REPROCESSED`, `MESSAGES_REPROCESSED`, `MESSAGE_RESEND_QUEUED` |
 | Collection records | `collections:read` | All four | Best effort: `COLLECTION_RECORDS_READ` |
 | Global map and configuration map values | `global_map:read`, `config_map:read` | admin, deployer, developer | Best effort: `GLOBAL_MAP_READ`, `CONFIG_MAP_READ` |
+| Configuration map values in a Test Connection, to the server the settings name and in its answer | `channels:deploy`, with `config_map:read` or `channels:write` on the channel | admin, deployer, channel-deployer | Best effort, with the entries' names: `CONFIG_MAP_READ` |
 | Audit event export (`GET /api/v1/events/export`) | `events:read` | All four | Yes, fail-closed in the audit log with its reason: `EVENTS_EXPORTED` |
 | Channel export (scripts and connector settings, secret fields masked) | `channels:read` | All four | Yes: `CHANNEL_EXPORTED` |
 | Connector credentials (channel and revision reads with secrets unmasked) | `channels:write` on that channel | admin, deployer, developer | Best effort: `CHANNEL_SECRETS_READ` |

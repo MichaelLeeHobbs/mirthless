@@ -48,6 +48,9 @@ describeIntegration('Test Connection and the configuration map (real Postgres)',
   const test = (who: TestUser, properties: Record<string, unknown>, channelId?: string): Promise<ApiAnswer<unknown>> =>
     apiCall(base, who.token, 'POST', '/connectors/test', { connectorType: 'TCP_MLLP', mode: 'DESTINATION', properties, ...(channelId === undefined ? {} : { channelId }) });
 
+  const readsOf = async (who: TestUser): Promise<unknown[]> => (await mods.pool.query<{ attributes: unknown; channel_id: string | null }>(
+    `SELECT attributes, channel_id FROM audit_log WHERE user_id = $1 AND action = 'CONFIG_MAP_READ'`, [who.id])).rows;
+
   const REFERENCES = { host: `\${${CATEGORY}.host}`, port: `\${${CATEGORY}.port}` };
 
   beforeAll(async () => {
@@ -93,6 +96,40 @@ describeIntegration('Test Connection and the configuration map (real Postgres)',
 
     expectFilled(await test(deployer, REFERENCES));
     expectFilled(await test(deployer, REFERENCES, LAB_CHANNEL));
+  });
+
+  it('records which values were filled, and for which channel, never the values', async () => {
+    const deployer = await userWithRole(mods.pool, 'deployer', null);
+    users.push(deployer.id);
+
+    await test(deployer, { host: '169.254.1.1', port: 6661 });
+    expect(await readsOf(deployer)).toEqual([]);
+    await test(deployer, REFERENCES, LAB_CHANNEL);
+
+    await expect.poll(() => readsOf(deployer)).toEqual([{
+      channel_id: LAB_CHANNEL,
+      attributes: expect.objectContaining({ connectionTest: 'TCP_MLLP', names: [`${CATEGORY}.host`, `${CATEGORY}.port`] }) as unknown,
+    }]);
+    expect(JSON.stringify(await readsOf(deployer))).not.toContain(HOST);
+  });
+
+  it('lets a scoped deployer use a certificate by a reference only where their channels have that reference', async () => {
+    const certificate = randomUUID();
+    await mods.pool.query('INSERT INTO configuration (category, name, value) VALUES ($1, $2, $3)', [CATEGORY, 'cert', certificate]);
+    const scoped = await user(['channels:read', 'channels:write', 'channels:deploy'], [lab]);
+    const withCertificate = (): Promise<ApiAnswer<unknown>> => apiCall(base, scoped.token, 'POST', '/connectors/test', {
+      connectorType: 'HTTP', mode: 'DESTINATION', channelId: LAB_CHANNEL,
+      properties: { url: 'https://203.0.113.10:9/', method: 'GET', scheme: 'HTTPS', tls: { clientCertId: `${'$'}{${CATEGORY}.cert}` } },
+    });
+
+    const foreign = await withCertificate();
+    expect(foreign.status).toBe(403);
+    expect(foreign.json.error?.message).toContain('certificate');
+
+    await mods.pool.query('UPDATE channels SET source_connector_properties = $2::jsonb WHERE id = $1', [LAB_CHANNEL, JSON.stringify({ tls: { clientCertId: `${'$'}{${CATEGORY}.cert}` } })]);
+    const own = await withCertificate();
+    expect(own.status).toBe(400);
+    expect(own.json.error?.message).toContain(`Referenced certificate ${certificate} could not be resolved`);
   });
 
   it('fills them for one who reads the map and writes no channel', async () => {

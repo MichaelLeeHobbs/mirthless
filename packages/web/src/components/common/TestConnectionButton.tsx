@@ -26,10 +26,11 @@ export function TestConnectionButton({ connectorType, mode, properties }: TestCo
   };
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mt: 1 }}>
       <Button
         variant="outlined"
         size="small"
+        sx={{ flexShrink: 0 }}
         startIcon={testMutation.isPending ? <CircularProgress size={16} /> : <WifiTetheringIcon />}
         onClick={handleTest}
         disabled={testMutation.isPending}
@@ -37,7 +38,7 @@ export function TestConnectionButton({ connectorType, mode, properties }: TestCo
         {testMutation.isPending ? 'Testing...' : 'Test Connection'}
       </Button>
       {testMutation.isSuccess ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, overflowWrap: 'anywhere' }}>
           {testMutation.data.success ? (
             <>
               <CheckCircleIcon color="success" fontSize="small" />
@@ -60,7 +61,7 @@ export function TestConnectionButton({ connectorType, mode, properties }: TestCo
         </Box>
       ) : null}
       {testMutation.isError ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, overflowWrap: 'anywhere' }}>
           <ErrorIcon color="error" fontSize="small" />
           <Typography variant="body2" sx={{
             color: 'error.main'

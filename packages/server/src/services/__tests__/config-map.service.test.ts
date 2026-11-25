@@ -131,6 +131,15 @@ beforeEach(() => {
 
 describe('ConfigMapService', () => {
   describe('references', () => {
+    it('fails when the entries cannot be read', async () => {
+      const list = vi.spyOn(ConfigMapService, 'list').mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') } as never);
+
+      const result = await ConfigMapService.references();
+
+      list.mockRestore();
+      expect(result.ok).toBe(false);
+    });
+
     it('fills a name, and a category and a name', async () => {
       pushOrderableResponse([makeEntry({ category: 'site', name: 'port', value: '6661' })]);
 

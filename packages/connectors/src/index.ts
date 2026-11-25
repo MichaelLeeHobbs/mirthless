@@ -191,5 +191,6 @@ export {
   type AmqpConnectionConfig,
 } from './amqp/index.js';
 export { databaseTarget, readQueueTls, smtpDispatcherConfig } from './registry.js';
+export { redirectMessage } from './redirect.js';
 export { withTimeout, TimeoutError } from './timeout.js';
 export { createSourceConnector, createDestinationConnector, type ConnectorEnvironment } from './registry.js';
