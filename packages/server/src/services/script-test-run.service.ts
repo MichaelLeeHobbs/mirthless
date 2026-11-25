@@ -11,9 +11,11 @@ import { ChannelService } from './channel.service.js';
 import { CodeTemplateService } from './code-template.service.js';
 import { createCollectionBridge, createResourceBridge } from '../engine.js';
 
+/** The run's own start-up comes before the script's limit (#188). */
+export const TEST_RUN_START_LIMIT_MS = 30_000;
 export const TEST_RUN_TIMEOUT_MS = 5_000;
 export const TEST_RUN_HEAP_MB = 64;
-/** Typed arrays are outside the worker's heap limit, so process growth is capped separately. */
+/** Typed arrays are outside the worker's heap limit, so their growth is capped separately. */
 export const TEST_RUN_MEMORY_GROWTH_MB = 256;
 
 interface ChannelScope {
@@ -97,7 +99,7 @@ export class ScriptTestRunService {
               getResource: reads.resources ? createResourceBridge() : refused('resources', 'resources:read'),
               collectionFind: reads.collections ? collections.find : refused('collections', 'collections:read'),
             },
-            { timeoutMs: scope.timeoutMs, maxOldGenerationSizeMb: TEST_RUN_HEAP_MB, maxMemoryGrowthMb: TEST_RUN_MEMORY_GROWTH_MB },
+            { startLimitMs: TEST_RUN_START_LIMIT_MS, timeoutMs: scope.timeoutMs, maxOldGenerationSizeMb: TEST_RUN_HEAP_MB, maxMemoryGrowthMb: TEST_RUN_MEMORY_GROWTH_MB },
           );
         } catch (err: unknown) {
           await audit(input, context, undefined);

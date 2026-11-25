@@ -6,6 +6,11 @@ export function formatTtl(seconds: number | null): string {
   return `${String(seconds)}s`;
 }
 
+/** A script no longer finds it; an administrator still sees it, and can give it a new life. */
+export function isExpired(expireAt: string | null, now: number = Date.now()): boolean {
+  return expireAt !== null && Date.parse(expireAt) <= now;
+}
+
 export function parseFields(input: string): string[] {
   return [...new Set(input.split(/[\s,]+/).map((s) => s.trim()).filter((s) => s.length > 0))];
 }
