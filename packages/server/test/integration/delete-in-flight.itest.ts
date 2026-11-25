@@ -1,5 +1,5 @@
 // Deleting a message while something still works on it left its content behind, where neither the
-// pruner nor the browser finds it, and could lose a queued delivery (#403, D-371).
+// pruner nor the browser finds it, and could lose a queued delivery (#403, D-372).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
