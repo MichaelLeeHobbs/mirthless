@@ -83,7 +83,7 @@ A channel has one of five storage modes: DEVELOPMENT, PRODUCTION, RAW, METADATA 
 | MSG-EXP-03 | The system shall take parts a channel's attachment rule picks out of each inbound message into attachments, and shall put them back unchanged into what a destination sends. | P2 | Test | Proposed |
 
 - MSG-EXP-01: source: docs/user/capabilities.md "Export messages" (Yes); docs/design/06-web-admin.md "Message Browser". Today's export takes only status and dates. The reason for an export and the header that names its audit record (D-318) are Audit's, keeping a CSV cell from running as a formula is Security's; a permission of its own (#172) is Access control's.
-- MSG-EXP-02: source: code only (an export is capped at 10,000 rows and counts what it left out); stated in the file so that a partial export is never taken for a complete one.
+- MSG-EXP-02: source: code only (an export is capped at 10,000 rows and tells the caller, outside the file, that it was cut); stated in the file so that a partial export is never taken for a complete one.
 - MSG-EXP-03: source: ROADMAP "Attachment extraction and batch splitting: library code exists, no channel setting reaches it"; docs/design/02-engine.md "Attachment Handler"; D-189. Conflict: docs/design/09-feature-comparison-and-vision.md says extraction is done; D-189 and docs/ops/deployment.md say it is not. Putting parts back is docs/research/voice-of-user/ranking.md MSG7 (reattach).
 
 ## Deletion and retention (RET)

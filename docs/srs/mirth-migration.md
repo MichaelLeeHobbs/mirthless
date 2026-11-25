@@ -85,7 +85,7 @@ What a Mirth Connect channel export or server backup becomes when it is imported
 - MIG-SET-02: source: docs/user/capabilities.md "JavaScript filter rules and transformer steps"; D-241; scenarios S03, S13. The response transformer is added under MIG-SAFE-01: docs/user/capabilities.md has the feature ("Response transformers and response modes") but no migration row for it.
 - MIG-SET-03: source: docs/user/capabilities.md "Rule Builder filter rules"; D-301.
 - MIG-SET-04: source: the importer's tests (destinations keyed by the number in the export); D-239 ("Respond from" names one); D-241.
-- MIG-SET-05: source: docs/user/capabilities.md "Destination queue settings" and "Multiple threads per destination queue" (No); D-230 (a retry count of 0 retries until delivered); scenario S06. How Mirth's retry count and its queue combine should be checked against Mirth before this is accepted.
+- MIG-SET-05: source: docs/user/capabilities.md "Destination queue settings" and "Multiple threads per destination queue" (No); D-230 (a retry count of 0 retries until delivered); scenario S06. Conflict: in Mirth's source the retry count limits only the attempts made before a message is queued, and its queue then retries without a limit, while D-230 makes the count end the queue, so carrying the number as it is gives a queued message up sooner; Mirth's outcome kept.
 - MIG-SET-06: source: docs/user/capabilities.md "Respond from a destination or the postprocessor"; D-239; D-255; scenarios S01, S26.
 - MIG-SET-07: source: docs/user/capabilities.md "Storage mode, encryption and pruning" and "Custom metadata columns"; D-240; scenario S10.
 - MIG-SET-08: source: D-301; docs/user/capabilities.md "Storage mode, encryption and pruning".
