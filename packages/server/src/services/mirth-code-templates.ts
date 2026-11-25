@@ -1,10 +1,11 @@
-// A Mirth server backup carries its code template libraries beside the channels, and
-// channel scripts call those templates, so a channel imported without them fails on its
-// first message.
+// A Mirth server backup carries its code template libraries beside the channels, and a channel
+// export inside the channel. Channel scripts call those templates, so a channel imported without
+// them fails on its first message.
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { CODE_TEMPLATE_CONTEXTS } from '@galvanigraph/core-models';
 import { isPlainObject } from '@galvanigraph/core-util';
+import { mirthOnlyTemplateWarning } from './mirth-only-constructs.js';
 import { getString, stringList, toRecordList } from './mirth-xml.js';
 import { CodeTemplateService, type TemplateDetail } from './code-template.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
@@ -76,23 +77,33 @@ function libraryScope(lib: Record<string, unknown>, name: string, warnings: stri
   return stringList(lib['enabledChannelIds']).map((id) => id.toLowerCase());
 }
 
+function libraryNodes(container: unknown): readonly Record<string, unknown>[] {
+  const node = isPlainObject(container) ? container['codeTemplateLibraries'] : null;
+  return isPlainObject(node) ? toRecordList(node['codeTemplateLibrary']) : [];
+}
+
+/** Every channel of a file that uses a library carries it whole, so the first of a name is taken. */
 export function extractCodeTemplateLibraries(
   parsed: Record<string, unknown>,
+  mirthChannels: readonly Record<string, unknown>[],
   warnings: string[],
 ): readonly MirthCodeTemplateLibrary[] {
-  const server = parsed['serverConfiguration'];
-  if (!isPlainObject(server)) return [];
-  const librariesNode = server['codeTemplateLibraries'];
-  const libraryNodes = isPlainObject(librariesNode) ? toRecordList(librariesNode['codeTemplateLibrary']) : [];
-  return libraryNodes.flatMap((lib) => {
-    const name = getString(lib, 'name');
-    if (!name) return [];
+  const nodes = [...libraryNodes(parsed['serverConfiguration']), ...mirthChannels.flatMap((c) => libraryNodes(c['exportData']))];
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const node of nodes) {
+    const name = getString(node, 'name');
+    if (name && !byName.has(name)) byName.set(name, node);
+  }
+  return [...byName].map(([name, lib]) => {
     const templatesNode = lib['codeTemplates'];
     const templates = (isPlainObject(templatesNode) ? toRecordList(templatesNode['codeTemplate']) : [])
-      .map((t) => convertTemplate(t))
+      .map(convertTemplate)
       .filter((t): t is MirthCodeTemplate => t !== null);
-    const channelIds = libraryScope(lib, name, warnings);
-    return [{ name, description: getString(lib, 'description') ?? '', channelIds, templates }];
+    for (const template of templates) {
+      const warning = mirthOnlyTemplateWarning(`Code template "${template.name}" in library "${name}" uses`, template.code);
+      if (warning) warnings.push(warning);
+    }
+    return { name, description: getString(lib, 'description') ?? '', channelIds: libraryScope(lib, name, warnings), templates };
   });
 }
 

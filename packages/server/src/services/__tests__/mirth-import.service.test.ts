@@ -479,7 +479,7 @@ describe('MirthImportService.convertXml', () => {
     if (!result.ok) return;
     const dbDest = result.value.channels[0]?.destinations[1];
     expect(dbDest?.queueMode).toBe('ALWAYS');
-    expect(dbDest?.retryCount).toBe(3);
+    expect(dbDest?.retryCount).toBe(0);
     expect(dbDest?.retryIntervalMs).toBe(5000);
     expect(dbDest?.rotateQueue).toBe(true);
     expect(dbDest?.queueThreadCount).toBe(2);
@@ -614,7 +614,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
   it('reads queue settings from destinationConnectorProperties', () => {
     const [tryFirst, always] = convert4x().destinations;
-    expect(tryFirst).toMatchObject({ queueMode: 'ON_FAILURE', retryCount: 3, retryIntervalMs: 5000, rotateQueue: true, queueThreadCount: 2 });
+    expect(tryFirst).toMatchObject({ queueMode: 'ON_FAILURE', retryCount: 0, retryIntervalMs: 5000, rotateQueue: true, queueThreadCount: 2 });
     expect(always?.queueMode).toBe('ALWAYS');
     const never = convert4x((x) => x.replace('<queueEnabled>true</queueEnabled>\n          <sendFirst>false</sendFirst>', '<queueEnabled>false</queueEnabled>\n          <sendFirst>false</sendFirst>'));
     expect(never.destinations[1]?.queueMode).toBe('NEVER');
