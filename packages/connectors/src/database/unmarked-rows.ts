@@ -26,18 +26,38 @@ export function rowKey(content: string): string {
 export class UnmarkedRows {
   private readonly counts = new Map<string, number>();
 
-  keys(): ReadonlySet<string> {
-    return new Set(this.counts.keys());
-  }
-
   /** A copy to count down. */
   remaining(): Map<string, number> {
     return new Map(this.counts);
   }
 
-  /** For rows that are gone: marked or changed elsewhere. Should one come back, it is new. */
-  forget(keys: ReadonlySet<string>): void {
-    for (const key of keys) this.counts.delete(key);
+  /** How many of them are among these rows. */
+  countIn(rows: readonly Row[]): ReadonlyMap<string, number> {
+    const found = new Map<string, number>();
+    const missing = this.remaining();
+    for (const row of rows) {
+      if (missing.size === 0) break;
+      const key = rowKey(JSON.stringify(row));
+      const left = missing.get(key);
+      if (left === undefined) continue;
+      found.set(key, (found.get(key) ?? 0) + 1);
+      if (left > 1) missing.set(key, left - 1);
+      else missing.delete(key);
+    }
+    return found;
+  }
+
+  hasMoreThan(found: ReadonlyMap<string, number>): boolean {
+    return [...this.counts].some(([key, count]) => count > (found.get(key) ?? 0));
+  }
+
+  /** The others are gone: marked or changed elsewhere. Should one come back, it is new. */
+  keepOnly(found: ReadonlyMap<string, number>): void {
+    for (const key of this.counts.keys()) {
+      const count = found.get(key);
+      if (count === undefined) this.counts.delete(key);
+      else this.counts.set(key, count);
+    }
   }
 
   settle(taken: readonly TakenRow[]): void {
@@ -52,14 +72,4 @@ export class UnmarkedRows {
     if (count > 0) this.counts.set(key, count);
     else this.counts.delete(key);
   }
-}
-
-/** Which of the keys none of the rows has. */
-export function keysNotIn(rows: readonly Row[], keys: ReadonlySet<string>): ReadonlySet<string> {
-  const missing = new Set(keys);
-  for (const row of rows) {
-    if (missing.size === 0) break;
-    missing.delete(rowKey(JSON.stringify(row)));
-  }
-  return missing;
 }

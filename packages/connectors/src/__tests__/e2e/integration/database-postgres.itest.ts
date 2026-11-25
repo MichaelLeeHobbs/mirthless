@@ -118,7 +118,8 @@ describeDb('DATABASE source (real PostgreSQL)', () => {
     await sql(`CREATE TABLE ${TABLE} (id int PRIMARY KEY, done boolean NOT NULL DEFAULT false, CONSTRAINT two_waits CHECK (id <> 2 OR NOT done))`);
     await sql(`INSERT INTO ${TABLE} (id) VALUES (2), (3)`);
     const source = await start({
-      selectQuery: `SELECT id FROM ${TABLE} WHERE NOT done ORDER BY id`,
+      // A read-only transaction refuses the inner lock, so the look-up has to leave that out as well.
+      selectQuery: `SELECT id FROM ${TABLE} WHERE NOT done AND EXISTS (SELECT 1 FROM ${TABLE} AS any_row FOR KEY SHARE SKIP LOCKED) ORDER BY id`,
       updateQuery: `UPDATE ${TABLE} SET done = true WHERE id = \${id}`,
     });
     await expect.poll(doneIds).toEqual([3]);

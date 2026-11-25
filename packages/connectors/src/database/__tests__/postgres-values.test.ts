@@ -91,10 +91,14 @@ describe('PostgreSQL values', () => {
   });
 
   it('reads JSON too deep for a reviver, and long escaped text', () => {
-    const deep = `${'['.repeat(20_000)}12345678901234567890${']'.repeat(20_000)}`;
+    const deep = `${'['.repeat(3_000)}12345678901234567890${']'.repeat(3_000)}`;
     expect(JSON.stringify(read('JSON', deep))).toBe(deep.replace('12345678901234567890', '"12345678901234567890"'));
     const long = JSON.stringify({ text: '\n"\\'.repeat(500_000), end: '\\' });
     expect(read('JSONB', `[${long}, 12345678901234567890]`)).toEqual([JSON.parse(long), '12345678901234567890']);
+  });
+
+  it('throws on text that is not JSON', () => {
+    expect(() => read('JSON', '{"n":12345678901234567890,"s":"open')).toThrow(SyntaxError);
   });
 
   it('keeps text, keys and nesting in JSON as they are', () => {

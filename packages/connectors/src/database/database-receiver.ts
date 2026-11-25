@@ -5,7 +5,7 @@ import { toPoolConfig, type DatabasePool, type TxQuery } from './connection-pool
 import { appendLockClause, withSkippedRows } from './lock-clause.js';
 import { prepare } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
-import { UnmarkedRows, keysNotIn, rowKey, type Row, type TakenRow } from './unmarked-rows.js';
+import { UnmarkedRows, rowKey, type Row, type TakenRow } from './unmarked-rows.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 const UPDATE_MODE = {
@@ -42,6 +42,12 @@ export { UPDATE_MODE, ROW_FORMAT };
 export type { UpdateMode, RowFormat };
 
 const STATEMENT_TIMEOUT_MS = 30_000;
+
+/** PostgreSQL's and MySQL's code for a write in a read-only transaction. */
+function isWriteRefused(error: Error): boolean {
+  const { code } = error as { readonly code?: unknown };
+  return code === '25006' || code === 'ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION';
+}
 
 /** One start of the source. A cycle that outlives a halt keeps its own pool, not a later start's. */
 interface Session {
@@ -222,14 +228,27 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
 
   /**
    * A row that another transaction holds is missing too, and is not gone. Read-only, because the
-   * query may be one that writes; that one fails here, and what it misses counts as gone.
+   * query may be one that writes: the database refuses that one, and what it misses counts as gone.
    */
   private async forgetGone(session: Session, rows: readonly Row[]): Promise<void> {
-    const missing = keysNotIn(rows, this.unmarked.keys());
-    if (missing.size === 0) return;
-    const all = withSkippedRows(this.claimQuery, this.vendor);
-    const held = all === this.claimQuery ? null : await session.pool.queryReadOnly(all, []);
-    this.unmarked.forget(held?.ok === true ? keysNotIn(held.value.rows, missing) : missing);
+    const claimed = this.unmarked.countIn(rows);
+    if (!this.unmarked.hasMoreThan(claimed)) return;
+    const query = withSkippedRows(this.claimQuery, this.vendor);
+    if (query === this.claimQuery) {
+      this.unmarked.keepOnly(claimed);
+      return;
+    }
+    const all = await session.pool.queryReadOnly(query, []);
+    if (all.ok) {
+      this.unmarked.keepOnly(this.unmarked.countIn(all.value.rows));
+    } else if (isWriteRefused(all.error)) {
+      this.unmarked.keepOnly(claimed);
+    } else {
+      this.logger.error(
+        { ...errorInfo(all.error), database: this.config.database },
+        'Could not look for rows that were dispatched and not marked; they stay remembered, and are not dispatched again',
+      );
+    }
   }
 
   private async takeRows(session: Session, tx: TxQuery, rows: readonly Row[], taken: TakenRow[]): Promise<void> {

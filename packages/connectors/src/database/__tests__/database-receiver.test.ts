@@ -716,12 +716,12 @@ describe('DatabaseReceiver row limit', () => {
 describe('DatabaseReceiver when a row cannot be marked', () => {
   /** A table behind a pool: `held` ids are locked by others, `fails` says which ids the mark statement refuses, `broken` fails whole transactions at COMMIT. */
   function makeTable(rows: Array<Record<string, unknown>>): {
-    readonly pool: ConnectionPool; rows: Array<Record<string, unknown>>; readonly held: Set<unknown>; readOnlyFails: boolean; readonly fails: Set<unknown>; broken: boolean;
+    readonly pool: ConnectionPool; rows: Array<Record<string, unknown>>; readonly held: Set<unknown>; readOnlyError: string | null; readonly fails: Set<unknown>; broken: boolean;
   } {
     const table = {
       rows,
       held: new Set<unknown>(),
-      readOnlyFails: false,
+      readOnlyError: null as string | null,
       fails: new Set<unknown>(),
       broken: false,
       pool: {
@@ -729,7 +729,7 @@ describe('DatabaseReceiver when a row cannot be marked', () => {
         destroy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
         query: vi.fn(),
         queryReadOnly: async (sql: string) => {
-          if (table.readOnlyFails) return { ok: false, value: null, error: new Error('cannot execute UPDATE in a read-only transaction') };
+          if (table.readOnlyError !== null) return { ok: false, value: null, error: Object.assign(new Error('refused'), { code: table.readOnlyError }) };
           expect(sql).not.toContain('FOR UPDATE');
           return { ok: true, value: { rows: [...table.rows], rowCount: table.rows.length }, error: null };
         },
@@ -760,9 +760,11 @@ describe('DatabaseReceiver when a row cannot be marked', () => {
     return table;
   }
 
-  async function run(pool: ConnectionPool, updateMode: DatabaseReceiverConfig['updateMode'] = UPDATE_MODE.ON_SUCCESS): Promise<Array<Record<string, unknown>>> {
+  async function run(
+    pool: ConnectionPool, updateMode: DatabaseReceiverConfig['updateMode'] = UPDATE_MODE.ON_SUCCESS, logger = makeMockLogger().logger,
+  ): Promise<Array<Record<string, unknown>>> {
     const dispatched: Array<Record<string, unknown>> = [];
-    receiver = new DatabaseReceiver(makeConfig({ updateMode, updateQuery: 'UPDATE t SET done = true WHERE id = ${id}' }), pool, makeMockLogger().logger);
+    receiver = new DatabaseReceiver(makeConfig({ updateMode, updateQuery: 'UPDATE t SET done = true WHERE id = ${id}' }), pool, logger);
     receiver.setDispatcher(makeDispatcher((raw) => {
       dispatched.push(JSON.parse(raw.content) as Record<string, unknown>);
       return { messageId: dispatched.length };
@@ -822,18 +824,37 @@ describe('DatabaseReceiver when a row cannot be marked', () => {
     expect(table.rows).toEqual([]);
   });
 
-  it('counts it as gone when the query is one that cannot be read again without writing', async () => {
+  it.each([
+    ['counts it as gone when the query is one that writes (PostgreSQL)', '25006', 2],
+    ['counts it as gone when the query is one that writes (MySQL)', 'ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION', 2],
+    ['remembers it when it could not be looked for', 'ETIMEDOUT', 1],
+  ])('%s', async (_what, code, times) => {
     const table = makeTable([{ id: 1 }]);
     table.fails.add(1);
-    table.readOnlyFails = true;
-    const dispatched = await run(table.pool);
+    table.readOnlyError = code;
+    const { logger, errors } = makeMockLogger();
+    const dispatched = await run(table.pool, UPDATE_MODE.ON_SUCCESS, logger);
     await poll();
     table.held.add(1);
     await poll();
     table.held.clear();
     await poll();
 
-    expect(dispatched).toHaveLength(2);
+    expect(dispatched).toHaveLength(times);
+    expect(errors.filter((e) => e.msg.includes('Could not look for rows'))).toHaveLength(times === 1 ? 1 : 0);
+  });
+
+  it('dispatches a new row that reads the same as one that has gone', async () => {
+    const table = makeTable([{ id: 1 }, { id: 1 }]);
+    table.fails.add(1);
+    const dispatched = await run(table.pool);
+    await poll();
+    table.rows = [{ id: 1 }];
+    await poll();
+    table.rows = [{ id: 1 }, { id: 1 }];
+    await poll();
+
+    expect(dispatched).toHaveLength(3);
   });
 
   it('dispatches another row that reads the same', async () => {

@@ -21,29 +21,24 @@ function codeLength(code: string): number {
   return end;
 }
 
-/** Whether a lock here holds the rows the query returns: not in a subquery of a condition or a column. */
-function locksReturnedRows(code: string, index: number): boolean {
+/** What stands before each parenthesis that is open here, the innermost first. */
+function openParentheses(code: string, index: number): readonly string[] {
+  const before: string[] = [];
   let closed = 0;
   for (let i = index - 1; i >= 0; i -= 1) {
     if (code[i] === ')') closed += 1;
     if (code[i] !== '(') continue;
     if (closed > 0) closed -= 1;
-    else if (!OPENS_A_SOURCE.test(code.slice(Math.max(0, i - 100), i).trimEnd())) return false;
+    else before.push(code.slice(0, i).trimEnd());
   }
-  return true;
-}
-
-function shareToUpdate(sql: string, code: string): string {
-  return sql.replace(/\bfor\s+share\b/gi, (found: string, index: number) => {
-    const isCode = /^for\s+share$/i.test(code.slice(index, index + found.length));
-    return isCode && (!SELECTS.test(code) || locksReturnedRows(code, index)) ? 'FOR UPDATE' : found;
-  });
+  return before;
 }
 
 /**
  * The SELECT as a poll sends it, so that two sources cannot take one row. A query with a
  * FOR UPDATE of its own is left as it is. FOR SHARE lets both read the row, so it becomes
- * FOR UPDATE, with the tables and the waiting it asks for.
+ * FOR UPDATE, with the tables and the waiting it asks for, unless it is in a subquery of a
+ * condition or a column, whose rows are not the query's.
  *
  * The added lock holds the rows of the tables the query itself reads. PostgreSQL rejects it on
  * GROUP BY, DISTINCT or an aggregate, and the failure is logged rather than reopening double
@@ -56,16 +51,28 @@ export function appendLockClause(selectQuery: string, vendor: DatabaseVendor = D
   // A comment at the end would hide a clause put after it.
   const sql = trimmed.slice(0, codeLength(code));
   if (/\bfor\s+update\b/i.test(code)) return sql;
-  const locked = shareToUpdate(sql, code);
-  return locked === sql ? `${sql} FOR UPDATE SKIP LOCKED` : locked;
+
+  const selects = SELECTS.test(code);
+  let claims = false;
+  const locked = sql.replace(/\bfor\s+share\b/gi, (found: string, index: number) => {
+    const isCode = /^for\s+share$/i.test(code.slice(index, index + found.length));
+    const open = isCode ? openParentheses(code, index) : [];
+    if (!isCode || (selects && !open.every((before) => OPENS_A_SOURCE.test(before)))) return found;
+    claims ||= !selects || open.every((before) => /^[\s(]*$/.test(before));
+    return 'FOR UPDATE';
+  });
+  return claims ? locked : `${locked} FOR UPDATE SKIP LOCKED`;
 }
 
-/** The query with the rows that another transaction holds; the same query when it skips none. */
+const LOCK_CLAUSE = /\bfor\s+(?:no\s+key\s+update|key\s+share|update|share)\b(?:\s+of\s+[\w$.]+(?:\s*,\s*[\w$.]+)*)?(?:\s+(?:nowait|skip\s+locked))?/gi;
+
+/** The query without its locks, so with the rows that another transaction holds; the same query when its locks skip none. */
 export function withSkippedRows(lockingQuery: string, vendor: DatabaseVendor): string {
   const code = codeOnly(lockingQuery, vendor);
+  if (!/\bskip\s+locked\b/i.test(code)) return lockingQuery;
   let all = '';
   let copied = 0;
-  for (const found of code.matchAll(/\bfor\s+(?:update|share)\b[^()]*?\bskip\s+locked\b/gi)) {
+  for (const found of code.matchAll(LOCK_CLAUSE)) {
     all += lockingQuery.slice(copied, found.index);
     copied = found.index + found[0].length;
   }

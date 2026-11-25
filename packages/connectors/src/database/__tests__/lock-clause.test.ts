@@ -23,15 +23,21 @@ describe('appendLockClause', () => {
     ['SELECT * FROM t FOR SHARE', 'SELECT * FROM t FOR UPDATE'],
     ['SELECT * FROM t for\n share OF t SKIP LOCKED;', 'SELECT * FROM t FOR UPDATE OF t SKIP LOCKED'],
     ['SELECT * FROM t FOR SHARE LIMIT 5', 'SELECT * FROM t FOR UPDATE LIMIT 5'],
-    ['WITH c AS (SELECT * FROM t FOR SHARE) SELECT * FROM c', 'WITH c AS (SELECT * FROM t FOR UPDATE) SELECT * FROM c'],
-    ['WITH c AS MATERIALIZED (SELECT * FROM t WHERE (a) = 1 FOR SHARE) SELECT * FROM c', 'WITH c AS MATERIALIZED (SELECT * FROM t WHERE (a) = 1 FOR UPDATE) SELECT * FROM c'],
-    ['SELECT * FROM (SELECT * FROM t FOR SHARE) s', 'SELECT * FROM (SELECT * FROM t FOR UPDATE) s'],
-    ['SELECT * FROM r JOIN (SELECT * FROM t FOR SHARE) s USING (id)', 'SELECT * FROM r JOIN (SELECT * FROM t FOR UPDATE) s USING (id)'],
+    ['WITH c AS (SELECT * FROM t FOR SHARE) SELECT * FROM c FOR SHARE', 'WITH c AS (SELECT * FROM t FOR UPDATE) SELECT * FROM c FOR UPDATE'],
     ['(SELECT * FROM t FOR SHARE)', '(SELECT * FROM t FOR UPDATE)'],
     ['UPDATE t SET a = 1 WHERE id IN (SELECT id FROM t FOR SHARE) RETURNING *', 'UPDATE t SET a = 1 WHERE id IN (SELECT id FROM t FOR UPDATE) RETURNING *'],
     ['SELECT * FROM a, b FOR SHARE OF a FOR SHARE OF b NOWAIT', 'SELECT * FROM a, b FOR UPDATE OF a FOR UPDATE OF b NOWAIT'],
   ])('claims the rows a share lock would let two sources read: %s', (query, claimed) => {
     expect(appendLockClause(query)).toBe(claimed);
+  });
+
+  it.each([
+    ['WITH c AS (SELECT * FROM t FOR SHARE) SELECT * FROM c', 'WITH c AS (SELECT * FROM t FOR UPDATE) SELECT * FROM c'],
+    ['WITH c AS MATERIALIZED (SELECT * FROM t WHERE (a) = 1 FOR SHARE) SELECT * FROM c', 'WITH c AS MATERIALIZED (SELECT * FROM t WHERE (a) = 1 FOR UPDATE) SELECT * FROM c'],
+    ['SELECT * FROM (SELECT * FROM t FOR SHARE) s', 'SELECT * FROM (SELECT * FROM t FOR UPDATE) s'],
+    ['SELECT * FROM q JOIN (SELECT * FROM r FOR SHARE) s USING (id)', 'SELECT * FROM q JOIN (SELECT * FROM r FOR UPDATE) s USING (id)'],
+  ])('claims the rows of a CTE or derived table, and the outer ones too: %s', (query, claimed) => {
+    expect(appendLockClause(query)).toBe(`${claimed}${LOCK}`);
   });
 
   it.each([
@@ -93,7 +99,10 @@ describe('withSkippedRows', () => {
     ['SELECT * FROM t FOR UPDATE SKIP LOCKED', 'SELECT * FROM t '],
     ['SELECT * FROM t for update OF t, u skip locked LIMIT 5', 'SELECT * FROM t  LIMIT 5'],
     ['WITH c AS (SELECT * FROM t FOR UPDATE SKIP LOCKED) SELECT * FROM c', 'WITH c AS (SELECT * FROM t ) SELECT * FROM c'],
-    ['SELECT * FROM a, b FOR UPDATE OF a FOR SHARE OF b SKIP LOCKED', 'SELECT * FROM a, b '],
+    ['SELECT * FROM a, b FOR UPDATE OF a FOR SHARE OF "b", c.d SKIP LOCKED', 'SELECT * FROM a, b  '],
+    ['SELECT * FROM t WHERE id IN (SELECT id FROM r FOR SHARE) FOR UPDATE SKIP LOCKED', 'SELECT * FROM t WHERE id IN (SELECT id FROM r ) '],
+    ['SELECT * FROM t FOR NO KEY UPDATE NOWAIT FOR KEY SHARE FOR UPDATE SKIP LOCKED', 'SELECT * FROM t   '],
+    ["SELECT 'for share' FROM t FOR UPDATE SKIP LOCKED", "SELECT 'for share' FROM t "],
   ])('reads what the lock skips: %s', (query, all) => {
     expect(withSkippedRows(query, 'postgresql')).toBe(all);
   });

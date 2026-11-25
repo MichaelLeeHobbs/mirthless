@@ -88,12 +88,13 @@ function canonical(decimal: string): string | null {
   return `${decimal.startsWith('-') ? '-' : ''}${significant}e${String(Number(match[3] ?? 0) - places.length + digits.length - end)}`;
 }
 
-/** Where a JSON string that opens at `open` closes. */
+/** Where a JSON string that opens at `open` closes; the end of text that is not JSON. */
 function closingQuote(json: string, open: number): number {
   let at = open;
   let escaped = true;
   while (escaped) {
     at = json.indexOf('"', at + 1);
+    if (at === -1) return json.length;
     let backslashes = 0;
     while (json[at - 1 - backslashes] === '\\') backslashes += 1;
     escaped = backslashes % 2 === 1;
