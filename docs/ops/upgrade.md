@@ -667,11 +667,11 @@ This reads the whole table, so run it at a quiet time. Start the server only on 
 
 ## Delimited columns keep their order (#372)
 
-A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read (D-378). Look at the channels with such names before the upgrade: a script that swapped the columns back, and a partner that reads them swapped, must stop doing that. Messages sent before stay as they were, so check them with the partner.
+A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read (D-378). Messages sent before stay as they were, so check them with the partner. Look at the channels with such names before the upgrade: a partner that reads the columns swapped must stop doing that, and a script that swaps them back, or gives such a row another order, must give the row as an array instead or stop. Such a script and the server have to change together: undeploy the channel, which then stays undeployed at the restart, upgrade, change the script and deploy.
 
 A column name that a later column without a name has is refused when the channel deploys, for example `column2` as the only name, or `column9` as the second of two: a row wide enough to have that later column lost the earlier one when it was read. The refusal does not depend on how wide the rows are. Before the upgrade rename such a column, change what scripts call it, and redeploy the channel: a restart deploys what was last deployed, not what was saved, and one that is refused is reported as a channel that failed to redeploy.
 
-This lists the column names of every Delimited channel:
+This lists the saved column names of every Delimited channel:
 
 ```sql
 SELECT c.id, c.name, t.inbound_properties->'delimited'->'columnNames' AS column_names

@@ -106,21 +106,24 @@ function isListedFirst(key: string): boolean {
 }
 
 /**
- * In the row's key order. A row with a column that JavaScript lists first no longer says which order its
- * columns were in: they go by their place in the record, and what is no column stays before or after them.
+ * In the row's key order, unless JavaScript has changed it: then the columns go by their place in the
+ * record, with what is no column after them.
  */
-function rowValues(row: object, columnNames: readonly string[]): unknown[] {
-  if (Array.isArray(row) || !columnNames.some((name) => isListedFirst(name) && Object.hasOwn(row, name))) return Object.values(row);
-  const places = new Map(columnNames.map((name, index) => [name, index]));
-  const place = (key: string): number => places.get(key) ?? (isListedFirst(key) ? -1 : places.size);
+function rowValues(row: object, places: ReadonlyMap<string, number>): unknown[] {
+  const keys = Object.keys(row);
+  const columns = keys.flatMap((key) => places.get(key) ?? []);
+  const asRead = columns.every((place, i) => i === 0 || (columns[i - 1] ?? 0) < place);
+  if (Array.isArray(row) || asRead || !keys.some((key) => places.has(key) && isListedFirst(key))) return Object.values(row);
+  const place = (key: string): number => places.get(key) ?? (isListedFirst(key) ? places.size + 1 : places.size);
   return Object.entries(row).sort(([a], [b]) => place(a) - place(b)).map(([, value]: [string, unknown]) => value);
 }
 
 export function serializeDelimited(rows: unknown, options: DelimitedOptions): string {
   const list: readonly unknown[] = Array.isArray(rows) ? rows : [rows];
+  const places = new Map(options.columnNames.map((name, index) => [name, index]));
   let out = '';
   for (const row of list) {
-    const values = row !== null && typeof row === 'object' ? rowValues(row, options.columnNames) : [row];
+    const values = row !== null && typeof row === 'object' ? rowValues(row, places) : [row];
     out += values.map((v) => writeValue(v, options)).join(options.columnDelimiter) + options.recordDelimiter;
   }
   return out;

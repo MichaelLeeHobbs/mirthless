@@ -123,10 +123,32 @@ describe('serializeDelimited', () => {
     expect(serializeDelimited(without, o)).toBe('A,B,D\n');
     expect(serializeDelimited({ ...read(), status: 'NEW' }, o)).toBe('A,B,C,D,NEW\n');
     expect(serializeDelimited({ ...read(), status: 'NEW', column3: 'ADDED' }, o)).toBe('A,B,C,D,NEW,ADDED\n');
-    // Not a column: first, where JavaScript lists it.
-    expect(serializeDelimited({ ...read(), 7: 'X' }, o)).toBe('X,A,B,C,D\n');
+    expect(serializeDelimited({ ...read(), 7: 'X', status: 'NEW' }, o)).toBe('A,B,C,D,NEW,X\n');
     // A record shorter than the names, and the columns a script gives it.
     expect(serializeDelimited({ ...parseDelimited('A', o)[0]!, status: 'NEW', name: 'C', 1: 'B' }, o)).toBe('A,B,C,NEW\n');
+  });
+
+  // Listed by JavaScript in the order of the record, so nothing is lost and a script has its way.
+  it.each([
+    [['1', '2', '3'], { 4: 'NEW' }, 'A,B,C,NEW'],
+    [['1', '2', '3'], { 0: 'NEW' }, 'NEW,A,B,C'],
+    [['10', '20', '30'], { 15: 'NEW' }, 'A,NEW,B,C'],
+    [['1', 'name', 'dob'], { 0: 'NEW' }, 'NEW,A,B,C'],
+    [['1', 'name', 'dob'], { status: 'NEW' }, 'A,B,C,NEW'],
+  ])('keeps where a script\'s addition is listed on columns named %j', (columnNames, added, text) => {
+    const o = delimitedOptionsSchema.parse({ columnNames });
+    expect(serializeDelimited(parseDelimited('A,B,C', o).map((row) => ({ ...row, ...added })), o)).toBe(`${text}\n`);
+  });
+
+  it.each([
+    [{ 1: 'A', patient: 'B', dob: 'C' }, 'A,B,C'],
+    [{ 1: 'A', status: 'S', name: 'B', dob: 'C' }, 'A,S,B,C'],
+    [{ name: 'B', dob: 'C' }, 'B,C'],
+    [{ dob: 'C', name: 'B' }, 'C,B'],
+    // The one thing that is lost: a row that has been read cannot be told from one that a script reordered.
+    [{ 1: 'A', dob: 'C', name: 'B' }, 'A,B,C'],
+  ])('writes %j, which a script built on columns named 1, name and dob, as %j', (row, text) => {
+    expect(serializeDelimited(row, delimitedOptionsSchema.parse({ columnNames: ['1', 'name', 'dob'] }))).toBe(`${text}\n`);
   });
 
   it('writes a row a script built with a whole-number column by the columns\' places', () => {
