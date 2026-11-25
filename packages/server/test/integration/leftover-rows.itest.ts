@@ -1,4 +1,4 @@
-// What the pruner does with rows of messages that are no longer there (#403, D-370). It deletes stored
+// What the pruner does with rows of messages that are no longer there (#403, D-371). It deletes stored
 // content for good, so most of this is about what it must not touch.
 
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
