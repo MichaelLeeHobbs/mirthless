@@ -239,8 +239,8 @@ export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnecti
     pathKind,
     async end(): Promise<void> {
       await client.end();
-      // While no SFTP session is up the library's end() closes nothing. Not ssh2's end():
-      // it waits for a server that may never close its side.
+      // While no SFTP session is up the library's end() closes nothing. ssh2's own end()
+      // would leave the socket open until the server closes its side, which a hung one may never do.
       client.client.destroy();
     },
   };

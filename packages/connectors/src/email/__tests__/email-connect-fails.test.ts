@@ -61,15 +61,16 @@ function makeReceiver(): EmailReceiver {
 }
 
 describe('an IMAP server that stops answering during the connect', () => {
-  it.each(['GREETING', 'CAPABILITY', 'LOGIN', 'NAMESPACE'])('has no connection left when the source gives up (%s)', async (step) => {
+  it.each(['GREETING', 'CAPABILITY', 'LOGIN', 'NAMESPACE'])('has no connection left once the source has failed to start (%s)', async (step) => {
     hangsAt = step;
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const starting = makeReceiver().onStart();
     await hung;
     expect(open.size).toBe(1);
 
-    // The connect, then the LOGOUT the library waits for on a signed-in connection.
-    await vi.advanceTimersByTimeAsync(30_000 + 10_000);
+    // The connect (the library itself gives up the greeting sooner), then the 10 s it waits
+    // for the answer to a LOGOUT on a signed-in connection.
+    await vi.advanceTimersByTimeAsync(30_000 + 11_000);
     const started = await starting;
     vi.useRealTimers();
 
