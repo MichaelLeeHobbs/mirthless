@@ -1,6 +1,7 @@
 // What the server logs when a statement fails (D-347). It logged the statement's
 // parameters: connector passwords and message content. The last tests also cover
 // what becomes of a message whose answer cannot be stored, or holds U+0000 (#404).
+// Needs CONTENT_ENCRYPTION_KEY.
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -23,6 +24,7 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
   let base: string;
   let partnerUrl: string;
   let logged = '';
+  let requests = 0;
   let engineMod: typeof import('../../src/engine.js');
   let deployment: typeof import('../../src/services/deployment.service.js');
   const channels: string[] = [];
@@ -43,10 +45,10 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     deployment = await import('../../src/services/deployment.service.js');
     const app = (await import('../../src/app.js')).default;
     ({ server, base } = await listen(app));
-    ({ server: partner, base: partnerUrl } = await listen((req, res) => { res.statusCode = req.url === '/refuse' ? 500 : 200; res.end(`MRN-8675309${NUL}`); }));
+    ({ server: partner, base: partnerUrl } = await listen((req, res) => { requests += 1; res.statusCode = req.url === '/refuse' ? 500 : 200; res.end(`MRN-8675309${NUL}`); }));
   });
 
-  beforeEach(() => { logged = ''; });
+  beforeEach(() => { logged = ''; requests = 0; });
 
   afterAll(async () => {
     for (const s of [server, partner]) await closeServer(s);
@@ -81,15 +83,26 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     expect(logged).not.toContain('S-timeout');
   });
 
+  interface Settings {
+    readonly queueMode: string;
+    readonly encryptData?: boolean;
+    readonly transformer?: string;
+    readonly prepare?: (channelId: string) => Promise<unknown>;
+  }
+
   /** Sends one message to the partner and runs the checks while the channel is deployed. */
-  async function withMessageTo(path: string, settings: { queueMode: string; encryptData?: boolean }, check: (channelId: string) => Promise<void>): Promise<void> {
+  async function withMessageTo(path: string, settings: Settings, check: (channelId: string) => Promise<void>): Promise<void> {
     const channel = unwrap(await mods.ChannelService.create(createChannelSchema.parse({
       name: `itest-query-error-${randomUUID()}`, enabled: true, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'AUTO_AFTER_DESTINATIONS',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 },
       properties: { encryptData: settings.encryptData ?? false },
       destinations: [{ name: 'H', connectorType: 'HTTP', queueMode: settings.queueMode, properties: { url: `${partnerUrl}${path}` } }],
+      transformers: settings.transformer === undefined ? [] : [
+        { metaDataId: 1, inboundDataType: 'RAW', outboundDataType: 'RAW', steps: [{ type: 'JAVASCRIPT', script: settings.transformer }] },
+      ],
     }), actor));
     channels.push(channel.id);
+    await settings.prepare?.(channel.id);
     unwrap(await deployment.DeploymentService.deploy(channel.id, actor));
     if (engineMod.getEngine().getRuntime(channel.id)!.runtime.getState() !== 'STARTED') unwrap(await deployment.DeploymentService.start(channel.id, actor));
     try {
@@ -110,23 +123,29 @@ describeIntegration('the log of a failed statement (real Postgres)', () => {
     ['took it from the queue', '/accept', 'ALWAYS', 'SENT', 'the response of a delivered destination'],
   ] as const;
 
+  /** Postgres quotes the whole row it refuses for a CHECK constraint. On the channel's own partition, so no other channel can meet it. */
+  const refuseAnswers = (channelId: string): Promise<unknown> => mods.pool.query(
+    `ALTER TABLE message_content_p_${channelId.replaceAll('-', '_')} ADD CHECK (content_type <> ${String(CONTENT_TYPE.RESPONSE)})`);
+
   it.each(PARTNERS)('says that the answer of a partner that %s cannot be stored, without the answer, and the message keeps its status', async (_what, path, queueMode, status, what) => {
-    // Postgres quotes the whole row it refuses for a CHECK constraint.
-    await mods.pool.query(`ALTER TABLE message_content DROP CONSTRAINT IF EXISTS itest_no_answer,
-      ADD CONSTRAINT itest_no_answer CHECK (content_type <> ${String(CONTENT_TYPE.RESPONSE)} OR content NOT LIKE '%MRN-8675309%') NOT VALID`);
-    try {
-      await withMessageTo(path, { queueMode }, async (channelId) => {
-        await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, WAIT);
-        expect(logged).toContain('Message store write failed');
-        await vi.waitFor(async () => { expect(await destinationStatus(channelId)).toEqual([{ status }]); }, WAIT);
-        const stored = await mods.pool.query('SELECT content_type FROM message_content WHERE channel_id = $1 AND meta_data_id = 1', [channelId]);
-        expect(stored.rows).not.toContainEqual({ content_type: CONTENT_TYPE.RESPONSE });
-        expect(logged).toContain('Failed query (23514');
-        expect(logged).not.toContain('MRN-8675309');
-      });
-    } finally {
-      await mods.pool.query('ALTER TABLE message_content DROP CONSTRAINT itest_no_answer');
-    }
+    await withMessageTo(path, { queueMode, prepare: refuseAnswers }, async (channelId) => {
+      await vi.waitFor(() => { expect(logged).toContain(`"what":"${what}"`); }, WAIT);
+      expect(logged).toContain('Message store write failed');
+      await vi.waitFor(async () => { expect(await destinationStatus(channelId)).toEqual([{ status }]); }, WAIT);
+      const stored = await mods.pool.query('SELECT content_type FROM message_content WHERE channel_id = $1 AND meta_data_id = 1', [channelId]);
+      expect(stored.rows).not.toContainEqual({ content_type: CONTENT_TYPE.RESPONSE });
+      expect(logged).toContain('Failed query (23514');
+      expect(logged).not.toContain('MRN-8675309');
+    });
+  });
+
+  it('sends nothing when what is to be sent holds U+0000: it cannot be stored, so the destination ends in ERROR', async () => {
+    await withMessageTo('/accept', { queueMode: 'NEVER', transformer: 'msg = String(msg) + String.fromCharCode(0);' }, async (channelId) => {
+      await vi.waitFor(async () => { expect(await destinationStatus(channelId)).toEqual([{ status: 'ERROR' }]); }, WAIT);
+      const stored = await mods.pool.query('SELECT content FROM message_content WHERE channel_id = $1 AND meta_data_id = 1 ORDER BY content_type', [channelId]);
+      expect(stored.rows).toEqual([{ content: expect.stringContaining('storeSentContent: Failed query (22021)') as unknown }]);
+      expect(requests).toBe(0);
+    });
   });
 
   it.each(PARTNERS)('keeps the answer of a partner that %s when it holds U+0000, as U+2400, and the log has no answer', async (_what, path, queueMode, status) => {

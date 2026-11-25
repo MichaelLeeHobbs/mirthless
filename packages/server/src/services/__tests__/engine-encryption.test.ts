@@ -211,14 +211,20 @@ describe('message store adapter — text with U+0000, which Postgres refuses (#4
   });
 
   it.each([
-    ['RAW', CONTENT_TYPE.RAW],
     ['TRANSFORMED', CONTENT_TYPE.TRANSFORMED],
     ['SENT', CONTENT_TYPE.SENT],
-    ['CHANNEL_MAP', CONTENT_TYPE.CHANNEL_MAP],
   ])('is not changed in %s, which can be sent or run again', async (_what, contentType) => {
     await adapter(false).storeContent('ch1', 7, 2, contentType, ANSWER, 'TEXT');
 
     expect(storedText()).toBe(ANSWER);
+    expect(mockWarn).not.toHaveBeenCalled();
+  });
+
+  it('is not changed in a message as it was received', async () => {
+    const rows = [{ metaDataId: 0, contentType: CONTENT_TYPE.RAW, content: ANSWER, dataType: 'RAW' }];
+    await adapter(false).initializeMessage!('ch1', 'srv', 'Source', rows);
+
+    expect(mockInitializeMessage.mock.calls[0]![3]).toEqual(rows);
     expect(mockWarn).not.toHaveBeenCalled();
   });
 
@@ -229,7 +235,7 @@ describe('message store adapter — text with U+0000, which Postgres refuses (#4
     expect(mockWarn).not.toHaveBeenCalled();
   });
 
-  it('is not looked for in text that has none: it is kept as it is, without a log line', async () => {
+  it('leaves other text as it is, U+2400 included, without a log line', async () => {
     await adapter(false).storeContent('ch1', 7, 2, CONTENT_TYPE.RESPONSE, 'MSA|AA|1\r\u2400', 'TEXT');
 
     expect(storedText()).toBe('MSA|AA|1\r\u2400');

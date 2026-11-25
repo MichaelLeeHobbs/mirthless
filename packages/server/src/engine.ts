@@ -378,7 +378,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
         if (!enc.ok) return Promise.resolve(fail<void>(enc.error));
         toStore = enc.value;
       } else if (READ_ONLY_CONTENT_TYPES.has(contentType) && content.includes('\u0000')) {
-        logger.warn({ channelId, messageId, metaDataId, contentType }, 'A response or error holds U+0000, which PostgreSQL cannot store as text: each one is kept as U+2400');
+        logger.warn({ channelId, messageId, metaDataId, contentType }, 'A response or error holds U+0000, which PostgreSQL cannot store as text: U+2400 is stored for each');
         toStore = content.replaceAll('\u0000', '\u2400');
       }
       return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
