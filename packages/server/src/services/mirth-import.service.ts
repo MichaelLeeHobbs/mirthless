@@ -520,6 +520,7 @@ function sftpWriterProperties(propsNode: Record<string, unknown>): Record<string
   return {
     ...(pattern ? { fileNameTemplate: pattern } : {}),
     appendMode: getBoolean(propsNode, 'outputAppend', true),
+    tempFileEnabled: getBoolean(propsNode, 'temporary', false),
   };
 }
 

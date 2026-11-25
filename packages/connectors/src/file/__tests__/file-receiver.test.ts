@@ -11,6 +11,7 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(),
   unlink: vi.fn(),
   rename: vi.fn(),
+  link: vi.fn(),
   mkdir: vi.fn(),
   realpath: vi.fn(),
 }));
@@ -24,6 +25,7 @@ const mockWriteFile = vi.mocked(fs.writeFile);
 const mockStat = vi.mocked(fs.stat);
 const mockUnlink = vi.mocked(fs.unlink);
 const mockRename = vi.mocked(fs.rename);
+const mockLink = vi.mocked(fs.link);
 const mockMkdir = vi.mocked(fs.mkdir);
 const mockRealpath = vi.mocked(fs.realpath);
 
@@ -231,6 +233,7 @@ describe('FileReceiver', () => {
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(mockMkdir).not.toHaveBeenCalled();
+      expect(mockLink).not.toHaveBeenCalled();
       expect(mockRename).not.toHaveBeenCalled();
     });
   });
@@ -316,12 +319,8 @@ describe('FileReceiver', () => {
       ] as never);
 
       // At poll time old.hl7 is 5s old (passes the 1s threshold), new.hl7 500ms (fails it).
-      let callIdx = 0;
-      mockStat.mockImplementation(async () => {
-        callIdx++;
-        if (callIdx === 1) return makeStatResult(pollTime - 5_000, 100) as never;
-        return makeStatResult(pollTime - 500, 100) as never;
-      });
+      mockStat.mockImplementation((async (file: unknown) =>
+        makeStatResult(pollTime - (String(file).endsWith('old.hl7') ? 5_000 : 500), 100)) as never);
       mockReadFile.mockResolvedValue('content');
       mockUnlink.mockResolvedValue(undefined);
 
@@ -479,7 +478,8 @@ describe('FileReceiver', () => {
       mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
       mockReadFile.mockResolvedValue('content');
       mockMkdir.mockResolvedValue(undefined as never);
-      mockRename.mockResolvedValue(undefined);
+      mockLink.mockResolvedValue(undefined);
+      mockUnlink.mockResolvedValue(undefined);
 
       receiver = new FileReceiver(makeConfig({
         postAction: FILE_POST_ACTION.MOVE,
@@ -490,10 +490,10 @@ describe('FileReceiver', () => {
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(mockMkdir).toHaveBeenCalledWith(path.resolve('/data/processed'), { recursive: true });
-      expect(mockRename).toHaveBeenCalledWith(
-        expect.stringContaining('file.hl7'),
-        expect.stringContaining('file.hl7'),
-      );
+      const source = path.join(path.resolve('/data/inbound'), 'file.hl7');
+      expect(mockLink).toHaveBeenCalledWith(source, path.join(path.resolve('/data/processed'), 'file.hl7'));
+      expect(mockUnlink).toHaveBeenCalledWith(source);
+      expect(mockRename).not.toHaveBeenCalled();
     });
 
     it('leaves file when postAction is NONE', async () => {

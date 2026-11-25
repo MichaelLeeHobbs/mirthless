@@ -560,7 +560,7 @@ describe('validateConnectorProperties', () => {
     };
     const SFTP_DEST = {
       host: 'sftp.lab.example', port: 22, username: 'lab', password: '', privateKey: '-----BEGIN KEY-----', passphrase: '',
-      remoteDirectory: '/outbound', fileNameTemplate: '${messageId}.dat', appendMode: false, strictHostKey: true, hostKey: 'AAAAkey',
+      remoteDirectory: '/outbound', fileNameTemplate: '${messageId}.dat', tempFileEnabled: true, appendMode: false, strictHostKey: true, hostKey: 'AAAAkey',
     };
 
     it('accepts SFTP source and destination properties as the forms save them', () => {
