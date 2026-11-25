@@ -8,7 +8,7 @@ import type {
   DispatchResult,
 } from '../base.js';
 import { DISPATCH_STATUS } from '../base.js';
-import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
+import { MllpParser, frameBytes, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
 import type { TlsServerOptions } from '../tls.js';
 import { buildAck, type AckCode } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -234,20 +234,28 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     };
 
     const result = await this.dispatcher(raw);
-    const response = this.buildResponse(content, result);
-    if (response !== null && socket.writable) {
-      socket.write(wrapMllp(response, this.config.charset, this.config.framing));
-    }
+    const answer = this.passthroughFrame(result) ?? this.ackFrame(content, result);
+    if (socket.writable) socket.write(answer);
   }
 
-  private buildResponse(content: string, result: Result<DispatchResult>): string | null {
-    if (this.config.responseMode === MLLP_RESPONSE_MODE.PASSTHROUGH) {
-      if (result.ok && result.value.response !== undefined) return result.value.response;
-      // No passthrough content available — fall back to an ACK/NAK so the
-      // sender is never left without a response.
-      return buildAck(content, ackCodeFor(result));
+  /** Never fails, whatever the charset makes of the delimiters and ids it repeats: the message was handled. */
+  private ackFrame(content: string, result: Result<DispatchResult>): Buffer {
+    return frameBytes(Buffer.from(buildAck(content, ackCodeFor(result)), this.config.charset), this.config.framing);
+  }
+
+  /** Null when there is no response to pass through, so the sender gets an ACK or NAK: it is never left without an answer. */
+  private passthroughFrame(result: Result<DispatchResult>): Buffer | null {
+    if (this.config.responseMode !== MLLP_RESPONSE_MODE.PASSTHROUGH) return null;
+    if (!result.ok || result.value.response === undefined) return null;
+    try {
+      return wrapMllp(result.value.response, this.config.charset, this.config.framing);
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), messageId: result.value.messageId },
+        'The response cannot be written in the charset of the source; sending an ACK or NAK instead',
+      );
+      return null;
     }
-    return buildAck(content, ackCodeFor(result));
   }
 }
 

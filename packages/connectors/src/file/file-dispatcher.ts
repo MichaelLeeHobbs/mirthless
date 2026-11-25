@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fillPlaceholders, placeholderNames, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
+import { encodeText, normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { tempFileName } from '../temp-file.js';
 import { isMissing, resolveWithinRoots, type FileRoots } from './file-roots.js';
@@ -95,6 +95,8 @@ export class FileDispatcher implements DestinationConnectorRuntime {
         throw new Error('Send aborted');
       }
 
+      const bytes = this.encode(message.content);
+
       // Checked on every write, not only at deploy: the directory or the file may
       // have been replaced by a symlink, and the name pattern may hold `..`.
       const directory = await resolveWithinRoots(this.config.directory, this.config.roots);
@@ -109,11 +111,11 @@ export class FileDispatcher implements DestinationConnectorRuntime {
       const outputPath = await resolveWithinRoots(path.join(directory, filename), this.config.roots);
 
       if (this.config.appendMode) {
-        await this.naming(outputPath, this.appendToFile(outputPath, message.content));
+        await this.naming(outputPath, fs.appendFile(outputPath, bytes));
       } else if (this.config.tempFileEnabled) {
-        await this.writeViaTempFile(outputPath, message.content);
+        await this.writeViaTempFile(outputPath, bytes);
       } else {
-        await this.naming(outputPath, this.writeFile(outputPath, message.content));
+        await this.naming(outputPath, fs.writeFile(outputPath, bytes));
       }
 
       return { status: 'SENT' as const, content: outputPath };
@@ -149,10 +151,10 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     }
   }
 
-  private async writeViaTempFile(outputPath: string, content: string): Promise<void> {
+  private async writeViaTempFile(outputPath: string, bytes: Buffer): Promise<void> {
     const tmpPath = path.join(path.dirname(outputPath), tempFileName());
     try {
-      await this.writeFile(tmpPath, content);
+      await fs.writeFile(tmpPath, bytes);
       await fs.rename(tmpPath, outputPath);
     } catch (err) {
       await this.removeTempFile(tmpPath);
@@ -168,23 +170,7 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     }
   }
 
-  private encodeForWrite(content: string): {
-    readonly data: string | Buffer;
-    readonly options: { readonly encoding: BufferEncoding } | undefined;
-  } {
-    if (this.config.binary) {
-      return { data: Buffer.from(content, 'base64'), options: undefined };
-    }
-    return { data: content, options: { encoding: normalizeEncoding(this.config.charset) } };
-  }
-
-  private async appendToFile(outputPath: string, content: string): Promise<void> {
-    const { data, options } = this.encodeForWrite(content);
-    await fs.appendFile(outputPath, data, options);
-  }
-
-  private async writeFile(outputPath: string, content: string): Promise<void> {
-    const { data, options } = this.encodeForWrite(content);
-    await fs.writeFile(outputPath, data, options);
+  private encode(content: string): Buffer {
+    return this.config.binary ? Buffer.from(content, 'base64') : encodeText(content, normalizeEncoding(this.config.charset));
   }
 }
