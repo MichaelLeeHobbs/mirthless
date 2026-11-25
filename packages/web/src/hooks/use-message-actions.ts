@@ -6,8 +6,10 @@ interface ReprocessResult {
   readonly rawContent: string;
 }
 
-interface BulkDeleteResult {
+export interface BulkDeleteResult {
   readonly deletedCount: number;
+  /** Still being processed or sent, so not deleted. */
+  readonly refusedIds: readonly number[];
 }
 
 export interface BulkReprocessItemResult {

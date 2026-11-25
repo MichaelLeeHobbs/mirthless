@@ -11,6 +11,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { PERMISSION } from '../../lib/permissions.js';
+import { DELETE_WARNING, deleteNotice } from '../../lib/message-delete.js';
 
 interface BulkMessageActionsToolbarProps {
   readonly channelId: string;
@@ -60,7 +61,7 @@ export function BulkMessageActionsToolbar({ channelId, selectedIds, onClear }: B
       { channelId, messageIds: ids },
       {
         onSuccess: (data) => {
-          notify(`Deleted ${String(data.deletedCount)} message(s)`, 'success');
+          notify(...deleteNotice(data));
           onClear();
         },
         onError: (err) => { notify(`Bulk delete failed: ${err.message}`, 'error'); },
@@ -128,7 +129,7 @@ export function BulkMessageActionsToolbar({ channelId, selectedIds, onClear }: B
       <ConfirmDialog
         open={confirmDelete}
         title="Delete Messages"
-        message={`Delete ${String(count)} selected message(s)? This cannot be undone.`}
+        message={`Delete ${String(count)} selected message(s)? ${DELETE_WARNING}`}
         confirmLabel="Delete"
         severity="error"
         isPending={bulkDelete.isPending}

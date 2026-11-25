@@ -6,10 +6,12 @@ import logger from '../lib/logger.js';
 import { channels } from '../db/schema/index.js';
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
-import { deleteMessagesByIds, DELETE_BATCH_SIZE } from './message-delete-helper.js';
+import { deleteMessagesByIds, DELETE_BATCH_SIZE, type DeleteRules } from './message-delete-helper.js';
+import { SWEEP_BUDGET_MS, sweepLeftoverRows } from './leftover-rows.js';
 
 const DEFAULT_MAX_AGE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const ONLY_FINISHED: DeleteRules = { unfinished: () => false, queued: false };
 
 export interface PruneChannelResult {
   readonly deletedCount: number;
@@ -19,6 +21,10 @@ export interface PruneAllResult {
   readonly channelsPruned: number;
   readonly totalDeleted: number;
   readonly failedChannelIds: readonly string[];
+  /** Rows of messages that are no longer there. */
+  readonly leftoverRowsDeleted: number;
+  /** False when some are for the next run to look at. */
+  readonly leftoverRowsComplete: boolean;
 }
 
 export interface PrunableChannelStats {
@@ -54,19 +60,21 @@ async function deleteOldMessages(
   cutoffDate: Date,
 ): Promise<number> {
   let deleted = 0;
+  let afterId = 0;
   for (;;) {
     const batch = await db.execute<{ id: number | string }>(sql`
       SELECT m.id FROM messages m
-      WHERE ${prunableWhere(channelId, cutoffDate)}
+      WHERE ${prunableWhere(channelId, cutoffDate)} AND m.id > ${afterId}
       ORDER BY m.id
       LIMIT ${DELETE_BATCH_SIZE}
     `);
     const messageIds = batch.rows.map((row) => Number(row.id));
-    if (messageIds.length === 0) return deleted;
+    const last = messageIds.at(-1);
+    if (last === undefined) return deleted;
 
-    await deleteMessagesByIds(channelId, messageIds);
-    deleted += messageIds.length;
+    deleted += (await deleteMessagesByIds(channelId, messageIds, ONLY_FINISHED)).deletedIds.length;
     if (messageIds.length < DELETE_BATCH_SIZE) return deleted;
+    afterId = last;
   }
 }
 
@@ -97,6 +105,7 @@ export class DataPrunerService {
 
   static async pruneAll(
     context?: AuditContext,
+    sweepBudgetMs: number = SWEEP_BUDGET_MS.SCHEDULED,
   ): Promise<Result<PruneAllResult>> {
     return tryCatch(async () => {
       const prunableChannels = await db
@@ -132,18 +141,25 @@ export class DataPrunerService {
         }
       }
 
+      const swept = await tryCatch(sweepLeftoverRows(sweepBudgetMs));
+      if (!swept.ok) logger.error({ errMsg: swept.error.message }, 'Data pruner could not look for rows that deleted messages left behind');
+      const leftoverRowsDeleted = swept.ok ? swept.value.rowsDeleted : 0;
+      const leftoverRowsComplete = swept.ok && swept.value.complete;
+      if (!leftoverRowsComplete) logger.info('Data pruner did not get to every row that deleted messages may have left behind; the next run goes on');
+      const failed = failedChannelIds.length > 0 || !swept.ok || swept.value.failed;
+
       emitEvent({
-        level: failedChannelIds.length > 0 ? 'ERROR' : 'INFO',
+        level: failed ? 'ERROR' : 'INFO',
         name: 'DATA_PRUNER_RAN',
-        outcome: failedChannelIds.length > 0 ? 'FAILURE' : 'SUCCESS',
+        outcome: failed ? 'FAILURE' : 'SUCCESS',
         userId: context?.userId ?? null,
         channelId: null,
         serverId: null,
         ipAddress: context?.ipAddress ?? null,
-        attributes: { channelsPruned, totalDeleted, failedChannelIds },
+        attributes: { channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete },
       });
 
-      return { channelsPruned, totalDeleted, failedChannelIds };
+      return { channelsPruned, totalDeleted, failedChannelIds, leftoverRowsDeleted, leftoverRowsComplete };
     });
   }
 

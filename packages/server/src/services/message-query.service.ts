@@ -4,7 +4,6 @@ import { CONTENT_TYPE, type ContentType, type MessageSearchQuery } from '@galvan
 import { db } from '../lib/db.js';
 import { ServiceError } from '../lib/service-error.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
-import { deleteMessagesByIds } from './message-delete-helper.js';
 import { containsPattern } from '../lib/like.js';
 import {
   messages,
@@ -290,31 +289,6 @@ export class MessageQueryService {
         serverId: message.serverId,
         connectors,
       };
-    });
-  }
-
-  static async deleteMessage(
-    channelId: string,
-    messageId: number,
-  ): Promise<Result<void>> {
-    return tryCatch(async () => {
-      const [message] = await db
-        .select({ id: messages.id })
-        .from(messages)
-        .where(
-          and(
-            eq(messages.channelId, channelId),
-            eq(messages.id, messageId),
-          ),
-        );
-
-      if (!message) {
-        throw new ServiceError('NOT_FOUND', `Message not found: ${String(messageId)}`);
-      }
-
-      // The shared helper is atomic and also removes attachments and custom metadata, which
-      // hold PHI that would otherwise outlive the delete.
-      await deleteMessagesByIds(channelId, [messageId]);
     });
   }
 

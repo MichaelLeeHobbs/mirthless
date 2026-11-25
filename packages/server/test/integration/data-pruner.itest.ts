@@ -109,6 +109,26 @@ describeIntegration('DataPruner (real Postgres)', () => {
     expect([finished, errored]).not.toEqual(expect.arrayContaining(await remainingIds(channelId)));
   });
 
+  // Between the read of what is old and its deletion, a resend can put a message back on its queue (#403).
+  it('keeps a message that a resend is putting on its queue, and prunes the others', async () => {
+    const { pool, DataPrunerService } = mods;
+    const channelId = randomUUID();
+    const resent = await seedMessage(channelId, 40, { destinationStatus: 'ERROR' });
+    await seedMessage(channelId, 40, { destinationStatus: 'ERROR' });
+    const resend = await pool.connect();
+    try {
+      await resend.query('BEGIN');
+      await resend.query(`UPDATE connector_messages SET status = 'QUEUED' WHERE channel_id = $1 AND message_id = $2 AND meta_data_id = 1`, [channelId, resent]);
+
+      expect(unwrap(await DataPrunerService.pruneChannel(channelId, 30)).deletedCount).toBe(1);
+
+      await resend.query('COMMIT');
+    } finally {
+      resend.release();
+    }
+    expect(await remainingIds(channelId)).toEqual([resent]);
+  });
+
   it('counts only messages it would actually prune in the statistics', async () => {
     const { db, schema, eq, DataPrunerService } = mods;
     const [channel] = await db

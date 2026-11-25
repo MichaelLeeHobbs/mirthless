@@ -1,13 +1,13 @@
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { whyNotTaking } from '../lib/taking-messages.js';
 import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { messageContent, messages, connectorMessages } from '../db/schema/index.js';
+import { messageContent, connectorMessages } from '../db/schema/index.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
-import { deleteMessagesByIds } from './message-delete-helper.js';
+import { deleteMessagesByIds, type DeletedMessages } from './message-delete-helper.js';
 import { MessageService } from './message.service.js';
 import { getEngine } from '../engine.js';
 
@@ -18,6 +18,8 @@ export interface ReprocessResult {
 
 export interface BulkDeleteResult {
   readonly deletedCount: number;
+  /** Not deleted: something may be working on them. */
+  readonly refusedIds: readonly number[];
 }
 
 export interface BulkReprocessItemResult {
@@ -50,6 +52,18 @@ async function hasStoredVariables(channelId: string, messageId: number, metaData
       eq(messageContent.contentType, CONTENT_TYPE.CHANNEL_MAP),
     ));
   return rows.length > 0;
+}
+
+/**
+ * A message that is not finished can be deleted only while nothing here works on the channel's messages: what
+ * is stored for it afterwards would outlive it. One that waits on a queue can, which takes it off the queue.
+ */
+async function deleteUnused(channelId: string, messageIds: readonly number[]): Promise<DeletedMessages> {
+  const result = await deleteMessagesByIds(channelId, messageIds, { unfinished: () => getEngine().isAtRest(channelId), queued: true });
+  if (result.deletedIds.length > 0) return result;
+  if (result.refusedIds.length === 0) throw new ServiceError('NOT_FOUND', 'No matching messages found');
+  const what = result.refusedIds.length === 1 ? `Message ${String(result.refusedIds[0])} was not deleted: it is` : `${String(result.refusedIds.length)} messages were not deleted: they are`;
+  throw new ServiceError('CONFLICT', `${what} still being processed or sent. Try again once that has ended. If it does not end, stop the channel first.`);
 }
 
 export class MessageReprocessService {
@@ -147,8 +161,9 @@ export class MessageReprocessService {
   /**
    * Re-queues one destination; no other is touched. A NEVER-queue destination has no
    * consumer, so re-queuing would strand the message: refused. So is one that uses variables
-   * of a message routed when it did not queue, because they were not kept (#390), and one whose
-   * first send may be under way, which the queue would send beside it (#416).
+   * of a message routed when it did not queue, because they were not kept (#390), one whose
+   * first send may be under way, which the queue would send beside it (#416), and one that its queue
+   * has claimed, whose row would read QUEUED while it is being sent (#403).
    */
   static async resendDestination(
     channelId: string,
@@ -196,6 +211,9 @@ export class MessageReprocessService {
       if (cm.status === 'RECEIVED' && cm.open) {
         throw new ServiceError('CONFLICT', `Message ${String(messageId)} is still being sent to "${dest.name}", or crash recovery is about to. Wait until that has ended; if it does not, redeploy the channel.`);
       }
+      if (cm.status === 'PENDING') {
+        throw new ServiceError('CONFLICT', `Message ${String(messageId)} is being sent to "${dest.name}" from its queue. Wait until that has ended; if it does not, redeploy the channel.`);
+      }
       const its = await MessageService.isForItsNumber(channelId, messageId, metaDataId);
       if (!its.ok) throw its.error;
       if (!its.value) {
@@ -222,14 +240,19 @@ export class MessageReprocessService {
       }
 
       // Re-enqueue with a fresh retry budget; the running consumer picks it up.
-      await db
+      const requeued = await db
         .update(connectorMessages)
         .set({ status: 'QUEUED', sendAttempts: 0 })
         .where(and(
           eq(connectorMessages.channelId, channelId),
           eq(connectorMessages.messageId, messageId),
           eq(connectorMessages.metaDataId, metaDataId),
-        ));
+          eq(connectorMessages.status, cm.status),
+        ))
+        .returning({ messageId: connectorMessages.messageId });
+      if (requeued.length === 0) {
+        throw new ServiceError('CONFLICT', `Message ${String(messageId)} was not resent: it was deleted, or its status for "${dest.name}" changed, meanwhile. Look at it again.`);
+      }
 
       emitEvent({
         level: 'INFO', name: 'MESSAGE_RESEND_QUEUED', outcome: 'SUCCESS',
@@ -242,6 +265,24 @@ export class MessageReprocessService {
     });
   }
 
+  static async deleteMessage(
+    channelId: string,
+    messageId: number,
+    context?: AuditContext,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      const { unfinishedIds } = await deleteUnused(channelId, [messageId]);
+      const unfinished = unfinishedIds.length > 0;
+      emitEvent({
+        level: 'WARN', name: 'MESSAGE_DELETED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { messageId, ...(unfinished ? { unfinished } : {}) },
+      });
+    });
+  }
+
+  /** Those that something may be working on are left and named. */
   static async bulkDelete(
     channelId: string,
     messageIds: readonly number[],
@@ -249,37 +290,18 @@ export class MessageReprocessService {
   ): Promise<Result<BulkDeleteResult>> {
     return tryCatch(async () => {
       if (messageIds.length === 0) {
-        return { deletedCount: 0 };
+        return { deletedCount: 0, refusedIds: [] };
       }
 
-      const ids = [...messageIds];
-
-      const existing = await db
-        .select({ id: messages.id })
-        .from(messages)
-        .where(
-          and(
-            eq(messages.channelId, channelId),
-            inArray(messages.id, ids),
-          ),
-        );
-
-      if (existing.length === 0) {
-        throw new ServiceError('NOT_FOUND', 'No matching messages found');
-      }
-
-      const existingIds = existing.map((m) => m.id);
-
-      await deleteMessagesByIds(channelId, existingIds);
-
+      const { deletedIds, unfinishedIds, refusedIds } = await deleteUnused(channelId, messageIds);
       emitEvent({
-        level: 'INFO', name: 'MESSAGES_DELETED', outcome: 'SUCCESS',
+        level: unfinishedIds.length > 0 ? 'WARN' : 'INFO', name: 'MESSAGES_DELETED', outcome: 'SUCCESS',
         userId: context?.userId ?? null, channelId,
         serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { deletedCount: existingIds.length },
+        attributes: { deletedCount: deletedIds.length, ...(unfinishedIds.length > 0 ? { unfinishedIds } : {}) },
       });
 
-      return { deletedCount: existingIds.length };
+      return { deletedCount: deletedIds.length, refusedIds };
     });
   }
 }

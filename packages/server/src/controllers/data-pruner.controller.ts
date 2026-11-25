@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { DataPrunerService } from '../services/data-pruner.service.js';
+import { SWEEP_BUDGET_MS } from '../services/leftover-rows.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 import { channelScopeOf } from '../lib/channel-scope.js';
@@ -13,7 +14,7 @@ function auditContext(req: Request): { userId: string | null; ipAddress: string 
 
 export class DataPrunerController {
   static async pruneAll(req: Request, res: Response): Promise<void> {
-    const result = await DataPrunerService.pruneAll(auditContext(req));
+    const result = await DataPrunerService.pruneAll(auditContext(req), SWEEP_BUDGET_MS.REQUEST);
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to prune all channels');

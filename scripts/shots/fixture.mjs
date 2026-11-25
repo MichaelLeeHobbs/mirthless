@@ -362,6 +362,8 @@ export function route(pathname, search) {
   if (p === '/channels/c4') return httpDetail;
   if (p === '/channels/c7') return sftpDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
+  const opened = messages.find((m) => p === `/channels/c1/messages/${String(m.messageId)}`);
+  if (opened) return { ...opened, serverId: 'server-01', connectors: opened.connectors.map((c) => ({ ...c, content: {} })) };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;
     return { items, total: items.length, limit: 25, offset: 0 };
