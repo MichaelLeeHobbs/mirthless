@@ -357,21 +357,32 @@ describe('ChannelController', () => {
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
-    it('waits for a deploy of the channel that is under way, and then deletes nothing (#202)', async () => {
+    it('is refused at once while a deploy of the channel is under way, and deletes nothing (#202)', async () => {
       const id = '00000000-0000-0000-0000-000000000001';
       let deployed: () => void = () => undefined;
       const deploy = inTurn(id, () => new Promise<void>((resolve) => { deployed = resolve; }));
       const res = makeRes();
-      const deleting = ChannelController.delete(makeReq({ params: { id } as Request['params'] }), res);
-      await new Promise((resolve) => { setImmediate(resolve); });
-      expect(res.status).not.toHaveBeenCalled();
+      try {
+        await ChannelController.delete(makeReq({ params: { id } as Request['params'] }), res);
 
-      mockGetRuntime.mockReturnValueOnce({ channelId: id });
-      deployed();
-      await Promise.all([deploy, deleting]);
+        expect(res.status).toHaveBeenCalledWith(409);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.objectContaining({ message: expect.stringContaining('being deployed') }) }));
+        expect(mockService.delete).not.toHaveBeenCalled();
+      } finally {
+        deployed();
+        await deploy;
+      }
+    });
 
-      expect(res.status).toHaveBeenCalledWith(409);
-      expect(mockService.delete).not.toHaveBeenCalled();
+    it('deletes a channel once what was under way on it is done', async () => {
+      const id = '00000000-0000-0000-0000-000000000001';
+      await inTurn(id, () => Promise.resolve());
+      mockService.delete.mockResolvedValueOnce({ ok: true, value: undefined, error: null });
+      const res = makeRes();
+
+      await ChannelController.delete(makeReq({ params: { id } as Request['params'] }), res);
+
+      expect(res.status).toHaveBeenCalledWith(204);
     });
 
     it('returns 409 and deletes nothing while the channel is deployed', async () => {

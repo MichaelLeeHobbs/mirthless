@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { inTurn } from '../../src/lib/channel-turns.js';
 import { migratedFrom } from './_migration-db.js';
 import {
-  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, listen, loadServerModules, unwrap, userWithRole,
+  apiCall, closeServer, deleteTestChannel, describeIntegration, insertTestChannel, insertTestGroup, listen, loadServerModules, unwrap, userWithRole, WAIT,
   type ApiAnswer, type ServerModules, type TestUser,
 } from './_setup.js';
 
@@ -110,15 +110,35 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
       expect(Math.round((Date.parse(lastReceivedAt) - Date.parse(firstReceivedAt)) / DAY_MS)).toBe(8);
     });
 
-    it('has a channel of which only rows are left that an earlier delete left behind', async () => {
+    it.each(TABLES.slice(1))('has a channel of which only rows of %s are left, which an earlier delete left behind', async (table) => {
       const id = await channel();
-      const messageId = await message(id);
-      await mods.pool.query('DELETE FROM messages WHERE channel_id = $1 AND id = $2', [id, messageId]);
+      await message(id, { destination: 'QUEUED' });
+      for (const other of TABLES.filter((t) => t !== table)) await mods.pool.query(`DELETE FROM ${other} WHERE channel_id = $1`, [id]);
       await del(id);
 
       const answer = await call<Listed[]>('GET', '/deleted-channels');
 
       expect(answer.json.data!.find((c) => c.channelId === id)).toMatchObject({ messages: 0, undelivered: 0, firstReceivedAt: null, lastReceivedAt: null });
+    });
+
+    it('is of the channels in the reader\'s access only', async () => {
+      const [inside, outside] = [await channel(), await channel()];
+      for (const id of [inside, outside]) await message(id);
+      const group = await insertTestGroup(mods.pool);
+      await mods.pool.query('INSERT INTO channel_group_members (channel_group_id, channel_id) VALUES ($1, $2)', [group, inside]);
+      const reader = await userWithRole(mods.pool, 'admin', [group]);
+      try {
+        for (const id of [inside, outside]) await del(id);
+
+        const answer = await apiCall<Listed[]>(base, reader.token, 'GET', '/admin/prune/deleted-channels');
+
+        expect(answer.status).toBe(200);
+        expect([inside, outside].map((id) => answer.json.data!.some((c) => c.channelId === id))).toEqual([true, false]);
+      } finally {
+        await mods.pool.query('DELETE FROM users WHERE id = $1', [reader.id]);
+        await mods.pool.query('DELETE FROM channel_group_members WHERE channel_group_id = $1', [group]);
+        await mods.pool.query('DELETE FROM channel_groups WHERE id = $1', [group]);
+      }
     });
   });
 
@@ -150,7 +170,8 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
 
       const answer = await purge(deleted);
 
-      expect([answer.status, answer.json.data]).toEqual([200, { messages: 3, undelivered: 3 }]);
+      // The row left behind is of no message, so it is not counted as one that was never delivered.
+      expect([answer.status, answer.json.data]).toEqual([200, { messages: 3, undelivered: 2 }]);
       expect(await rowsOf(deleted)).toEqual([0, 0, 0, 0, 0]);
       for (const id of [alsoDeleted, live]) expect(await rowsOf(id)).toEqual([3, 6, 3, 3, 3]);
       const listed = (await call<Listed[]>('GET', '/deleted-channels')).json.data!.map((c) => c.channelId);
@@ -246,7 +267,9 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
         await reader.query('BEGIN');
         await reader.query('SELECT 1 FROM message_content WHERE channel_id = $1', [id]);
 
+        const started = Date.now();
         const refused = await purge(id);
+        expect(Date.now() - started).toBeLessThan(WAIT.timeout);
         expect([refused.status, refused.json.error?.code]).toEqual([409, 'CONFLICT']);
         expect(refused.json.error?.message).toContain('Nothing was removed');
         expect(await rowsOf(id)).toEqual([1, 2, 1, 1, 1]);
@@ -256,6 +279,31 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
       }
       expect((await purge(id)).status).toBe(200);
       expect(await rowsOf(id)).toEqual([0, 0, 0, 0, 0]);
+    });
+
+    // The Traffic search takes connector_messages before messages; a purge that held messages and waited would deadlock with it.
+    it('neither deadlocks with a read that takes the tables in another order, nor holds it up', async () => {
+      const id = await channel();
+      await message(id);
+      await del(id);
+      const reader = await mods.pool.connect();
+      try {
+        await reader.query('BEGIN');
+        await reader.query('SELECT count(*) FROM connector_messages WHERE channel_id = $1', [id]);
+        const purging = purge(id);
+        await new Promise((resolve) => { setTimeout(resolve, 300); });
+
+        const started = Date.now();
+        await reader.query('SELECT count(*) FROM messages WHERE channel_id = $1', [id]);
+        expect(Date.now() - started).toBeLessThan(500);
+        await reader.query('COMMIT');
+
+        expect((await purging).status).toBe(200);
+        expect(await rowsOf(id)).toEqual([0, 0, 0, 0, 0]);
+      } finally {
+        await reader.query('ROLLBACK').catch(() => undefined);
+        reader.release();
+      }
     });
 
     it.each([[undefined], [{}], [{ reason: '' }], [{ reason: ' a ' }], [{ reason: 'one\nline' }], [{ reason: 'x'.repeat(501) }]])('needs a reason: %j', async (body) => {

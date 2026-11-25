@@ -450,7 +450,7 @@ Deleting a channel has always kept its messages, and the data pruner left them a
 
 Channels deleted before the upgrade keep their messages: migration 0029 turns their pruning off. The Data pruner page lists every deleted channel that still has messages, and an administrator can remove them there, for a reason and with a record in the audit log (D-389). To have one of them pruned after all, run `UPDATE channels SET pruning_enabled = true, pruning_max_age_days = <days> WHERE id = '<id>';` as the owner.
 
-A custom role or API key with `settings:write` can remove them too. A channel that is being deployed can no longer be deleted: the delete waits and is then refused.
+A custom role or API key with `settings:write` can remove them too. A channel that is being deployed or undeployed can no longer be deleted: the delete is refused, and can be tried again once that is done.
 
 ## An alert's regex must compile (#133)
 

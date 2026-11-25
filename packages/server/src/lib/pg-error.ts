@@ -2,6 +2,7 @@ export const PG_ERROR = {
   UNIQUE_VIOLATION: '23505',
   FOREIGN_KEY_VIOLATION: '23503',
   LOCK_NOT_AVAILABLE: '55P03',
+  DEADLOCK_DETECTED: '40P01',
 } as const;
 
 /** Drizzle wraps the Postgres error in `cause`. */
