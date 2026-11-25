@@ -182,7 +182,7 @@ const messages = Array.from({ length: 14 }, (_, i) => ({
 }));
 
 const traffic = messages.map((m, i) => ({
-  messageId: m.messageId, channelId: CHANNELS[i % 4][0], channelName: CHANNELS[i % 4][1], receivedAt: m.receivedAt,
+  messageId: m.messageId, channelId: CHANNELS[i % 4][0], channelName: CHANNELS[i % 4][1], channelDeleted: i % 4 === 2, receivedAt: m.receivedAt,
   processed: true, status: m.connectors[1].status, connectorName: 'To EHR',
 }));
 
@@ -288,6 +288,13 @@ const settings = [
   ['s12', 'audit.retention_years', '6', 'number', null, 'audit'],
 ].map(([id, key, value, type, description, category]) => ({ id, key, value, type, description, category, createdAt: ago(90000), updatedAt: ago(500) }));
 
+const deletedChannels = [
+  ['7f3c1a52-0c1d-4c3e-9a55-2f6f2a9f1a01', 'ADT Inbound - Cerner (retired)', 182_344, 12, 20_000, 900, 30],
+  ['b2d90e11-77aa-4c21-8f0d-91d7c3b6ef02', 'Billing 837 Outbound', 48, 0, 90_000, 60_000, null],
+].map(([channelId, name, messages, undelivered, first, last, prunedAfterDays]) => ({
+  channelId, name, messages, undelivered, prunedAfterDays, deletedAt: ago(800), firstReceivedAt: ago(first), lastReceivedAt: ago(last),
+}));
+
 const systemInfo = {
   server: { version: '0.1.0', nodeVersion: 'v24.11.0', env: 'production', pid: 4127, uptime: 389_200, startedAt: ago(6487), hostname: 'mirth-prod-01' },
   os: { platform: 'linux', release: '6.8.0-49-generic', arch: 'x64', cpus: 8, loadAverage: [0.42, 0.38, 0.31], totalMemory: 16 * 2 ** 30, freeMemory: 9.4 * 2 ** 30 },
@@ -382,6 +389,7 @@ export function route(pathname, search) {
   if (p === '/audit') return page(auditRows);
   if (p === '/settings') return settings;
   if (p === '/system') return systemInfo;
+  if (p === '/admin/prune/deleted-channels') return deletedChannels;
   if (p === '/system/logs') return { entries: logs, total: logs.length };
   if (p === '/admin/prune/schedule') return { enabled: true, cronExpression: '0 2 * * *', lastRunAt: ago(720), lastRunResult: { channelsPruned: 4, totalDeleted: 18230, expiredRecordsDeleted: 412, failed: false, failedChannelIds: [], expiredRecordsComplete: true, expiredRecordsFailed: false, completedAt: ago(715) } };
   if (p === '/code-templates/libraries') return libraries;

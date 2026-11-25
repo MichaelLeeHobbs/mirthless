@@ -44,10 +44,9 @@ function Identity({ channel }: { readonly channel: DeletedChannel }): ReactNode 
 }
 
 function warning(channel: DeletedChannel): string {
-  const undelivered = undeliveredText(channel);
   return [
     `This removes ${whatText(channel)} of "${channel.name}" (${channel.channelId.slice(0, 8)}), deleted on ${formatTimestamp(channel.deletedAt)}, with their content, attachments and metadata, from this server.`,
-    ...(undelivered === '' ? [] : [`Of them, ${undelivered}.`]),
+    ...(channel.undelivered === 0 ? [] : [`${String(channel.undelivered)} of them ${channel.undelivered === 1 ? 'was' : 'were'} never delivered.`]),
     'It cannot be undone. Files on disk, messages passed on to other channels, and backups are not touched.',
   ].join(' ');
 }

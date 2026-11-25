@@ -76,7 +76,7 @@ describe('the removal', () => {
   it('says what goes, what does not, and that it cannot be undone', () => {
     show();
     const text = open('ADT Old').textContent ?? '';
-    for (const part of ['1200 messages', '"ADT Old" (11111111)', '3 not delivered', 'cannot be undone', 'Files on disk', 'backups are not touched']) expect(text).toContain(part);
+    for (const part of ['1200 messages', '"ADT Old" (11111111)', '3 of them were never delivered.', 'cannot be undone', 'Files on disk', 'backups are not touched']) expect(text).toContain(part);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(purge.mutate).not.toHaveBeenCalled();
   });
@@ -85,7 +85,14 @@ describe('the removal', () => {
     show();
     const text = open('Lab Old').textContent ?? '';
     expect(text).toContain('what is left of deleted messages');
-    expect(text).not.toContain('not delivered');
+    expect(text).not.toContain('delivered');
+  });
+
+  it('counts one message as one', () => {
+    show({ data: [{ ...OLD, messages: 1, undelivered: 1 }] });
+    const text = open('ADT Old').textContent ?? '';
+    expect(text).toContain('This removes 1 message of');
+    expect(text).toContain('1 of them was never delivered.');
   });
 
   it('needs a reason and the name of the channel, and is of the channel that was clicked', () => {

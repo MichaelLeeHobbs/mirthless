@@ -73,6 +73,7 @@ const PAGES = {
   system: '/system',
   'system-logs': '/system/logs',
   'system-pruner': '/system/pruner',
+  'system-pruner-purge': { url: '/system/pruner', click: 'Delete messages' },
   'system-pruner-run': { url: '/system/pruner', click: 'Run Now' },
   // Each export and the backup ask for a reason first (D-318).
   'backup-reason': { url: '/system/backup', click: 'Download Backup' },
