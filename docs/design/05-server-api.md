@@ -111,7 +111,7 @@ router.put('/:id',
 | GET | `/channels` | List channels (filtered by user access) | channels:read |
 | POST | `/channels` | Create channel | channels:write |
 | GET | `/channels/:id` | Get channel by ID | channels:read |
-| PUT | `/channels/:id` | Update channel (optimistic locking via revision); what the request leaves out stays as it is (D-359) | channels:write |
+| PUT | `/channels/:id` | Update channel (optimistic locking via revision); what the request leaves out stays as it is (D-360) | channels:write |
 | DELETE | `/channels/:id` | Delete channel | channels:delete |
 | PATCH | `/channels/:id/enabled` | Enable/disable | channels:write |
 | GET | `/channels/:id/status` | Get runtime status | channels:read |
@@ -244,7 +244,7 @@ All responses follow the fullstack-template pattern:
 ```
 SIGTERM/SIGINT received
 1. Stop accepting new HTTP connections
-2. Undeploy all channels (stop source connectors, drain queues)
+2. Undeploy all channels at once (stop source connectors; a queued send has until 20s after the signal)
 3. Close engine
 4. Close database pool
 5. Exit
