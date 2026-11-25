@@ -194,7 +194,7 @@ These write no audit event:
 - Socket.IO live feeds: the dashboard and channel feeds carry IDs, states and counts; the log feed carries log entries.
 - Reading channels, code templates, resources, data sources and settings. Channel export is audited.
 - Listing a message's attachments. Downloads are audited.
-- Test Connection, and the data source connection test. Sending a test message into a channel is recorded fail-closed before it is sent (`MESSAGE_SENT`), so a refusal means nothing was sent (a send to a channel that is not deployed or not started is refused first and not recorded, whoever sends it), as is a script test run that returns a result (`SCRIPT_TEST_RUN`).
+- Test Connection, apart from the configuration map entries it fills, and the data source connection test. Sending a test message into a channel is recorded fail-closed before it is sent (`MESSAGE_SENT`), so a refusal means nothing was sent (a send to a channel that is not deployed or not started is refused first and not recorded, whoever sends it), as is a script test run that returns a result (`SCRIPT_TEST_RUN`).
 - Resetting channel statistics and unlocking an account. Enabling or disabling an extension writes a `SETTINGS_CHANGED` event with no user or client address.
 - Token refreshes.
 

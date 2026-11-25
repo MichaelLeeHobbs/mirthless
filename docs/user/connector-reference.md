@@ -28,7 +28,7 @@ A connector's properties are checked when the channel deploys. Every type reject
 
 ### Test Connection
 
-**Test Connection** checks the settings in the form as a deploy checks them, with the references to the configuration map filled, and answers with the deploy's reason when a deploy would refuse them (D-380). So the rest of the form has to be filled in before a connection can be tested. Scripts are not compiled. It then connects, gives up after 10 seconds, and sends no message:
+**Test Connection** checks the settings in the form as a deploy checks them, with the references to the configuration map filled, and answers with the deploy's reason when a deploy would refuse them (D-380). So the rest of the form has to be filled in before a connection can be tested. Scripts are not compiled. It then connects, gives up after 10 seconds (40 at most, for a MySQL server that stops answering after the sign-in), and sends no message:
 
 | Connector | What is tested |
 |---|---|

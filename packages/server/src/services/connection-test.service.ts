@@ -366,7 +366,9 @@ async function testSmtp(settings: z.output<typeof DEST_SCHEMAS.SMTP>): Promise<C
 
   const start = performance.now();
 
-  const transport = smtpTransportFactory({ ...buildNodemailerOptions(smtpDispatcherConfig(settings)), connectionTimeout: TEST_TIMEOUT_MS });
+  // close() leaves the connection that verify() holds open.
+  const limits = { connectionTimeout: TEST_TIMEOUT_MS, greetingTimeout: TEST_TIMEOUT_MS, socketTimeout: TEST_TIMEOUT_MS };
+  const transport = smtpTransportFactory({ ...buildNodemailerOptions(smtpDispatcherConfig(settings)), ...limits });
 
   try {
     await withTimeout(transport.verify(), TEST_TIMEOUT_MS, 'SMTP connection test');

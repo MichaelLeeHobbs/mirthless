@@ -1046,15 +1046,23 @@ describe('ConnectionTestService', () => {
       expect(mockFetch).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ redirect: 'manual' }));
     });
 
-    it('SMTP: gives up on a server that does not answer', async () => {
+    it('SMTP: gives up on a server that does not answer, and the connection with it', async () => {
       vi.useFakeTimers();
       try {
+        const seen: unknown[] = [];
+        setSmtpTransportFactory((options) => {
+          seen.push(options);
+          return { verify: mockTransportVerify, close: mockTransportClose };
+        });
         mockTransportVerify.mockReturnValue(new Promise(() => undefined));
         const pending = ConnectionTestService.testConnection('SMTP', 'DESTINATION', SMTP);
         await vi.advanceTimersByTimeAsync(_testing.TEST_TIMEOUT_MS);
 
         expect((await pending).value).toMatchObject({ success: false });
         expect(mockTransportClose).toHaveBeenCalledOnce();
+        // What nodemailer closes a connection after; close() does not.
+        const limit = _testing.TEST_TIMEOUT_MS;
+        expect(seen).toEqual([expect.objectContaining({ connectionTimeout: limit, greetingTimeout: limit, socketTimeout: limit })]);
       } finally {
         vi.useRealTimers();
       }

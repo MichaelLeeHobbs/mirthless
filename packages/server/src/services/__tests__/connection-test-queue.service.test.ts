@@ -103,6 +103,12 @@ describe('AMQP', () => {
     expect(result.value?.message).toContain('no queue');
   });
 
+  it('tests with the certificates it deploys with', async () => {
+    mockGetMaterialById.mockResolvedValue({ ok: true, value: { certificatePem: 'CA-PEM', privateKeyPem: null }, error: null });
+    await ConnectionTestService.testConnection('AMQP', 'SOURCE', { host: 'rabbit.example.com', queue: 'adt', useTls: true, tls: { caCertId: 'ca-1' } });
+    expect(mockTestAmqp.mock.calls[0]?.[0]).toMatchObject({ tls: { ca: 'CA-PEM', rejectUnauthorized: true } });
+  });
+
   it('fails loud when a referenced certificate cannot be resolved', async () => {
     mockGetMaterialById.mockResolvedValueOnce({ ok: false, value: null, error: { message: 'Certificate ca-9 not found' } });
     const result = await ConnectionTestService.testConnection('AMQP', 'SOURCE', { host: 'rabbit.example.com', queue: 'adt', useTls: true, tls: { caCertId: 'ca-9' } });
