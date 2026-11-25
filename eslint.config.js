@@ -33,6 +33,7 @@ const SHARED_HELPERS = [
   { names: 'containsPattern|likePattern', home: 'packages/server/src/lib/like.ts' },
   { names: 'emitSuccessEvent|emitCollectionEvent|emitDataSourceEvent', home: 'packages/server/src/lib/event-emitter.ts' },
   { names: 'buildEventWhereConditions|buildExportWhereConditions', home: 'packages/server/src/services/event.service.ts' },
+  { names: 'groupNamer', home: 'packages/web/src/lib/channel-access.ts' },
   { names: 'definedSearchParams|messageFilterParts', home: 'packages/web/src/lib/search-params.ts and message-filter-query.ts' },
   { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvanigraph/connectors (smtp/smtp-dispatcher.ts)' },
   { names: 'parseHeaderLines|parseHeaders|headersFromText', home: '@galvanigraph/core-models (http-connector.schema.ts)' },
