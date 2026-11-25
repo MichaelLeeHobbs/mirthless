@@ -67,7 +67,7 @@ interface ConnectorLifecycle {
 - CPI-LIF-06: source: `file/file-receiver.ts` and `kafka/kafka-receiver.ts` (a `running` flag or generation checked before each input), D-342. Today a DATABASE source drains its pool without waiting for its poll cycle, and a SFTP source closes the connection under the file in hand.
 - CPI-LIF-07: source: D-342 (a halt ends every send that can be ended, whoever asked for it). The 10 seconds is `EARLIER_ENDS_MS` in `channel-runtime.ts`, the time the next start waits before it refuses; no source states a limit for `onHalt`. Today Kafka and AMQP may take 30 seconds to close, and a DATABASE destination waits for its query.
 - CPI-LIF-08: source: D-342 ("a connector's `onStop` that resumes after a start takes down what the start made"); `generation` in the Kafka and AMQP receivers; `close` in `tcp-mllp-dispatcher.ts`.
-- CPI-LIF-09: source: `attachIdleHandlers` in `tcp-mllp-dispatcher.ts`, the `error` listeners in `email/email-receiver.ts` and `dicom/dicom-receiver.ts`; each comment says an unhandled `error` event would take the server down.
+- CPI-LIF-09: source: `attachIdleHandlers` in `tcp-mllp-dispatcher.ts`, the `error` listeners in `email/imap-client.ts` and `dicom/dicom-receiver.ts`; each comment says an unhandled `error` event would take the server down.
 - CPI-LIF-10: source: srs-debate 2026-11-24, finding C5 (Customer 1 over Contractor 4; the source error added by Contractor). Replaces CPI-LIF-03: when this row is accepted, that row becomes Superseded by CPI-LIF-10.
 - CPI-LIF-11: source: srs-debate 2026-11-24, finding C8 (Contractor 7, Tester). Replaces CPI-LIF-06: when this row is accepted, that row becomes Superseded by CPI-LIF-11.
 - CPI-LIF-12: source: srs-debate 2026-11-24, finding C17 (Scope 6, with Domain 2). Replaces CPI-LIF-05: when this row is accepted, that row becomes Superseded by CPI-LIF-12.
@@ -152,7 +152,7 @@ interface QuarantineLedger { load(paths: readonly string[]): Promise<void>; has(
 | CPI-POL-03 | A polling source shall not stop itself because an input was not recorded; it shall offer it again at each later poll. | P1 | Test | Proposed |
 
 - CPI-POL-01: source: the `polling` flag in every polling receiver; `client-lifecycle.ts` ("a hung server cannot wedge a poll loop"), `SFTP_OP_TIMEOUT_MS` and `IMAP_OP_TIMEOUT_MS`, `STATEMENT_TIMEOUT_MS` in the DATABASE receiver. An interval is 100 to 2147483647 ms, at least 1000 for EMAIL (D-274).
-- CPI-POL-02: source: D-158, D-168, `quarantine-ledger.ts`, `DISPATCHED_KEYWORD` in `email/email-receiver.ts`. Conflict: the code only logs a ledger it could not write and D-158 accepts a loud log; the alert follows AGENTS.md "Fail safe, not silent". Today a SFTP source whose connection was closed by a stop takes a skipped post-action for a done one (`postProcess` returns when there is no client), so the file is neither removed nor quarantined, and the next start dispatches it again.
+- CPI-POL-02: source: D-158, D-168, `quarantine-ledger.ts`, `DISPATCHED_KEYWORD` in `email/imap-client.ts`. Conflict: the code only logs a ledger it could not write and D-158 accepts a loud log; the alert follows AGENTS.md "Fail safe, not silent". Today a SFTP source whose connection was closed by a stop takes a skipped post-action for a done one (`postProcess` returns when there is no client), so the file is neither removed nor quarantined, and the next start dispatches it again.
 - CPI-POL-03: source: srs-debate 2026-11-24, finding C3 (Contractor 2).
 
 ## Destination guarantees (DST)

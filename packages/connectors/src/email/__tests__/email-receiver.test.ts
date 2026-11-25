@@ -16,6 +16,7 @@ import {
   ImapRefusal,
   type ImapClient,
   type EmailMessage,
+  type UnreadEmails,
 } from '../imap-client.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
@@ -39,7 +40,6 @@ function makeConfig(overrides?: Partial<EmailReceiverConfig>): EmailReceiverConf
 function makeMessage({ body = 'MSH|^~\\&|SENDER|HOSPITAL', ...overrides }: Partial<EmailMessage> & { readonly body?: string } = {}): EmailMessage {
   return {
     uid: 1,
-    uidValidity: '1',
     subject: 'Lab Results',
     from: 'sender@hospital.org',
     to: 'receiver@clinic.org',
@@ -52,10 +52,14 @@ function makeMessage({ body = 'MSH|^~\\&|SENDER|HOSPITAL', ...overrides }: Parti
   };
 }
 
+function listing(emails: readonly EmailMessage[], uidValidity = '1', unreadable: readonly number[] = []): UnreadEmails {
+  return { uidValidity, emails, unreadable };
+}
+
 function makeMockClient(messages: readonly EmailMessage[] = []): ImapClient {
   return {
     connect: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    fetchUnread: vi.fn<(folder: string) => Promise<readonly EmailMessage[]>>().mockResolvedValue(messages),
+    fetchUnread: vi.fn<(folder: string) => Promise<UnreadEmails>>().mockResolvedValue(listing(messages)),
     markRead: vi.fn<(uid: number) => Promise<void>>().mockResolvedValue(undefined),
     mark: vi.fn<(uid: number, keyword: string) => Promise<boolean>>().mockResolvedValue(true),
     moveMessage: vi.fn<(uid: number, folder: string) => Promise<void>>().mockResolvedValue(undefined),
@@ -491,7 +495,7 @@ describe('EmailReceiver', () => {
       vi.mocked(client.fetchUnread).mockImplementation(async () => {
         callCount++;
         if (callCount === 1) throw new Error('Connection lost');
-        return [msg];
+        return listing([msg]);
       });
 
       receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
@@ -589,7 +593,7 @@ describe('EmailReceiver', () => {
       expect(client.markRead).toHaveBeenCalledWith(7);
 
       // Resume: the server would no longer list it as unread.
-      vi.mocked(client.fetchUnread).mockResolvedValue([]);
+      vi.mocked(client.fetchUnread).mockResolvedValue(listing([]));
       await receiver.onStart();
       await vi.advanceTimersByTimeAsync(5_000);
       expect(pending.calls()).toBe(1);
@@ -618,7 +622,7 @@ describe('EmailReceiver', () => {
 
     it('a stop during a fetch dispatches nothing of what it brings (#413)', async () => {
       const client = makeMockClient();
-      let fetched = (emails: readonly EmailMessage[]): void => { void emails; };
+      let fetched = (unread: UnreadEmails): void => { void unread; };
       vi.mocked(client.fetchUnread).mockReturnValue(new Promise((resolve) => { fetched = resolve; }));
       const pending = pendingDispatcher();
       receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
@@ -627,7 +631,7 @@ describe('EmailReceiver', () => {
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect((await receiver.onStop()).ok).toBe(true);
-      fetched([makeMessage()]);
+      fetched(listing([makeMessage()]));
       await vi.advanceTimersByTimeAsync(60_000);
 
       expect(pending.calls()).toBe(0);
@@ -832,7 +836,7 @@ describe('EmailReceiver', () => {
       vi.mocked(client1.fetchUnread).mockRejectedValue(new Error('IMAP connection dropped'));
       vi.mocked(client1.disconnect).mockReturnValue(new Promise(() => { /* never */ }));
       const client2 = makeMockClient();
-      vi.mocked(client2.fetchUnread).mockResolvedValueOnce([makeMessage()]);
+      vi.mocked(client2.fetchUnread).mockResolvedValueOnce(listing([makeMessage()]));
 
       const clients = [client1, client2];
       let idx = 0;
@@ -953,8 +957,9 @@ describe('EmailReceiver', () => {
 
       await vi.advanceTimersByTimeAsync(5_000);
       expect(dispatched).toHaveLength(2);
-      expect(client.markRead).toHaveBeenNthCalledWith(1, 6);
-      expect(client.markRead).toHaveBeenNthCalledWith(2, 7);
+      // The new one first, then the one to be tried again.
+      expect(client.markRead).toHaveBeenNthCalledWith(1, 7);
+      expect(client.markRead).toHaveBeenNthCalledWith(2, 6);
     });
 
     it('takes no further email on a connection whose post-action hangs (#413)', async () => {
@@ -983,7 +988,7 @@ describe('EmailReceiver when the pipeline recorded an error', () => {
 
   it('leaves the email in the mailbox, marks it and does not dispatch it again', async () => {
     const client = makeMockClient();
-    vi.mocked(client.fetchUnread).mockResolvedValueOnce([makeMessage({ uid: 77 })]).mockResolvedValue([makeMessage({ uid: 77, held: true })]);
+    vi.mocked(client.fetchUnread).mockResolvedValueOnce(listing([makeMessage({ uid: 77 })])).mockResolvedValue(listing([makeMessage({ uid: 77, held: true })]));
     const dispatched: string[] = [];
     const { logger, warnings } = makeMockLogger();
     receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.DELETE }), makeClientFactory(client), logger);
@@ -1019,9 +1024,9 @@ describe('EmailReceiver when the pipeline recorded an error', () => {
   it('sets the mark again at the next poll when it could not', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread)
-      .mockResolvedValueOnce([makeMessage({ uid: 77 })])
-      .mockResolvedValueOnce([makeMessage({ uid: 77 })])
-      .mockResolvedValue([makeMessage({ uid: 77, held: true })]);
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 77 })]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 77 })]))
+      .mockResolvedValue(listing([makeMessage({ uid: 77, held: true })]));
     vi.mocked(client.mark).mockRejectedValueOnce(new Error('Connection lost'));
     const dispatched: string[] = [];
     receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), makeMockLogger().logger);
@@ -1037,10 +1042,10 @@ describe('EmailReceiver when the pipeline recorded an error', () => {
   it('reads the email again once the mark is removed from it, without a redeploy', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread)
-      .mockResolvedValueOnce([makeMessage({ uid: 77 })])
-      .mockResolvedValueOnce([makeMessage({ uid: 77, held: true })])
-      .mockResolvedValueOnce([makeMessage({ uid: 77 })])
-      .mockResolvedValue([makeMessage({ uid: 77, held: true })]);
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 77 })]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 77, held: true })]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 77 })]))
+      .mockResolvedValue(listing([makeMessage({ uid: 77, held: true })]));
     const dispatched: string[] = [];
     receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), makeMockLogger().logger);
     receiver.setDispatcher(errorDispatcher(dispatched));
@@ -1077,9 +1082,9 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
   it('retries the deletion of an email it dispatched itself, which carries its keyword by then', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread)
-      .mockResolvedValueOnce([makeMessage({ uid: 4 })])
-      .mockResolvedValueOnce([makeMessage({ uid: 4, dispatched: true })])
-      .mockResolvedValue([]);
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 4 })]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 4, dispatched: true })]))
+      .mockResolvedValue(listing([]));
     vi.mocked(client.deleteMessage).mockRejectedValueOnce(new ImapRefusal('refused'));
     const { dispatched } = await startDeleting(client);
 
@@ -1102,7 +1107,7 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
 
   it('keeps an email whose message has a failed destination, as one recorded with an error', async () => {
     const client = makeMockClient();
-    vi.mocked(client.fetchUnread).mockResolvedValueOnce([makeMessage({ uid: 6 })]).mockResolvedValue([makeMessage({ uid: 6, held: true })]);
+    vi.mocked(client.fetchUnread).mockResolvedValueOnce(listing([makeMessage({ uid: 6 })])).mockResolvedValue(listing([makeMessage({ uid: 6, held: true })]));
     const { dispatched } = await startDeleting(client, { destinationFailed: true });
 
     await vi.advanceTimersByTimeAsync(15_000);
@@ -1115,8 +1120,8 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
   it('marks an email read, and does not delete it, when its message cannot hold all its bytes', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread)
-      .mockResolvedValueOnce([makeMessage({ uid: 7, source: Buffer.from([0x4d, 0xfc, 0x6c, 0x6c, 0x65, 0x72]) })])
-      .mockResolvedValue([]);
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 7, source: Buffer.from([0x4d, 0xfc, 0x6c, 0x6c, 0x65, 0x72]) })]))
+      .mockResolvedValue(listing([]));
     const { errors } = await startDeleting(client);
 
     await vi.advanceTimersByTimeAsync(5_000);
@@ -1124,6 +1129,170 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
     expect(client.deleteMessage).not.toHaveBeenCalled();
     expect(client.markRead).toHaveBeenCalledExactlyOnceWith(7);
     expect(errors.map((e) => e.msg)).toEqual([expect.stringContaining('marked read, not deleted')]);
+  });
+});
+
+describe('EmailReceiver and what a poll lists (#413)', () => {
+  async function startWith(client: ImapClient, overrides: Partial<EmailReceiverConfig> = {}): Promise<{ dispatched: string[]; log: ReturnType<typeof makeMockLogger> }> {
+    const log = makeMockLogger();
+    const dispatched: string[] = [];
+    receiver = new EmailReceiver(makeConfig(overrides), makeClientFactory(client), log.logger);
+    receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw.content); return { messageId: 1 }; }));
+    await receiver.onStart();
+    return { dispatched, log };
+  }
+
+  it('does not dispatch an email again that one poll did not list, and goes on with its deletion', async () => {
+    const client = makeMockClient();
+    vi.mocked(client.mark).mockResolvedValue(false);
+    vi.mocked(client.deleteMessage).mockRejectedValueOnce(new ImapRefusal('refused'));
+    vi.mocked(client.fetchUnread)
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 5 })]))
+      .mockResolvedValueOnce(listing([]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 5 })]))
+      .mockResolvedValue(listing([]));
+    const { dispatched } = await startWith(client, { postAction: EMAIL_POST_ACTION.DELETE });
+
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(dispatched).toHaveLength(1);
+    expect(client.deleteMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('forgets an email that was post-processed once it is no longer listed', async () => {
+    const client = makeMockClient();
+    vi.mocked(client.mark).mockResolvedValue(false);
+    vi.mocked(client.fetchUnread)
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 5 })]))
+      .mockResolvedValueOnce(listing([]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 5 })]))
+      .mockResolvedValue(listing([]));
+    const { dispatched } = await startWith(client);
+
+    // Marked unread by a person, in a mailbox that keeps no keyword: read again.
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(dispatched).toHaveLength(2);
+  });
+
+  it('a post-action the server refuses does not keep the next email from being taken', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1 }), makeMessage({ uid: 2 })]);
+    vi.mocked(client.markRead).mockRejectedValueOnce(new ImapRefusal('refused'));
+    const { dispatched } = await startWith(client);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(dispatched).toHaveLength(2);
+    expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('a mark the server refuses does not keep the email from its post-action', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1 })]);
+    vi.mocked(client.mark).mockRejectedValue(new ImapRefusal('refused'));
+    await startWith(client);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(client.markRead).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('an email whose post-action always fails is tried after the new ones, which it would hold up', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1, body: 'poison' }), makeMessage({ uid: 2, body: 'b' }), makeMessage({ uid: 3, body: 'c' })]);
+    vi.mocked(client.markRead).mockImplementation(async (uid) => { if (uid === 1) throw new Error('Connection lost'); });
+    const { dispatched } = await startWith(client);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(dispatched).toEqual(['poison', 'b', 'c']);
+  });
+
+  it('sets the keyword of a dispatched email again when the server does not show it', async () => {
+    const client = makeMockClient();
+    vi.mocked(client.fetchUnread)
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 1 })]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 1 })]))
+      .mockResolvedValue(listing([makeMessage({ uid: 1, dispatched: true })]));
+    vi.mocked(client.mark).mockRejectedValueOnce(new ImapRefusal('throttled'));
+    vi.mocked(client.markRead).mockRejectedValue(new ImapRefusal('refused'));
+    const { dispatched } = await startWith(client);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(vi.mocked(client.mark).mock.calls).toEqual([[1, DISPATCHED_KEYWORD], [1, DISPATCHED_KEYWORD]]);
+    expect(dispatched).toHaveLength(1);
+  });
+
+  it('says once which emails the server listed and did not answer', async () => {
+    const client = makeMockClient();
+    vi.mocked(client.fetchUnread).mockResolvedValue(listing([], '1', [4, 9]));
+    const { log } = await startWith(client);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(log.warnings.map((w) => w.obj)).toEqual([{ emails: 2, uids: [4, 9], folder: 'INBOX' }]);
+  });
+
+  it('says nothing of emails that the subject filter leaves out', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1, held: true, subject: 'other' })]);
+    const { log } = await startWith(client, { subjectFilter: 'HL7' });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(log.warnings).toEqual([]);
+  });
+
+  it('a failed destination behind an early answer holds an email only where it would be deleted', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1 })]);
+    receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), makeMockLogger().logger);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, destinationFailed: true })));
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(client.markRead).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('a stop waits for the logout that the cycle began, and a fetch that it ended is no error', async () => {
+    const client = makeMockClient();
+    let fetchFails = (err: Error): void => { void err; };
+    vi.mocked(client.fetchUnread).mockReturnValue(new Promise((_resolve, reject) => { fetchFails = reject; }));
+    let loggedOut = (): void => undefined;
+    vi.mocked(client.disconnect).mockReturnValue(new Promise((resolve) => { loggedOut = resolve; }));
+    const { log } = await startWith(client);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const first = receiver!.onStop();
+    fetchFails(new Error('Connection closed'));
+    await vi.advanceTimersByTimeAsync(0);
+    let stopped = false;
+    void first.then(() => { stopped = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
+    loggedOut();
+    await first;
+    expect(log.errors).toEqual([]);
+    expect(client.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('a stop waits for the logout after the email in hand, which its cycle begins', async () => {
+    const client = makeMockClient([makeMessage({ uid: 1 })]);
+    let loggedOut = (): void => undefined;
+    vi.mocked(client.disconnect).mockReturnValue(new Promise((resolve) => { loggedOut = resolve; }));
+    let letGo = (): void => undefined;
+    const held = new Promise<void>((resolve) => { letGo = resolve; });
+    receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), makeMockLogger().logger);
+    receiver.setDispatcher(async () => { await held; return { ok: true as const, value: { messageId: 1 }, error: null }; });
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    let stopped = false;
+    const stopping = receiver.onStop().then(() => { stopped = true; });
+    letGo();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.markRead).toHaveBeenCalledOnce();
+    expect(stopped).toBe(false);
+    loggedOut();
+    await stopping;
   });
 });
 
@@ -1138,7 +1307,7 @@ describe('EmailReceiver when the mailbox was made anew (#413)', () => {
     await receiver.onStart();
     await vi.advanceTimersByTimeAsync(5_000);
 
-    vi.mocked(client.fetchUnread).mockResolvedValueOnce([makeMessage({ uid: 1, uidValidity: '2', body: 'new' })]).mockResolvedValue([]);
+    vi.mocked(client.fetchUnread).mockResolvedValueOnce(listing([makeMessage({ uid: 1, body: 'new' })], '2')).mockResolvedValue(listing([], '2'));
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(dispatched).toEqual(['old', 'new']);
@@ -1155,7 +1324,7 @@ describe('EmailReceiver when the mailbox was made anew (#413)', () => {
     await receiver.onStart();
     await vi.advanceTimersByTimeAsync(5_000);
 
-    vi.mocked(client.fetchUnread).mockResolvedValueOnce([makeMessage({ uid: 1, uidValidity: '2', body: 'new' })]).mockResolvedValue([]);
+    vi.mocked(client.fetchUnread).mockResolvedValueOnce(listing([makeMessage({ uid: 1, body: 'new' })], '2')).mockResolvedValue(listing([], '2'));
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(dispatched).toEqual(['old', 'new']);

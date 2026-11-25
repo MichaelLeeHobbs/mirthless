@@ -3,12 +3,18 @@ import { ImapRefusal, wrapImapFlow, type ImapFlowFetchMessage, type ImapFlowInst
 
 interface FakeFlow {
   readonly flow: ImapFlowInstance;
+  readonly ranges: readonly string[];
   readonly messageDelete: Mock;
   readonly messageMove: Mock;
   readonly messageFlagsAdd: Mock;
 }
 
-function fakeFlow(capabilities: readonly string[] = ['UIDPLUS', 'MOVE'], rows: readonly ImapFlowFetchMessage[] = []): FakeFlow {
+function fakeFlow(
+  capabilities: readonly string[] = ['UIDPLUS', 'MOVE'],
+  rows: readonly ImapFlowFetchMessage[] = [],
+  uids: unknown = rows.map((row) => row.uid),
+): FakeFlow {
+  const ranges: string[] = [];
   const messageDelete = vi.fn().mockResolvedValue(true);
   const messageMove = vi.fn().mockResolvedValue({ path: 'INBOX' });
   const messageFlagsAdd = vi.fn().mockResolvedValue(true);
@@ -16,16 +22,18 @@ function fakeFlow(capabilities: readonly string[] = ['UIDPLUS', 'MOVE'], rows: r
     connect: async () => undefined,
     on: () => undefined,
     getMailboxLock: async () => ({ release: () => undefined }),
-    async *fetch() { yield* rows; },
+    search: async () => uids,
+    async *fetch(range) { ranges.push(range); yield* rows; },
     messageFlagsAdd,
     messageMove,
     messageDelete,
     capabilities: new Map(capabilities.map((name) => [name, true])),
     mailbox: { uidValidity: 17n },
+    usable: true,
     logout: async () => undefined,
     close: () => undefined,
   };
-  return { flow, messageDelete, messageMove, messageFlagsAdd };
+  return { flow, ranges, messageDelete, messageMove, messageFlagsAdd };
 }
 
 const ROW = { uid: 4, source: Buffer.from('raw'), envelope: { subject: 'ORU' }, flags: new Set<string>() };
@@ -44,10 +52,30 @@ describe('the IMAP client\'s deletion', () => {
     expect(messageFlagsAdd).not.toHaveBeenCalled();
   });
 
-  it.each([[false], [undefined]])('fails when imapflow answers %s', async (answer) => {
+  it.each([[false], [undefined]])('is refused when imapflow answers %s', async (answer) => {
     const { flow, messageDelete } = fakeFlow();
     messageDelete.mockResolvedValue(answer);
     await expect(wrapImapFlow(flow).deleteMessage(4)).rejects.toThrow(ImapRefusal);
+  });
+
+  // imapflow answers false for a command it was running when the connection went.
+  it.each([
+    ['is gone', { usable: false }],
+    ['has no folder open any more', { mailbox: false as const }],
+    ['is being closed by the server', { byeReason: 'shutting down' }],
+  ])('is no refusal when the connection %s', async (_what, state) => {
+    const { flow, messageDelete } = fakeFlow();
+    messageDelete.mockResolvedValue(false);
+    const failure: unknown = await wrapImapFlow({ ...flow, ...state }).deleteMessage(4).catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(ImapRefusal);
+  });
+
+  it.each(['deleteMessage', 'moveMessage'] as const)('%s is refused when the server does not say that UIDs last', async (action) => {
+    const { flow, messageDelete, messageMove } = fakeFlow();
+    await expect(wrapImapFlow({ ...flow, mailbox: {} })[action](4, 'Done')).rejects.toThrow(ImapRefusal);
+    expect(messageDelete).not.toHaveBeenCalled();
+    expect(messageMove).not.toHaveBeenCalled();
   });
 });
 
@@ -68,26 +96,48 @@ describe('the IMAP client\'s move', () => {
 describe('the IMAP client\'s fetch', () => {
   it('reads an email with its folder\'s UIDVALIDITY', async () => {
     const { flow } = fakeFlow([], [ROW]);
-    const [email] = await wrapImapFlow(flow).fetchUnread('INBOX');
-    expect(email).toMatchObject({ uid: 4, uidValidity: '17', subject: 'ORU', source: Buffer.from('raw'), dispatched: false, held: false });
+    const unread = await wrapImapFlow(flow).fetchUnread('INBOX');
+    expect(unread).toMatchObject({ uidValidity: '17', unreadable: [] });
+    expect(unread.emails).toEqual([expect.objectContaining({ uid: 4, subject: 'ORU', source: Buffer.from('raw'), dispatched: false, held: false })]);
   });
 
   it.each([
     ['only its flags', { uid: 4, flags: new Set(['\\Seen']) }],
     ['no flags', { ...ROW, flags: undefined }],
-    ['no envelope', { ...ROW, envelope: undefined }],
     ['no source', { ...ROW, source: undefined }],
     ['an empty source', { ...ROW, source: Buffer.alloc(0) }],
-    ['no UID', { ...ROW, uid: undefined }],
-    ['a UID that is none', { ...ROW, uid: 0 }],
-  ] as ReadonlyArray<readonly [string, ImapFlowFetchMessage]>)('takes a row with %s for no email', async (_what, row) => {
+  ] as ReadonlyArray<readonly [string, ImapFlowFetchMessage]>)('takes a row with %s for no email, and says that it could not be read', async (_what, row) => {
     const { flow } = fakeFlow([], [row]);
-    expect(await wrapImapFlow(flow).fetchUnread('INBOX')).toEqual([]);
+    expect(await wrapImapFlow(flow).fetchUnread('INBOX')).toEqual({ uidValidity: '17', emails: [], unreadable: [4] });
+  });
+
+  it('takes no email that the search did not list', async () => {
+    const { flow } = fakeFlow([], [ROW, { ...ROW, uid: 5 }], [4]);
+    const unread = await wrapImapFlow(flow).fetchUnread('INBOX');
+    expect(unread.emails.map(({ uid }) => uid)).toEqual([4]);
+    expect(unread.unreadable).toEqual([]);
+  });
+
+  it('reads an email without an envelope, and one whose date is no date', async () => {
+    const { flow } = fakeFlow([], [{ uid: 4, source: ROW.source, flags: ROW.flags }, { ...ROW, uid: 5, envelope: { date: 'yesterday' } }]);
+    const { emails } = await wrapImapFlow(flow).fetchUnread('INBOX');
+    expect(emails.map(({ subject, date }) => [subject, date])).toEqual([['', ''], ['', 'yesterday']]);
   });
 
   it('takes an email once although a change of its flags comes with it', async () => {
-    const { flow } = fakeFlow([], [ROW, { uid: 4, flags: new Set(['\\Seen']) }]);
-    expect(await wrapImapFlow(flow).fetchUnread('INBOX')).toHaveLength(1);
+    const { flow } = fakeFlow([], [ROW, { uid: 4, flags: new Set(['\\Seen']) }], [4]);
+    expect((await wrapImapFlow(flow).fetchUnread('INBOX')).emails).toHaveLength(1);
+  });
+
+  it('fails, and is no empty folder, when the server refuses the search', async () => {
+    const { flow } = fakeFlow([], [ROW], false);
+    await expect(wrapImapFlow(flow).fetchUnread('INBOX')).rejects.toThrow('did not answer the search');
+  });
+
+  it('asks for many emails in commands of a length a server takes', async () => {
+    const { flow, ranges } = fakeFlow([], [], Array.from({ length: 450 }, (_, i) => i + 1));
+    await wrapImapFlow(flow).fetchUnread('INBOX');
+    expect(ranges.map((range) => range.split(',').length)).toEqual([200, 200, 50]);
   });
 
   it('fails when the folder is not open', async () => {
@@ -126,6 +176,6 @@ describe('the IMAP client\'s keyword', () => {
 describe('a folder without UIDVALIDITY', () => {
   it('is read', async () => {
     const { flow } = fakeFlow([], [ROW]);
-    expect(await wrapImapFlow({ ...flow, mailbox: {} }).fetchUnread('INBOX')).toHaveLength(1);
+    expect((await wrapImapFlow({ ...flow, mailbox: {} }).fetchUnread('INBOX')).emails).toHaveLength(1);
   });
 });

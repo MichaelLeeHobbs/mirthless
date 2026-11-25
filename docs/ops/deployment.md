@@ -118,7 +118,8 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
   post-action fails, later polls, restarts and redeploys retry only the post-action, except that `DELETE` is retried
   only until the next restart or redeploy; after that the email stays, and a warning counts it. An email whose message
   was recorded with an error gets `$GalvaniGraphError` and is left alone. To process an email with a keyword again,
-  remove the keyword (each, if it has several). A mailbox that rejects custom keywords (a warning is logged once) can
+  remove the keyword (each, if it has several) and mark the email unread; one whose post-action still fails is read again
+  only after a redeploy or restart. A mailbox that rejects custom keywords (a warning is logged once) can
   still dispatch an email again after a restart if it was left in the folder.
 - **Batch files** are ingested as one message. A file with several MSH segments is not
   split.

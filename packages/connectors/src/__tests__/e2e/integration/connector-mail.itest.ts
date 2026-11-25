@@ -17,24 +17,29 @@ const TCP_PORT = await freePort();
 const WAIT = { timeout: 20_000, interval: 100 };
 const TEST_TIMEOUT = 60_000;
 
+/** A test that failed has not let them go, and the teardown would wait for them. */
+const held: Array<() => void> = [];
+
 /** A sink that holds its first message until it is let go. */
 function heldSink(): { readonly sink: CaptureDestination; readonly reached: Promise<void>; readonly letGo: () => void } {
   let reach = (): void => undefined;
   let letGo = (): void => undefined;
   const reached = new Promise<void>((resolve) => { reach = resolve; });
-  const held = new Promise<void>((resolve) => { letGo = resolve; });
+  const gate = new Promise<void>((resolve) => { letGo = resolve; });
   const sink = new CaptureDestination();
   const send = sink.send.bind(sink);
   vi.spyOn(sink, 'send').mockImplementation(async (message, signal) => {
     reach();
-    await held;
+    await gate;
     return send(message, signal);
   });
-  return { sink, reached, letGo: () => { letGo(); } };
+  held.push(letGo);
+  return { sink, reached, letGo };
 }
 
 let deployed: DeployedChannel[] = [];
 afterEach(async () => {
+  for (const letGo of held.splice(0)) letGo();
   await teardownAll(deployed);
   deployed = [];
   clearChannelRegistry();
