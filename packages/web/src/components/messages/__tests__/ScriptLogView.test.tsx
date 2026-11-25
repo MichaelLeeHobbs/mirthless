@@ -66,6 +66,11 @@ describe('ScriptLogView', () => {
     expect(last.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 
+  it('says nothing of the kind between runs of which none is left out', () => {
+    show(text({ runs: Array.from({ length: MAX_SCRIPT_LOG_FIRST_RUNS + 1 }, (_, i) => run(`run ${String(i)}`)), runsLeftOut: 0 }));
+    expect(screen.queryByText(/not kept/)).toBeNull();
+  });
+
   it('shows what is stored as it is when it is not a script log', () => {
     show('something else');
     expect(screen.getByText('something else')).toBeTruthy();
