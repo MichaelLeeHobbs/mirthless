@@ -277,6 +277,50 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
     });
   }
 
+  it('reads an email byte for byte, whatever its charset, and counts its attachments (#369)', async () => {
+    const run = `E2E-BYTES-${String(Date.now())}`;
+    const part = (headers: string, body: string): string => `--b\r\n${headers}\r\n\r\n${body}\r\n`;
+    const email = (subject: string, charset: string): string => [
+      `Subject: ${run}-${subject}`, 'From: lab@example.com', 'To: mirth@example.com', 'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary=b', '', '',
+    ].join('\r\n')
+      + part(`Content-Type: text/plain; charset=${charset}\r\nContent-Transfer-Encoding: 8bit`, 'M\u00fcller')
+      + part('Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=report.pdf\r\nContent-Transfer-Encoding: base64', 'JVBERi0xLjQ=')
+      + part('Content-Type: message/rfc822', 'Subject: inner\r\nContent-Type: text/plain\r\n\r\ninner')
+      + '--b--\r\n';
+    const utf8 = Buffer.from(email('utf8', 'utf-8'), 'utf8');
+    const latin1 = Buffer.from(email('latin1', 'iso-8859-1'), 'latin1');
+    const plain = Buffer.from(`Subject: ${run}-plain\r\nContent-Type: text/plain\r\n\r\nMSH|\r\n`);
+    await withMailbox(async (client) => {
+      for (const raw of [utf8, latin1, plain]) await client.append('INBOX', raw);
+    });
+    const held = await withMailbox(async (client) => {
+      const found = new Map<string, Buffer>();
+      for await (const row of client.fetch('1:*', { envelope: true, source: true })) found.set(row.envelope?.subject ?? '', row.source ?? Buffer.alloc(0));
+      return found;
+    });
+
+    const sink = new CaptureDestination();
+    await deployReader(run, {
+      transformer: "return JSON.stringify({ subject: sourceMap.subject, charset: sourceMap.charset, attachments: sourceMap.attachmentCount, text: String(msg) });",
+      destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
+    }, 'DELETE');
+    await vi.waitFor(() => { expect(sink.received).toHaveLength(3); }, WAIT);
+
+    const read = new Map(sink.received.map((m) => {
+      const { subject, ...rest } = JSON.parse(m.content) as { subject: string; charset: BufferEncoding; attachments: number; text: string };
+      return [subject, { ...rest, bytes: Buffer.from(rest.text, rest.charset) }];
+    }));
+    expect([...read].map(([subject, { charset, attachments }]) => [subject, charset, attachments]).sort()).toEqual([
+      [`${run}-latin1`, 'latin1', 2],
+      [`${run}-plain`, 'utf-8', 0],
+      [`${run}-utf8`, 'utf-8', 2],
+    ]);
+    for (const [subject, { bytes }] of read) expect(bytes.equals(held.get(subject)!)).toBe(true);
+    expect(held.get(`${run}-latin1`)!.includes(Buffer.from('M\u00fcller', 'latin1'))).toBe(true);
+    await vi.waitFor(async () => { expect((await inMailbox(run)).size).toBe(0); }, WAIT);
+  }, TEST_TIMEOUT);
+
   it('DELETE removes the emails it recorded and no other, whoever flagged that deleted (#413)', async () => {
     const run = `E2E-DELETE-${String(Date.now())}`;
     const filter = `${run}-HL7`;

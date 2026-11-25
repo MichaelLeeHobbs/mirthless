@@ -1,6 +1,7 @@
 import { settleUnlessAborted, stderr, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
+import { decodePayload } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
 import { connectFresh, closeQuietly } from '../client-lifecycle.js';
@@ -363,14 +364,16 @@ export class EmailReceiver implements SourceConnectorRuntime {
     const { dispatcher } = this;
     if (!dispatcher) return false;
     const { uid } = email;
+    const { text, charset } = readSource(email.source);
     const raw: RawMessage = {
-      content: textOf(email),
+      content: text,
       sourceMap: {
         subject: email.subject,
         from: email.from,
         to: email.to,
         date: email.date,
         attachmentCount: email.attachmentCount,
+        charset,
       },
     };
 
@@ -430,16 +433,10 @@ export class EmailReceiver implements SourceConnectorRuntime {
     }
   }
 
-  private async postProcess(client: ImapClient, email: EmailMessage): Promise<void> {
-    const { uid } = email;
+  private async postProcess(client: ImapClient, { uid }: EmailMessage): Promise<void> {
     switch (this.config.postAction) {
       case EMAIL_POST_ACTION.DELETE:
-        if (holdsAllBytes(email)) {
-          await withTimeout(client.deleteMessage(uid), IMAP_OP_TIMEOUT_MS, 'IMAP deleteMessage');
-        } else {
-          this.logger.error({ uid, folder: this.config.folder }, 'Email marked read, not deleted: it is not valid UTF-8, so its message does not hold all of it');
-          await withTimeout(client.markRead(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markRead');
-        }
+        await withTimeout(client.deleteMessage(uid), IMAP_OP_TIMEOUT_MS, 'IMAP deleteMessage');
         break;
       case EMAIL_POST_ACTION.MARK_READ:
         await withTimeout(client.markRead(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markRead');
@@ -462,10 +459,8 @@ function keyOf(uidValidity: string, uid: number | ''): string {
   return `${uidValidity}:${String(uid)}`;
 }
 
-function textOf(email: EmailMessage): string {
-  return email.source.toString('utf8');
-}
-
-function holdsAllBytes(email: EmailMessage): boolean {
-  return Buffer.from(textOf(email), 'utf8').equals(email.source);
+/** No byte is replaced: an email that is not valid UTF-8 is read with each as the character of its number. */
+function readSource(source: Buffer): { readonly text: string; readonly charset: 'utf-8' | 'latin1' } {
+  const { text, replaced } = decodePayload(source, 'utf-8');
+  return replaced ? { text: decodePayload(source, 'latin1').text, charset: 'latin1' } : { text, charset: 'utf-8' };
 }

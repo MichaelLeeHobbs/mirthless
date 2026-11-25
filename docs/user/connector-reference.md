@@ -516,11 +516,11 @@ The hash has no key, so a UID can be checked against the log, and one that can b
 
 EMAIL can only receive; it cannot send messages. Use [SMTP](#smtp) to send email.
 
-It polls an IMAP mailbox folder for unread messages and sends each one as the mail server holds it: the raw email, headers and MIME parts and attachments included, read as UTF-8. The subject, from, to and date are in the source map. Afterwards it marks the email read, deletes it or moves it.
+It polls an IMAP mailbox folder for unread messages and sends each one as the mail server holds it, byte for byte: the raw email, headers and MIME parts and attachments included. An email that is valid UTF-8 is read as that. Any other is read with each byte as the character of its number (ISO-8859-1), so that none is lost, and a destination that writes it in ISO-8859-1 writes its bytes back. `charset` in the source map says which (`utf-8` or `latin1`). The subject, from, to and date are there too, and `attachmentCount`: how many parts the email has besides its text, or null when the mail server does not say. Plain text and HTML count only with a file name or as an attachment, an image shown in the HTML counts, and an attached email counts as one. Afterwards it marks the email read, deletes it or moves it.
 
 It keeps track of what it has done with IMAP keywords, which stay on the email through restarts and redeploys: `$GalvaniGraphDispatched` once the pipeline took it, so that only the marking, deleting or moving is tried again, and `$GalvaniGraphError` when its message was recorded with an error. Such an email is left in the folder and not dispatched again, by any channel that reads the folder, and each says once in the log how many there are; reprocess its message from the message browser. Remove the keyword, and mark the email unread, to have it dispatched again. A mailbox that does not accept custom keywords is reported once in the log; there, a restart or a redeploy sends an email that was left in the folder again.
 
-`DELETE` removes an email only after this source has recorded its message since the channel was deployed, one that a filter left out included. A channel that stores no content keeps no copy of it then. An email that carries `$GalvaniGraphDispatched` from before, or from another channel, stays in the folder, and the log says once how many there are. One stays as if recorded with an error when a destination failed although the sender is answered before the destinations (`AUTO_BEFORE`, `AUTO_AFTER_TRANSFORMER`). One that is not valid UTF-8 is marked read instead, because its message does not hold all of it. On Gmail, removing an email from a folder keeps it in All Mail unless the account is set otherwise.
+`DELETE` removes an email only after this source has recorded its message since the channel was deployed, one that a filter left out included. A channel that stores no content keeps no copy of it then. An email that carries `$GalvaniGraphDispatched` from before, or from another channel, stays in the folder, and the log says once how many there are. One stays as if recorded with an error when a destination failed although the sender is answered before the destinations (`AUTO_BEFORE`, `AUTO_AFTER_TRANSFORMER`). On Gmail, removing an email from a folder keeps it in All Mail unless the account is set otherwise.
 
 A stop or a pause waits for the email in hand, marks, deletes or moves it, and takes no more. A halt does not wait; the email in hand is dealt with when its message ends. A channel redeployed before that may dispatch that email again, and one that is started again polls only then.
 
@@ -547,7 +547,7 @@ A stop or a pause waits for the email in hand, marks, deletes or moves it, and t
 ### EMAIL limits
 
 - IMAP only; POP3 is refused at deploy.
-- The email is not parsed: attachments arrive as MIME parts of the raw email and are stored with it, and `attachmentCount` in the source map is always 0 (#369). `includeAttachments`, which earlier versions saved and never used, is dropped when a channel is validated (#154).
+- The email is not parsed: attachments arrive as MIME parts of the raw email and are stored with it, and a script decodes what it needs (D-388). An email that holds U+0000 is refused by a channel that stores its content without encryption; it stays unread, and the log says so at each poll. `includeAttachments`, which earlier versions saved and never used, is dropped when a channel is validated (#154).
 - No OAuth sign-in; the mailbox needs a username and password.
 
 ## SMTP

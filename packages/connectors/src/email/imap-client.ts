@@ -40,7 +40,8 @@ export interface EmailMessage {
   readonly to: string;
   readonly date: string;
   readonly source: Buffer;
-  readonly attachmentCount: number;
+  /** Null when the server does not say. */
+  readonly attachmentCount: number | null;
   /** True when the email already carries {@link DISPATCHED_KEYWORD} or one of {@link LEGACY_DISPATCHED_KEYWORDS}. */
   readonly dispatched: boolean;
   /** True when the email carries {@link ERROR_KEYWORD}. */
@@ -92,11 +93,20 @@ interface ImapFlowEnvelope {
   readonly date?: Date | string;
 }
 
+export interface ImapFlowBodyPart {
+  readonly type: string;
+  readonly parameters?: Readonly<Record<string, string>>;
+  readonly disposition?: string;
+  readonly dispositionParameters?: Readonly<Record<string, string>>;
+  readonly childNodes?: readonly ImapFlowBodyPart[];
+}
+
 export interface ImapFlowFetchMessage {
   readonly uid?: number;
   readonly source?: Buffer;
   readonly envelope?: ImapFlowEnvelope;
   readonly flags?: ReadonlySet<string>;
+  readonly bodyStructure?: ImapFlowBodyPart;
 }
 
 interface ByUid {
@@ -164,8 +174,28 @@ function dateText(date: Date | string | undefined): string {
   return date instanceof Date ? date.toISOString() : date ?? '';
 }
 
+/** The text a person reads, which is no file. */
+function isBodyText({ type, parameters, disposition, dispositionParameters }: ImapFlowBodyPart): boolean {
+  return (type === 'text/plain' || type === 'text/html')
+    && disposition !== 'attachment' && dispositionParameters?.['filename'] === undefined && parameters?.['name'] === undefined;
+}
+
+/** An email in the email is one attachment, whatever it holds. */
+function attachmentsIn(email: ImapFlowBodyPart): number {
+  let count = 0;
+  const parts = [email];
+  for (let part = parts.pop(); part !== undefined; part = parts.pop()) {
+    if (part.type.startsWith('multipart/')) {
+      for (const child of part.childNodes ?? []) parts.push(child);
+    } else if (!isBodyText(part)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /** Null for a row without all of the email: the server may add one at any time that says only that its flags changed. */
-function toEmail({ uid, source, envelope, flags }: ImapFlowFetchMessage): EmailMessage | null {
+function toEmail({ uid, source, envelope, flags, bodyStructure }: ImapFlowFetchMessage): EmailMessage | null {
   if (uid === undefined || source === undefined || source.length === 0 || flags === undefined) return null;
   return {
     uid,
@@ -174,7 +204,7 @@ function toEmail({ uid, source, envelope, flags }: ImapFlowFetchMessage): EmailM
     to: envelope?.to?.[0]?.address ?? '',
     date: dateText(envelope?.date),
     source,
-    attachmentCount: 0,
+    attachmentCount: bodyStructure === undefined ? null : attachmentsIn(bodyStructure),
     dispatched: hasDispatchedKeyword(flags),
     held: hasErrorKeyword(flags),
   };
@@ -197,9 +227,10 @@ async function fetchUnread(client: ImapFlowInstance, folder: string): Promise<Un
     const uidValidity = String(client.mailbox.uidValidity ?? '');
     const uids = await searchUnread(client);
     const read = new Map<number, EmailMessage>();
+    const query = { source: true, envelope: true, uid: true, flags: true, bodyStructure: true };
     for (let i = 0; i < uids.length; i += FETCH_CHUNK) {
       const range = uids.slice(i, i + FETCH_CHUNK).join(',');
-      for await (const row of client.fetch(range, { source: true, envelope: true, uid: true, flags: true }, BY_UID)) {
+      for await (const row of client.fetch(range, query, BY_UID)) {
         const email = toEmail(row);
         if (email !== null) read.set(email.uid, email);
       }

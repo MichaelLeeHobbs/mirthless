@@ -277,6 +277,49 @@ describe('EmailReceiver', () => {
     });
   });
 
+  describe('the bytes of an email (#369)', () => {
+    async function read(source: Buffer): Promise<RawMessage | undefined> {
+      const taken: RawMessage[] = [];
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(makeMockClient([makeMessage({ source })])));
+      receiver.setDispatcher(makeDispatcher((raw) => { taken.push(raw); return { messageId: 1 }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(taken).toHaveLength(1);
+      return taken[0];
+    }
+
+    it.each([
+      ['ASCII', Buffer.from('Subject: ORU\r\n\r\nNa 140\r\n')],
+      ['UTF-8', Buffer.from('Subject: ORU\r\n\r\nM\u00fcller \u65e5\u672c \u{1f600}\r\n')],
+      ['UTF-8 with a byte order mark', Buffer.from('\ufeffSubject: ORU\r\n')],
+    ])('are read as UTF-8 when they are valid: %s', async (_what, source) => {
+      const raw = await read(source);
+      expect(raw?.sourceMap['charset']).toBe('utf-8');
+      expect(Buffer.from(raw!.content, 'utf8').equals(source)).toBe(true);
+    });
+
+    it.each([
+      ['ISO-8859-1', Buffer.from('Content-Type: text/plain; charset=iso-8859-1\r\n\r\nM\xfcller\r\n', 'latin1'), 'M\u00fcller'],
+      ['a UTF-8 part beside one that is not', Buffer.from('M\xc3\xbcller, M\xfcller', 'latin1'), 'M\u00c3\u00bcller, M\u00fcller'],
+      ['every byte there is', Buffer.from(Array.from({ length: 256 }, (_, i) => i)), '\u0080\u0081'],
+      ['cut off within a character', Buffer.from([0x4d, 0xc3]), 'M\u00c3'],
+    ])('are one character each when they are not valid UTF-8, and the message says so: %s', async (_what, source, text) => {
+      const raw = await read(source);
+      expect(raw?.sourceMap['charset']).toBe('latin1');
+      expect(raw?.content).toContain(text);
+      expect(Buffer.from(raw!.content, 'latin1').equals(source)).toBe(true);
+    });
+  });
+
+  it.each([2, 0, null])('passes on how many attachments the server says the email has: %s (#369)', async (attachmentCount) => {
+    const taken: RawMessage[] = [];
+    receiver = new EmailReceiver(makeConfig(), makeClientFactory(makeMockClient([makeMessage({ attachmentCount })])));
+    receiver.setDispatcher(makeDispatcher((raw) => { taken.push(raw); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(taken.map((raw) => raw.sourceMap['attachmentCount'])).toEqual([attachmentCount]);
+  });
+
   describe('subject filter', () => {
     it('only processes messages matching subject filter', async () => {
       const captured: RawMessage[] = [];
@@ -1120,18 +1163,18 @@ describe('EmailReceiver with post-action DELETE (#413)', () => {
     expect(client.mark).toHaveBeenCalledExactlyOnceWith(6, ERROR_KEYWORD);
   });
 
-  it('marks an email read, and does not delete it, when its message cannot hold all its bytes', async () => {
+  it('deletes an email that is not valid UTF-8, whose message holds all its bytes too (#369)', async () => {
     const client = makeMockClient();
     vi.mocked(client.fetchUnread)
-      .mockResolvedValueOnce(listing([makeMessage({ uid: 7, source: Buffer.from([0x4d, 0xfc, 0x6c, 0x6c, 0x65, 0x72]) })]))
+      .mockResolvedValueOnce(listing([makeMessage({ uid: 7, source: Buffer.from('M\xfcller', 'latin1') })]))
       .mockResolvedValue(listing([]));
     const { errors } = await startDeleting(client);
 
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(client.deleteMessage).not.toHaveBeenCalled();
-    expect(client.markRead).toHaveBeenCalledExactlyOnceWith(7);
-    expect(errors.map((e) => e.msg)).toEqual([expect.stringContaining('marked read, not deleted')]);
+    expect(client.deleteMessage).toHaveBeenCalledExactlyOnceWith(7);
+    expect(client.markRead).not.toHaveBeenCalled();
+    expect(errors).toEqual([]);
   });
 });
 
