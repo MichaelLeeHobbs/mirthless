@@ -41,7 +41,7 @@ vi.mock('../message.service.js', () => ({
 }));
 function deployedWithDests(state: string, destinations: { metaDataId: number; queueMode: string; enabled?: boolean }[]) {
   const named = destinations.map((d) => ({ name: 'Lab', enabled: true, ...d }));
-  return { runtime: { getState: () => state }, config: { destinations: named }, variablesUsed: mockVariablesUsed };
+  return { runtime: { getState: () => state, runSignal: new AbortController().signal }, config: { destinations: named }, variablesUsed: mockVariablesUsed };
 }
 
 function mockUpdateCapture(): { set: ReturnType<typeof vi.fn> } {
@@ -50,8 +50,8 @@ function mockUpdateCapture(): { set: ReturnType<typeof vi.fn> } {
   return { set };
 }
 
-function deployedChannel(state: string, processMessage: ReturnType<typeof vi.fn>) {
-  return { runtime: { getState: () => state }, processMessage };
+function deployedChannel(state: string, processMessage: ReturnType<typeof vi.fn>, runSignal = new AbortController().signal) {
+  return { runtime: { getState: () => state, runSignal }, processMessage };
 }
 
 function mockRawContent(content: string | null): void {
@@ -130,6 +130,19 @@ describe('MessageReprocessService.reprocessMessage', () => {
     if (!result.ok) {
       expect(result.error).toHaveProperty('code', 'CONFLICT');
     }
+  });
+
+  it('reprocesses nothing once a stop has begun, although the channel still reads STARTED (#413)', async () => {
+    const processMessage = vi.fn();
+    mockRawContent('MSH|...');
+    mockGetRuntime.mockReturnValue(deployedChannel('STARTED', processMessage, AbortSignal.abort()));
+
+    const one = await MessageReprocessService.reprocessMessage('ch-001', 1);
+    const bulk = await MessageReprocessService.bulkReprocess('ch-001', [1]);
+
+    expect(one.error?.message).toBe('Channel is stopping, must be STARTED to reprocess a message.');
+    expect(bulk.error?.message).toBe('Channel is stopping, must be STARTED to reprocess messages.');
+    expect(processMessage).not.toHaveBeenCalled();
   });
 
   it('returns error when the pipeline rejects the re-injected message', async () => {

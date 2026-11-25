@@ -8,7 +8,7 @@ function fakeDeployed(name: string, state = 'STARTED'): { deployed: DeployedChan
   const deployed = {
     channelId: `id-${name}`,
     config: { name },
-    runtime: { getState: () => state },
+    runtime: { getState: () => state, runSignal: new AbortController().signal },
     processMessage,
   } as unknown as DeployedChannel;
   return { deployed, processMessage };
@@ -75,7 +75,7 @@ describe('EngineManager.routeMessage', () => {
       return { ok: true, value: { messageId: hops }, error: null };
     });
     internals(engine).runtimes.set('id-Loop', {
-      channelId: 'id-Loop', config: { name: 'Loop' }, runtime: { getState: () => 'STARTED' }, processMessage,
+      channelId: 'id-Loop', config: { name: 'Loop' }, runtime: { getState: () => 'STARTED', runSignal: new AbortController().signal }, processMessage,
     } as unknown as DeployedChannel);
 
     const result = await engine.routeMessage('Loop', 'x');
@@ -95,7 +95,7 @@ describe('EngineManager.routeMessage', () => {
       return { ok: true, value: { messageId: 1 }, error: null };
     });
     internals(engine).runtimes.set('id-Target', {
-      channelId: 'id-Target', config: { name: 'Target' }, runtime: { getState: () => 'STARTED' }, processMessage,
+      channelId: 'id-Target', config: { name: 'Target' }, runtime: { getState: () => 'STARTED', runSignal: new AbortController().signal }, processMessage,
     } as unknown as DeployedChannel);
 
     const calls = Array.from({ length: 40 }, () => engine.routeMessage('Target', 'x'));
