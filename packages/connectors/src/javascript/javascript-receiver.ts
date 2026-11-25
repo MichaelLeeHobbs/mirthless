@@ -1,4 +1,4 @@
-import { tryCatch, type Result } from '@galvanigraph/core-util';
+import { settleUnlessAborted, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -20,7 +20,12 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
   private dispatcher: MessageDispatcher | null = null;
   private scriptRunner: ScriptRunner | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private polling = false;
+  /** The poll cycle in flight, of this start or of one that was halted; there is never a second. */
+  private cycle: Promise<void> | null = null;
+  /** Of the current start: its cycle sends no more once a halt aborts it. */
+  private halted = new AbortController();
+  /** What the script returned and is not sent yet. Nothing else holds it, so a halt keeps it for the next start. */
+  private waiting: string[] = [];
 
   constructor(config: JavaScriptReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
@@ -52,21 +57,26 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
+      this.halted = new AbortController();
+      const { signal } = this.halted;
       this.pollTimer = setInterval(() => {
-        void this.pollCycle();
+        this.poll(signal);
       }, this.config.pollingIntervalMs);
     });
   }
 
+  /** Waits for the script under way and for all it returned, however long that takes, until a halt. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.clearPollTimer();
+      if (this.cycle !== null) await settleUnlessAborted(this.cycle, this.halted.signal);
     });
   }
 
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.clearPollTimer();
+      this.halted.abort();
     });
   }
 
@@ -74,32 +84,58 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     return tryCatch(async () => {
       this.dispatcher = null;
       this.scriptRunner = null;
+      this.reportWaiting();
     });
   }
 
-  private async pollCycle(): Promise<void> {
-    if (this.polling || !this.dispatcher) return;
-    this.polling = true;
+  private poll(halted: AbortSignal): void {
+    if (this.cycle !== null) return;
+    this.cycle = this.pollCycle(halted).finally(() => {
+      this.cycle = null;
+      this.reportWaiting();
+    });
+  }
+
+  private async pollCycle(halted: AbortSignal): Promise<void> {
     try {
-      const messages = await this.executeScript();
-      for (const content of messages) {
-        const raw: RawMessage = {
-          content,
-          sourceMap: { connectorType: 'JAVASCRIPT', executedAt: Date.now() },
-        };
-        const failure = dispatchFailure(await this.dispatcher(raw));
-        if (failure !== null) {
-          // The script already produced the message, so there is nothing to keep
-          // for a retry here; make sure the failure is at least visible.
-          this.logger.error(errorInfo(failure), 'JavaScript source message dispatch failed');
-        }
-      }
+      if (this.waiting.length === 0) this.waiting = [...await this.executeScript()];
+      await this.sendWaiting(halted);
     } catch (err) {
       // Log it: otherwise a broken script leaves the channel STARTED yet silently producing nothing.
       this.logger.error(errorInfo(err), 'JavaScript source poll cycle failed');
-    } finally {
-      this.polling = false;
     }
+  }
+
+  private async sendWaiting(halted: AbortSignal): Promise<void> {
+    const { dispatcher } = this;
+    if (!dispatcher) return;
+    while (!halted.aborted) {
+      const content = this.waiting.shift();
+      if (content === undefined) return;
+      const raw: RawMessage = {
+        content,
+        sourceMap: { connectorType: 'JAVASCRIPT', executedAt: Date.now() },
+      };
+      const failure = dispatchFailure(await dispatcher(raw));
+      if (failure !== null) {
+        // The script already produced the message, so there is nothing to keep
+        // for a retry here; make sure the failure is at least visible.
+        this.logger.error(errorInfo(failure), 'JavaScript source message dispatch failed');
+      }
+    }
+  }
+
+  private reportWaiting(): void {
+    if (this.waiting.length === 0) return;
+    if (this.dispatcher) {
+      this.logger.warn({ kept: this.waiting.length }, 'A halt kept messages that the JavaScript source script returned; the next start sends them');
+      return;
+    }
+    this.logger.error(
+      { lost: this.waiting.length },
+      'Messages that the JavaScript source script returned are lost: the channel was halted before they were sent, and then undeployed',
+    );
+    this.waiting = [];
   }
 
   private async executeScript(): Promise<readonly string[]> {
