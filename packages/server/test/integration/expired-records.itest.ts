@@ -1,4 +1,4 @@
-// Which collection records a pruner run deletes (#417, D-379). Real SQL: row locks, batches and clocks.
+// Which collection records a pruner run deletes (#417, D-390). Real SQL: row locks, batches and clocks.
 
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
