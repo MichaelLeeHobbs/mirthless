@@ -3,6 +3,7 @@ export { BatchProcessor, BATCH_MODE } from './batch/index.js';
 export type { BatchConfig, BatchMode, BatchJsOptions } from './batch/index.js';
 export { MessageProcessor } from './pipeline/message-processor.js';
 export { parseForSandbox, type DataTypeOptions } from './pipeline/data-type-handler.js';
+export { reportUnsaved } from './pipeline/report-unsaved.js';
 export type {
   ChannelScripts,
   DestinationScripts,

@@ -244,7 +244,7 @@ All responses follow the fullstack-template pattern:
 ```
 SIGTERM/SIGINT received
 1. Stop accepting new HTTP connections
-2. Undeploy all channels (stop source connectors, drain queues)
+2. Undeploy all channels at once (stop source connectors; a queued send has until 20s after the signal)
 3. Close engine
 4. Close database pool
 5. Exit

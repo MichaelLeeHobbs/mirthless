@@ -162,6 +162,23 @@ describeIntegration('Queued messages and edited destinations (real Postgres, rea
     expect(await received()).toEqual([{ partner: 'Lab A', messageId }]);
   });
 
+  it('a destination that is being sent to is not put on its queue by a resend, and can be once the message is finished (#416)', async () => {
+    await waiting();
+    await deploy();
+    const { MessageService } = mods;
+    const { messageId } = unwrap(await MessageService.createMessage(channel!.id, 'itest'));
+    unwrap(await MessageService.createConnectorMessage(channel!.id, messageId, 0, 'Source', 'TRANSFORMED'));
+    unwrap(await MessageService.createConnectorMessage(channel!.id, messageId, 1, 'Lab A', 'RECEIVED'));
+    unwrap(await MessageService.storeContent(channel!.id, messageId, 1, CONTENT_TYPE.SENT, 'PHI for Lab A', 'RAW'));
+
+    expect(await reprocess.resendDestination(channel!.id, messageId, 1, actor)).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('still being sent to "Lab A"') } });
+    expect(await status(messageId)).toBe('RECEIVED');
+
+    unwrap(await MessageService.markProcessed(channel!.id, messageId));
+    unwrap(await reprocess.resendDestination(channel!.id, messageId, 1, actor));
+    await vi.waitFor(async () => { expect(await status(messageId)).toBe('SENT'); }, WAIT);
+  });
+
   describe('from before saves kept the numbers', () => {
     it('go to the destination that had their name then, also when it has been renamed', async () => {
       const messageId = await waiting();
