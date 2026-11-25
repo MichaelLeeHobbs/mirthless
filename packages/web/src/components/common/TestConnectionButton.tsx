@@ -44,7 +44,7 @@ export function TestConnectionButton({ connectorType, mode, properties }: TestCo
               <Typography variant="body2" sx={{
                 color: 'success.main'
               }}>
-                Connected ({String(testMutation.data.latencyMs)}ms)
+                {testMutation.data.message} ({String(testMutation.data.latencyMs)}ms)
               </Typography>
             </>
           ) : (

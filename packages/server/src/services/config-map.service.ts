@@ -4,6 +4,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { configuration } from '../db/schema/index.js';
+import { configLookup } from '../lib/config-references.js';
 
 export interface ConfigMapEntry {
   readonly category: string;
@@ -26,6 +27,12 @@ export class ConfigMapService {
         value: r.value,
       }));
     });
+  }
+
+  /** What the references in connector settings are filled with. */
+  static async references(): Promise<Result<ReadonlyMap<string, string>>> {
+    const entries = await ConfigMapService.list();
+    return entries.ok ? { ok: true, value: configLookup(entries.value), error: null } : entries;
   }
 
   static async getByKey(category: string, name: string): Promise<Result<ConfigMapEntry>> {

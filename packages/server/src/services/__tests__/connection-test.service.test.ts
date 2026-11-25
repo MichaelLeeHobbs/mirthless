@@ -7,6 +7,8 @@ vi.mock('../certificate.service.js', () => ({
   CertificateService: { getMaterialById: (...args: unknown[]) => mockGetMaterialById(...args) },
 }));
 
+import type { DestinationConnectorType, SourceConnectorType } from '@galvanigraph/core-models';
+import { validateConnectorProperties } from '../connector-validation.service.js';
 import {
   ConnectionTestService,
   setPoolFactory,
@@ -136,6 +138,45 @@ function createFakeSocket(outcome: 'connect' | 'error', errorMsg?: string): Reco
 
   return socket;
 }
+
+/** What a deploy needs of each connector besides its server. */
+const DATABASE_SOURCE = { host: 'db.example.com', port: 5432, database: 'testdb', selectQuery: 'SELECT 1' };
+const DATABASE_DESTINATION = { host: 'db.example.com', database: 'partner', query: 'SELECT 1' };
+const SMTP = { host: 'smtp.example.com', port: 587, from: 'engine@example.com', to: 'lab@example.com' };
+const EMAIL = { host: 'imap.example.com', username: 'lab', password: 'pw' };
+const SFTP_PROPS = {
+  host: 'sftp.lab.example', port: 2222, username: 'lab', password: 'pw', privateKey: '', passphrase: '',
+  remoteDirectory: '/inbound', strictHostKey: true, hostKey: 'AAAAkey',
+};
+
+/** Settings each connector type deploys with, by direction. */
+const SOURCES: Readonly<Record<SourceConnectorType, Record<string, unknown>>> = {
+  TCP_MLLP: { port: 6661 },
+  HTTP: { port: 8080 },
+  FILE: { directory: '/data/in' },
+  DATABASE: DATABASE_SOURCE,
+  JAVASCRIPT: { script: 'return [];' },
+  CHANNEL: {},
+  DICOM: { port: 104, storageDir: '/data/dicom' },
+  EMAIL,
+  SFTP: SFTP_PROPS,
+  KAFKA: { brokers: 'k.example.com:9092', topic: 'adt', groupId: 'g' },
+  AMQP: { host: 'rabbit.example.com', queue: 'adt' },
+};
+const DESTINATIONS: Readonly<Record<DestinationConnectorType, Record<string, unknown>>> = {
+  TCP_MLLP: { host: 'example.com', port: 6661 },
+  HTTP: { url: 'https://example.com/api' },
+  FILE: { directory: '/data/out' },
+  DATABASE: DATABASE_DESTINATION,
+  JAVASCRIPT: { script: 'return msg;' },
+  SMTP,
+  CHANNEL: { targetChannelId: '${target}' },
+  FHIR: { baseUrl: 'https://fhir.example.com/r4' },
+  DICOM: { host: 'pacs.example.com', port: 104 },
+  SFTP: SFTP_PROPS,
+  KAFKA: { brokers: 'k.example.com:9092', topic: 'adt' },
+  AMQP: { host: 'rabbit.example.com', exchange: 'hl7', routingKey: 'x' },
+};
 
 describe('ConnectionTestService', () => {
   beforeEach(() => {
@@ -374,11 +415,7 @@ describe('ConnectionTestService', () => {
 
   describe('DATABASE', () => {
     it('returns success when the connector pool connects', async () => {
-      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com',
-        port: 5432,
-        database: 'testdb',
-      });
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', DATABASE_SOURCE);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -388,38 +425,37 @@ describe('ConnectionTestService', () => {
     });
 
     it('signs in with the account and TLS setting the connector form saves', async () => {
-      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com', port: 5432, database: 'testdb', username: 'reader', password: 'pw', tls: true,
-      });
-      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com', port: 5432, database: 'testdb',
-      });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { ...DATABASE_SOURCE, username: 'reader', password: 'pw', tls: true });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', DATABASE_SOURCE);
 
       expect(mockPoolCreate.mock.calls[0]![0]).toMatchObject({ user: 'reader', password: 'pw', tls: true });
       expect(mockPoolCreate.mock.calls[1]![0]).toMatchObject({ user: '', password: '', tls: false });
     });
 
     it('connects to MySQL with the MySQL pool, and refuses a database with no driver', async () => {
-      await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', {
-        vendor: 'mysql', host: 'db.example.com', port: 3306, database: 'partner',
-      });
+      await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', { ...DATABASE_DESTINATION, vendor: 'mysql' });
       expect(mockPoolVendor).toHaveBeenCalledWith('mysql');
 
-      const refused = await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', {
-        vendor: 'sqlserver', host: 'db.example.com', port: 1433, database: 'partner',
-      });
-      expect(refused.ok && refused.value).toMatchObject({ success: false, message: 'Database "sqlserver" is not supported (PostgreSQL and MySQL are)' });
+      const refused = await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', { ...DATABASE_DESTINATION, vendor: 'sqlserver' });
+      expect(refused.error?.message).toContain('vendor: database "sqlserver" is not supported (PostgreSQL and MySQL are)');
       expect(mockPoolVendor).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [{ vendor: 'mysql' }, 3306],
+      [{ vendor: 'postgresql' }, 5432],
+      [{}, 5432],
+      [{ port: 5433 }, 5433],
+    ])('connects to the port a deploy uses: %j', async (props, port) => {
+      await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', { ...DATABASE_DESTINATION, ...props });
+
+      expect(mockPoolCreate.mock.calls[0]![0]).toMatchObject({ port, maxConnections: 1, connectionTimeoutMs: _testing.TEST_TIMEOUT_MS, statementTimeoutMs: _testing.TEST_TIMEOUT_MS });
     });
 
     it('returns failure when database connection fails', async () => {
       mockPoolCreate.mockResolvedValueOnce({ ok: false, value: null, error: new Error('connection refused') });
 
-      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com',
-        port: 5432,
-        database: 'testdb',
-      });
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', DATABASE_SOURCE);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -428,10 +464,8 @@ describe('ConnectionTestService', () => {
     });
 
     it('returns error when host property is missing', async () => {
-      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        port: 5432,
-        database: 'testdb',
-      });
+      const { host: _host, ...noHost } = DATABASE_SOURCE;
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', noHost);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -439,7 +473,7 @@ describe('ConnectionTestService', () => {
     });
 
     it.each(['/var/run/postgresql', '127.0.0.1'])('refuses %s before opening a pool', async (host) => {
-      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host, port: 5432, database: 'testdb' });
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { ...DATABASE_SOURCE, host });
 
       expect(result.ok).toBe(false);
       expect(mockPoolVendor).not.toHaveBeenCalled();
@@ -448,8 +482,8 @@ describe('ConnectionTestService', () => {
 
     it('closes the pool whether or not it connected', async () => {
       mockPoolCreate.mockResolvedValueOnce({ ok: false, value: null, error: new Error('refused') });
-      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host: 'db.example.com', port: 5432, database: 'testdb' });
-      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host: 'db.example.com', port: 5432, database: 'testdb' });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', DATABASE_SOURCE);
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', DATABASE_SOURCE);
 
       expect(mockPoolDestroy).toHaveBeenCalledTimes(2);
     });
@@ -459,10 +493,7 @@ describe('ConnectionTestService', () => {
     it('returns success when SMTP verify succeeds', async () => {
       mockTransportVerify.mockResolvedValueOnce(true);
 
-      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
-        host: 'smtp.example.com',
-        port: 587,
-      });
+      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', SMTP);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -474,10 +505,7 @@ describe('ConnectionTestService', () => {
     it('returns failure when SMTP verify fails', async () => {
       mockTransportVerify.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
-        host: 'smtp.example.com',
-        port: 587,
-      });
+      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', SMTP);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -487,9 +515,7 @@ describe('ConnectionTestService', () => {
     });
 
     it('returns error when host property is missing', async () => {
-      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
-        port: 587,
-      });
+      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', { ...SMTP, host: '' });
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -504,9 +530,7 @@ describe('ConnectionTestService', () => {
         return { verify: mockTransportVerify, close: mockTransportClose };
       });
       mockTransportVerify.mockResolvedValueOnce(true);
-      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
-        host: 'smtp.example.com', port: 587, requireTLS: true, authUser: 'lab', authPass: 's3cret',
-      });
+      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', { ...SMTP, requireTLS: true, authUser: 'lab', authPass: 's3cret' });
       expect(seen[0]).toMatchObject({ requireTLS: true, auth: { user: 'lab', pass: 's3cret' } });
     });
 
@@ -517,17 +541,14 @@ describe('ConnectionTestService', () => {
         return { verify: mockTransportVerify, close: mockTransportClose };
       });
       mockTransportVerify.mockResolvedValueOnce(true);
-      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', { host: 'smtp.example.com', port: 587, authUser: '', authPass: '' });
+      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', { ...SMTP, authUser: '', authPass: '' });
       expect(seen[0]).not.toHaveProperty('auth');
     });
 
     it('always calls transport.close in finally block', async () => {
       mockTransportVerify.mockResolvedValueOnce(true);
 
-      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
-        host: 'smtp.example.com',
-        port: 587,
-      });
+      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', SMTP);
 
       expect(mockTransportClose).toHaveBeenCalled();
     });
@@ -633,9 +654,7 @@ describe('ConnectionTestService', () => {
 
   describe('CHANNEL', () => {
     it('returns immediate success for CHANNEL connector', async () => {
-      const result = await ConnectionTestService.testConnection('CHANNEL', 'SOURCE', {
-        channelId: 'abc-123',
-      });
+      const result = await ConnectionTestService.testConnection('CHANNEL', 'SOURCE', {});
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -663,10 +682,7 @@ describe('ConnectionTestService', () => {
     it('returns success when TCP connection to IMAP host succeeds', async () => {
       createFakeSocket('connect');
 
-      const result = await ConnectionTestService.testConnection('EMAIL', 'SOURCE', {
-        host: 'imap.example.com',
-        port: 993,
-      });
+      const result = await ConnectionTestService.testConnection('EMAIL', 'SOURCE', EMAIL);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -677,10 +693,7 @@ describe('ConnectionTestService', () => {
     it('returns failure when IMAP TCP connection fails', async () => {
       createFakeSocket('error', 'ECONNREFUSED');
 
-      const result = await ConnectionTestService.testConnection('EMAIL', 'SOURCE', {
-        host: 'imap.example.com',
-        port: 993,
-      });
+      const result = await ConnectionTestService.testConnection('EMAIL', 'SOURCE', EMAIL);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -690,10 +703,6 @@ describe('ConnectionTestService', () => {
   });
 
   describe('SFTP', () => {
-    const SFTP_PROPS = {
-      host: 'sftp.lab.example', port: 2222, username: 'lab', password: 'pw', privateKey: '', passphrase: '',
-      remoteDirectory: '/inbound', strictHostKey: true, hostKey: 'AAAAkey',
-    };
     const mockSftpConnect = vi.fn<() => Promise<void>>();
     const mockSftpPathKind = vi.fn<(path: string) => Promise<SftpPathKind>>();
     const mockSftpEnd = vi.fn<() => Promise<void>>();
@@ -711,7 +720,7 @@ describe('ConnectionTestService', () => {
 
     afterEach(() => { vi.useRealTimers(); });
 
-    it.each(['SOURCE', 'DESTINATION'])('connects, finds the remote directory and closes (%s)', async (mode) => {
+    it.each(['SOURCE', 'DESTINATION'] as const)('connects, finds the remote directory and closes (%s)', async (mode) => {
       const result = await ConnectionTestService.testConnection('SFTP', mode, SFTP_PROPS);
 
       expect(result.ok).toBe(true);
@@ -740,7 +749,7 @@ describe('ConnectionTestService', () => {
       expect(result.value.message).toContain('remote directory /inbound found');
     });
 
-    it.each(['SOURCE', 'DESTINATION'])('fails when the remote directory is a regular file (%s)', async (mode) => {
+    it.each(['SOURCE', 'DESTINATION'] as const)('fails when the remote directory is a regular file (%s)', async (mode) => {
       mockSftpPathKind.mockResolvedValue('file');
 
       const result = await ConnectionTestService.testConnection('SFTP', mode, SFTP_PROPS);
@@ -871,19 +880,18 @@ describe('ConnectionTestService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.message).toContain('Unknown connector type');
-      expect(result.error.message).toContain('UNKNOWN_TYPE');
+      expect(result.error.message).toBe('Unknown destination connector type: UNKNOWN_TYPE');
     });
   });
 
   describe('a host with spaces around it', () => {
     it.each([
-      ['TCP_MLLP', 'DESTINATION'],
-      ['DICOM', 'DESTINATION'],
-      ['EMAIL', 'SOURCE'],
-    ] as const)('%s connects without them, as deploy does', async (type, mode) => {
+      ['TCP_MLLP', 'DESTINATION', DESTINATIONS.TCP_MLLP],
+      ['DICOM', 'DESTINATION', DESTINATIONS.DICOM],
+      ['EMAIL', 'SOURCE', SOURCES.EMAIL],
+    ] as const)('%s connects without them, as deploy does', async (type, mode, properties) => {
       createFakeSocket('connect');
-      const result = await ConnectionTestService.testConnection(type, mode, { host: ' example.com ', port: 6661 });
+      const result = await ConnectionTestService.testConnection(type, mode, { ...properties, host: ' example.com ' });
       expect(result.ok && result.value.success).toBe(true);
       expect(mockConnect.mock.calls[0]?.[0]).toMatchObject({ host: 'example.com' });
     });
@@ -893,6 +901,94 @@ describe('ConnectionTestService', () => {
       expect(blocked.ok ? '' : blocked.error.message).toContain('blocked');
       const missing = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', { host: '   ', port: 6661 });
       expect(missing.ok ? '' : missing.error.message).toContain('host');
+    });
+  });
+
+  // #133: what a deploy refuses, the test refuses, with the deploy's words.
+  describe('the check a deploy makes', () => {
+    const cases = [
+      ...Object.entries(SOURCES).map(([type, properties]) => [type, 'SOURCE', properties] as const),
+      ...Object.entries(DESTINATIONS).map(([type, properties]) => [type, 'DESTINATION', properties] as const),
+    ];
+    // A Channel Reader's channelId is its own channel's, which a deploy fills in.
+    const deployed = (type: string, mode: string, properties: Record<string, unknown>): Record<string, unknown> =>
+      (type === 'CHANNEL' && mode === 'SOURCE' ? { ...properties, channelId: 'this channel' } : properties);
+
+    it.each(cases)('%s %s: refuses an unknown setting before it connects', async (type, mode, properties) => {
+      const wrong = { ...properties, noSuchSetting: true };
+      const refused = validateConnectorProperties(type, mode === 'SOURCE' ? 'source' : 'destination', deployed(type, mode, wrong));
+
+      const result = await ConnectionTestService.testConnection(type, mode, wrong);
+
+      expect(refused.ok).toBe(false);
+      expect(result.error?.message).toBe(refused.error?.message);
+      expect(result.error?.message).toContain('noSuchSetting');
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      for (const connect of [mockConnect, mockFetch, mockAccess, mockPoolCreate, mockTransportVerify, mockDnsLookup]) expect(connect).not.toHaveBeenCalled();
+    });
+
+    it.each(cases)('%s %s: passes settings that deploy', async (type, mode, properties) => {
+      expect(validateConnectorProperties(type, mode === 'SOURCE' ? 'source' : 'destination', deployed(type, mode, properties)).error).toBeNull();
+    });
+
+    it('names every setting that is refused', async () => {
+      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', { host: 'smtp.example.com', port: 70_000 });
+
+      for (const setting of ['port:', 'from:', 'to:']) expect(result.error?.message).toContain(setting);
+      expect(mockTransportVerify).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['EMAIL', 'SOURCE', SOURCES.EMAIL, 993],
+      ['TCP_MLLP', 'DESTINATION', { host: 'example.com', port: '6661' }, 6661],
+      ['DICOM', 'DESTINATION', { host: 'example.com', port: '104' }, 104],
+    ] as const)('%s %s: connects to the port a deploy uses', async (type, mode, properties, port) => {
+      createFakeSocket('connect');
+
+      const result = await ConnectionTestService.testConnection(type, mode, properties);
+
+      expect(result.ok && result.value.success).toBe(true);
+      expect(mockConnect.mock.calls[0]?.[0]).toMatchObject({ port });
+    });
+
+    it('an HTTP path filled per message is tested', async () => {
+      mockFetch.mockResolvedValueOnce({ status: 200, statusText: 'OK' });
+
+      const result = await ConnectionTestService.testConnection('HTTP', 'DESTINATION', { url: 'https://example.com/${patientId}' });
+
+      expect(result.ok && result.value.success).toBe(true);
+    });
+
+    it('SMTP: signs in on the port a deploy uses', async () => {
+      const seen: unknown[] = [];
+      setSmtpTransportFactory((options) => {
+        seen.push(options);
+        return { verify: mockTransportVerify, close: mockTransportClose };
+      });
+      const { port: _port, ...noPort } = SMTP;
+
+      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', noPort);
+
+      expect(seen[0]).toMatchObject({ port: 587, secure: false });
+    });
+
+    it.each([
+      ['TCP_MLLP', SOURCES.TCP_MLLP],
+      ['HTTP', SOURCES.HTTP],
+      ['DICOM', SOURCES.DICOM],
+    ])('%s source: says that its settings are valid and that there is nothing to connect to', async (type, properties) => {
+      const result = await ConnectionTestService.testConnection(type, 'SOURCE', properties);
+
+      expect(result.value).toEqual({ success: true, latencyMs: 0, message: 'The settings are valid. A listener connects to nothing: its port is opened when the channel starts' });
+      expect(mockConnect).not.toHaveBeenCalled();
+    });
+
+    it.each(['https://${partnerHost}/api', '${partnerUrl}', '/api', 'file:///etc/hosts'])('an HTTP URL that names no server cannot be tested: %s', async (url) => {
+      const result = await ConnectionTestService.testConnection('HTTP', 'DESTINATION', { url });
+
+      expect(result.error?.message).toBe('url: names no server, or one that is filled per message, so there is none to test');
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -952,11 +1048,7 @@ describe('ConnectionTestService', () => {
     });
 
     it('blocks DATABASE connections to blocked hosts', async () => {
-      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: '127.0.0.1',
-        port: 5432,
-        database: 'testdb',
-      });
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { ...DATABASE_SOURCE, host: '127.0.0.1' });
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -964,10 +1056,7 @@ describe('ConnectionTestService', () => {
     });
 
     it('blocks SMTP connections to blocked hosts', async () => {
-      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
-        host: '127.0.0.1',
-        port: 587,
-      });
+      const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', { ...SMTP, host: '127.0.0.1' });
 
       expect(result.ok).toBe(false);
       if (result.ok) return;

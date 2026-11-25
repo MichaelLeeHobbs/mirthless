@@ -130,6 +130,16 @@ beforeEach(() => {
 });
 
 describe('ConfigMapService', () => {
+  describe('references', () => {
+    it('fills a name, and a category and a name', async () => {
+      pushOrderableResponse([makeEntry({ category: 'site', name: 'port', value: '6661' })]);
+
+      const result = await ConfigMapService.references();
+
+      expect([...(result.value ?? new Map<string, string>())]).toEqual([['site.port', '6661'], ['port', '6661']]);
+    });
+  });
+
   describe('list', () => {
     it('returns all entries sorted by category then name', async () => {
       const entries = [

@@ -1,10 +1,13 @@
+import { isDeepStrictEqual } from 'node:util';
 import type { Request, Response } from 'express';
-import { ALL_CHANNELS, type ConnectionTestInput } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, type ConnectionTestInput, type FoldedGrants } from '@galvanigraph/core-models';
+import { ConfigMapService } from '../services/config-map.service.js';
 import { ConnectionTestService } from '../services/connection-test.service.js';
 import { errorInfo } from '@galvanigraph/core-util';
 import { assertCertificatesInScope } from '../services/connector-tls-resolver.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { holdsOnChannel } from '../lib/channel-scope.js';
+import { resolveConfigReferences } from '../lib/config-references.js';
 import { deny, DENY_REASON } from '../middleware/permission.middleware.js';
 import { ServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
@@ -35,15 +38,37 @@ async function scopedTestAllowed(req: Request, res: Response, input: ConnectionT
   return true;
 }
 
+/** As the map shows its values, or in a script of the channel, which reads them all. */
+async function readsConfigMap(grants: FoldedGrants | undefined, channelId: string | undefined): Promise<boolean> {
+  if (grants === undefined) return false;
+  if (grants.get('config_map:read') === ALL_CHANNELS || grants.get('channels:write') === ALL_CHANNELS) return true;
+  return channelId !== undefined && holdsOnChannel(grants, 'channels:write', channelId);
+}
+
+/**
+ * The references of the configuration map filled, as a deploy fills them. A deploy fills what is saved;
+ * here the caller names the server that gets the values and reads the answer, so it is only for one
+ * who can read them anyway.
+ */
+async function filledProperties(req: Request, input: ConnectionTestInput): Promise<Record<string, unknown>> {
+  const references = await ConfigMapService.references();
+  if (!references.ok) throw new ServiceError('INTERNAL', 'Could not load the configuration map');
+  const filled = resolveConfigReferences(input.properties, references.value);
+  if (isDeepStrictEqual(filled, input.properties) || await readsConfigMap(req.principal?.grants, input.channelId)) return filled;
+  throw new ServiceError('FORBIDDEN', 'These settings hold a reference to the configuration map. To test them with its value you need config_map:read, or channels:write on the channel the test is for');
+}
+
 export class ConnectionTestController {
   static async test(req: Request, res: Response): Promise<void> {
     const input = req.body as ConnectionTestInput;
-    const { connectorType, mode, properties } = input;
+    const { connectorType, mode } = input;
+    let properties: Record<string, unknown>;
     try {
       if (!(await scopedTestAllowed(req, res, input))) return;
+      properties = await filledProperties(req, input);
     } catch (err: unknown) {
       // A refusal is answered as such; anything else is a server fault.
-      if (!(err instanceof ServiceError)) logger.error(errorInfo(err), 'Connection test scope check failed');
+      if (!(err instanceof ServiceError)) logger.error(errorInfo(err), 'Connection test could not be prepared');
       refuse(res, err instanceof ServiceError ? err : new ServiceError('INTERNAL', 'Connection test failed'));
       return;
     }

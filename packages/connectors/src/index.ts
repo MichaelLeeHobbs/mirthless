@@ -69,6 +69,7 @@ export {
   ROW_FORMAT,
   DATABASE_VENDOR,
   createPool,
+  toPoolConfig,
   type DatabasePool,
   type DatabaseVendor,
   type PreparedQuery,
@@ -189,6 +190,6 @@ export {
   type AmqpDispatcherConfig,
   type AmqpConnectionConfig,
 } from './amqp/index.js';
-export { readQueueTls } from './registry.js';
+export { databaseTarget, readQueueTls, smtpDispatcherConfig } from './registry.js';
 export { withTimeout, TimeoutError } from './timeout.js';
 export { createSourceConnector, createDestinationConnector, type ConnectorEnvironment } from './registry.js';

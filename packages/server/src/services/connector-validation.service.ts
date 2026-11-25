@@ -25,12 +25,14 @@ import {
   sftpSourcePropertiesSchema,
   sftpDestinationPropertiesSchema,
   formatPropertyIssues,
+  type DestinationConnectorType,
+  type SourceConnectorType,
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 
 // Every connector type's properties have one schema in core-models (#115).
 
-const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
+export const SOURCE_SCHEMAS = {
   TCP_MLLP: tcpMllpSourcePropertiesSchema,
   HTTP: httpSourcePropertiesSchema,
   FILE: fileSourcePropertiesSchema,
@@ -42,9 +44,9 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   SFTP: sftpSourcePropertiesSchema,
   KAFKA: kafkaSourcePropertiesSchema,
   AMQP: amqpSourcePropertiesSchema,
-};
+} as const satisfies Readonly<Record<SourceConnectorType, z.ZodType>>;
 
-const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
+export const DEST_SCHEMAS = {
   TCP_MLLP: tcpMllpDestinationPropertiesSchema,
   HTTP: httpDestinationPropertiesSchema,
   FILE: fileDestinationPropertiesSchema,
@@ -57,7 +59,7 @@ const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   SFTP: sftpDestinationPropertiesSchema,
   KAFKA: kafkaDestinationPropertiesSchema,
   AMQP: amqpDestinationPropertiesSchema,
-};
+} as const satisfies Readonly<Record<DestinationConnectorType, z.ZodType>>;
 
 /**
  * A type with no schema in a mode fails: the registry could not build it
@@ -68,7 +70,7 @@ export function validateConnectorProperties(
   mode: 'source' | 'destination',
   properties: Record<string, unknown>,
 ): Result<void> {
-  const schemas = mode === 'source' ? SOURCE_SCHEMAS : DEST_SCHEMAS;
+  const schemas: Readonly<Record<string, z.ZodType>> = mode === 'source' ? SOURCE_SCHEMAS : DEST_SCHEMAS;
   const schema = Object.hasOwn(schemas, connectorType) ? schemas[connectorType] : undefined;
 
   if (!schema) {

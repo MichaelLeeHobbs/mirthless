@@ -7,37 +7,31 @@ import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
 import type { z } from 'zod/v4';
-import {
-  kafkaSourcePropertiesSchema,
-  kafkaDestinationPropertiesSchema,
-  amqpSourcePropertiesSchema,
-  amqpDestinationPropertiesSchema,
-  trimmedTextSchema,
-  type ConnectionTestResult,
-} from '@galvanigraph/core-models';
+import type { ConnectionTestInput, ConnectionTestResult, DestinationConnectorType, SourceConnectorType } from '@galvanigraph/core-models';
 import { isReservedAddress, isReservedHostname } from '@galvanigraph/engine';
 import {
   testKafkaConnection,
   testAmqpConnection,
   readQueueTls,
   withTimeout,
-  DATABASE_VENDOR,
   createPool,
+  databaseTarget,
+  toPoolConfig,
   createSsh2SftpClient,
   buildNodemailerOptions,
-  validateAuth,
+  smtpDispatcherConfig,
   resolveWithinRoots,
   type DatabasePool,
   type DatabaseVendor,
   type SftpClient,
   type SftpClientFactory,
-  type SftpConnectionOptions,
   type SftpPathKind,
 } from '@galvanigraph/connectors';
 import { ServiceError } from '../lib/service-error.js';
 import { buildFileRoots } from '../lib/file-roots.js';
 import { config } from '../config/index.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
+import { DEST_SCHEMAS, SOURCE_SCHEMAS, validateConnectorProperties } from './connector-validation.service.js';
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -128,10 +122,13 @@ async function assertHostAllowed(hostname: string): Promise<void> {
   }
 }
 
-type Tester = (
-  mode: string,
-  properties: Readonly<Record<string, unknown>>,
-) => Promise<ConnectionTestResult>;
+type Properties = Readonly<Record<string, unknown>>;
+type Tester = (properties: Properties) => Promise<ConnectionTestResult>;
+
+/** `run` gets the settings as a deploy reads them. */
+function tester<S extends z.ZodType>(schema: S, run: (settings: z.output<S>) => Promise<ConnectionTestResult>): Tester {
+  return (properties) => run(schema.parse(properties));
+}
 
 function successResult(message: string, latencyMs: number): ConnectionTestResult {
   return { success: true, message, latencyMs: Math.round(latencyMs * 100) / 100 };
@@ -141,30 +138,22 @@ function failureResult(message: string, latencyMs: number): ConnectionTestResult
   return { success: false, message, latencyMs: Math.round(latencyMs * 100) / 100 };
 }
 
-function requireString(props: Readonly<Record<string, unknown>>, key: string): string {
-  const val = props[key];
-  if (typeof val !== 'string' || val.length === 0) {
-    throw new ServiceError('INVALID_INPUT', `Missing required property: ${key}`);
-  }
-  return val;
+interface Server {
+  readonly host: string;
+  readonly port: number;
 }
 
-/** Trimmed as deploy trims it, so the address check and the connect see the host a deploy would. */
-function requireHost(props: Readonly<Record<string, unknown>>): string {
-  const host = trimmedTextSchema.safeParse(props['host']);
-  if (!host.success) throw new ServiceError('INVALID_INPUT', 'Missing required property: host');
-  return host.data;
+/** The references of the configuration map are filled by now, so one that is left is filled per message. */
+function hostnameOf(url: string, setting: string): string {
+  const hostname = URL.canParse(url) ? new URL(url).hostname : '';
+  if (hostname !== '' && !hostname.includes('${')) return hostname;
+  throw new ServiceError('INVALID_INPUT', `${setting}: names no server, or one that is filled per message, so there is none to test`);
 }
 
-function requireNumber(props: Readonly<Record<string, unknown>>, key: string): number {
-  const val = props[key];
-  if (typeof val !== 'number' || !Number.isFinite(val)) {
-    throw new ServiceError('INVALID_INPUT', `Missing required numeric property: ${key}`);
-  }
-  return val;
-}
+const testListener = async (): Promise<ConnectionTestResult> =>
+  successResult('The settings are valid. A listener connects to nothing: its port is opened when the channel starts', 0);
 
-async function testTcpConnect(host: string, port: number): Promise<ConnectionTestResult> {
+async function testTcpConnect({ host, port }: Server): Promise<ConnectionTestResult> {
   await assertHostAllowed(host);
   const start = performance.now();
 
@@ -189,20 +178,11 @@ async function testTcpConnect(host: string, port: number): Promise<ConnectionTes
   });
 }
 
-const testTcpMllp: Tester = async (_mode, props) => {
-  const host = requireHost(props);
-  const port = requireNumber(props, 'port');
-  return testTcpConnect(host, port);
-};
-
 /**
  * A real TLS (or mTLS) handshake with the resolved certificates, so a passing
  * test reflects the ca/cert/key/rejectUnauthorized the connector will deploy with.
  */
-async function testHttpsWithTls(
-  url: string,
-  props: Readonly<Record<string, unknown>>,
-): Promise<ConnectionTestResult> {
+async function testHttpsWithTls(url: string, props: Properties): Promise<ConnectionTestResult> {
   const resolved = await resolveHttpDestinationTls(props);
   if (!resolved.ok) {
     throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
@@ -241,9 +221,7 @@ async function testHttpsWithTls(
  * otherwise surface only at deploy: an unresolvable certificate, no private
  * key, or a cert and key that do not pair.
  */
-async function testHttpsSourceHandshake(
-  props: Readonly<Record<string, unknown>>,
-): Promise<ConnectionTestResult> {
+async function testHttpsSourceHandshake(props: Properties): Promise<ConnectionTestResult> {
   const resolved = await resolveHttpSourceTls(props);
   if (!resolved.ok) {
     throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
@@ -294,17 +272,12 @@ async function testHttpsSourceHandshake(
   });
 }
 
-const testHttp: Tester = async (mode, props) => {
-  if (mode === 'SOURCE' && props['scheme'] === 'HTTPS') {
-    return testHttpsSourceHandshake(props);
-  }
+async function testHttpDestination(settings: z.output<typeof DEST_SCHEMAS.HTTP>): Promise<ConnectionTestResult> {
+  const { url, scheme } = settings;
+  await assertHostAllowed(hostnameOf(url, 'url'));
 
-  const url = requireString(props, 'url');
-  const parsed = new URL(url);
-  await assertHostAllowed(parsed.hostname);
-
-  if (props['scheme'] === 'HTTPS') {
-    return testHttpsWithTls(url, props);
+  if (scheme === 'HTTPS') {
+    return testHttpsWithTls(url, settings);
   }
 
   const start = performance.now();
@@ -326,22 +299,18 @@ const testHttp: Tester = async (mode, props) => {
   } finally {
     clearTimeout(timer);
   }
-};
+}
 
 /**
  * A path outside FILE_CONNECTOR_ROOTS is refused before it is touched, so the
  * button cannot tell anyone what exists elsewhere on the server (D-315).
  */
-const testFile: Tester = async (mode, props) => {
-  const directory = requireString(props, 'directory');
+async function testFile(directory: string, access: number): Promise<ConnectionTestResult> {
   const start = performance.now();
 
   try {
     const real = await resolveWithinRoots(directory, buildFileRoots(config.FILE_CONNECTOR_ROOTS));
-    const accessMode = mode === 'SOURCE'
-      ? fs.constants.R_OK
-      : fs.constants.R_OK | fs.constants.W_OK;
-    await fs.access(real, accessMode);
+    await fs.access(real, access);
     const latency = performance.now() - start;
     return successResult(`Path accessible: ${directory}`, latency);
   } catch (err: unknown) {
@@ -349,58 +318,35 @@ const testFile: Tester = async (mode, props) => {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return failureResult(`Path not accessible: ${msg}`, latency);
   }
-};
+}
 
-const testDatabase: Tester = async (_mode, props) => {
-  const host = requireHost(props);
-  const port = requireNumber(props, 'port');
-  const database = requireString(props, 'database');
-  const vendor = props['vendor'] ?? DATABASE_VENDOR.POSTGRESQL;
-  if (vendor !== DATABASE_VENDOR.POSTGRESQL && vendor !== DATABASE_VENDOR.MYSQL) {
-    return failureResult(`Database "${String(vendor)}" is not supported (PostgreSQL and MySQL are)`, 0);
-  }
+async function testDatabase(settings: z.output<typeof SOURCE_SCHEMAS.DATABASE> | z.output<typeof DEST_SCHEMAS.DATABASE>): Promise<ConnectionTestResult> {
+  const { host, database } = settings;
+  const { vendor, port } = databaseTarget(settings);
   await assertHostAllowed(host);
 
   const start = performance.now();
   const pool = poolFactory(vendor);
   const created = await pool.create({
-    host,
-    port,
-    database,
-    // The connector forms save the account as `username`.
-    user: typeof props['username'] === 'string' ? props['username'] : '',
-    password: typeof props['password'] === 'string' ? props['password'] : '',
-    tls: props['tls'] === true,
+    ...toPoolConfig({ ...settings, port }, TEST_TIMEOUT_MS),
     maxConnections: 1,
     idleTimeoutMs: TEST_TIMEOUT_MS,
     connectionTimeoutMs: TEST_TIMEOUT_MS,
-    statementTimeoutMs: TEST_TIMEOUT_MS,
   });
   await pool.destroy();
   const latency = performance.now() - start;
   return created.ok
     ? successResult(`Database connected: ${host}:${port}/${database}`, latency)
     : failureResult(`Database connection failed: ${created.error.message}`, latency);
-};
+}
 
-const testSmtp: Tester = async (_mode, props) => {
-  const host = requireHost(props);
-  const port = requireNumber(props, 'port');
+async function testSmtp(settings: z.output<typeof DEST_SCHEMAS.SMTP>): Promise<ConnectionTestResult> {
+  const { host, port } = settings;
   await assertHostAllowed(host);
 
   const start = performance.now();
 
-  // The options the connector sends mail with, from the same keys.
-  const transport = smtpTransportFactory({
-    ...buildNodemailerOptions({
-      host,
-      port,
-      secure: props['secure'] === true,
-      requireTLS: props['requireTLS'] === true,
-      auth: { user: optionalString(props, 'authUser') ?? '', pass: optionalString(props, 'authPass') ?? '' },
-    }),
-    connectionTimeout: TEST_TIMEOUT_MS,
-  });
+  const transport = smtpTransportFactory({ ...buildNodemailerOptions(smtpDispatcherConfig(settings)), connectionTimeout: TEST_TIMEOUT_MS });
 
   try {
     await transport.verify();
@@ -413,12 +359,10 @@ const testSmtp: Tester = async (_mode, props) => {
   } finally {
     transport.close();
   }
-};
+}
 
-const testFhir: Tester = async (_mode, props) => {
-  const baseUrl = requireString(props, 'baseUrl');
-  const parsed = new URL(baseUrl);
-  await assertHostAllowed(parsed.hostname);
+async function testFhir({ baseUrl }: z.output<typeof DEST_SCHEMAS.FHIR>): Promise<ConnectionTestResult> {
+  await assertHostAllowed(hostnameOf(baseUrl, 'baseUrl'));
 
   const metadataUrl = baseUrl.replace(/\/+$/, '') + '/metadata';
   const start = performance.now();
@@ -444,54 +388,11 @@ const testFhir: Tester = async (_mode, props) => {
   } finally {
     clearTimeout(timer);
   }
-};
-
-const testDicom: Tester = async (_mode, props) => {
-  const host = requireHost(props);
-  const port = requireNumber(props, 'port');
-  return testTcpConnect(host, port);
-};
-
-const testChannel: Tester = async () => {
-  return successResult('Channel connector is internal — always available', 0);
-};
-
-const testJavascript: Tester = async () => {
-  return successResult('JavaScript connector is script-based — always available', 0);
-};
-
-const testEmail: Tester = async (_mode, props) => {
-  const host = requireHost(props);
-  const port = requireNumber(props, 'port');
-  return testTcpConnect(host, port);
-};
-
-function optionalString(props: Readonly<Record<string, unknown>>, key: string): string | undefined {
-  const val = props[key];
-  return typeof val === 'string' && val.length > 0 ? val : undefined;
 }
 
-/** Reads the options as the registry's SFTP factories read them. */
-function readSftpOptions(props: Readonly<Record<string, unknown>>): SftpConnectionOptions {
-  const options: SftpConnectionOptions = {
-    host: requireHost(props),
-    port: props['port'] === undefined || props['port'] === '' ? 22 : requireNumber(props, 'port'),
-    username: requireString(props, 'username'),
-    password: optionalString(props, 'password'),
-    privateKey: optionalString(props, 'privateKey'),
-    passphrase: optionalString(props, 'passphrase'),
-    strictHostKey: props['strictHostKey'] !== false,
-    hostKey: optionalString(props, 'hostKey'),
-    // ssh2 waits 20 s for the handshake by default; give up when the test does.
-    readyTimeoutMs: TEST_TIMEOUT_MS,
-  };
-  const authError = validateAuth(options);
-  if (authError) throw new ServiceError('INVALID_INPUT', authError);
-  if (options.strictHostKey && !options.hostKey?.trim()) {
-    throw new ServiceError('INVALID_INPUT', 'Host key checking is on but no host key is set');
-  }
-  return options;
-}
+const testChannel = async (): Promise<ConnectionTestResult> => successResult('Channel connector is internal — always available', 0);
+
+const testJavascript = async (): Promise<ConnectionTestResult> => successResult('JavaScript connector is script-based — always available', 0);
 
 /** The result is already decided, so a failed or slow close does not change it. */
 async function closeSftp(client: SftpClient): Promise<void> {
@@ -503,7 +404,7 @@ async function closeSftp(client: SftpClient): Promise<void> {
 }
 
 function sftpPathResult(
-  mode: string,
+  mode: ConnectionTestInput['mode'],
   kind: SftpPathKind,
   latency: number,
   where: { readonly target: string; readonly path: string },
@@ -517,14 +418,17 @@ function sftpPathResult(
   return failureResult(`SFTP connected to ${target} but remote path ${path} was not found`, latency);
 }
 
-const testSftp: Tester = async (mode, props) => {
-  const options = readSftpOptions(props);
-  const remoteDirectory = requireString(props, 'remoteDirectory');
-  await assertHostAllowed(options.host);
+async function testSftp(
+  mode: ConnectionTestInput['mode'],
+  settings: z.output<typeof SOURCE_SCHEMAS.SFTP> | z.output<typeof DEST_SCHEMAS.SFTP>,
+): Promise<ConnectionTestResult> {
+  const { host, port, remoteDirectory } = settings;
+  await assertHostAllowed(host);
 
   const start = performance.now();
-  const target = `${options.host}:${String(options.port)}`;
-  const client = sftpClientFactory(options);
+  const target = `${host}:${String(port)}`;
+  // The settings as the connector takes them. ssh2 waits 20 s for the handshake by default; give up when the test does.
+  const client = sftpClientFactory({ ...settings, readyTimeoutMs: TEST_TIMEOUT_MS });
   try {
     const kind = await withTimeout(
       client.connect().then(() => client.pathKind(remoteDirectory)),
@@ -538,17 +442,9 @@ const testSftp: Tester = async (mode, props) => {
   } finally {
     await closeSftp(client);
   }
-};
-
-function parseProps<S extends z.ZodType>(schema: S, props: unknown): z.output<S> {
-  const parsed = schema.safeParse(props);
-  if (!parsed.success) {
-    throw new ServiceError('INVALID_INPUT', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
-  }
-  return parsed.data;
 }
 
-async function queueTls(props: Readonly<Record<string, unknown>>): Promise<ReturnType<typeof readQueueTls>> {
+async function queueTls(props: Properties): Promise<ReturnType<typeof readQueueTls>> {
   const resolved = await resolveQueueTls(props);
   if (!resolved.ok) {
     throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
@@ -568,65 +464,68 @@ async function brokerCheck(label: string, check: () => Promise<string>): Promise
 }
 
 /** A topic that varies per message (`${...}`) is not checked. */
-const testKafka: Tester = async (mode, props) => {
-  const config = parseProps(mode === 'SOURCE' ? kafkaSourcePropertiesSchema : kafkaDestinationPropertiesSchema, props);
-  for (const broker of config.brokers.split(',')) {
+async function testKafka(settings: z.output<typeof SOURCE_SCHEMAS.KAFKA> | z.output<typeof DEST_SCHEMAS.KAFKA>): Promise<ConnectionTestResult> {
+  for (const broker of settings.brokers.split(',')) {
     await assertHostAllowed(broker.trim().replace(/:\d+$/, ''));
   }
-  const tls = await queueTls(props);
-  const topic = config.topic.includes('${') ? undefined : config.topic;
-  return brokerCheck('Kafka', () => testKafkaConnection({ ...config, tls }, topic));
+  const tls = await queueTls(settings);
+  const topic = settings.topic.includes('${') ? undefined : settings.topic;
+  return brokerCheck('Kafka', () => testKafkaConnection({ ...settings, tls }, topic));
+}
+
+async function testAmqp(
+  settings: z.output<typeof SOURCE_SCHEMAS.AMQP> | z.output<typeof DEST_SCHEMAS.AMQP>,
+  target: Parameters<typeof testAmqpConnection>[1],
+): Promise<ConnectionTestResult> {
+  const tls = await queueTls(settings);
+  await assertHostAllowed(settings.host);
+  return brokerCheck('AMQP', () => testAmqpConnection({ ...settings, tls }, target));
+}
+
+const SOURCE_TESTERS: Readonly<Record<SourceConnectorType, Tester>> = {
+  TCP_MLLP: tester(SOURCE_SCHEMAS.TCP_MLLP, testListener),
+  HTTP: tester(SOURCE_SCHEMAS.HTTP, (s) => (s.scheme === 'HTTPS' ? testHttpsSourceHandshake(s) : testListener())),
+  FILE: tester(SOURCE_SCHEMAS.FILE, (s) => testFile(s.directory, fs.constants.R_OK)),
+  DATABASE: tester(SOURCE_SCHEMAS.DATABASE, testDatabase),
+  JAVASCRIPT: tester(SOURCE_SCHEMAS.JAVASCRIPT, testJavascript),
+  CHANNEL: tester(SOURCE_SCHEMAS.CHANNEL, testChannel),
+  DICOM: tester(SOURCE_SCHEMAS.DICOM, testListener),
+  EMAIL: tester(SOURCE_SCHEMAS.EMAIL, testTcpConnect),
+  SFTP: tester(SOURCE_SCHEMAS.SFTP, (s) => testSftp('SOURCE', s)),
+  KAFKA: tester(SOURCE_SCHEMAS.KAFKA, testKafka),
+  AMQP: tester(SOURCE_SCHEMAS.AMQP, (s) => testAmqp(s, { queue: s.queue })),
 };
 
-const testAmqp: Tester = async (mode, props) => {
-  const tls = await queueTls(props);
-  if (mode === 'SOURCE') {
-    const config = parseProps(amqpSourcePropertiesSchema, props);
-    await assertHostAllowed(config.host);
-    return brokerCheck('AMQP', () => testAmqpConnection({ ...config, tls }, { queue: config.queue }));
-  }
-  const config = parseProps(amqpDestinationPropertiesSchema, props);
-  await assertHostAllowed(config.host);
-  return brokerCheck('AMQP', () => testAmqpConnection({ ...config, tls }, { exchange: config.exchange }));
-};
-
-const TESTERS: Readonly<Record<string, Tester>> = {
-  TCP_MLLP: testTcpMllp,
-  HTTP: testHttp,
-  FILE: testFile,
-  DATABASE: testDatabase,
-  SMTP: testSmtp,
-  FHIR: testFhir,
-  DICOM: testDicom,
-  CHANNEL: testChannel,
-  JAVASCRIPT: testJavascript,
-  EMAIL: testEmail,
-  SFTP: testSftp,
-  KAFKA: testKafka,
-  AMQP: testAmqp,
+const DEST_TESTERS: Readonly<Record<DestinationConnectorType, Tester>> = {
+  TCP_MLLP: tester(DEST_SCHEMAS.TCP_MLLP, testTcpConnect),
+  HTTP: tester(DEST_SCHEMAS.HTTP, testHttpDestination),
+  FILE: tester(DEST_SCHEMAS.FILE, (s) => testFile(s.directory, fs.constants.R_OK | fs.constants.W_OK)),
+  DATABASE: tester(DEST_SCHEMAS.DATABASE, testDatabase),
+  JAVASCRIPT: tester(DEST_SCHEMAS.JAVASCRIPT, testJavascript),
+  SMTP: tester(DEST_SCHEMAS.SMTP, testSmtp),
+  CHANNEL: tester(DEST_SCHEMAS.CHANNEL, testChannel),
+  FHIR: tester(DEST_SCHEMAS.FHIR, testFhir),
+  DICOM: tester(DEST_SCHEMAS.DICOM, testTcpConnect),
+  SFTP: tester(DEST_SCHEMAS.SFTP, (s) => testSftp('DESTINATION', s)),
+  KAFKA: tester(DEST_SCHEMAS.KAFKA, testKafka),
+  AMQP: tester(DEST_SCHEMAS.AMQP, (s) => testAmqp(s, { exchange: s.exchange })),
 };
 
 export class ConnectionTestService {
+  /** Refuses what a deploy refuses, and then connects. The references of the configuration map are filled before. */
   static async testConnection(
     connectorType: string,
-    mode: string,
-    properties: Readonly<Record<string, unknown>>,
+    mode: ConnectionTestInput['mode'],
+    given: Properties,
   ): Promise<Result<ConnectionTestResult>> {
-    const tester = TESTERS[connectorType];
-
-    if (!tester) {
-      return {
-        ok: false,
-        value: null,
-        error: stderr(new ServiceError(
-          'INVALID_INPUT',
-          `Unknown connector type: ${connectorType}`,
-        )),
-      };
-    }
+    // A deploy gives a Channel Reader its own channel's id, which a new channel has not got.
+    const properties = connectorType === 'CHANNEL' && mode === 'SOURCE' ? { ...given, channelId: 'this channel' } : { ...given };
+    const valid = validateConnectorProperties(connectorType, mode === 'SOURCE' ? 'source' : 'destination', properties);
+    if (!valid.ok) return valid;
+    const testers: Readonly<Record<string, Tester>> = mode === 'SOURCE' ? SOURCE_TESTERS : DEST_TESTERS;
 
     try {
-      const result = await tester(mode, properties);
+      const result = await testers[connectorType]!(properties);
       return { ok: true, value: result, error: null };
     } catch (err: unknown) {
       if (err instanceof ServiceError) {

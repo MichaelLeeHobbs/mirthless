@@ -665,6 +665,10 @@ GROUP BY c.channel_id;
 
 This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
 
+## Test Connection checks the settings as a deploy does (#133)
+
+Test Connection refuses whatever a deploy would refuse, with the deploy's text, before it connects ([what it tests](../user/connector-reference.md#test-connection), D-380). A script that calls `POST /connectors/test` with only a host and a port gets 400 and has to send the connector's other settings too. References to the configuration map are filled, for someone who holds `config_map:read` or `channels:write` on the channel; anyone else gets 403 for settings that hold one. The test of a TCP/MLLP, HTTP or DICOM source, which always failed, checks the settings.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

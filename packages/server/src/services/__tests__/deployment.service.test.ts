@@ -46,9 +46,9 @@ vi.mock('../channel.service.js', () => ({
   ChannelService: mockChannelService,
 }));
 
-const mockConfigEntries = vi.fn().mockResolvedValue({ ok: true, value: [], error: null });
+const mockReferences = vi.fn().mockResolvedValue({ ok: true, value: new Map(), error: null });
 vi.mock('../config-map.service.js', () => ({
-  ConfigMapService: { list: mockConfigEntries },
+  ConfigMapService: { references: mockReferences },
 }));
 
 const mockEmitEvent = vi.fn();
@@ -168,7 +168,7 @@ describe('DeploymentService', () => {
     });
 
     it('records the channel before configuration map references are resolved', async () => {
-      mockConfigEntries.mockResolvedValueOnce(ok([{ category: 'site', name: 'SECRET_HOST', value: '10.0.0.9' }]));
+      mockReferences.mockResolvedValueOnce(ok(new Map([['SECRET_HOST', '10.0.0.9']])));
       const channel = { ...CHANNEL_DETAIL, sourceConnectorProperties: { port: 6661, host: '${SECRET_HOST}' } };
       mockChannelService.getById.mockResolvedValue(ok(channel));
 
@@ -339,10 +339,7 @@ describe('DeploymentService', () => {
     });
 
     it('resolves configuration map references in connector settings before validating them', async () => {
-      mockConfigEntries.mockResolvedValueOnce(ok([
-        { category: 'site', name: 'SENDER_HOST', value: '10.0.0.5' },
-        { category: 'site', name: 'SENDER_PORT', value: '6661' },
-      ]));
+      mockReferences.mockResolvedValueOnce(ok(new Map([['SENDER_HOST', '10.0.0.5'], ['site.SENDER_PORT', '6661']])));
       mockChannelService.getById.mockResolvedValue(ok({
         ...CHANNEL_DETAIL,
         destinations: [{
@@ -361,7 +358,7 @@ describe('DeploymentService', () => {
     });
 
     it('fails the deploy when the configuration map cannot be loaded', async () => {
-      mockConfigEntries.mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') });
+      mockReferences.mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') });
       mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
 
       const result = await DeploymentService.deploy(CHANNEL_ID);
