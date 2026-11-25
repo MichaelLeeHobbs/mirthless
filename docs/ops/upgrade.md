@@ -472,6 +472,10 @@ The migration builds the index of waiting messages again, which reads the whole 
 - `PUT /api/v1/channels/:id` needs the `id` and `enabled` of each destination, and filters and transformers name their destination by that `id`. A script that sends `metaDataId` there, or ids the channel does not have, gets a 400 ([Change a channel](api-automation.md#change-a-channel)).
 - An import finds the channel's destinations by the `id` that exports now carry, and can refuse a channel over its numbers ([which ones](api-automation.md#import-it-on-another-server)). A file from before the upgrade is read as before, by number and name.
 
+## A DICOM Sender reads SENT only for a stored image (#410)
+
+A DICOM Sender took a refused C-STORE, a rejected presentation context, an aborted association and a closed connection as sent, and a DICOM Listener in front of it deleted its file. Each is now an ERROR that names the status or the reason, and a destination with a queue retries it. Nothing in the database is rewritten: a message that reads SENT from before the upgrade is no proof that the archive has the image, so compare with the archive where that matters. Expect errors on channels whose archive has been refusing images unnoticed.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

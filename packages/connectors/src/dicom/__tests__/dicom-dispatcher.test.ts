@@ -44,7 +44,7 @@ function makeMockSender(overrides?: Partial<DcmtkSender>): DcmtkSender {
   return {
     send: vi.fn(async () => ({
       ok: true as const,
-      value: { files: ['/data/dicom/output/image.dcm'], fileCount: 1, durationMs: 150 } as DcmtkSendResult,
+      value: { files: ['/data/dicom/output/image.dcm'], fileCount: 1, durationMs: 150, warnings: [] } satisfies DcmtkSendResult,
       error: null,
     })),
     stop: vi.fn(async () => {}),
