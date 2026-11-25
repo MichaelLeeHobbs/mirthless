@@ -3,6 +3,7 @@
 // start and end bytes can be set.
 
 import { DEFAULT_MAX_FRAME_BYTES } from '@galvanigraph/core-models';
+import { encodeText } from '../encoding.js';
 
 export interface Framing {
   /** Bytes before each message; may be empty (the message starts right after the previous end). */
@@ -28,8 +29,13 @@ export function framingFromHex(startHex: string | undefined, endHex: string | un
 
 export { DEFAULT_MAX_FRAME_BYTES };
 
+/** Throws when the charset cannot hold the message. */
 export function wrapMllp(message: string, charset: BufferEncoding = 'utf-8', framing: Framing = MLLP_FRAMING): Buffer {
-  return Buffer.concat([framing.start, Buffer.from(message, charset), framing.end]);
+  return frameBytes(encodeText(message, charset), framing);
+}
+
+export function frameBytes(payload: Buffer, framing: Framing = MLLP_FRAMING): Buffer {
+  return Buffer.concat([framing.start, payload, framing.end]);
 }
 
 export class MllpParser {
