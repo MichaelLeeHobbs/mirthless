@@ -4,6 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { channelDeployments } from '../db/schema/channel-deployments.js';
+import './query-error.js';
 
 /** What a thread can be sent of the server's pool config. */
 export interface WatchdogDb {

@@ -8,6 +8,7 @@ import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { checkRuntimeRole, provisionRuntimeRole, runtimeRoleFromUrl } from './dist/db/runtime-role.js';
+import './dist/lib/query-error.js';
 
 const ROLES_DOC = 'docs/ops/upgrade.md#database-roles';
 const databaseUrl = process.env.DATABASE_URL;

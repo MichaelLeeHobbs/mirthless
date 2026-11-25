@@ -1,6 +1,6 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
-import { DrizzleQueryError, eq, isNull, and, sql } from 'drizzle-orm';
+import { eq, isNull, and, sql } from 'drizzle-orm';
 import {
   PERMISSIONS,
   can,
@@ -18,6 +18,7 @@ import { PartitionManagerService } from './partition-manager.service.js';
 import { GrantService } from './grant.service.js';
 import { assertCertificatesInScope } from './connector-tls-resolver.js';
 import { queryUserStanding } from '../lib/principal.js';
+import { QueryError } from '../lib/query-error.js';
 import { stripRedactedProperties } from '../lib/secret-redaction.js';
 import { overwriteProperties, sameDestination } from '../lib/stored-credentials.js';
 import {
@@ -133,7 +134,7 @@ async function importSingleChannel(
 
 /** A failed statement is reported in the database's own words: no value from the channel belongs in an import's answer. */
 function importErrorText(err: unknown): string {
-  const reported = err instanceof DrizzleQueryError ? err.cause ?? 'a database statement failed' : err;
+  const reported = err instanceof QueryError ? err.cause ?? 'a database statement failed' : err;
   return reported instanceof Error ? reported.message : String(reported);
 }
 
