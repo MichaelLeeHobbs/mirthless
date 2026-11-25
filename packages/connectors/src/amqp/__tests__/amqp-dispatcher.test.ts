@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import { AmqpDispatcher, type AmqpDispatcherConfig } from '../amqp-dispatcher.js';
 import { connectOptions, socketOptions, type AmqpPublisherFactory } from '../amqp-client.js';
@@ -99,6 +99,34 @@ describe('send', () => {
     pubs.failNext = 1;
     expect((await dispatcher.send(message(), signal())).ok).toBe(false);
     expect((await dispatcher.send(message(), signal())).ok).toBe(true);
+  });
+
+  it.each([
+    ['halt', 'onHalt', 2_000],
+    ['stop', 'onStop', 10_000],
+  ] as const)('a %s ends although the broker never lets the connection open, which is closed when it does (#413)', async (_what, action, withinMs) => {
+    let connected = (publisher: FakeAmqpPublisher): void => { void publisher; };
+    const dispatcher = new AmqpDispatcher(config, () => new Promise((resolve) => { connected = resolve; }));
+    await dispatcher.onStart();
+    vi.useFakeTimers();
+    try {
+      const sending = dispatcher.send(message(), AbortSignal.abort());
+      expect((await sending).ok).toBe(false);
+      const controller = new AbortController();
+      const hanging = dispatcher.send(message(), controller.signal);
+      controller.abort();
+      expect((await hanging).ok).toBe(false);
+
+      const ending = dispatcher[action]();
+      await vi.advanceTimersByTimeAsync(withinMs);
+      expect((await ending).ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    const late = new FakeAmqpPublisher();
+    connected(late);
+    await vi.waitFor(() => { expect(late.closed).toBe(true); });
+    expect(late.published).toEqual([]);
   });
 
   it('refuses to send before start, after stop and with an aborted signal', async () => {

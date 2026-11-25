@@ -50,6 +50,23 @@ async function start(topic: FakeKafkaTopic, dispatch: Dispatch, overrides: Parti
   return { log, started };
 }
 
+/** Started on a topic with a record, whose dispatch is held until it is let go. */
+async function startHeld(topic: FakeKafkaTopic, recoverable = true): Promise<{
+  readonly log: ReturnType<typeof makeMockLogger>;
+  readonly held: { readonly offered: string[]; readonly letGo: (result: Result<DispatchResult>) => void };
+}> {
+  const offered: string[] = [];
+  let letGo = (result: Result<DispatchResult>): void => { void result; };
+  const answer = new Promise<Result<DispatchResult>>((resolve) => { letGo = resolve; });
+  const { log } = await start(topic, async (raw) => {
+    offered.push(raw.content);
+    raw.onStored?.({ recoverable });
+    return answer;
+  });
+  await vi.waitFor(() => { expect(offered).toHaveLength(1); });
+  return { log, held: { offered, letGo: (result) => { letGo(result); } } };
+}
+
 describe('onDeploy', () => {
   it.each([
     [{ brokers: ' , ' }, 'broker'],
@@ -266,11 +283,12 @@ describe('a record the pipeline never stores', () => {
     await receiver.onStart();
     await vi.waitFor(() => { expect(calls).toBe(1); });
     await receiver.onHalt();
-    await receiver.onStart();
-    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
-
+    const starting = receiver.onStart();
     releaseFirst?.();
-    await new Promise((r) => setTimeout(r, 20));
+    await starting;
+    // Not stored, so it is read again.
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+    expect(calls).toBe(2);
     expect(fatal).toBe(0);
     topic.produce('MSH|2');
     await vi.waitFor(() => { expect(topic.committed).toBe(2); });
@@ -356,15 +374,71 @@ describe('stop and halt', () => {
     receiver = null;
   });
 
-  it('halt leaves without waiting; the record in progress is read again next time', async () => {
+  it('a stop waits for the record in progress however long it takes, and reads none after it (#413)', async () => {
     const topic = new FakeKafkaTopic();
     topic.produce('MSH|1');
-    let entered = false;
-    await start(topic, async () => { entered = true; return new Promise<Result<DispatchResult>>(() => undefined); });
-    await vi.waitFor(() => { expect(entered).toBe(true); });
+    topic.produce('MSH|2');
+    const { held } = await startHeld(topic);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let stopped = false;
+      const stopping = receiver?.onStop().then(() => { stopped = true; });
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(stopped).toBe(false);
+      held.letGo(stored(1));
+      await stopping;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(topic.committed).toBe(1);
+    expect(topic.isSubscribed).toBe(false);
+    expect(held.offered).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('a halt does not wait, and a record recorded by then is committed, not read again (#413)', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    topic.produce('MSH|2');
+    const { held } = await startHeld(topic);
+
     expect((await receiver?.onHalt())?.ok).toBe(true);
     expect(topic.committed).toBe(0);
-    expect(topic.isSubscribed).toBe(false);
+    held.letGo(stored(1));
+    await vi.waitFor(() => { expect(topic.isSubscribed).toBe(false); });
+
+    expect(topic.committed).toBe(1);
+    expect(held.offered).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it.each([
+    ['is committed when the channel keeps its content', true, 1],
+    ['is read again when the channel does not', false, 0],
+  ])('a record that a halt ended with an error %s', async (_what, recoverable, committed) => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const { held } = await startHeld(topic, recoverable);
+
+    await receiver?.onHalt();
+    held.letGo(stored(1, DISPATCH_STATUS.ERROR));
+    await vi.waitFor(() => { expect(topic.isSubscribed).toBe(false); });
+
+    expect(topic.committed).toBe(committed);
+    receiver = null;
+  });
+
+  it('a halt ends a stop that waits', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const { held } = await startHeld(topic);
+
+    const stopping = receiver?.onStop();
+    await receiver?.onHalt();
+    expect((await stopping)?.ok).toBe(true);
+    held.letGo(stored(1));
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
     receiver = null;
   });
 });
@@ -385,13 +459,71 @@ describe('halt then start again', () => {
     await start(topic, dispatch);
     await vi.waitFor(() => { expect(calls).toBe(1); });
     await receiver?.onHalt();
-    expect((await receiver?.onStart())?.ok).toBe(true);
-    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+    const starting = receiver?.onStart();
     releaseFirst?.();
+    expect((await starting)?.ok).toBe(true);
     topic.produce('MSH|2');
     await vi.waitFor(() => { expect(topic.committed).toBe(2); });
     await new Promise((r) => setTimeout(r, 20));
-    expect(offered).toEqual(['MSH|1', 'MSH|1', 'MSH|2']);
+    expect(offered).toEqual(['MSH|1', 'MSH|2']);
+  });
+
+  it('a start waits 10 seconds for the record a halt left in hand, and then reads it again', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const { log, held } = await startHeld(topic);
+    await receiver?.onHalt();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let started = false;
+      const starting = receiver?.onStart().then(() => { started = true; });
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(started).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await starting;
+    } finally {
+      vi.useRealTimers();
+    }
+    await vi.waitFor(() => { expect(held.offered).toEqual(['MSH|1', 'MSH|1']); });
+    expect(log.warnings.some((w) => w.msg.includes('may be read again'))).toBe(true);
+    held.letGo(stored(1));
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+  });
+
+  it('an undeploy waits for the record a halt left in hand, which another deployment would read', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const { held } = await startHeld(topic);
+    await receiver?.onHalt();
+
+    const undeploying = receiver?.onUndeploy();
+    held.letGo(stored(1));
+    await undeploying;
+
+    expect(topic.committed).toBe(1);
+    receiver = null;
+  });
+});
+
+describe('a partner that does not answer (#413)', () => {
+  it.each([
+    ['halt', 'onHalt', 2_000],
+    ['stop', 'onStop', 20_000],
+  ] as const)('a %s ends although the broker never answers the close', async (_what, action, withinMs) => {
+    const topic = new FakeKafkaTopic();
+    topic.hangCloses = true;
+    await start(topic, pipeline().dispatch);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const ending = receiver?.[action]();
+      await vi.advanceTimersByTimeAsync(withinMs);
+      expect((await ending)?.ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      receiver = null;
+    }
   });
 });
 

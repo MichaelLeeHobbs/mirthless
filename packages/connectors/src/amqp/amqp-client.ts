@@ -1,7 +1,8 @@
 // Queues, exchanges and bindings are the broker administrator's: check them, never declare them (D-266).
 
-import { connect, type ChannelModel, type ConfirmChannel, type ConsumeMessage, type Options, type SocketOptions } from 'amqplib';
-import { isPlainObject } from '@galvanigraph/core-util';
+import { connect, type Channel, type ChannelModel, type ConfirmChannel, type ConsumeMessage, type Options, type SocketOptions } from 'amqplib';
+import { isPlainObject, settleWithin } from '@galvanigraph/core-util';
+import { STOP_CLOSE_MS } from '../client-lifecycle.js';
 import type { TlsClientOptions } from '../tls.js';
 
 export interface AmqpConnectionConfig {
@@ -50,6 +51,19 @@ export function socketOptions(config: AmqpConnectionConfig): SocketOptions {
 
 async function open(config: AmqpConnectionConfig): Promise<ChannelModel> {
   return connect(connectOptions(config), socketOptions(config));
+}
+
+/**
+ * amqplib waits for the broker to answer the close, and its types leave out the connection's socket.
+ * The channel goes first: the close of the connection overtakes an acknowledgement just sent on it.
+ */
+async function close(model: ChannelModel, timeoutMs: number, channel?: Channel): Promise<void> {
+  const closing = async (): Promise<void> => {
+    await channel?.close().catch(() => undefined);
+    await model.close();
+  };
+  if (await settleWithin(closing(), timeoutMs)) return;
+  (model.connection as { readonly stream?: { destroy(): unknown } }).stream?.destroy();
 }
 
 interface OpenContainer {
@@ -141,7 +155,8 @@ export interface AmqpConsumeOptions extends AmqpConnectionConfig {
 /** `closed` settles when the connection or channel goes away. */
 export interface AmqpConsumer {
   readonly closed: Promise<Error>;
-  close(): Promise<void>;
+  /** Ends in this time: a broker that does not answer loses the connection. */
+  close(timeoutMs: number): Promise<void>;
 }
 
 /** A throw from `onDelivery` closes the channel, and the message is delivered again without end: do fallible work after it returns. */
@@ -169,8 +184,9 @@ export const consumeAmqp: AmqpConsume = async (options, onDelivery) => {
   const closed = new Promise<Error>((resolve) => { settle = resolve; });
   model.on('error', (err: Error) => { lastError = err; });
   model.on('close', (err?: Error) => { settle(err ?? lastError ?? new Error('AMQP connection closed')); });
+  let channel: Channel;
   try {
-    const channel = await model.createChannel();
+    channel = await model.createChannel();
     channel.on('error', (err: Error) => { lastError = err; });
     channel.on('close', () => { settle(lastError ?? new Error('AMQP channel closed')); });
     await channel.checkQueue(options.queue);
@@ -183,12 +199,12 @@ export const consumeAmqp: AmqpConsume = async (options, onDelivery) => {
       onDelivery(toDelivery(channel, msg));
     }, { noAck: false });
   } catch (err) {
-    await model.close().catch(() => undefined);
+    await close(model, STOP_CLOSE_MS);
     throw err;
   }
   return {
     closed,
-    close: async (): Promise<void> => { await model.close(); },
+    close: (timeoutMs) => close(model, timeoutMs, channel),
   };
 };
 
@@ -206,7 +222,8 @@ export interface AmqpPublisher {
   /** Resolves once the broker confirms it has routed and stored the message. */
   publish(message: AmqpOutbound): Promise<void>;
   readonly isOpen: boolean;
-  close(): Promise<void>;
+  /** As {@link AmqpConsumer.close}. */
+  close(timeoutMs: number): Promise<void>;
 }
 
 export type AmqpPublisherFactory = (config: AmqpConnectionConfig) => Promise<AmqpPublisher>;
@@ -221,7 +238,7 @@ export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
   try {
     channel = await model.createConfirmChannel();
   } catch (err) {
-    await model.close().catch(() => undefined);
+    await close(model, STOP_CLOSE_MS);
     throw err;
   }
   channel.on('close', () => { connectionOpen = false; });
@@ -256,9 +273,9 @@ export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     }),
-    close: async (): Promise<void> => {
+    close: async (timeoutMs): Promise<void> => {
       connectionOpen = false;
-      await model.close();
+      await close(model, timeoutMs);
     },
   };
 };
@@ -279,6 +296,6 @@ export async function testAmqpConnection(config: AmqpConnectionConfig, target: {
     if (target.exchange) await channel.checkExchange(target.exchange);
     return `Connected to ${where}: exchange ${target.exchange || '(default)'} exists`;
   } finally {
-    await model.close().catch(() => undefined);
+    await close(model, STOP_CLOSE_MS);
   }
 }

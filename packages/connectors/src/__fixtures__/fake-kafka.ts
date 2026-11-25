@@ -23,6 +23,8 @@ export class FakeKafkaTopic {
   subscribeCount = 0;
   failSubscribes = 0;
   failCommits = 0;
+  /** The broker never answers a close. */
+  hangCloses = false;
   private active: FakeSubscription | null = null;
   private listeners: (() => void)[] = [];
 
@@ -109,6 +111,7 @@ class FakeSubscription implements KafkaSubscription {
   }
 
   async close(force: boolean): Promise<void> {
+    if (this.topic.hangCloses) await new Promise(() => undefined);
     this.closed = true;
     this.closedForcefully = force;
     this.topic.notify();
@@ -124,6 +127,7 @@ export class FakeKafkaProducer implements KafkaProducerClient {
   readonly sent: KafkaOutboundRecord[] = [];
   failSends = 0;
   closed = false;
+  hangClose = false;
 
   async send(record: KafkaOutboundRecord): Promise<{ topic: string; partition: number; offset: string }> {
     if (this.failSends > 0) {
@@ -135,6 +139,7 @@ export class FakeKafkaProducer implements KafkaProducerClient {
   }
 
   async close(): Promise<void> {
+    if (this.hangClose) await new Promise(() => undefined);
     this.closed = true;
   }
 }

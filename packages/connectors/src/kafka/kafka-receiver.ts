@@ -4,11 +4,12 @@
 // would block its partition forever, so after `maxStoreAttempts` failures in a row the
 // receiver stops the channel and leaves it uncommitted.
 
-import { tryCatch, type Result } from '@galvanigraph/core-util';
+import { settleUnlessAborted, settleWithin, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { closeQuietly, HALT_CLOSE_MS, STOP_CLOSE_MS } from '../client-lifecycle.js';
 import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
 import {
@@ -23,6 +24,8 @@ import {
 /** Wait before rejoining after a failure, so a down broker is not hammered. */
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const KAFKA_OP_TIMEOUT_MS = 30_000;
+/** How long a start or an undeploy waits for the record that a halt left in hand. */
+const EARLIER_ENDS_MS = 10_000;
 
 export interface KafkaReceiverConfig extends KafkaConnectionConfig {
   readonly topic: string;
@@ -63,20 +66,25 @@ export function toRawMessage(record: KafkaInboundRecord, charset: QueueCharset =
   };
 }
 
+/** One start of the source. A record that outlives a halt is committed on its own subscription. */
+interface Run {
+  subscription: KafkaSubscription | null;
+  /** False once the source stops, is halted or gives up: it takes no more records. */
+  live: boolean;
+  readonly halted: AbortController;
+  /** The record being dispatched and committed. */
+  inHand: Promise<boolean> | null;
+  loop: Promise<void>;
+  wake: (() => void) | null;
+}
+
 export class KafkaReceiver implements SourceConnectorRuntime {
   private readonly config: KafkaReceiverConfig;
   private readonly subscribe: KafkaSubscribe;
   private readonly logger: ConnectorLogger;
   private readonly retryDelayMs: number;
   private dispatcher: MessageDispatcher | null = null;
-  private subscription: KafkaSubscription | null = null;
-  private running = false;
-  /** Counts starts, so a loop left over from before a halt and restart exits. */
-  private generation = 0;
-  private loop: Promise<void> | null = null;
-  /** The record being dispatched and committed, so a stop can let it finish. */
-  private current: Promise<boolean> | null = null;
-  private wake: (() => void) | null = null;
+  private run: Run | null = null;
   private onFatal: SourceFatalHandler | null = null;
   private readonly failures = new Map<string, number>();
 
@@ -107,82 +115,86 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   async onStart(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (!this.dispatcher) throw new Error('Dispatcher not set — call setDispatcher before start');
+      await this.earlierEnds();
       const subscription = await this.subscribe(this.config);
       this.failures.clear();
-      this.generation += 1;
-      this.running = true;
-      this.loop = this.run(this.generation, subscription);
+      const run: Run = { subscription, live: true, halted: new AbortController(), inHand: null, loop: Promise.resolve(), wake: null };
+      this.run = run;
+      run.loop = this.consumeWhileLive(run);
     });
   }
 
+  /** The next member of the group would be given its partition, and with it the record, or wait for it. */
+  private async earlierEnds(): Promise<void> {
+    const { run } = this;
+    if (!run || run.inHand === null || await settleWithin(run.inHand, EARLIER_ENDS_MS)) return;
+    this.logger.warn({ topic: this.config.topic }, 'A Kafka record that a halt left in hand has not ended; it is not committed and may be read again');
+    await this.closeSubscription(run, true, HALT_CLOSE_MS);
+  }
+
+  /** Waits for the record in hand, however long it takes, until a halt. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.running = false;
-      this.wake?.();
-      if (this.current) await withTimeout(this.current, KAFKA_OP_TIMEOUT_MS, 'Kafka in-flight record').catch(() => false);
-      await this.closeSubscription(this.subscription, false);
-      await withTimeout(this.loop ?? Promise.resolve(), KAFKA_OP_TIMEOUT_MS, 'Kafka stop').catch(() => undefined);
-      this.loop = null;
+      const { run } = this;
+      if (!run) return;
+      run.live = false;
+      run.wake?.();
+      if (run.inHand !== null && !(await settleUnlessAborted(run.inHand, run.halted.signal))) return;
+      await this.closeSubscription(run, false, STOP_CLOSE_MS);
+      await settleWithin(run.loop, STOP_CLOSE_MS, run.halted.signal);
     });
   }
 
-  /**
-   * Leave at once. A record in progress (its dispatch is cancelled by the halt)
-   * is not committed, so it is read again on the next start.
-   */
+  /** Does not wait: the loop keeps the subscription for a record in hand, commits it and leaves the group. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
-      this.running = false;
-      this.wake?.();
-      await this.closeSubscription(this.subscription, true);
-      this.loop = null;
+      const { run } = this;
+      if (!run) return;
+      run.live = false;
+      run.wake?.();
+      run.halted.abort();
+      if (run.inHand === null) await this.closeSubscription(run, true, HALT_CLOSE_MS);
     });
   }
 
   async onUndeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.dispatcher = null;
+      await this.earlierEnds();
     });
   }
 
-  private isCurrent(generation: number): boolean {
-    return this.running && generation === this.generation;
-  }
-
-  private async run(generation: number, first: KafkaSubscription): Promise<void> {
-    let subscription: KafkaSubscription | null = first;
-    while (this.isCurrent(generation)) {
+  private async consumeWhileLive(run: Run): Promise<void> {
+    while (run.live) {
       try {
-        subscription ??= await this.subscribe(this.config);
-        this.subscription = subscription;
+        run.subscription ??= await this.subscribe(this.config);
         // A stop or halt during the subscribe above must not leave it open.
-        if (this.isCurrent(generation)) await this.consume(generation, subscription);
+        if (run.live) await this.consume(run, run.subscription);
       } catch (err) {
-        if (this.isCurrent(generation)) {
+        if (run.live) {
           this.logger.error({ ...errorInfo(err), topic: this.config.topic }, 'Kafka consumer failed; rejoining from the last committed offset');
         }
       }
-      await this.closeSubscription(subscription, true);
-      subscription = null;
-      if (this.isCurrent(generation)) await this.pause();
+      await this.closeSubscription(run, run.live || run.halted.signal.aborted, KAFKA_OP_TIMEOUT_MS);
+      if (run.live) await this.pause(run);
     }
   }
 
-  private async consume(generation: number, subscription: KafkaSubscription): Promise<void> {
+  private async consume(run: Run, subscription: KafkaSubscription): Promise<void> {
     for await (const record of subscription) {
-      if (!this.isCurrent(generation)) return;
-      this.current = this.handle(generation, record);
-      const stored = await this.current;
-      this.current = null;
-      if (!stored) return;
+      if (!run.live) return;
+      run.inHand = this.handle(run, record);
+      const stored = await run.inHand;
+      run.inHand = null;
+      if (!stored || !run.live) return;
     }
-    if (this.isCurrent(generation)) this.logger.warn({ topic: this.config.topic }, 'Kafka stream ended; rejoining');
+    if (run.live) this.logger.warn({ topic: this.config.topic }, 'Kafka stream ended; rejoining');
   }
 
   /** A throw becomes a failed result, so it counts toward the cap like any record not stored. */
-  private async dispatchRecord(dispatcher: MessageDispatcher, record: KafkaInboundRecord, where: RecordPosition): Promise<Result<DispatchResult>> {
+  private async dispatchRecord(dispatcher: MessageDispatcher, record: KafkaInboundRecord, where: RecordPosition, onStored: RawMessage['onStored']): Promise<Result<DispatchResult>> {
     return tryCatch(async () => {
-      const raw = toRawMessage(record, this.config.charset);
+      const raw = { ...toRawMessage(record, this.config.charset), onStored };
       if (raw.sourceMap['charsetError']) {
         this.logger.warn({ ...where }, 'Kafka record value is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
       }
@@ -192,21 +204,26 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     });
   }
 
-  private async handle(generation: number, record: KafkaInboundRecord): Promise<boolean> {
+  private async handle(run: Run, record: KafkaInboundRecord): Promise<boolean> {
     const dispatcher = this.dispatcher;
     if (!dispatcher) return false;
     const where = { topic: record.topic, partition: record.partition, offset: record.offset.toString() };
-    const result = await this.dispatchRecord(dispatcher, record, where);
+    let rawKept = false;
+    const result = await this.dispatchRecord(dispatcher, record, where, ({ recoverable }) => { rawKept = recoverable; });
     const position = `${String(record.partition)}:${where.offset}`;
     if (!result.ok) {
       // A failure that comes back after a stop or halt (the pipeline was being
       // shut down) is not the record's fault, and must not stop a later start.
-      if (this.isCurrent(generation)) this.notStored(position, result.error, where);
+      if (run.live) this.notStored(run, position, result.error, where);
       else this.logger.warn({ ...errorInfo(result.error), ...where }, 'Pipeline did not store the Kafka record while the source was stopping; it is not committed and will be read again');
       return false;
     }
     this.failures.delete(position);
     const failure = dispatchFailure(result);
+    if (failure && run.halted.signal.aborted && !rawKept) {
+      this.logger.warn({ ...errorInfo(failure), ...where }, 'A halt ended a Kafka record whose content the channel does not keep; it is not committed and will be read again');
+      return false;
+    }
     if (failure) {
       // Stored with an error and alerted; reading it again would process it twice.
       this.logger.error({ ...errorInfo(failure), ...where }, 'Kafka record stored with an ERROR status; committing so it is not processed twice');
@@ -220,20 +237,19 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     return true;
   }
 
-  private notStored(position: string, cause: Error, where: RecordPosition): void {
+  private notStored(run: Run, position: string, cause: Error, where: RecordPosition): void {
     const attempts = (this.failures.get(position) ?? 0) + 1;
     this.failures.set(position, attempts);
     if (attempts >= (this.config.maxStoreAttempts ?? DEFAULT_MAX_STORE_ATTEMPTS)) {
-      this.giveUp(cause, where, attempts);
+      this.giveUp(run, cause, where, attempts);
       return;
     }
     this.logger.error({ ...errorInfo(cause), ...where, attempts }, 'Pipeline did not store the Kafka record; it is not committed and will be read again');
   }
 
   /** The record stays uncommitted, so a restart reads it first. */
-  private giveUp(cause: Error, where: RecordPosition, attempts: number): void {
-    this.running = false;
-    this.wake?.();
+  private giveUp(run: Run, cause: Error, where: RecordPosition, attempts: number): void {
+    run.live = false;
     const error = new Error(
       `Kafka source stopped: the channel could not store the record at topic ${where.topic} partition ${String(where.partition)} ` +
       `offset ${where.offset} after ${String(attempts)} attempts (${cause.message}). The record is not committed; ` +
@@ -243,21 +259,24 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     this.onFatal?.(error);
   }
 
-  private async closeSubscription(subscription: KafkaSubscription | null, force: boolean): Promise<void> {
+  private async closeSubscription(run: Run, force: boolean, timeoutMs: number): Promise<void> {
+    const { subscription } = run;
     if (!subscription) return;
-    if (this.subscription === subscription) this.subscription = null;
-    try {
-      await withTimeout(subscription.close(force), KAFKA_OP_TIMEOUT_MS, 'Kafka close');
-    } catch (err) {
-      this.logger.warn(errorInfo(err), 'Error closing Kafka consumer');
-    }
+    run.subscription = null;
+    await closeQuietly({
+      close: () => subscription.close(force),
+      timeoutMs,
+      label: 'Kafka close',
+      logger: this.logger,
+      message: 'Error closing Kafka consumer',
+    });
   }
 
-  private async pause(): Promise<void> {
+  private async pause(run: Run): Promise<void> {
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, this.retryDelayMs);
-      this.wake = (): void => { clearTimeout(timer); resolve(); };
+      run.wake = (): void => { clearTimeout(timer); resolve(); };
     });
-    this.wake = null;
+    run.wake = null;
   }
 }
