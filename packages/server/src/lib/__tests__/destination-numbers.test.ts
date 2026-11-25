@@ -40,10 +40,16 @@ describe('planDestinations', () => {
     const gone = '3f0c9f3e-0000-4000-8000-000000000001';
     expect(() => planDestinations(['lab', gone], [LAB], 2)).toThrow(expect.objectContaining({ code: 'INVALID_INPUT', message: expect.stringContaining(`no destination with the id "${gone}"`) }));
     expect(planDestinations([gone], [{ id: gone, metaDataId: 1 }], 2).rows).toEqual([{ id: gone, metaDataId: 1, isNew: false }]);
-    for (const other of [`{${gone}}`, gone.replaceAll('-', '')]) {
-      expect(() => planDestinations([other], [{ id: gone, metaDataId: 1 }], 2)).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
-    }
-    for (const made of ['new-1', 'deadbeef', `${gone}x`]) expect(planDestinations([made], [], 1).rows).toMatchObject([{ isNew: true }]);
+    for (const made of ['new-1', 'deadbeef', gone.slice(0, -1)]) expect(planDestinations([made], [], 1).rows).toMatchObject([{ isNew: true }]);
+  });
+
+  it.each([
+    ['in braces', (id: string) => `{${id}}`], ['without dashes', (id: string) => id.replaceAll('-', '')], ['with a space', (id: string) => ` ${id}`], ['with a carriage return', (id: string) => `${id}\r`],
+    ['in quotes', (id: string) => `"${id}"`], ['as a URN', (id: string) => `urn:uuid:${id}`], ['with more behind it', (id: string) => `${id}x`],
+  ])('refuses a stored id %s, rather than take it for a new destination, and shows what it got', (_how, write) => {
+    const id = '3f0c9f3e-0000-4000-8000-000000000001';
+    expect(() => planDestinations([write(id)], [{ id, metaDataId: 1 }], 2))
+      .toThrow(expect.objectContaining({ code: 'INVALID_INPUT', message: expect.stringContaining(`no destination with the id ${JSON.stringify(write(id))}`) }));
   });
 
   it('refuses two destinations with one id', () => {

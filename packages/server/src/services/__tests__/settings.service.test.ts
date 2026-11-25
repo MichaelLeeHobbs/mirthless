@@ -245,6 +245,14 @@ describe('SettingsService', () => {
     });
   });
 
+  it('refuses a value sent back as a read shows it, and saves none of them', async () => {
+    const masked = { key: 'smtp.auth_pass', value: '__REDACTED__' };
+    for (const result of [await SettingsService.upsert(masked), await SettingsService.bulkUpsert([{ key: 'smtp.from', value: 'x' }, masked])]) {
+      expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    }
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
   describe('bulkUpsert', () => {
     it('upserts multiple settings in transaction', async () => {
       const row1 = makeSettingRow();

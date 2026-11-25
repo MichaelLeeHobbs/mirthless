@@ -9,6 +9,7 @@ import {
   type ScriptLanguageCode,
   type CreateChannelInput,
   type UpdateChannelInput,
+  type UpdateDestinationInput,
   type ChannelListQuery,
   type DestinationConnectorType,
   type DestinationInput,
@@ -171,7 +172,8 @@ export interface ChannelListResult {
   };
 }
 
-const DEFAULT_SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
+/** A channel script's type, and its key in a request. */
+const SCRIPT_KEYS = [['DEPLOY', 'deploy'], ['UNDEPLOY', 'undeploy'], ['PREPROCESSOR', 'preprocessor'], ['POSTPROCESSOR', 'postprocessor']] as const;
 
 async function findChannel(id: string, reader: DbReader = db): Promise<typeof channels.$inferSelect> {
   const [channel] = await reader
@@ -408,7 +410,7 @@ function assembleDetail(
 }
 
 /** A channel read with its credentials masked, then sent back, would lose them. */
-function refuseMaskedCredentials(input: Pick<UpdateChannelInput, 'sourceConnectorProperties'> & { readonly destinations?: readonly DestinationInput[] | undefined }): void {
+function refuseMaskedCredentials(input: Pick<UpdateChannelInput, 'sourceConnectorProperties'> & { readonly destinations?: readonly Pick<DestinationInput, 'name' | 'properties'>[] | undefined }): void {
   const masked = [
     ...(holdsRedacted(input.sourceConnectorProperties ?? {}) ? ['The source'] : []),
     ...(input.destinations ?? []).filter((d) => holdsRedacted(d.properties)).map((d) => `Destination "${d.name}"`),
@@ -547,8 +549,8 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
 
 type ChannelTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Every column a save sets, so one it leaves out does not stay as it was. */
-function destinationColumns(dest: DestinationInput, position: number): Omit<typeof channelConnectors.$inferInsert, 'id' | 'channelId' | 'metaDataId'> {
+/** Drizzle skips what is undefined: an update keeps what is stored, an insert takes the column's default. */
+function destinationColumns(dest: DestinationInput | UpdateDestinationInput, position: number): Omit<typeof channelConnectors.$inferInsert, 'id' | 'channelId' | 'metaDataId'> {
   return {
     position,
     name: dest.name,
@@ -561,9 +563,22 @@ function destinationColumns(dest: DestinationInput, position: number): Omit<type
     rotateQueue: dest.rotateQueue,
     queueThreadCount: dest.queueThreadCount,
     waitForPrevious: dest.waitForPrevious,
-    responseTransformer: dest.responseTransformer ?? null,
-    responseTransformerLanguage: dest.responseTransformerLanguage ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
+    responseTransformer: dest.responseTransformer,
+    responseTransformerLanguage: dest.responseTransformerLanguage,
   };
+}
+
+async function syncScripts(tx: ChannelTx, channelId: string, scripts: NonNullable<UpdateChannelInput['scripts']>): Promise<void> {
+  for (const [scriptType, key] of SCRIPT_KEYS) {
+    const script = scripts[key] === null ? '' : scripts[key];
+    const language = scripts.languages?.[key];
+    if (script === undefined && language === undefined) continue;
+    // A channel that was imported without this script has no row for it.
+    await tx
+      .insert(channelScripts)
+      .values({ channelId, scriptType, script, language })
+      .onConflictDoUpdate({ target: [channelScripts.channelId, channelScripts.scriptType], set: { script, language } });
+  }
 }
 
 async function storedDestinations(tx: ChannelTx, channelId: string): Promise<DestinationRow[]> {
@@ -810,15 +825,12 @@ export class ChannelService {
 
         const channelId = inserted[0]!.id;
 
-        const scriptValues = DEFAULT_SCRIPT_TYPES.map((scriptType) => {
-          const key = scriptType.toLowerCase() as 'deploy' | 'undeploy' | 'preprocessor' | 'postprocessor';
-          return {
-            channelId,
-            scriptType,
-            script: input.scripts?.[key] ?? '',
-            language: input.scripts?.languages[key] ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
-          };
-        });
+        const scriptValues = SCRIPT_KEYS.map(([scriptType, key]) => ({
+          channelId,
+          scriptType,
+          script: input.scripts?.[key] ?? '',
+          language: input.scripts?.languages[key] ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
+        }));
 
         await tx.insert(channelScripts).values(scriptValues);
 
@@ -944,22 +956,7 @@ export class ChannelService {
           });
         }
 
-        // A language the request leaves out keeps the stored one (D-294):
-        // defaulting it would turn TypeScript into JavaScript and switch off the
-        // script's deploy type check.
-        if (input.scripts) {
-          const { languages, ...scriptsByKey } = input.scripts;
-          for (const [key, value] of Object.entries(scriptsByKey)) {
-            if (value !== undefined) {
-              const scriptType = key.toUpperCase();
-              const language = languages[key as keyof typeof languages];
-              await tx
-                .update(channelScripts)
-                .set({ script: value ?? '', ...(language === undefined ? {} : { language }) })
-                .where(and(eq(channelScripts.channelId, id), eq(channelScripts.scriptType, scriptType)));
-            }
-          }
-        }
+        if (input.scripts) await syncScripts(tx, id, input.scripts);
 
         let lookup: ConnectorLookup | null = null;
         if (input.destinations) {
