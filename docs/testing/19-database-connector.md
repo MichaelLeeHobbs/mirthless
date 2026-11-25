@@ -44,7 +44,7 @@
 | 23 | Update mode NEVER | Process rows with updateMode=NEVER | Rows not modified after read | |
 | 24 | Update mode ALWAYS | Process rows with updateMode=ALWAYS | UPDATE query executed for every row | |
 | 25 | Update mode ON_SUCCESS | Process row that succeeds | UPDATE query executed | |
-| 26 | Update mode ON_SUCCESS (error) | Process row that fails in pipeline | UPDATE query NOT executed | |
+| 26 | Update mode ON_SUCCESS (error) | Process row whose message is recorded with an ERROR | UPDATE query executed: the message is in the store (D-231) | |
 | 27 | No rows returned | Poll with empty result set | No messages dispatched, no errors | |
 | 28 | Connection error | Configure invalid credentials | Error logged, channel stays running | |
 | 29 | Invalid SELECT query | Configure malformed SQL | Error logged per poll cycle | |
@@ -56,7 +56,7 @@
 |---|---|---|---|---|
 | 31 | Execute parameterized INSERT | Send message through DATABASE destination | Row inserted with parameterized values | |
 | 32 | Execute parameterized UPDATE | Configure UPDATE query | Row updated with parameterized values | |
-| 33 | Variable substitution | Use ${msg.PID} in query | Variable resolved from message context | |
+| 33 | Variable substitution | Set a channel map variable `patient-id` and use ${patient-id} in query | Variable bound as a parameter | |
 | 34 | Transaction mode | useTransaction=true | Query wrapped in BEGIN/COMMIT | |
 | 35 | Transaction rollback on error | useTransaction=true, query fails | Transaction rolled back | |
 | 36 | Return generated keys | returnGeneratedKeys=true | Generated keys available in response | |

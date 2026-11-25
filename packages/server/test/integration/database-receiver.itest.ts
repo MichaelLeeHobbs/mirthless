@@ -46,8 +46,10 @@ describeIntegration('DatabaseReceiver (real Postgres)', () => {
     return (result.rows as Array<{ id: number }>).map((r) => r.id);
   }
 
-  it('keeps the rows that were acknowledged when one acknowledgement fails', async () => {
+  it('keeps the rows that were acknowledged when one acknowledgement fails, and dispatches no row twice', async () => {
     const dispatched: number[] = [];
+    let failures = 0;
+    const logger = { error: (): void => { failures += 1; }, warn: (): void => {}, info: (): void => {}, debug: (): void => {} };
     receiver = new DatabaseReceiver({
       ...connection(),
       selectQuery: `SELECT id FROM ${TABLE} WHERE NOT processed ORDER BY id`,
@@ -56,7 +58,7 @@ describeIntegration('DatabaseReceiver (real Postgres)', () => {
       updateMode: 'ON_SUCCESS',
       pollingIntervalMs: 100,
       rowFormat: 'JSON',
-    });
+    }, undefined, logger);
     receiver.setDispatcher(async (raw) => {
       dispatched.push((JSON.parse(raw.content) as { id: number }).id);
       return { ok: true, value: { messageId: dispatched.length }, error: null };
@@ -65,13 +67,11 @@ describeIntegration('DatabaseReceiver (real Postgres)', () => {
     expect((await receiver.onStart()).ok).toBe(true);
 
     await expect.poll(processedIds).toEqual([1, 3]);
-    // Two more polls have read the table since.
-    await expect.poll(() => dispatched.filter((id) => id === 2).length).toBeGreaterThan(2);
+    // Two more polls have read row 2 since, whose acknowledgement keeps failing.
+    await expect.poll(() => failures).toBeGreaterThan(2);
     await receiver.onStop();
     receiver = null;
 
-    // Row 2's acknowledgement keeps failing, so only it was read again.
-    expect(dispatched.filter((id) => id === 1)).toHaveLength(1);
-    expect(dispatched.filter((id) => id === 3)).toHaveLength(1);
+    expect(dispatched).toEqual([1, 2, 3]);
   });
 });

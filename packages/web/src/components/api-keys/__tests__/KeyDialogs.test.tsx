@@ -46,8 +46,8 @@ describe('KeyTokenDialog', () => {
 
 describe('OffboardKeysDialog', () => {
   const keys = [
-    { id: 'k1', name: 'Lab feed', permissions: ['channels:read'] },
-    { id: 'k2', name: 'CI deploys', permissions: ['channels:deploy'] },
+    { id: 'k1', name: 'Lab feed', permissions: ['channels:read'], groupIds: ['g1', 'g-unknown'], lastUsedAt: '2026-11-24T12:00:00.000Z' },
+    { id: 'k2', name: 'CI deploys', permissions: ['channels:deploy'], groupIds: null, lastUsedAt: null },
   ] as never;
   const open = (over: Partial<Parameters<typeof OffboardKeysDialog>[0]> = {}): ReturnType<typeof vi.fn> => {
     const onConfirm = vi.fn();
@@ -62,6 +62,14 @@ describe('OffboardKeysDialog', () => {
     expect(screen.getByText('CI deploys')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
     expect(onConfirm).toHaveBeenCalledWith([]);
+  });
+
+  it('says where each key reaches and when it was last used (#419)', () => {
+    open();
+    const used = new Date('2026-11-24T12:00:00.000Z').toLocaleString();
+    // A group the reader cannot name shows as its id.
+    expect(screen.getByText(`Lab, g-unknown. Last used ${used}`)).toBeTruthy();
+    expect(screen.getByText('All channels. Never used')).toBeTruthy();
   });
 
   it('sends the keys taken over', () => {

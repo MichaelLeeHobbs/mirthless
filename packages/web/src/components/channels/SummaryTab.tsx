@@ -24,6 +24,7 @@ import type { AdvancedFormValues } from './AdvancedTab.js';
 import { useChannelGroups, useGroupMemberships, useSetChannelGroups } from '../../hooks/use-channel-groups.js';
 import { SOURCE_CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { useNotification } from '../../stores/notification.store.js';
+import { groupNamer } from '../../lib/channel-access.js';
 import { errorMessage } from '../../lib/error-message.js';
 import { isSameGroupSet, multiGroupNote } from '../../lib/group-membership.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
@@ -69,7 +70,7 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
 
   const currentGroupId = currentGroupIds[0] ?? NONE_GROUP;
   const canChangeGroup = usePermissions().has(PERMISSION.CHANNELS_WRITE);
-  const groupNote = multiGroupNote(currentGroupIds.map((id) => groupsQuery.data?.find((g) => g.id === id)?.name ?? id));
+  const groupNote = multiGroupNote(currentGroupIds.map(groupNamer(groupsQuery.data)));
 
   const handleGroupChange = useCallback(async (newGroupId: string): Promise<void> => {
     if (!channelId) return;

@@ -3,6 +3,7 @@
 // Default or that group.
 
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import { groupNamer } from '../lib/channel-access.js';
 import { useAuthStore } from '../stores/auth.store.js';
 import { useChannelGroups, type ChannelGroupSummary } from './use-channel-groups.js';
 
@@ -20,5 +21,6 @@ export function useNewChannelGroups(): readonly Pick<ChannelGroupSummary, 'id' |
   const { data: groups } = useChannelGroups();
   const ids = writeGroupChoices(grants);
   if (ids === null) return null;
-  return ids.map((id) => ({ id, name: groups?.find((g) => g.id === id)?.name ?? id }));
+  const groupName = groupNamer(groups);
+  return ids.map((id) => ({ id, name: groupName(id) }));
 }
