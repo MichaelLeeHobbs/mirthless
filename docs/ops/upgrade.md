@@ -703,14 +703,14 @@ This reads the whole table, so run it at a quiet time. Start the server only on 
 
 ## Process Batch on a source that hands over no text (#441)
 
-A channel with `processBatch` on deployed although its source hands over content that is never an HL7 batch: a Database source (a JSON row), a DICOM source (a file's path), a File source with `binary` on, or an HTTP, Kafka or AMQP source whose charset is `base64`. No message of it was ever recorded, and a Database source with `updateMode` `ALWAYS` marked its rows anyway, so they were lost. Such a channel now fails to deploy (D-394), at a restart too, which reports it as a channel that failed to redeploy. Before upgrading, turn `processBatch` off on such a channel, or change its source, and redeploy it: a restart deploys what was last deployed, not what was saved. The editor has no field for `processBatch`, so turn it off through the API or by exporting, editing and importing the channel. A Mirth import holds such a channel disabled, with the reason in its description.
+A channel with `processBatch` on deployed although its source hands over content that is never an HL7 batch: a Database source (a JSON row), a DICOM source (a file's path), an Email source (the whole email, headers first), a File source with `binary` on, or an HTTP, Kafka or AMQP source whose charset is `base64`. No message of it was ever recorded, and a Database source with `updateMode` `ALWAYS` marked its rows anyway, so they were lost; an Email source left each email unread and raised an alert at every poll. Such a channel now fails to deploy (D-394), at a restart too, which reports it as a channel that failed to redeploy. Before upgrading, turn `processBatch` off on such a channel, or change its source, and redeploy it: a restart deploys what was last deployed, not what was saved. The editor has no field for `processBatch`, so turn it off through the API or by exporting, editing and importing the channel. A Mirth import holds such a channel disabled, with the reason in its description.
 
-This lists them:
+This lists them by their saved settings. A channel saved with `processBatch` off but not redeployed since still fails at the restart, so redeploy every channel it lists, and any you changed without redeploying:
 
 ```sql
 SELECT id, name, source_connector_type FROM channels
 WHERE deleted_at IS NULL AND (source_connector_properties->>'processBatch') = 'true'
-  AND (source_connector_type IN ('DATABASE', 'DICOM')
+  AND (source_connector_type IN ('DATABASE', 'DICOM', 'EMAIL')
     OR (source_connector_type = 'FILE' AND (source_connector_properties->>'binary') = 'true')
     OR (source_connector_type = 'HTTP' AND source_connector_properties->>'bodyCharset' = 'base64')
     OR (source_connector_type IN ('KAFKA', 'AMQP') AND source_connector_properties->>'charset' = 'base64'));

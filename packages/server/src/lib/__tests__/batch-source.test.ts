@@ -12,7 +12,6 @@ describe('batchRefusal', () => {
     ['HTTP', { bodyCharset: 'utf-8' }],
     ['KAFKA', { charset: 'latin1' }],
     ['AMQP', {}],
-    ['EMAIL', {}],
     ['JAVASCRIPT', {}],
     ['CHANNEL', {}],
   ])('lets a %s source that hands over text split HL7 v2 batches', (type, props) => {
@@ -22,6 +21,7 @@ describe('batchRefusal', () => {
   it.each([
     ['DATABASE', {}, 'a Database source hands over each row as a JSON object'],
     ['DICOM', {}, 'a DICOM source hands over the path of a stored file'],
+    ['EMAIL', {}, 'an Email source hands over the whole email, headers first'],
     ['FILE', { binary: true }, 'a File source with binary on hands over each file as base64'],
     ['HTTP', { bodyCharset: 'base64' }, 'this source hands over its content as base64'],
     ['KAFKA', { charset: 'base64' }, 'this source hands over its content as base64'],

@@ -731,9 +731,12 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(held.value.channels[0]?.enabled).toBe(false);
     expect(held.value.channels[0]?.description).toContain('a Database source hands over each row as a JSON object');
     expect(held.value.warnings.some((w) => w.includes('imported disabled because batch processing splits HL7 v2 text'))).toBe(true);
+    // What refuses an OVERWRITE of an enabled channel, which would keep it enabled.
+    expect(held.value.holds[held.value.channels[0]!.id]).toEqual([expect.stringContaining('a Database source hands over each row')]);
     const plain = convert(false);
     if (!plain.ok) throw plain.error;
     expect(plain.value.channels[0]?.enabled).toBe(true);
+    expect(plain.value.holds).toEqual({});
   });
 
   it.each([

@@ -1,4 +1,3 @@
-/** What `processBatch` needs to know of a channel. */
 export interface BatchSource {
   readonly inboundDataType: string;
   readonly sourceConnectorType: string;
@@ -9,6 +8,8 @@ export interface BatchSource {
 function unsplittableContent(type: string, props: Readonly<Record<string, unknown>>): string | null {
   if (type === 'DATABASE') return 'a Database source hands over each row as a JSON object';
   if (type === 'DICOM') return 'a DICOM source hands over the path of a stored file';
+  // The split runs before any script could take out the body.
+  if (type === 'EMAIL') return 'an Email source hands over the whole email, headers first';
   if (type === 'FILE' && props['binary'] === true) return 'a File source with binary on hands over each file as base64';
   const charset = type === 'HTTP' ? props['bodyCharset'] : props['charset'];
   if ((type === 'HTTP' || type === 'KAFKA' || type === 'AMQP') && charset === 'base64') return 'this source hands over its content as base64';
