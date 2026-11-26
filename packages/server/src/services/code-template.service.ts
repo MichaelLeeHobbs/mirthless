@@ -16,10 +16,15 @@ import {
 import { grantedChannels, holdsOnEveryChannel, linksInScope, type ChannelScope } from '../lib/channel-scope.js';
 import { queryUserStanding } from '../lib/principal.js';
 import { ServiceError } from '../lib/service-error.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
 import { codeTemplateLibraries, codeTemplates, type CodeTemplate } from '../db/schema/index.js';
 import { actorGrants, holdsOver, lockAccess, lockAccessFor } from './grant.service.js';
+
+function libraryNameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Library "${name}" already exists`);
+}
 
 export interface LibrarySummary {
   readonly id: string;
@@ -186,7 +191,7 @@ export class CodeTemplateService {
         .where(eq(codeTemplateLibraries.name, input.name));
 
       if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', `Library "${input.name}" already exists`);
+        throw libraryNameTaken(input.name);
       }
 
       const grants = await writerGrants(db, context);
@@ -200,7 +205,9 @@ export class CodeTemplateService {
           description: input.description,
           channelIds,
         })
-        .returning();
+        .returning()
+        // Two requests at once can both pass the check above; the one that loses gets its answer.
+        .catch((err: unknown) => { throw uniqueConstraint(err) === codeTemplateLibraries.name.uniqueName ? libraryNameTaken(input.name) : err; });
 
       emitEvent({
         level: 'INFO', name: 'CODE_TEMPLATE_UPDATED', outcome: 'SUCCESS',
@@ -252,7 +259,7 @@ export class CodeTemplateService {
             .where(eq(codeTemplateLibraries.name, input.name));
 
           if (dup) {
-            throw new ServiceError('ALREADY_EXISTS', `Library "${input.name}" already exists`);
+            throw libraryNameTaken(input.name);
           }
         }
 
@@ -268,7 +275,8 @@ export class CodeTemplateService {
           .update(codeTemplateLibraries)
           .set(updates)
           .where(eq(codeTemplateLibraries.id, id))
-          .returning();
+          .returning()
+          .catch((err: unknown) => { throw input.name && uniqueConstraint(err) === codeTemplateLibraries.name.uniqueName ? libraryNameTaken(input.name) : err; });
         return updated!;
       });
 

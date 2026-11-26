@@ -1,8 +1,10 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, count, asc } from 'drizzle-orm';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { ALL_CHANNELS, type CreateTagInput, type UpdateTagInput } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import { ServiceError } from '../lib/service-error.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { channelTags, channelTagAssignments, channels } from '../db/schema/index.js';
@@ -13,6 +15,16 @@ export interface TagSummary {
   readonly color: string | null;
   readonly assignmentCount: number;
 }
+
+function nameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Tag "${name}" already exists`);
+}
+
+function alreadyAssigned(): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', 'Tag is already assigned to this channel');
+}
+
+const ASSIGNMENT_KEY = getTableConfig(channelTagAssignments).primaryKeys[0]?.getName();
 
 export class TagService {
   /** `scope` is the reader's settings:read channels; only those are counted. */
@@ -67,16 +79,18 @@ export class TagService {
         .where(eq(channelTags.name, input.name));
 
       if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', `Tag "${input.name}" already exists`);
+        throw nameTaken(input.name);
       }
 
+      // Two requests at once can both pass the check above; the one that loses gets its answer.
       const [row] = await db
         .insert(channelTags)
         .values({
           name: input.name,
           color: input.color,
         })
-        .returning();
+        .returning()
+        .catch((err: unknown) => { throw uniqueConstraint(err) === channelTags.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitEvent({
         level: 'INFO', name: 'TAG_UPDATED', outcome: 'SUCCESS',
@@ -116,7 +130,7 @@ export class TagService {
           .where(eq(channelTags.name, input.name));
 
         if (dup) {
-          throw new ServiceError('ALREADY_EXISTS', `Tag "${input.name}" already exists`);
+          throw nameTaken(input.name);
         }
       }
 
@@ -132,7 +146,8 @@ export class TagService {
           .update(channelTags)
           .set(updates)
           .where(eq(channelTags.id, id))
-          .returning();
+          .returning()
+          .catch((err: unknown) => { throw input.name && uniqueConstraint(err) === channelTags.name.uniqueName ? nameTaken(input.name) : err; });
 
       const [countRow] = await db
         .select({ value: count() })
@@ -212,12 +227,13 @@ export class TagService {
         ));
 
       if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', 'Tag is already assigned to this channel');
+        throw alreadyAssigned();
       }
 
       await db
         .insert(channelTagAssignments)
-        .values({ tagId, channelId });
+        .values({ tagId, channelId })
+        .catch((err: unknown) => { throw uniqueConstraint(err) === ASSIGNMENT_KEY ? alreadyAssigned() : err; });
 
       emitEvent({
         level: 'INFO', name: 'TAG_UPDATED', outcome: 'SUCCESS',

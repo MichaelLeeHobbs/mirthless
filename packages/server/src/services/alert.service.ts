@@ -2,6 +2,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, asc, inArray, sql, type SQL } from 'drizzle-orm';
 import type { AlertTriggerInput, CreateAlertInput, UpdateAlertInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db, type DbReader } from '../lib/db.js';
 import { alerts, alertChannels, alertActions } from '../db/schema/index.js';
@@ -198,6 +199,10 @@ const READ_TIMEOUT_MS = 30_000;
 
 let changeListener: (() => void) | null = null;
 
+function nameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Alert "${name}" already exists`);
+}
+
 /** Also when the write fails: one whose connection was lost may have been committed. */
 async function notifying<T>(write: Promise<T>): Promise<T> {
   try {
@@ -301,7 +306,7 @@ export class AlertService {
         .where(eq(alerts.name, input.name));
 
       if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', `Alert "${input.name}" already exists`);
+        throw nameTaken(input.name);
       }
 
       const triggerScript = serializeTrigger(input.trigger);
@@ -320,7 +325,9 @@ export class AlertService {
             reAlertIntervalMs: input.reAlertIntervalMs,
             maxAlerts: input.maxAlerts,
           })
-          .returning();
+          .returning()
+          // Two requests at once can both pass the check above; the one that loses gets its answer.
+          .catch((err: unknown) => { throw uniqueConstraint(err) === alerts.name.uniqueName ? nameTaken(input.name) : err; });
 
         const alertId = inserted[0]!.id;
 
@@ -387,7 +394,7 @@ export class AlertService {
           .where(eq(alerts.name, input.name));
 
         if (dup) {
-          throw new ServiceError('ALREADY_EXISTS', `Alert "${input.name}" already exists`);
+          throw nameTaken(input.name);
         }
       }
 
@@ -412,7 +419,8 @@ export class AlertService {
         await tx
           .update(alerts)
           .set(updates)
-          .where(eq(alerts.id, id));
+          .where(eq(alerts.id, id))
+          .catch((err: unknown) => { throw input.name !== undefined && uniqueConstraint(err) === alerts.name.uniqueName ? nameTaken(input.name) : err; });
 
         if (input.channelIds !== undefined) {
           await tx.delete(alertChannels).where(eq(alertChannels.alertId, id));

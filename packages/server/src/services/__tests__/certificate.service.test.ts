@@ -269,6 +269,22 @@ describe('CertificateService', () => {
       );
     });
 
+    // Drizzle wraps the Postgres error in `cause`.
+    it('returns ALREADY_EXISTS when another request took the name after the check (#450)', async () => {
+      pushResponse([]);
+      mockReturning.mockRejectedValueOnce({ cause: { code: '23505', constraint: 'certificates_name_unique' } });
+
+      const result = await CertificateService.create({
+        name: 'test-cert',
+        type: 'CA',
+        certificatePem: '-----BEGIN CERTIFICATE-----\nMIIBkTCB...\n-----END CERTIFICATE-----',
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toMatchObject({ code: 'ALREADY_EXISTS', message: 'Certificate "test-cert" already exists' });
+    });
+
     it('returns ALREADY_EXISTS for duplicate name', async () => {
       pushResponse([{ id: CERT_ID }]); // existing found
 

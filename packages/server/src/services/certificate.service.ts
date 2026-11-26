@@ -3,10 +3,15 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc, lte, ilike, and, sql, type SQL } from 'drizzle-orm';
 import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { containsPattern } from '../lib/like.js';
 import { certificates } from '../db/schema/index.js';
+
+function nameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Certificate "${name}" already exists`);
+}
 
 export interface CertificateSummary {
   readonly id: string;
@@ -153,7 +158,7 @@ export class CertificateService {
         .where(eq(certificates.name, input.name));
 
       if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', `Certificate "${input.name}" already exists`);
+        throw nameTaken(input.name);
       }
 
       let certInfo: ParsedCertInfo;
@@ -177,7 +182,9 @@ export class CertificateService {
           notBefore: certInfo.notBefore,
           notAfter: certInfo.notAfter,
         })
-        .returning();
+        .returning()
+        // Two requests at once can both pass the check above; the one that loses gets its answer.
+        .catch((err: unknown) => { throw uniqueConstraint(err) === certificates.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitEvent({
         level: 'INFO', name: 'SETTINGS_CHANGED', outcome: 'SUCCESS',
@@ -212,7 +219,7 @@ export class CertificateService {
           .where(eq(certificates.name, input.name));
 
         if (dup) {
-          throw new ServiceError('ALREADY_EXISTS', `Certificate "${input.name}" already exists`);
+          throw nameTaken(input.name);
         }
       }
 
@@ -244,7 +251,8 @@ export class CertificateService {
         .update(certificates)
         .set(updates)
         .where(eq(certificates.id, id))
-        .returning();
+        .returning()
+        .catch((err: unknown) => { throw input.name && uniqueConstraint(err) === certificates.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitEvent({
         level: 'INFO', name: 'SETTINGS_CHANGED', outcome: 'SUCCESS',

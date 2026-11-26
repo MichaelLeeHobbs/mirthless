@@ -12,10 +12,15 @@ import type {
   UpdateRecordInput,
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { emitSuccessEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { containsPattern } from '../lib/like.js';
 import { collections, collectionRecords } from '../db/schema/index.js';
+
+function nameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Collection "${name}" already exists`);
+}
 
 const MAX_PAYLOAD_BYTES = 1_048_576;
 
@@ -90,8 +95,9 @@ export class CollectionService {
         .select({ id: collections.id })
         .from(collections)
         .where(eq(collections.name, input.name));
-      if (existing) throw new ServiceError('ALREADY_EXISTS', `Collection "${input.name}" already exists`);
+      if (existing) throw nameTaken(input.name);
 
+      // Two requests at once can both pass the check above; the one that loses gets its answer.
       const [row] = await db
         .insert(collections)
         .values({
@@ -100,7 +106,8 @@ export class CollectionService {
           indexedFields: input.indexedFields,
           defaultTtlSeconds: input.defaultTtlSeconds,
         })
-        .returning();
+        .returning()
+        .catch((err: unknown) => { throw uniqueConstraint(err) === collections.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'create', collectionName: input.name });
       return toSummary(row!);
@@ -121,7 +128,7 @@ export class CollectionService {
           .select({ id: collections.id })
           .from(collections)
           .where(eq(collections.name, input.name));
-        if (dup) throw new ServiceError('ALREADY_EXISTS', `Collection "${input.name}" already exists`);
+        if (dup) throw nameTaken(input.name);
       }
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -130,7 +137,8 @@ export class CollectionService {
       if (input.indexedFields !== undefined) updates['indexedFields'] = input.indexedFields;
       if (input.defaultTtlSeconds !== undefined) updates['defaultTtlSeconds'] = input.defaultTtlSeconds;
 
-      const [row] = await db.update(collections).set(updates).where(eq(collections.id, id)).returning();
+      const [row] = await db.update(collections).set(updates).where(eq(collections.id, id)).returning()
+        .catch((err: unknown) => { throw input.name && uniqueConstraint(err) === collections.name.uniqueName ? nameTaken(input.name) : err; });
       emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'update', collectionId: id });
       return toSummary(row!);
     });

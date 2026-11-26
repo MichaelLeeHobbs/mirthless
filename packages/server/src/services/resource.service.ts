@@ -2,9 +2,14 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
 import type { CreateResourceInput, UpdateResourceInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { resources } from '../db/schema/index.js';
+
+function nameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Resource "${name}" already exists`);
+}
 
 export interface ResourceSummary {
   readonly id: string;
@@ -85,7 +90,7 @@ export class ResourceService {
         .where(eq(resources.name, input.name));
 
       if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', `Resource "${input.name}" already exists`);
+        throw nameTaken(input.name);
       }
 
       const sizeBytes = Buffer.byteLength(input.content, 'utf-8');
@@ -99,7 +104,9 @@ export class ResourceService {
           sizeBytes,
           content: input.content,
         })
-        .returning();
+        .returning()
+        // Two requests at once can both pass the check above; the one that loses gets its answer.
+        .catch((err: unknown) => { throw uniqueConstraint(err) === resources.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitEvent({
         level: 'INFO', name: 'RESOURCE_UPDATED', outcome: 'SUCCESS',
@@ -143,7 +150,7 @@ export class ResourceService {
           .where(eq(resources.name, input.name));
 
         if (dup) {
-          throw new ServiceError('ALREADY_EXISTS', `Resource "${input.name}" already exists`);
+          throw nameTaken(input.name);
         }
       }
 
@@ -162,7 +169,8 @@ export class ResourceService {
         .update(resources)
         .set(updates)
         .where(eq(resources.id, id))
-        .returning();
+        .returning()
+        .catch((err: unknown) => { throw input.name && uniqueConstraint(err) === resources.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitEvent({
         level: 'INFO', name: 'RESOURCE_UPDATED', outcome: 'SUCCESS',

@@ -4,9 +4,13 @@ import { DEFAULT_GROUP_NAME, type CreateChannelGroupInput, type UpdateChannelGro
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
-import { PG_ERROR, pgCode } from '../lib/pg-error.js';
+import { PG_ERROR, pgCode, uniqueConstraint } from '../lib/pg-error.js';
 import { channelGroups, channelGroupMembers, channels } from '../db/schema/index.js';
 import { GrantService, lockAccess } from './grant.service.js';
+
+function nameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Channel group "${name}" already exists`);
+}
 
 export interface ChannelGroupSummary {
   readonly id: string;
@@ -157,16 +161,18 @@ export class ChannelGroupService {
         .where(eq(channelGroups.name, input.name));
 
       if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', `Channel group "${input.name}" already exists`);
+        throw nameTaken(input.name);
       }
 
+      // Two requests at once can both pass the check above; the one that loses gets its answer.
       const [row] = await db
         .insert(channelGroups)
         .values({
           name: input.name,
           description: input.description,
         })
-        .returning();
+        .returning()
+        .catch((err: unknown) => { throw uniqueConstraint(err) === channelGroups.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitEvent({
         level: 'INFO', name: 'CHANNEL_GROUP_UPDATED', outcome: 'SUCCESS',
@@ -220,7 +226,7 @@ export class ChannelGroupService {
           .where(eq(channelGroups.name, input.name));
 
         if (dup) {
-          throw new ServiceError('ALREADY_EXISTS', `Channel group "${input.name}" already exists`);
+          throw nameTaken(input.name);
         }
       }
 
@@ -237,7 +243,8 @@ export class ChannelGroupService {
         .update(channelGroups)
         .set(updates)
         .where(and(eq(channelGroups.id, id), eq(channelGroups.revision, input.revision)))
-        .returning();
+        .returning()
+        .catch((err: unknown) => { throw input.name && uniqueConstraint(err) === channelGroups.name.uniqueName ? nameTaken(input.name) : err; });
 
       if (!row) {
         throw new ServiceError('CONFLICT', 'Channel group has been modified by another user');

@@ -51,7 +51,7 @@ const mockSelectFrom = vi.fn().mockImplementation(() => {
 const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
 const mockReturning = vi.fn();
-const mockInsertValues = vi.fn().mockReturnValue({ returning: mockReturning });
+const mockInsertValues = vi.fn().mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: mockReturning }));
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
 const mockUpdateReturning = vi.fn();
@@ -176,6 +176,29 @@ describe('TagService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('message', expect.stringContaining('already exists'));
     });
+
+    // Drizzle wraps the Postgres error in `cause`.
+    it('returns ALREADY_EXISTS when another request took the name after the check (#450)', async () => {
+      pushResponse([]);
+      mockReturning.mockRejectedValueOnce({ cause: { code: '23505', constraint: 'channel_tags_name_unique' } });
+
+      const result = await TagService.create({ name: 'Production', color: '#FF0000' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toMatchObject({ code: 'ALREADY_EXISTS', message: 'Tag "Production" already exists' });
+    });
+
+    it('passes on a unique violation of another constraint as it is', async () => {
+      pushResponse([]);
+      mockReturning.mockRejectedValueOnce({ cause: { code: '23505', constraint: 'some_other_unique' } });
+
+      const result = await TagService.create({ name: 'Production', color: '#FF0000' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).not.toHaveProperty('code', 'ALREADY_EXISTS');
+    });
   });
 
   describe('update', () => {
@@ -248,6 +271,21 @@ describe('TagService', () => {
 
       expect(result.ok).toBe(true);
       expect(mockInsert).toHaveBeenCalled();
+    });
+
+    it('returns ALREADY_EXISTS when another request assigned it after the check (#450)', async () => {
+      pushResponse([{ id: TAG_ID }]);
+      pushResponse([{ id: CHANNEL_ID }]);
+      pushResponse([]);
+      mockInsertValues.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('duplicate key'), {
+        cause: { code: '23505', constraint: 'channel_tag_assignments_channel_id_tag_id_pk' },
+      })));
+
+      const result = await TagService.assign(TAG_ID, CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toMatchObject({ code: 'ALREADY_EXISTS', message: 'Tag is already assigned to this channel' });
     });
 
     it('returns NOT_FOUND for invalid tag', async () => {
