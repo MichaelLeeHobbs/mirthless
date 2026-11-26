@@ -10,7 +10,7 @@ class FakeChannel extends EventEmitter {
   calls: [string, ...unknown[]][] = [];
   consumer: ((msg: unknown) => void) | null = null;
   checkQueueError: Error | null = null;
-  confirm: { error?: Error; returned?: boolean } = {};
+  confirm: { error?: Error; returned?: boolean; closedBy?: Error } = {};
   async checkQueue(q: string): Promise<unknown> {
     this.calls.push(['checkQueue', q]);
     if (this.checkQueueError) {
@@ -31,6 +31,13 @@ class FakeChannel extends EventEmitter {
   publish(exchange: string, key: string, content: Buffer, options: { messageId: string }, cb: (err: unknown) => void): boolean {
     this.calls.push(['publish', exchange, key, content, options]);
     if (this.confirm.returned) this.emit('return', { properties: { messageId: options.messageId } });
+    // As amqplib closes a channel the broker closed: 'error' with the reason, then each unconfirmed publish fails.
+    if (this.confirm.closedBy) {
+      this.emit('error', this.confirm.closedBy);
+      this.emit('close');
+      cb(new Error('channel closed'));
+      return true;
+    }
     cb(this.confirm.error ?? null);
     return true;
   }
@@ -166,6 +173,16 @@ describe('createAmqpPublisher', () => {
     const publisher = await createAmqpPublisher(config);
     lastModel().channel.confirm = { returned: true };
     await expect(publisher.publish(outbound)).rejects.toThrow('the broker returned the message');
+  });
+
+  it('fails a publish with the reason the broker closed the channel for, not "channel closed" (#414)', async () => {
+    const publisher = await createAmqpPublisher(config);
+    lastModel().channel.confirm = {
+      closedBy: new Error("Channel closed by server: 404 (NOT-FOUND) with message \"NOT_FOUND - no exchange 'hl7' in vhost '/'\""),
+    };
+
+    await expect(publisher.publish(outbound)).rejects.toThrow("NOT_FOUND - no exchange 'hl7' in vhost '/'");
+    expect(publisher.isOpen).toBe(false);
   });
 
   it('fails a message the broker nacked', async () => {

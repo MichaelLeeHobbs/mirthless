@@ -245,8 +245,11 @@ export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
     await close(model, STOP_CLOSE_MS).catch(() => undefined);
     throw err;
   }
+  // amqplib emits the broker's reason (a missing exchange: 404 NOT_FOUND) before it fails each unconfirmed
+  // publish with only "channel closed".
+  let closedBy: Error | null = null;
   channel.on('close', () => { connectionOpen = false; });
-  channel.on('error', () => { connectionOpen = false; });
+  channel.on('error', (err: Error) => { connectionOpen = false; closedBy = err; });
   const returned = new Set<string>();
   channel.on('return', (msg: { properties: { messageId?: unknown } }) => {
     if (typeof msg.properties.messageId === 'string') returned.add(msg.properties.messageId);
@@ -266,7 +269,7 @@ export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
           timestamp: Math.floor(Date.now() / 1000),
         }, (err: unknown) => {
           if (err) {
-            reject(err instanceof Error ? err : new Error('Broker did not confirm the message (nack)'));
+            reject(closedBy ?? (err instanceof Error ? err : new Error('Broker did not confirm the message (nack)')));
           } else if (returned.delete(message.messageId)) {
             reject(new Error(`No queue is bound to exchange "${message.exchange}" with routing key "${message.routingKey}"; the broker returned the message`));
           } else {

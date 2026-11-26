@@ -463,6 +463,19 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     }
   }, TEST_TIMEOUT);
 
+  it('fails a publish to an exchange that does not exist with the broker\'s reason (#414)', async () => {
+    const missing = `e2e-missing-${RUN}`;
+    const dispatcher = new AmqpDispatcher({ ...connection(), exchange: missing, routingKey: 'adt.a01', headers: {}, contentType: 'text/plain' });
+    await dispatcher.onStart();
+    try {
+      const result = await dispatcher.send({ channelId: 'c', messageId: 1, metaDataId: 1, content: 'x', dataType: 'RAW' }, AbortSignal.timeout(30_000));
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain(`no exchange '${missing}'`);
+    } finally {
+      await dispatcher.onStop();
+    }
+  }, TEST_TIMEOUT);
+
   it('returns a message the pipeline could not store to the queue, and it is delivered again', async () => {
     const sink = new CaptureDestination();
     const store = storeFailingFirst(1);
