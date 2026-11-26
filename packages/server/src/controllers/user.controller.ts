@@ -173,7 +173,7 @@ export class UserController {
       logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to set assignments');
       // The details name what is missing; they hold permission names and assignment ids only.
       const details = isServiceError(result.error) ? result.error.details : undefined;
-      res.status(status).json({ success: false, error: { ...errorResponse(result.error), ...(details === undefined ? {} : { details }) } });
+      res.status(status).json({ success: false, error: Object.assign(errorResponse(result.error), details === undefined ? {} : { details }) });
       return;
     }
     logger.info({ userId: id }, 'Assignments set');

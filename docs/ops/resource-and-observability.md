@@ -122,6 +122,8 @@ structured JSON in production.
 Health and metrics requests (`/health`, `/health/live`, `/health/ready`, `/metrics`) are
 not logged, so probe traffic won't drown your logs.
 
+Each request's line is written at `info`, except one answered 500 (`INTERNAL` "Internal server error", or `CONFIG_ERROR`): that line is written at `error` and carries the cause in `err` (its message, name and stack, never the values of a failed statement), so at `warn` every such answer still leaves a line with its `requestId`. When the client had already gone (a proxy timed out), the cause is a separate `error` line, "Request failed after its client had gone". A controller that logs its own failure line keeps it, beside the request's.
+
 ### `LOG_HTTP_HEADERS` caveat
 
 When `false` (the default), request logs include only `id`, `method`, and `url` for the
