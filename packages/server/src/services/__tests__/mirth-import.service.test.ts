@@ -718,6 +718,24 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(channel.transformers.find((t) => (t.metaDataId ?? null) === null)?.inboundDataType).toBe('JSON');
   });
 
+  it('imports a Database Reader with Process Batch disabled, since the deploy refuses it and its rows would be marked and lost (#441, D-301)', () => {
+    const reader = (batch: boolean): string => '<properties class="com.mirth.connect.connectors.jdbc.DatabaseReceiverProperties" version="4.5.0"><pluginProperties/><pollConnectorProperties version="4.5.0"><pollingType>INTERVAL</pollingType><pollOnStart>false</pollOnStart><pollingFrequency>2000</pollingFrequency></pollConnectorProperties>'
+      + `<sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable><processBatch>${String(batch)}</processBatch></sourceConnectorProperties>`
+      + '<driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org/orders</url><username>mirth</username><password>pw</password><select>SELECT id FROM o</select><update>UPDATE o SET s = 1 WHERE id = ${id}</update><useScript>false</useScript><updateMode>2</updateMode></properties><transformer';
+    const convert = (batch: boolean): ReturnType<typeof MirthImportService.convertXml> => MirthImportService.convertXml(
+      loadFixture('mirth-4x-channel.xml').replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(batch)),
+    );
+
+    const held = convert(true);
+    if (!held.ok) throw held.error;
+    expect(held.value.channels[0]?.enabled).toBe(false);
+    expect(held.value.channels[0]?.description).toContain('a Database source hands over each row as a JSON object');
+    expect(held.value.warnings.some((w) => w.includes('imported disabled because batch processing splits HL7 v2 text'))).toBe(true);
+    const plain = convert(false);
+    if (!plain.ok) throw plain.error;
+    expect(plain.value.channels[0]?.enabled).toBe(true);
+  });
+
   it.each([
     ['jdbc:mysql://partner.example.org:3307/results', 'mysql', { host: 'partner.example.org', port: 3307, database: 'results' }],
     ['jdbc:mariadb://partner.example.org/results', 'mysql', { host: 'partner.example.org', database: 'results' }],

@@ -32,6 +32,7 @@ import {
 } from './mirth-steps.js';
 import { getBoolean, getNestedRecord, getNumber, getString, stringList, toRecordList } from './mirth-xml.js';
 import { withCopies } from '../lib/import-copies.js';
+import { batchRefusal } from '../lib/batch-source.js';
 import { isPlainObject, unescapeControlChars } from '@galvanigraph/core-util';
 import { DATABASE_VENDOR, unknownPlaceholders } from '@galvanigraph/connectors';
 
@@ -278,9 +279,6 @@ function convertChannel(
   warnings: string[],
 ): ChannelExportEntry {
   const name = getString(mirthChannel, 'name') ?? 'Unnamed Channel';
-  const holds = channelEnabled(mirthChannel) ? disabling : [];
-  const enabled = channelEnabled(mirthChannel) && holds.length === 0;
-  const description = withHoldNote(getString(mirthChannel, 'description'), holds);
   const fileId = getString(mirthChannel, 'id') ?? randomUUID();
   const id = idSchema.safeParse(fileId).data ?? fileId;
 
@@ -300,6 +298,11 @@ function convertChannel(
   const destinations = convertDestinations(mirthChannel, { channelName: name, inboundDataType, warnings });
   const response = mapResponseVariable(sourceConnector, destinations, name, warnings);
   const sourceConnectorProperties = withSourceResponseMode(sourceConnectorResult, response.responseMode);
+  // The deploy refuses it, and here it may run on a Database Reader whose rows would be marked and lost.
+  const batchHold = batchRefusal({ inboundDataType, sourceConnectorType: sourceConnectorResult.type, sourceConnectorProperties });
+  const holds = channelEnabled(mirthChannel) ? [...disabling, ...(batchHold === null ? [] : [batchHold])] : [];
+  const enabled = channelEnabled(mirthChannel) && holds.length === 0;
+  const description = withHoldNote(getString(mirthChannel, 'description'), holds);
 
   const outboundDataType = extractDataType(sourceConnector, 'outbound') ?? 'HL7V2';
 
