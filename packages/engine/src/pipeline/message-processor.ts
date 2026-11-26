@@ -80,7 +80,7 @@ export interface DestinationResponse {
   readonly status: 'SENT' | 'ERROR';
   readonly content: string;
   readonly errorMessage?: string;
-  /** Sending it again would do harm or cannot help: no queue sends it again (D-393, D-397). */
+  /** Sending it again would do harm or cannot help: no queue sends it again (D-393, D-400). */
   readonly final?: true;
 }
 
