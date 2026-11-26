@@ -171,6 +171,13 @@ describe('EngineManager.deploy refuses to start a channel it cannot run as confi
       .rejects.toThrow('batch processing is only supported for HL7V2, not JSON');
   });
 
+  it('refuses batch processing on a Database source, whose rows can never be split, so none is marked and lost (#441)', async () => {
+    const engine = new EngineManager('test-server');
+    const database = { sourceConnectorType: 'DATABASE', sourceConnectorProperties: { host: 'db', database: 'lab', selectQuery: 'SELECT 1', updateMode: 'ALWAYS', processBatch: true } };
+    await expect(engine.deploy(bundleOf(makeChannel(database))))
+      .rejects.toThrow('Channel Labs: batch processing splits HL7 v2 text, and a Database source hands over each row as a JSON object');
+  });
+
   it.each(['RAW', 'METADATA', 'DISABLED'])('refuses a queued destination on %s storage, and names only storage modes that it takes', async (messageStorageMode) => {
     const queued = (mode: string): DeploymentBundle => bundleOf(makeChannel({
       messageStorageMode: mode,
@@ -385,6 +392,7 @@ describe('EngineManager.checkDeploy', () => {
     ['a response from a destination it does not have', { responseMode: 'DESTINATION', responseConnectorName: 'Old Name' }, undefined],
     ['a queued destination on RAW storage', { messageStorageMode: 'RAW', destinations: [tcpDestination({ queueMode: 'ALWAYS' })] }, undefined],
     ['Delimited settings that do not validate', BAD_DELIMITED, undefined],
+    ['batch processing on a data type it cannot split', { inboundDataType: 'JSON', sourceConnectorProperties: { port: 6661, processBatch: true } }, undefined],
     ['a source filter that does not compile', sourceFilter(rule({ script: 'return msg.get("MSH.9.1" === ;' })), undefined],
     ['a certificate from the store it cannot read', { sourceConnectorType: 'HTTP' }, async () => {
       mockResolveTls.mockResolvedValueOnce({ ok: false, value: null, error: new Error('certificate 7 not found') });
