@@ -8,6 +8,11 @@ describe('fhirDestinationPropertiesSchema', () => {
     expect(fhirDestinationPropertiesSchema.parse({ baseUrl: 'https://fhir.example/r4' })).toEqual({ baseUrl: 'https://fhir.example/r4', ...DEFAULTS });
   });
 
+  // Filled per message, as the HTTP destination's URL is (#414).
+  it('takes a base URL that names a variable, which is no URL until it is filled', () => {
+    expect(fhirDestinationPropertiesSchema.safeParse({ baseUrl: 'https://${host}:${port}/r4' }).success).toBe(true);
+  });
+
   // FHIR_DEST_DEFAULTS since 349a666 (2026-07-12), a base URL filled.
   it('accepts what the editor saves', () => {
     const saved = {
