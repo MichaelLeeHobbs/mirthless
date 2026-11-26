@@ -456,6 +456,8 @@ The original NextGen Connect source is at `reference/connect/` for architecture 
 
 Add a decision at the end of `DECISIONS.md` with the next `D-NNN` number. Git merges the file with `merge=union`, so two branches that add a decision both keep theirs, and a test in `pnpm gate` (`packages/server/src/__tests__/docs/decisions.test.ts`) fails when two decisions share a number. The branch that merges second renumbers its decision and every place that cites it.
 
+When a decision sets how the app should behave, update or add the SRS row at decision time, in the same change as the decision record, even if the build comes later: add a row or reword a Proposed one, and supersede an Accepted one with a new ID, as the conventions in [`docs/srs/README.md`](docs/srs/README.md) say, which also say who may accept a row. The row's source note cites the decision; the decision record keeps the why.
+
 Git is the source of truth for what changed and when. Use `git log` for that, not STATUS.md.
 
 ## Diagrams
