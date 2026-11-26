@@ -80,6 +80,8 @@ export interface DestinationResponse {
   readonly status: 'SENT' | 'ERROR';
   readonly content: string;
   readonly errorMessage?: string;
+  /** The partner kept the message although it failed there: no queue sends it again (D-393). */
+  readonly final?: true;
 }
 
 export interface ContentRow {
@@ -808,7 +810,7 @@ export class MessageProcessor {
       }
 
       await this.recordSendFailure(messageId, dest.metaDataId, sendResult);
-      if (dest.queueMode === 'ON_FAILURE') {
+      if (dest.queueMode === 'ON_FAILURE' && response.final !== true) {
         return this.enqueueDestination(messageId, dest);
       }
       await this.saved(messageId, dest.metaDataId, 'the ERROR status of a failed destination', [

@@ -98,7 +98,7 @@ export class DestinationRedispatcher {
     if (!sent.ok && haltSignal.aborted) throw new Error('Interrupted: the channel was halted');
 
     await this.storeResponse(messageId, metaDataId, sent);
-    if (queueMode !== 'ON_FAILURE') return this.fail(messageId, metaDataId, CONTENT_TYPE.ERROR, sendFailureReason(sent));
+    if (queueMode !== 'ON_FAILURE' || (sent.ok && sent.value.final === true)) return this.fail(messageId, metaDataId, CONTENT_TYPE.ERROR, sendFailureReason(sent));
     await this.storeReason(messageId, metaDataId, CONTENT_TYPE.ERROR, sendFailureReason(sent));
     return this.enqueue(messageId, metaDataId);
   }

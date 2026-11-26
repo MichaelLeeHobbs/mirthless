@@ -444,7 +444,7 @@ The script runs inside the server. Whatever it reaches through the script bridge
 
 A CHANNEL destination hands the message to another GalvaniGraph channel's CHANNEL source in memory, on the same server, without a network hop. With `waitForResponse` on, the destination's response is the target channel's response; otherwise it is `messageId=<n>` for the message the target created.
 
-The send is an ERROR when the target is not deployed, when the target stores the message with an ERROR status, or when a message has passed through 10 channel hops, which stops a routing loop.
+The send is an ERROR when the target is not deployed, when the target stores the message with an ERROR status, or when a message has passed through 10 channel hops, which stops a routing loop. It is an ERROR too when the target answers before its destinations (response mode "On receipt" or "After source transformer") and something failed there after that answer: the target's response mode keeps its own sender from resending, but this channel still reads the failure. A message the target stored is not sent to it again, whatever this destination's queue mode, because the target would make a second message of it and deliver it again to its destinations that worked: the queue gives up on it at once. Reprocess it in the target channel instead (D-393). One the target did not store (not deployed, or its database refused it) is retried as any other failed send.
 
 ### CHANNEL security
 

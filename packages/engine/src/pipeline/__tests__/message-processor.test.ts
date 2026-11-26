@@ -594,6 +594,23 @@ describe('MessageProcessor', () => {
     expect(store.incrementStats).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
   });
 
+  it('ON_FAILURE: a failure the partner calls final ends ERROR and is not queued (#414)', async () => {
+    const store = makeStore();
+    const sendFn = vi.fn().mockResolvedValue({
+      ok: true, value: { status: 'ERROR', content: '', errorMessage: 'target recorded it with an error', final: true }, error: null,
+    }) as SendToDestination;
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ON_FAILURE' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.destinationResults[0]!.status).toBe('ERROR');
+    expect(store.enqueue).not.toHaveBeenCalled();
+    expect(statuses(store)).toContainEqual([1, 'ERROR']);
+  });
+
   it('stores what a destination answered as text, not as the inbound data type', async () => {
     const store = makeStore();
     const processor = new MessageProcessor(sandbox, store, makeSendFn(), makeConfig({ dataType: 'HL7V2' }), DEFAULT_EXECUTION_OPTIONS);
