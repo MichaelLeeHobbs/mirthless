@@ -71,6 +71,23 @@ describeIntegration('API keys: narrowing, Replace and offboarding (real Postgres
       expect(why.rows.map((r) => r.why)).toEqual(['issuer no longer holds what the key holds']);
     });
 
+    // Enabled, it was shown active and every request with it was a 401 (#450).
+    it('will not switch the key back on while its issuer no longer holds what it holds: it must be replaced', async () => {
+      const { user, roleId } = await holderOf(MANAGER);
+      const key = await issue(user, ['channels:read', 'channels:deploy']);
+      expect((await apiCall(base, admin.token, 'PUT', `/roles/${roleId}`, { permissions: ['api_keys:manage', 'channels:read'] })).status).toBe(200);
+
+      const refused = await apiCall(base, admin.token, 'PATCH', `/api-keys/${key.key.id}/enabled`, { enabled: true });
+
+      expect(refused.status).toBe(409);
+      expect(refused.json.error).toEqual({ code: 'CONFLICT', message: 'Its issuer no longer holds what the key holds; replace the key to take it over' });
+      expect((await view(key.key.id)).status).toBe('disabled');
+      const next = await apiCall<IssuedApiKey>(base, admin.token, 'POST', `/api-keys/${key.key.id}/replace`, { mode: 'leak' });
+      expect(next.status).toBe(201);
+      expect((await apiCall(base, admin.token, 'PATCH', `/api-keys/${key.key.id}/enabled`, { enabled: true })).status).toBe(200);
+      expect(await works(next.json.data!.token)).toBe(200);
+    });
+
     it('disables a key that would outlast the issuer\'s shortened access', async () => {
       const { user, roleId } = await holderOf(MANAGER);
       const key = await issue(user, ['channels:read']);

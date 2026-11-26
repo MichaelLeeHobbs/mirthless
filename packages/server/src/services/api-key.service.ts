@@ -23,7 +23,7 @@ import { hashToken, matchesTokenHash } from '../lib/token-hash.js';
 import { apiKeys, assignmentGroups, assignments, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 import {
-  GrantService, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, lockAccessFor, lockScopeGroups,
+  GrantService, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, keyStillCovered, lockAccessFor, lockScopeGroups,
   type GrantActor, type Reader, type ScopeIds,
 } from './grant.service.js';
 
@@ -185,6 +185,10 @@ export class ApiKeyService {
         // A key whose issuer is disabled never works (resolve): replacing it is how it comes back (D-322).
         const [issuer] = await tx.select({ enabled: users.enabled }).from(users).where(eq(users.id, key.issuedBy));
         if (issuer?.enabled !== true) throw new ServiceError('CONFLICT', 'Its issuer is disabled; replace the key to take it over');
+        // Nor does one whose issuer was narrowed, which is how such a key came to be disabled (#450).
+        if (!(await keyStillCovered(tx, { keyUserId: key.userId, issuedBy: key.issuedBy, expiresAt: key.expiresAt }))) {
+          throw new ServiceError('CONFLICT', 'Its issuer no longer holds what the key holds; replace the key to take it over');
+        }
         const [held] = await readKeys(tx, id);
         await assertActorCovers(tx, actor.userId, (held?.permissions ?? []) as Permission[], held?.groupIds ?? null, key.expiresAt);
       }
