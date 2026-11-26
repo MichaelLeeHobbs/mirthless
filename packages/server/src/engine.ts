@@ -1,5 +1,6 @@
 import {
   ChannelRuntime,
+  readyConnectors,
   VmSandboxExecutor,
   MessageProcessor,
   DEFAULT_EXECUTION_OPTIONS,
@@ -42,6 +43,8 @@ import {
   ScriptRunLog,
   type ScriptLogSink,
   type DataTypeOptions,
+  type DestinationResponse,
+  type HandOff,
 } from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { isPlainObject, settleWithin, splitHl7Batch } from '@galvanigraph/core-util';
@@ -52,6 +55,7 @@ import {
   JavaScriptReceiver,
   JavaScriptDispatcher,
   DISPATCH_STATUS,
+  resolveTarget,
   type DispatchStatus,
   type ConnectorMessage,
   type SourceConnectorRuntime,
@@ -72,6 +76,7 @@ import { ServiceError } from './lib/service-error.js';
 import { dataTypeOptionsFrom } from './lib/data-type-options.js';
 import { batchRefusal } from './lib/batch-source.js';
 import { whyNotTaking } from './lib/taking-messages.js';
+import { handOffIn, pauseBeforeNextLook, sendOnce, type HandOffStore } from './lib/channel-hand-off.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
@@ -235,6 +240,79 @@ export function dataTypeOptionsFor(channel: ChannelDetail): DataTypeOptions {
   }
 }
 
+/**
+ * What a deploy refuses in the channel's own settings, before it reads or opens anything. Returns the
+ * data type settings it read.
+ */
+function refuseUndeployable(channel: ChannelDetail): DataTypeOptions {
+  // Fail loud, never silent: a channel that asks for at-rest encryption must
+  // not deploy (and store PHI as plaintext) when no key is configured.
+  if (channel.encryptData && !isContentEncryptionConfigured()) {
+    throw new Error(
+      `Channel ${channel.id} has encryptData enabled but CONTENT_ENCRYPTION_KEY is not configured. ` +
+      'Refusing to deploy — message content would be stored in plaintext. ' +
+      'Set CONTENT_ENCRYPTION_KEY (64 hex chars) or disable encryptData on the channel.',
+    );
+  }
+  // A queued destination needs stored RAW+SENT content to deliver and to recover after a crash.
+  // Any other storage mode never writes SENT, so every queued message would error on delivery.
+  const storageMode = channel.messageStorageMode as MessageStorageMode;
+  if (channel.destinations.some((d) => d.queueMode !== 'NEVER') && !storageModeSupportsQueue(storageMode)) {
+    throw new Error(
+      `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
+      'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
+      `Use ${Object.values(MESSAGE_STORAGE_MODE).filter(storageModeSupportsQueue).join(' or ')} storage, or set every destination queue mode to NEVER.`,
+    );
+  }
+  // A response from a destination that does not exist would leave every
+  // sender without the answer it waits for, with nothing logged.
+  if (channel.responseMode === 'DESTINATION' && !channel.destinations.some((d) => d.name === channel.responseConnectorName)) {
+    throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: it responds from destination "${channel.responseConnectorName ?? ''}", which it does not have`);
+  }
+  // Mirth's "Process Batch" splits what the source receives into messages. Only HL7v2 text can be split;
+  // anything else refuses to deploy rather than treat a whole batch as one message or record none of it.
+  const unbatchable = batchRefusal(channel);
+  if (unbatchable !== null) throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: ${unbatchable}`);
+  return dataTypeOptionsFor(channel);
+}
+
+interface BuiltConnectors {
+  readonly source: SourceConnectorRuntime;
+  readonly destinations: Map<number, DestinationConnectorRuntime>;
+}
+
+/**
+ * Cert-ID references resolve to PEM here, since connectors have no DB access. Fail loud: a channel
+ * never deploys without the TLS it was configured for. Building a connector opens nothing.
+ */
+async function buildConnectors(channel: ChannelDetail): Promise<BuiltConnectors> {
+  const connectorEnv = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS), channelId: channel.id };
+  const resolveSourceTls = SOURCE_TLS_RESOLVERS[channel.sourceConnectorType];
+  const sourceProperties = resolveSourceTls
+    ? withTls(await resolveSourceTls(channel.sourceConnectorProperties), `Channel ${channel.id} source`)
+    : channel.sourceConnectorProperties;
+  const source = createSourceConnector(channel.sourceConnectorType, sourceProperties, connectorEnv) as SourceConnectorRuntime;
+
+  const destinations = new Map<number, DestinationConnectorRuntime>();
+  for (const dest of channel.destinations) {
+    const resolveDestTls = DESTINATION_TLS_RESOLVERS[dest.connectorType];
+    const destProperties = resolveDestTls
+      ? withTls(await resolveDestTls(dest.properties), `Channel ${channel.id} destination ${dest.metaDataId}`)
+      : dest.properties;
+    destinations.set(dest.metaDataId, createDestinationConnector(dest.connectorType, destProperties, connectorEnv));
+  }
+  return { source, destinations };
+}
+
+function withTls(resolved: Result<Record<string, unknown>>, connector: string): Record<string, unknown> {
+  if (!resolved.ok) throw new Error(`${connector} TLS resolution failed: ${resolved.error.message}`);
+  return resolved.value;
+}
+
+function runtimeNotDeployed(cause: Error): Error {
+  return new Error(`Failed to deploy channel runtime: ${cause.message}`);
+}
+
 export interface BatchRules {
   /** The source never offers its input again, so no message may wait for that. */
   readonly offeredOnce: boolean;
@@ -253,6 +331,8 @@ interface MessageHooks {
   readonly onStored?: (() => void) | undefined;
   /** The halt signal the message takes, where it is not the channel's at the time (an HL7 batch's). */
   readonly haltSignal?: AbortSignal | undefined;
+  /** The Channel Writer send the message comes from, for a channel that records it (D-403). */
+  readonly handOff?: HandOff | undefined;
 }
 
 export interface BatchRun extends BatchRules {
@@ -485,10 +565,11 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       MessageService.removeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.removeContent>[3]),
     storeCustomMetadata: (channelId, messageId, metaDataId, metadata) =>
       MessageService.storeCustomMetadata(channelId, messageId, metaDataId, metadata),
-    initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId) => {
-      const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
+    initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId, handOff) => {
+      // Whatever the mode: a run again without it can route the message another way than the send that is not sent again (D-403).
+      const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType) || (handOff && r.contentType === CONTENT_TYPE.SOURCE_MAP));
       if (!encrypt) {
-        return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId, false);
+        return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId, { handOff });
       }
       // Fail loud: the whole message init fails rather than storing PHI in
       // plaintext under an encryptData channel.
@@ -500,7 +581,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
         }
         encRows.push({ ...r, content: enc.value });
       }
-      return MessageService.initializeMessage(channelId, serverId, connectorName, encRows, correlationId, true);
+      return MessageService.initializeMessage(channelId, serverId, connectorName, encRows, correlationId, { encrypted: true, handOff });
     },
     finalizeMessage: (channelId, messageId, serverId) =>
       MessageService.finalizeMessage(channelId, messageId, serverId),
@@ -622,6 +703,22 @@ export class EngineManager {
   private alertsRefreshQueued = false;
   /** The last read of changed alerts failed. */
   private alertsStale = false;
+  private readonly handOffStore: HandOffStore = {
+    handedTo: ({ channelId, messageId, metaDataId }) => MessageService.loadContent(channelId, messageId, metaDataId, CONTENT_TYPE.HAND_OFF),
+    forget: ({ channelId, messageId, metaDataId }) => MessageService.removeContent(channelId, messageId, metaDataId, CONTENT_TYPE.HAND_OFF),
+    sourceState: (channelId, messageId) => MessageService.sourceState(channelId, messageId),
+    isStarted: (channelId) => {
+      const target = this.runtimes.get(channelId);
+      return target !== undefined && whyNotTaking(target.runtime) === null;
+    },
+    onRepeat: (send, to) => {
+      logger.info({ ...send, targetChannelId: to.channelId, targetMessageId: to.messageId }, 'A send to another channel that a server stop interrupted had been delivered there; it is not sent again');
+    },
+    onUnread: (send, error) => {
+      logger.error({ ...send, errMsg: error.message }, 'Could not read or remove what the target channel recorded for a send; a send that a server stop interrupts may be delivered twice');
+    },
+    pause: pauseBeforeNextLook,
+  };
 
   constructor(serverId?: string) {
     AlertService.onChange(() => {
@@ -711,29 +808,8 @@ export class EngineManager {
 
   private async deployChannel(bundle: DeploymentBundle): Promise<void> {
     const { channel } = bundle;
-
-    // Fail loud, never silent: a channel that asks for at-rest encryption must
-    // not deploy (and store PHI as plaintext) when no key is configured.
-    if (channel.encryptData && !isContentEncryptionConfigured()) {
-      throw new Error(
-        `Channel ${channel.id} has encryptData enabled but CONTENT_ENCRYPTION_KEY is not configured. ` +
-        'Refusing to deploy — message content would be stored in plaintext. ' +
-        'Set CONTENT_ENCRYPTION_KEY (64 hex chars) or disable encryptData on the channel.',
-      );
-    }
-
-    // Fail loud, never silent: a queued destination needs stored RAW+SENT content
-    // to deliver and to recover after a crash. Any other storage mode never writes
-    // SENT, so every queued message would error on delivery.
+    const dataTypeOptions = refuseUndeployable(channel);
     const storageMode = channel.messageStorageMode as MessageStorageMode;
-    const hasQueuedDestination = channel.destinations.some((d) => d.queueMode !== 'NEVER');
-    if (hasQueuedDestination && !storageModeSupportsQueue(storageMode)) {
-      throw new Error(
-        `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
-        'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
-        `Use ${Object.values(MESSAGE_STORAGE_MODE).filter(storageModeSupportsQueue).join(' or ')} storage, or set every destination queue mode to NEVER.`,
-      );
-    }
 
     const runtime = new ChannelRuntime();
     const gcm = new GlobalChannelMap();
@@ -745,42 +821,7 @@ export class EngineManager {
       encryptData: channel.encryptData,
     });
 
-    // Cert-ID references resolve to PEM here, since connectors have no DB access.
-    // Fail loud: a channel never deploys without the TLS it was configured for.
-    let sourceProperties: Record<string, unknown> = channel.sourceConnectorProperties;
-    const resolveSourceTls = SOURCE_TLS_RESOLVERS[channel.sourceConnectorType];
-    if (resolveSourceTls) {
-      const resolved = await resolveSourceTls(sourceProperties);
-      if (!resolved.ok) {
-        throw new Error(`Channel ${channel.id} source TLS resolution failed: ${resolved.error.message}`);
-      }
-      sourceProperties = resolved.value;
-    }
-    const connectorEnv = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS), channelId: channel.id };
-    const source = createSourceConnector(
-      channel.sourceConnectorType,
-      sourceProperties,
-      connectorEnv,
-    ) as SourceConnectorRuntime;
-
-    const destinations = new Map<number, DestinationConnectorRuntime>();
-    for (const dest of channel.destinations) {
-      let destProperties: Record<string, unknown> = dest.properties;
-      const resolveDestTls = DESTINATION_TLS_RESOLVERS[dest.connectorType];
-      if (resolveDestTls) {
-        const resolved = await resolveDestTls(destProperties);
-        if (!resolved.ok) {
-          throw new Error(`Channel ${channel.id} destination ${dest.metaDataId} TLS resolution failed: ${resolved.error.message}`);
-        }
-        destProperties = resolved.value;
-      }
-      const connector = createDestinationConnector(
-        dest.connectorType,
-        destProperties,
-        connectorEnv,
-      );
-      destinations.set(dest.metaDataId, connector);
-    }
+    const { source, destinations } = await buildConnectors(channel);
 
     // Alerts, the configuration map and the global map are server settings,
     // read live at every deploy; the channel's own code comes from the bundle.
@@ -882,7 +923,7 @@ export class EngineManager {
       channelId: channel.id,
       serverId: this.serverId,
       dataType: channel.inboundDataType,
-      dataTypeOptions: dataTypeOptionsFor(channel),
+      dataTypeOptions,
       scripts,
       destinations: destConfigs,
       globalChannelMap: gcm,
@@ -907,7 +948,10 @@ export class EngineManager {
         : undefined,
     };
 
-    const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId, variables) => {
+    const channelTargets = new Map(channel.destinations.flatMap((d) =>
+      d.connectorType === 'CHANNEL' ? [[d.metaDataId, String(d.properties['targetChannelId'] ?? '')] as const] : []));
+    // The pipeline's sends are the first of their destination, so there is no earlier one to ask about.
+    const sendVia = (firstSend: boolean): SendToDestination => async (metaDataId, messageId, content, signal, correlationId, variables) => {
       const connector = destinations.get(metaDataId);
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
@@ -916,13 +960,20 @@ export class EngineManager {
       const sent = variables && Object.keys(variables).length > 0 ? variables : undefined;
       // Connectors apply their own configured timeouts; this is the backstop
       // that keeps a send from hanging forever if one does not.
-      const called = await tryCatch(() => connector.send(
-        { ...messageFor(metaDataId, messageId, content), correlationId, variables: sent },
-        AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]),
-      ));
-      // One that throws fails this send, not the whole message with its other destinations.
-      return called.ok ? called.value : called;
+      const backstop = (): AbortSignal => AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]);
+      // From when it begins: a Channel Writer may first have waited for the target.
+      const send = async (): Promise<Result<DestinationResponse>> => {
+        const called = await tryCatch(() => connector.send({ ...messageFor(metaDataId, messageId, content), correlationId, variables: sent }, backstop()));
+        // One that throws fails this send, not the whole message with its other destinations.
+        return called.ok ? called.value : called;
+      };
+      const target = channelTargets.get(metaDataId);
+      if (target === undefined) return send();
+      const resolved = firstSend ? null : resolveTarget(target, sent);
+      const key = { channelId: channel.id, messageId, metaDataId };
+      return sendOnce({ key, target: resolved?.includes('${') ? null : resolved, halt: signal, waitUntil: backstop(), send }, this.handOffStore);
     };
+    const sendFn = sendVia(false);
 
     const queueConsumers: QueueConsumer[] = [];
     for (const dest of channel.destinations) {
@@ -948,20 +999,10 @@ export class EngineManager {
     }
 
     const processor = new MessageProcessor(
-      this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
+      this.sandbox, store, sendVia(true), pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    // A response from a destination that does not exist would leave every
-    // sender without the answer it waits for, with nothing logged.
-    if (channel.responseMode === 'DESTINATION' && !channel.destinations.some((d) => d.name === channel.responseConnectorName)) {
-      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: it responds from destination "${channel.responseConnectorName ?? ''}", which it does not have`);
-    }
-    // A source with Mirth's "Process Batch" on splits what it receives into
-    // messages. Only HL7v2 text can be split; anything else refuses to deploy
-    // rather than treat a whole batch as one message or record none of it.
     const batched = channel.sourceConnectorProperties['processBatch'] === true;
-    const unbatchable = batchRefusal(channel);
-    if (unbatchable !== null) throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: ${unbatchable}`);
 
     // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
@@ -972,7 +1013,7 @@ export class EngineManager {
         ? sourceMap['correlationId'] as string
         : undefined;
       const result = await processor.processMessage(
-        { rawContent, sourceMap: sourceMap ?? {}, correlationId, received, onStored: hooks?.onStored },
+        { rawContent, sourceMap: sourceMap ?? {}, correlationId, received, onStored: hooks?.onStored, handOff: hooks?.handOff },
         // Aborted by a halt, which cancels the scripts and sends in progress.
         // There is no deadline for the message as a whole: each script is
         // limited by the channel's script timeout and each send by its
@@ -1007,6 +1048,9 @@ export class EngineManager {
       return result;
     };
 
+    // Not for a batch, whose parts share one send: one recorded part would read as the whole batch. Not
+    // without the raw content either: recovery cannot run the message again, so the sender has to.
+    const recordsHandOffs = channel.sourceConnectorType === 'CHANNEL' && shouldStoreContent(storageMode, CONTENT_TYPE.RAW);
     const runtimeConfig: ChannelRuntimeConfig = {
       channelId: channel.id,
       source,
@@ -1014,7 +1058,10 @@ export class EngineManager {
       queues: queueConsumers,
       onMessage: async (raw) => (batched
         ? processHl7Batch(raw)
-        : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, { onStored: () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) }) }))),
+        : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, {
+          onStored: () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) }),
+          handOff: recordsHandOffs ? handOffIn(raw.sourceMap) ?? undefined : undefined,
+        }))),
     };
 
     // Taken before the channel can receive anything: every unprocessed message
@@ -1024,7 +1071,7 @@ export class EngineManager {
 
     const result = await runtime.deploy(runtimeConfig);
     if (!result.ok) {
-      throw new Error(`Failed to deploy channel runtime: ${result.error.message}`);
+      throw runtimeNotDeployed(result.error);
     }
 
     // Recover messages left unprocessed by a prior crash/restart on the first
@@ -1682,11 +1729,20 @@ export class EngineManager {
   }
 
   /**
-   * Throws the same error deploy would. Runs before a running channel is
-   * stopped for a redeploy, so a script that does not compile cannot take a
-   * working channel offline.
+   * Throws the error deploy would for what it refuses before it opens anything: the channel's own
+   * settings, the certificates from the store, the scripts and each connector's deploy check, in deploy's order. A
+   * redeploy runs it before it stops the running channel (#480). The deploy and undeploy scripts do
+   * not run, so one that fails is still found only by the deploy.
    */
-  async checkScripts(bundle: DeploymentBundle): Promise<void> {
+  async checkDeploy(bundle: DeploymentBundle): Promise<void> {
+    refuseUndeployable(bundle.channel);
+    const { source, destinations } = await buildConnectors(bundle.channel);
+    await this.checkScripts(bundle);
+    const { refusal } = await readyConnectors({ source, destinations });
+    if (refusal !== null) throw runtimeNotDeployed(refusal);
+  }
+
+  private async checkScripts(bundle: DeploymentBundle): Promise<void> {
     const { channel } = bundle;
     const templates = templateData(bundle);
     const ftData = filterTransformerDataOf(channel);

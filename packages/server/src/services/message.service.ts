@@ -5,6 +5,7 @@ import { db } from '../lib/db.js';
 import { emitToRoomCoalesced } from '../lib/socket.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { ServiceError } from '../lib/service-error.js';
+import type { HandOff } from '@galvanigraph/engine';
 import {
   messages,
   connectorMessages,
@@ -198,6 +199,25 @@ export class MessageService {
         eq(messageContent.metaDataId, metaDataId),
         eq(messageContent.contentType, contentType),
       ));
+    });
+  }
+
+  /** Whether a message is finished and its source's status, or null when there is no such message. */
+  static async sourceState(
+    channelId: string,
+    messageId: number,
+  ): Promise<Result<{ readonly processed: boolean; readonly status: string | null } | null>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select({ processed: messages.processed, status: connectorMessages.status })
+        .from(messages)
+        .leftJoin(connectorMessages, and(
+          eq(connectorMessages.channelId, messages.channelId),
+          eq(connectorMessages.messageId, messages.id),
+          eq(connectorMessages.metaDataId, 0),
+        ))
+        .where(and(eq(messages.channelId, channelId), eq(messages.id, messageId)));
+      return row ?? null;
     });
   }
 
@@ -657,6 +677,8 @@ export class MessageService {
    * content insert: an empty VALUES list is invalid SQL and would lose the whole message.
    *
    * `encrypted` only marks the rows; the caller must already have encrypted each row's content.
+   * `handOff` is the Channel Writer send the message comes from: the same statement records the
+   * message on the sender's message, so a send a server stop interrupts can tell it was recorded (D-403).
    */
   static async initializeMessage(
     channelId: string,
@@ -664,7 +686,7 @@ export class MessageService {
     connectorName: string,
     contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
     correlationId?: string,
-    encrypted = false,
+    { encrypted = false, handOff }: { readonly encrypted?: boolean; readonly handOff?: HandOff | undefined } = {},
   ): Promise<Result<{ messageId: number; correlationId: string }>> {
     return tryCatch(async () => {
       const correlationInsert = correlationId
@@ -676,6 +698,16 @@ export class MessageService {
       // read a previous message's id and misattribute PHI content.
       const contentCte = contentRows.length > 0
         ? sql`, new_content AS (${MessageService.buildContentInsert(channelId, contentRows, encrypted)})`
+        : sql``;
+      // A row an earlier send left is replaced: that send never returned, and this message is the one the next one asks about.
+      const handOffCte = handOff
+        ? sql`, hand_off AS (
+            INSERT INTO message_content (channel_id, message_id, meta_data_id, content_type, content, data_type, is_encrypted)
+            SELECT ${handOff.channelId}, ${handOff.messageId}, ${handOff.metaDataId}, ${CONTENT_TYPE.HAND_OFF},
+              json_build_object('channelId', ${channelId}::text, 'messageId', new_msg.id)::text, 'JSON', false
+            FROM new_msg
+            ON CONFLICT (channel_id, message_id, meta_data_id, content_type) DO UPDATE SET content = EXCLUDED.content
+          )`
         : sql``;
 
       const result = await db.execute<{ message_id: number; correlation_id: string }>(sql`
@@ -694,7 +726,7 @@ export class MessageService {
           DO UPDATE SET
             received = message_statistics.received + 1,
             received_lifetime = message_statistics.received_lifetime + 1
-        )${contentCte}
+        )${contentCte}${handOffCte}
         SELECT id AS message_id, correlation_id FROM new_msg
       `);
 

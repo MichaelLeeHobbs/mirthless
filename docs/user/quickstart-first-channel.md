@@ -71,6 +71,10 @@ The destination is the outbound side — where transformed messages go.
    starts the channel runtime; the source begins listening.
 2. The channel state moves to **STARTED**. If validation fails, the error is surfaced —
    fix it and redeploy. Deployment fails loud rather than starting a broken channel.
+   A redeploy of a running channel checks the new version first, so one with a setting,
+   script or data type setting that deploy refuses leaves the running channel as it is.
+   A deploy script that fails, or a port the new version cannot open, is found only after
+   the running version has stopped.
 
 ## 6. Send a test message
 

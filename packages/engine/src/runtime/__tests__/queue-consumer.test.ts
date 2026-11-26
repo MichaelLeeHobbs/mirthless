@@ -158,6 +158,21 @@ describe('QueueConsumer', () => {
       expect(onError).toHaveBeenCalledOnce();
     });
 
+    it('keeps what the partner answered with a final failure, as a direct send does (#414)', async () => {
+      const store = makeStore();
+      const sendFn = makeSendFn({ status: 'ERROR', content: 'accepted=a@example.com, rejected=b@example.com', errorMessage: 'refused 1 of 2', final: true });
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([
+        { channelId: '00000000-0000-0000-0000-000000000001', messageId: 13, metaDataId: 1, sendAttempts: 0 },
+      ]));
+
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+      await consumer.poll();
+
+      expect(store.storeContent).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000001', 13, 1, 6, 'accepted=a@example.com, rejected=b@example.com', 'TEXT',
+      );
+    });
+
     it('stores error content and raises an alert when it gives up on a message', async () => {
       const store = makeStore();
       const sendFn: SendToDestination = vi.fn().mockResolvedValue(fail('Connection refused'));
