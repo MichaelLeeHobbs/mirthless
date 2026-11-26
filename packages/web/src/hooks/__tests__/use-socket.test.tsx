@@ -21,7 +21,7 @@ const fakeSocket = vi.hoisted(() => {
 const io = vi.hoisted(() => vi.fn(() => fakeSocket));
 vi.mock('socket.io-client', () => ({ io }));
 
-const { useSocketConnection, useThrottledSocketEvent, LIVE_REFRESH_INTERVAL_MS, SOCKET_RETRY_MS } = await import('../use-socket.js');
+const { useSocketConnection, useThrottledSocketEvent, LIVE_REFRESH_INTERVAL_MS, SOCKET_RETRY_MS, SOCKET_RETRY_JITTER_MS } = await import('../use-socket.js');
 const { SOCKET_ERROR } = await import('@galvanigraph/core-models');
 const { connectSocket, disconnectSocket } = await import('../../lib/socket.js');
 const { useAuthStore } = await import('../../stores/auth.store.js');
@@ -88,8 +88,9 @@ describe('useSocketConnection', () => {
       renderHook(() => { useSocketConnection(); });
 
       act(() => { fakeSocket.listeners.get('connect_error')?.(new Error(SOCKET_ERROR.UNAVAILABLE)); });
+      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS - 1); });
       expect(fakeSocket.connect).not.toHaveBeenCalled();
-      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS); });
+      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_JITTER_MS + 1); });
 
       expect(fakeSocket.connect).toHaveBeenCalledTimes(1);
       expect(fetchMock).not.toHaveBeenCalled();
@@ -107,9 +108,29 @@ describe('useSocketConnection', () => {
 
       act(() => { fakeSocket.listeners.get('connect_error')?.(new Error(SOCKET_ERROR.UNAVAILABLE)); });
       unmount();
-      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS); });
+      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS + SOCKET_RETRY_JITTER_MS); });
 
       expect(fakeSocket.connect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reconnects later a socket the server closed, but not one the page closed', () => {
+    vi.useFakeTimers();
+    try {
+      useAuthStore.getState().setAuth(USER, 'token', false);
+      renderHook(() => { useSocketConnection(); });
+      const disconnected = fakeSocket.listeners.get('disconnect') as unknown as (reason: string) => void;
+
+      act(() => { disconnected('io client disconnect'); });
+      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS + SOCKET_RETRY_JITTER_MS); });
+      expect(fakeSocket.connect).not.toHaveBeenCalled();
+
+      act(() => { disconnected('io server disconnect'); });
+      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS + SOCKET_RETRY_JITTER_MS); });
+      expect(fakeSocket.connect).toHaveBeenCalledTimes(1);
+      expect(useAuthStore.getState().isAuthenticated).toBe(true);
     } finally {
       vi.useRealTimers();
     }

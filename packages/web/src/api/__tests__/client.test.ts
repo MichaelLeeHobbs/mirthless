@@ -114,6 +114,16 @@ describe('apiFetch refresh', () => {
     expect(useAuthStore.getState().accessToken).toBe('old-token');
   });
 
+  it('signs out when the refresh is refused with another 4xx', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(json(401, { success: false }))
+      .mockResolvedValueOnce(json(403, { success: false })));
+
+    await apiFetch('/channels');
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
   it('stays signed in when a request answers 503', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(503, { success: false, error: { code: 'UNAVAILABLE', message: 'try again' } })));
 

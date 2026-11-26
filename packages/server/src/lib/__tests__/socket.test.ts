@@ -245,6 +245,7 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(socket.disconnect).toHaveBeenCalledWith(true);
       const logger = (await import('../logger.js')).default;
       expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ errMsg: 'connection lost', socketId: 'sock-1' }), expect.any(String));
+      expect(logger.info).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('revoked'));
     });
 
     it('rejects the handshake while the user must change their password', async () => {

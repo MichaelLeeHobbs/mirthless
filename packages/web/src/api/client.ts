@@ -12,8 +12,8 @@ interface RefreshResult {
 }
 
 /**
- * `refused` only when the refresh answered 401. A 503, a 429 or no answer says
- * nothing about the session, so it keeps the person signed in (#473).
+ * A 5xx, a 429 or no answer says nothing about the session, so it keeps the
+ * person signed in (#473). Any other refusal signs them out.
  */
 type RefreshOutcome = RefreshResult | 'refused' | 'unavailable';
 
@@ -128,8 +128,8 @@ async function refreshSession(): Promise<RefreshOutcome> {
   } catch {
     return 'unavailable';
   }
-  if (response.status === 401) return 'refused';
-  if (!response.ok) return 'unavailable';
+  if (response.status === 429 || response.status >= 500) return 'unavailable';
+  if (!response.ok) return 'refused';
 
   try {
     const json: unknown = await response.json();

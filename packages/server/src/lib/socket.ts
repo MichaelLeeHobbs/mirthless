@@ -119,11 +119,15 @@ interface RevalidatableSocket {
 /** True when the socket stays connected. */
 export async function revalidateSocket(socket: RevalidatableSocket): Promise<boolean> {
   const current = socket.data['user'] as SocketUserData | undefined;
-  // A failed read disconnects too: what the socket may see can't be confirmed (#473).
-  const fresh = current ? await loadSocketUser(current.userId, current.sessionId, current.type).catch((err: unknown) => {
+  let fresh: SocketUserData | null;
+  try {
+    fresh = current ? await loadSocketUser(current.userId, current.sessionId, current.type) : null;
+  } catch (err: unknown) {
+    // Disconnected too: what the socket may see can't be confirmed. The web reconnects (#473).
     logger.warn({ ...errorInfo(err), socketId: socket.id }, 'Disconnecting socket: its access could not be checked');
-    return null;
-  }) : null;
+    socket.disconnect(true);
+    return false;
+  }
   if (!fresh) {
     logger.info({ socketId: socket.id }, 'Disconnecting socket: session revoked or access removed');
     socket.disconnect(true);

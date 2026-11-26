@@ -252,6 +252,7 @@ describe('authenticate: a failure to read is not a refusal (#473)', () => {
     const { res, next } = await answerTo(makeReq('GET', '/api/v1/channels'));
     expect(res.statusCode).toBe(401);
     expect(next).not.toHaveBeenCalled();
+    expect(mockEmit).toHaveBeenCalledWith(expect.objectContaining({ action: 'ACCESS_DENIED', userId: 'u1', attributes: expect.objectContaining({ reason: 'session_revoked' }) }));
   });
 });
 
