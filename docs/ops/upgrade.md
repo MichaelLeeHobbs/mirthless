@@ -741,6 +741,10 @@ A CHANNEL destination read SENT when its target channel answers before its desti
 
 A CHANNEL destination that queues no longer sends a message again once the target has stored it with an error (an HL7 batch the target stored only in part is still sent again), which made a new message in the target for every retry and delivered it again to the target's destinations that worked. It ends ERROR at once. A failure that has gone away (a partner that was down, a lookup that timed out) used to be cleared by the next retry: reprocess the message in the target channel instead.
 
+## An email refused for some recipients reads ERROR (#414)
+
+An SMTP destination read SENT when the mail server refused some of the recipients and took the others, and said only how many. It now reads ERROR and raises its alert, the response names the recipients accepted and refused, and the message is not sent again by a queue, which would mail the others twice (D-398). An address that a mail server has always refused, for a recipient nobody noticed was gone, now makes every such message an error: remove it from the destination's settings.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
