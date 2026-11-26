@@ -80,7 +80,7 @@ export interface DestinationResponse {
   readonly status: 'SENT' | 'ERROR';
   readonly content: string;
   readonly errorMessage?: string;
-  /** The partner kept the message although it failed there: no queue sends it again (D-393). */
+  /** Sending it again would do harm or cannot help: no queue sends it again (D-393, D-397). */
   readonly final?: true;
 }
 

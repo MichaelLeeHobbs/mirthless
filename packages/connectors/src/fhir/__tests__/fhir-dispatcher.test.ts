@@ -7,6 +7,7 @@ import {
   buildFhirUrl,
   buildHeaders,
   extractResourceId,
+  resourceTypeOf,
   type FhirDispatcherConfig,
 } from '../fhir-dispatcher.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
@@ -290,7 +291,42 @@ describe('FhirDispatcher.send', () => {
 
       const result = await dispatcher.send(makeMessage({ content }), makeSignal());
 
-      expect(result.ok && result.value).toMatchObject({ status: 'ERROR', content: '', errorMessage: expect.stringContaining(why) });
+      // final: no retry can make it one, and a queue would wait behind it for ever.
+      expect(result.ok && result.value).toMatchObject({ status: 'ERROR', content: '', errorMessage: expect.stringContaining(why), final: true });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an attribute whose name ends in xmlns', 'xml', '<Patient data-xmlns="http://hl7.org/fhir"/>'],
+      ['a namespace that only looks like FHIR\'s', 'xml', '<Patient xmlns="httpX//hl7.org/fhir"/>'],
+      ['a prefix bound to another namespace', 'xml', '<f:Patient xmlns:f="urn:other" xmlns="http://hl7.org/fhir"/>'],
+      ['a root start tag that never ends', 'xml', '<Patient xmlns="http://hl7.org/fhir"'],
+    ] as const)('refuses %s', (_what, format, content) => {
+      expect(resourceTypeOf(content, format)).toBeNull();
+    });
+
+    it('reads JSON after a byte order mark', () => {
+      expect(resourceTypeOf('﻿{"resourceType":"Patient"}', 'json')).toBe('Patient');
+    });
+
+    it.each([
+      ['word characters and dots without a closing bracket', `<${'a.'.repeat(500_000)}`],
+      ['an XML declaration that never ends', `<?xml ${'<?'.repeat(500_000)}`],
+      ['a root element far behind a long comment', `<!--${'-'.repeat(1_000_000)}--><Patient xmlns="http://hl7.org/fhir"/>`],
+    ])('reads %s in bounded time, and refuses it', (_what, content) => {
+      const started = performance.now();
+      expect(resourceTypeOf(content, 'xml')).toBeNull();
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it('refuses a filled header value that holds a line break, without quoting it', async () => {
+      const dispatcher = new FhirDispatcher(makeConfig({ headers: { 'X-Site': '${site}' } }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage({ variables: { site: 'EAST\r\nX-Evil: 1' } }), makeSignal());
+
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error.message).not.toContain('X-Evil');
       expect(mockFetch).not.toHaveBeenCalled();
     });
 

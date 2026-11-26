@@ -70,23 +70,11 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
       if (!this.started) throw new Error('Dispatcher not started');
       if (signal.aborted) throw new Error('Send aborted');
 
+      // No retry can change the message or the setting, and a queue would wait behind it for ever (D-397).
       const refused = refusedContent(message.content, this.config);
-      if (refused !== null) return { status: 'ERROR' as const, content: '', errorMessage: `${refused}, so nothing was sent` };
+      if (refused !== null) return { status: 'ERROR' as const, content: '', errorMessage: `${refused}, so nothing was sent`, final: true as const };
 
-      // R4 servers reject a bare `PUT /{type}`: an update targets /{type}/{id}.
-      const resourceId = this.config.method === 'PUT'
-        ? extractResourceId(message.content, this.config.format)
-        : undefined;
-      if (this.config.method === 'PUT' && !resourceId) {
-        throw new Error('FHIR PUT requires a resource id in the message body');
-      }
-      const url = buildFhirUrl(fillVariables(this.config.baseUrl, message), this.config.resourceType, resourceId);
-      const headers = buildHeaders({
-        ...this.config,
-        headers: Object.fromEntries(Object.entries(this.config.headers).map(([name, value]) => [name, fillVariables(value, message)])),
-      });
-      refuseQuotedCredentials(new URL(url), headers);
-
+      const { url, headers } = this.request(message);
       const timeoutSignal = AbortSignal.timeout(this.config.timeout);
       const combinedSignal = AbortSignal.any([signal, timeoutSignal]);
 
@@ -124,6 +112,22 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
     });
   }
 
+  /** Throws for a request that cannot be made: a PUT without an id, or a URL or header that would quote a credential. */
+  private request(message: ConnectorMessage): { readonly url: string; readonly headers: Record<string, string> } {
+    // R4 servers reject a bare `PUT /{type}`: an update targets /{type}/{id}.
+    const resourceId = this.config.method === 'PUT' ? extractResourceId(message.content, this.config.format) : undefined;
+    if (this.config.method === 'PUT' && !resourceId) {
+      throw new Error('FHIR PUT requires a resource id in the message body');
+    }
+    const url = buildFhirUrl(fillVariables(this.config.baseUrl, message), this.config.resourceType, resourceId);
+    const headers = buildHeaders({
+      ...this.config,
+      headers: Object.fromEntries(Object.entries(this.config.headers).map(([name, value]) => [name, fillVariables(value, message)])),
+    });
+    refuseQuotedCredentials(new URL(url), headers);
+    return { url, headers };
+  }
+
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.started = false;
@@ -148,27 +152,56 @@ const RESOURCE_TYPE_RE = /^[A-Z][A-Za-z]+$/;
 
 const FHIR_NAMESPACE = 'http://hl7.org/fhir';
 
-/** What comes before the root element: a byte order mark, the XML declaration, comments and white space. */
-const XML_PROLOG_RE = /^\uFEFF?(?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->)*/;
-const XML_ROOT_RE = /^<(?:([A-Za-z_][\w.-]*):)?([A-Za-z_][\w.-]*)\b([^>]*)>/;
+/**
+ * The root start tag of an XML resource is looked for in this much of the content. Message content comes from
+ * outside: the scan is linear, and bounded so that no content can make it slow.
+ */
+const XML_HEAD_CHARS = 8_192;
+const XML_NAME_CHAR_RE = /[\w.:-]/;
+/** An attribute that declares a namespace: `xmlns` or `xmlns:<prefix>`, and its quoted value. */
+const XMLNS_RE = /(?:^|\s)xmlns(?::([\w.-]+))?\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 /** The resource's own type, or null when the content is not a FHIR resource in that format. */
 export function resourceTypeOf(content: string, format: 'json' | 'xml'): string | null {
-  if (format === 'json') {
-    try {
-      const parsed: unknown = JSON.parse(content);
-      if (!isPlainObject(parsed)) return null;
-      const type = parsed['resourceType'];
-      return typeof type === 'string' && RESOURCE_TYPE_RE.test(type) ? type : null;
-    } catch {
-      return null;
-    }
+  const text = content.startsWith('\uFEFF') ? content.slice(1) : content;
+  if (format === 'xml') return xmlRootType(text.slice(0, XML_HEAD_CHARS));
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!isPlainObject(parsed)) return null;
+    const type = parsed['resourceType'];
+    return typeof type === 'string' && RESOURCE_TYPE_RE.test(type) ? type : null;
+  } catch {
+    return null;
   }
-  const root = XML_ROOT_RE.exec(content.replace(XML_PROLOG_RE, ''));
-  if (root === null) return null;
-  const [, prefix, name = '', attributes = ''] = root;
-  const declared = new RegExp(`\\bxmlns${prefix === undefined ? '' : `:${prefix}`}\\s*=\\s*(["'])${FHIR_NAMESPACE}\\1`);
-  return RESOURCE_TYPE_RE.test(name) && declared.test(attributes) ? name : null;
+}
+
+/** The root element's name when it is in the FHIR namespace, after white space, the XML declaration and comments. */
+function xmlRootType(head: string): string | null {
+  let at = 0;
+  for (;;) {
+    while (at < head.length && /\s/.test(head[at] ?? '')) at += 1;
+    const close = head.startsWith('<?', at) ? '?>' : head.startsWith('<!--', at) ? '-->' : null;
+    if (close === null) break;
+    const end = head.indexOf(close, at);
+    if (end === -1) return null;
+    at = end + close.length;
+  }
+  if (head[at] !== '<') return null;
+  let nameEnd = at + 1;
+  while (nameEnd < head.length && XML_NAME_CHAR_RE.test(head[nameEnd] ?? '')) nameEnd += 1;
+  const tagEnd = head.indexOf('>', nameEnd);
+  if (tagEnd === -1) return null;
+  const [prefix, name] = splitQName(head.slice(at + 1, nameEnd));
+  if (!RESOURCE_TYPE_RE.test(name)) return null;
+  for (const [, declaredPrefix, double, single] of head.slice(nameEnd, tagEnd).matchAll(XMLNS_RE)) {
+    if (declaredPrefix === prefix && (double ?? single) === FHIR_NAMESPACE) return name;
+  }
+  return null;
+}
+
+function splitQName(qname: string): [string | undefined, string] {
+  const colon = qname.indexOf(':');
+  return colon === -1 ? [undefined, qname] : [qname.slice(0, colon), qname.slice(colon + 1)];
 }
 
 /** Why the content is not sent, or null: a server takes the type in the URL as given and may store content that is no FHIR. */
