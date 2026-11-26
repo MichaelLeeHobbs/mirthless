@@ -79,7 +79,7 @@ describeIntegration('a name two requests take at once (real Postgres)', () => {
       await holder.query('ROLLBACK');
       holder.release();
       const early = await answer;
-      throw new Error(`${(err as Error).message}; the request answered ${String(early.status)} ${JSON.stringify(early.json.error)}`);
+      throw new Error(`${(err as Error).message}; the request answered ${String(early.status)} ${JSON.stringify(early.json.error)}`, { cause: err });
     }
     await holder.query('COMMIT');
     holder.release();
