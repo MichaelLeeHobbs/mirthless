@@ -4,6 +4,10 @@ import { useAuthStore } from '../stores/auth.store.js';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket.js';
 import { queryClient } from '../providers/QueryProvider.js';
 import { refreshOrSignOut } from '../api/client.js';
+import { SOCKET_ERROR } from '@galvanigraph/core-models';
+
+export const SOCKET_RETRY_MS = 10_000;
+export const SOCKET_RETRY_JITTER_MS = 10_000;
 
 /**
  * Call once, in the authenticated layout. Waits out a forced password change:
@@ -27,6 +31,19 @@ export function useSocketConnection(): void {
     }
 
     const socket = connectSocket(accessToken);
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    // Spread out, so every open page does not hit a struggling server at once.
+    const retryLater = (): void => {
+      clearTimeout(retry);
+      retry = setTimeout(() => { socket.connect(); }, SOCKET_RETRY_MS + Math.random() * SOCKET_RETRY_JITTER_MS);
+    };
+
+    // socket.io never reconnects a socket the server closed. The server closes one
+    // whose access it could not check (#473); for one it revoked, the handshake is
+    // refused and the refresh signs the person out.
+    const handleDisconnect = (reason: string): void => {
+      if (reason === 'io server disconnect') retryLater();
+    };
 
     const handleConnect = (): void => {
       if (hasConnectedOnce.current) {
@@ -37,6 +54,12 @@ export function useSocketConnection(): void {
     };
 
     const handleConnectError = (err: Error): void => {
+      // socket.io does not retry a handshake the server refused, and this refusal
+      // says nothing about the token (#473).
+      if (err.message === SOCKET_ERROR.UNAVAILABLE) {
+        retryLater();
+        return;
+      }
       // Stop retrying, or a refused token loops.
       const message = err.message.toLowerCase();
       if (message.includes('auth') || message.includes('unauthorized') || message.includes('jwt')) {
@@ -55,8 +78,11 @@ export function useSocketConnection(): void {
 
     socket.on('connect', handleConnect);
     socket.on('connect_error', handleConnectError);
+    socket.on('disconnect', handleDisconnect);
 
     return (): void => {
+      clearTimeout(retry);
+      socket.off('disconnect', handleDisconnect);
       socket.off('connect', handleConnect);
       socket.off('connect_error', handleConnectError);
       disconnectSocket();

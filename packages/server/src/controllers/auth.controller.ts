@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { errorInfo } from '@galvanigraph/core-util';
 import { AuthService, type SessionMetadata } from '../services/auth.service.js';
 import logger from '../lib/logger.js';
 import { setRefreshTokenCookie, clearRefreshTokenCookie, getRefreshTokenFromCookie } from '../lib/cookies.js';
@@ -73,6 +74,13 @@ export class AuthController {
     }
 
     const result = await AuthService.refreshSession(refreshToken, sessionMetadata(req));
+
+    if (!result.ok && !isServiceError(result.error, 'UNAUTHORIZED')) {
+      // The token may be good: clearing the cookie would sign the person out (#473).
+      logger.error({ ...errorInfo(result.error) }, 'Could not refresh a session');
+      res.status(503).json({ success: false, error: { code: 'UNAVAILABLE', message: 'The session cannot be refreshed right now; try again shortly' } });
+      return;
+    }
 
     if (!result.ok) {
       clearRefreshTokenCookie(res);
