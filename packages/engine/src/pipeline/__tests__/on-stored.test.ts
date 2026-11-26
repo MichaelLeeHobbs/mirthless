@@ -12,7 +12,7 @@ function ok<T>(value: T): Result<T> {
 }
 
 /** Runs a message through a channel with one destination; what happened, in order. */
-async function run(input: Partial<PipelineInput>, storing: Result<unknown> = ok({ messageId: 3, correlationId: CORRELATION })): Promise<{ order: string[]; result: Result<ProcessedMessage> }> {
+async function run(input: Partial<PipelineInput>, storing: Result<unknown> = ok({ messageId: 3, correlationId: CORRELATION })): Promise<{ order: string[]; result: Result<ProcessedMessage>; store: MessageStore }> {
   const order: string[] = [];
   const done = vi.fn().mockResolvedValue(ok(undefined));
   const store: MessageStore = {
@@ -35,8 +35,21 @@ async function run(input: Partial<PipelineInput>, storing: Result<unknown> = ok(
   };
   const result = await new MessageProcessor(new VmSandboxExecutor(), store, send, config, DEFAULT_EXECUTION_OPTIONS)
     .processMessage({ rawContent: 'x', sourceMap: {}, onStored: () => { order.push('onStored'); }, ...input }, AbortSignal.timeout(5_000));
-  return { order, result };
+  return { order, result, store };
 }
+
+describe('handOff', () => {
+  it('goes to the store with the new message, in the call that records it', async () => {
+    const handOff = { channelId: '00000000-0000-0000-0000-000000000034', messageId: 8, metaDataId: 2 };
+    const { store } = await run({ handOff, correlationId: CORRELATION });
+    expect(store.initializeMessage).toHaveBeenCalledExactlyOnceWith(CHANNEL, 'server-01', 'Source', expect.any(Array), CORRELATION, handOff);
+  });
+
+  it('is not given when the message comes from no other channel', async () => {
+    const { store } = await run({});
+    expect(store.initializeMessage).toHaveBeenCalledExactlyOnceWith(CHANNEL, 'server-01', 'Source', expect.any(Array), undefined, undefined);
+  });
+});
 
 describe('onStored', () => {
   it('is called once, after the message is stored and before anything is sent', async () => {

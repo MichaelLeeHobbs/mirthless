@@ -21,6 +21,7 @@ export type {
   MetadataColumnConfig,
   AlertEventHandler,
   ContentRow,
+  HandOff,
   StageTiming,
   TimingCallback,
   StoreFailure,
