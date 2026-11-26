@@ -7,6 +7,7 @@ import {
   buildFhirUrl,
   buildHeaders,
   extractResourceId,
+  resourceTypeOf,
   type FhirDispatcherConfig,
 } from '../fhir-dispatcher.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
@@ -253,7 +254,7 @@ describe('FhirDispatcher.send', () => {
       method: 'POST',
     }));
     await dispatcher.onStart();
-    await dispatcher.send(makeMessage(), makeSignal());
+    await dispatcher.send(makeMessage({ content: '{"resourceType":"Observation","status":"final"}' }), makeSignal());
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -273,6 +274,103 @@ describe('FhirDispatcher.send', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).not.toContain('hunter2');
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  describe('what it posts (#414)', () => {
+    it.each([
+      ['a resource of another type', 'json', '{"resourceType":"Observation","status":"final"}', 'is a resource of type Observation, and this destination sends Patient'],
+      ['HL7 v2 text', 'json', 'MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5', 'is not a FHIR resource in JSON'],
+      ['JSON that is not a resource', 'json', '{"name":"Doe"}', 'is not a FHIR resource in JSON'],
+      ['a JSON array', 'json', '[{"resourceType":"Patient"}]', 'is not a FHIR resource in JSON'],
+      ['XML outside the FHIR namespace', 'xml', '<Patient><name/></Patient>', 'is not a FHIR resource in XML'],
+      ['a JSON resource to an XML destination', 'xml', '{"resourceType":"Patient"}', 'is not a FHIR resource in XML'],
+      ['an XML resource of another type', 'xml', '<Observation xmlns="http://hl7.org/fhir"/>', 'is a resource of type Observation, and this destination sends Patient'],
+    ] as const)('refuses %s without sending it', async (_what, format, content, why) => {
+      const dispatcher = new FhirDispatcher(makeConfig({ format }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage({ content }), makeSignal());
+
+      // final: no retry can make it one, and a queue would wait behind it for ever.
+      expect(result.ok && result.value).toMatchObject({ status: 'ERROR', content: '', errorMessage: expect.stringContaining(why), final: true });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an attribute whose name ends in xmlns', 'xml', '<Patient data-xmlns="http://hl7.org/fhir"/>'],
+      ['a namespace that only looks like FHIR\'s', 'xml', '<Patient xmlns="httpX//hl7.org/fhir"/>'],
+      ['a prefix bound to another namespace', 'xml', '<f:Patient xmlns:f="urn:other" xmlns="http://hl7.org/fhir"/>'],
+      ['a root start tag that never ends', 'xml', '<Patient xmlns="http://hl7.org/fhir"'],
+    ] as const)('refuses %s', (_what, format, content) => {
+      expect(resourceTypeOf(content, format)).toBeNull();
+    });
+
+    it('reads JSON after a byte order mark', () => {
+      expect(resourceTypeOf('﻿{"resourceType":"Patient"}', 'json')).toBe('Patient');
+    });
+
+    it.each([
+      ['word characters and dots without a closing bracket', `<${'a.'.repeat(500_000)}`],
+      ['an XML declaration that never ends', `<?xml ${'<?'.repeat(500_000)}`],
+      ['a root element far behind a long comment', `<!--${'-'.repeat(1_000_000)}--><Patient xmlns="http://hl7.org/fhir"/>`],
+    ])('reads %s in bounded time, and refuses it', (_what, content) => {
+      const started = performance.now();
+      expect(resourceTypeOf(content, 'xml')).toBeNull();
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it('refuses a filled header value that holds a line break, without quoting it', async () => {
+      const dispatcher = new FhirDispatcher(makeConfig({ headers: { 'X-Site': '${site}' } }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage({ variables: { site: 'EAST\r\nX-Evil: 1' } }), makeSignal());
+
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error.message).not.toContain('X-Evil');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a JSON resource', 'json', '{"resourceType":"Patient","id":"p1"}'],
+      ['an XML resource with a declaration and a comment first', 'xml', '\uFEFF<?xml version="1.0" encoding="UTF-8"?>\n<!-- from the lab -->\n<Patient xmlns="http://hl7.org/fhir"><id value="p1"/></Patient>'],
+      ['an XML resource with a namespace prefix', 'xml', "<f:Patient xmlns:f='http://hl7.org/fhir'/>"],
+    ] as const)('posts %s of the type it is set to', async (_what, format, content) => {
+      mockFetch.mockResolvedValue(new Response('{}', { status: 201, statusText: 'Created' }));
+      const dispatcher = new FhirDispatcher(makeConfig({ format }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage({ content }), makeSignal());
+
+      expect(result.ok && result.value.status).toBe('SENT');
+    });
+
+    it('posts a resource of any type to an operation, which takes what it names', async () => {
+      mockFetch.mockResolvedValue(new Response('{}', { status: 200, statusText: 'OK' }));
+      const dispatcher = new FhirDispatcher(makeConfig({ resourceType: '$process-message' }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage({ content: '{"resourceType":"Bundle","type":"message"}' }), makeSignal());
+
+      expect(result.ok && result.value.status).toBe('SENT');
+      expect(mockFetch.mock.calls[0]?.[0]).toBe('https://fhir.example.com/r4/$process-message');
+    });
+
+    it('fills ${name} in its base URL and header values from the message, leaving a name it lacks as written', async () => {
+      mockFetch.mockResolvedValue(new Response('{}', { status: 201, statusText: 'Created' }));
+      const dispatcher = new FhirDispatcher(makeConfig({
+        baseUrl: 'https://${host}/r4/${tenant}',
+        headers: { 'X-Site': '${site}', 'X-Other': '${missing}' },
+      }));
+      expect((await dispatcher.onDeploy()).ok).toBe(true);
+      await dispatcher.onStart();
+
+      await dispatcher.send(makeMessage({ variables: { host: 'fhir.east.example.com', tenant: 't1', site: 'EAST' } }), makeSignal());
+
+      const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('https://fhir.east.example.com/r4/t1/Patient');
+      expect(opts.headers).toMatchObject({ 'X-Site': 'EAST', 'X-Other': '${missing}' });
+      expect(dispatcher.variablesUsed()).toEqual(['host', 'tenant', 'site', 'missing']);
+    });
   });
 
   it('returns ERROR on non-OK response', async () => {

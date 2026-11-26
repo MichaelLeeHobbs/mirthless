@@ -1,5 +1,5 @@
-import { tryCatch, type Result } from '@galvanigraph/core-util';
-import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { isPlainObject, tryCatch, type Result } from '@galvanigraph/core-util';
+import { fillVariables, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { answerText } from '../answer.js';
 import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 import { redirectMessage } from '../redirect.js';
@@ -48,8 +48,8 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
   async onDeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (!this.config.baseUrl) throw new Error('FHIR base URL is required');
-      // Not quoted in the error: it may hold credentials.
-      if (!URL.canParse(this.config.baseUrl)) throw new Error('Invalid base URL');
+      // Not quoted in the error: it may hold credentials. One with `${name}` is filled per message.
+      if (!this.config.baseUrl.includes('${') && !URL.canParse(this.config.baseUrl)) throw new Error('Invalid base URL');
       if (!this.config.resourceType) throw new Error('FHIR resource type is required');
       validateAuth(this.config.authType, this.config.authConfig);
     });
@@ -62,7 +62,7 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
   }
 
   variablesUsed(): readonly string[] {
-    return [];
+    return variableNames([this.config.baseUrl, ...Object.values(this.config.headers)]);
   }
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
@@ -70,17 +70,11 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
       if (!this.started) throw new Error('Dispatcher not started');
       if (signal.aborted) throw new Error('Send aborted');
 
-      // R4 servers reject a bare `PUT /{type}`: an update targets /{type}/{id}.
-      const resourceId = this.config.method === 'PUT'
-        ? extractResourceId(message.content, this.config.format)
-        : undefined;
-      if (this.config.method === 'PUT' && !resourceId) {
-        throw new Error('FHIR PUT requires a resource id in the message body');
-      }
-      const url = buildFhirUrl(this.config.baseUrl, this.config.resourceType, resourceId);
-      const headers = buildHeaders(this.config);
-      refuseQuotedCredentials(new URL(url), headers);
+      // No retry can change the message or the setting, and a queue would wait behind it for ever (D-401).
+      const refused = refusedContent(message.content, this.config);
+      if (refused !== null) return { status: 'ERROR' as const, content: '', errorMessage: `${refused}, so nothing was sent`, final: true as const };
 
+      const { url, headers } = this.request(message);
       const timeoutSignal = AbortSignal.timeout(this.config.timeout);
       const combinedSignal = AbortSignal.any([signal, timeoutSignal]);
 
@@ -118,6 +112,22 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
     });
   }
 
+  /** Throws for a request that cannot be made: a PUT without an id, or a URL or header that would quote a credential. */
+  private request(message: ConnectorMessage): { readonly url: string; readonly headers: Record<string, string> } {
+    // R4 servers reject a bare `PUT /{type}`: an update targets /{type}/{id}.
+    const resourceId = this.config.method === 'PUT' ? extractResourceId(message.content, this.config.format) : undefined;
+    if (this.config.method === 'PUT' && !resourceId) {
+      throw new Error('FHIR PUT requires a resource id in the message body');
+    }
+    const url = buildFhirUrl(fillVariables(this.config.baseUrl, message), this.config.resourceType, resourceId);
+    const headers = buildHeaders({
+      ...this.config,
+      headers: Object.fromEntries(Object.entries(this.config.headers).map(([name, value]) => [name, fillVariables(value, message)])),
+    });
+    refuseQuotedCredentials(new URL(url), headers);
+    return { url, headers };
+  }
+
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.started = false;
@@ -135,6 +145,73 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
       this.started = false;
     });
   }
+}
+
+/** A resource type as FHIR names one; a setting of another form is an operation or a path, such as `$process-message`. */
+const RESOURCE_TYPE_RE = /^[A-Z][A-Za-z]+$/;
+
+const FHIR_NAMESPACE = 'http://hl7.org/fhir';
+
+/**
+ * The root start tag of an XML resource is looked for in this much of the content. Message content comes from
+ * outside: the scan is linear, and bounded so that no content can make it slow.
+ */
+const XML_HEAD_CHARS = 8_192;
+const XML_NAME_CHAR_RE = /[\w.:-]/;
+/** An attribute that declares a namespace: `xmlns` or `xmlns:<prefix>`, and its quoted value. */
+const XMLNS_RE = /(?:^|\s)xmlns(?::([\w.-]+))?\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+
+/** The resource's own type, or null when the content is not a FHIR resource in that format. */
+export function resourceTypeOf(content: string, format: 'json' | 'xml'): string | null {
+  const text = content.startsWith('\uFEFF') ? content.slice(1) : content;
+  if (format === 'xml') return xmlRootType(text.slice(0, XML_HEAD_CHARS));
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!isPlainObject(parsed)) return null;
+    const type = parsed['resourceType'];
+    return typeof type === 'string' && RESOURCE_TYPE_RE.test(type) ? type : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The root element's name when it is in the FHIR namespace, after white space, the XML declaration and comments. */
+function xmlRootType(head: string): string | null {
+  let at = 0;
+  for (;;) {
+    while (at < head.length && /\s/.test(head[at] ?? '')) at += 1;
+    const close = head.startsWith('<?', at) ? '?>' : head.startsWith('<!--', at) ? '-->' : null;
+    if (close === null) break;
+    const end = head.indexOf(close, at);
+    if (end === -1) return null;
+    at = end + close.length;
+  }
+  if (head[at] !== '<') return null;
+  let nameEnd = at + 1;
+  while (nameEnd < head.length && XML_NAME_CHAR_RE.test(head[nameEnd] ?? '')) nameEnd += 1;
+  const tagEnd = head.indexOf('>', nameEnd);
+  if (tagEnd === -1) return null;
+  const [prefix, name] = splitQName(head.slice(at + 1, nameEnd));
+  if (!RESOURCE_TYPE_RE.test(name)) return null;
+  for (const [, declaredPrefix, double, single] of head.slice(nameEnd, tagEnd).matchAll(XMLNS_RE)) {
+    if (declaredPrefix === prefix && (double ?? single) === FHIR_NAMESPACE) return name;
+  }
+  return null;
+}
+
+function splitQName(qname: string): [string | undefined, string] {
+  const colon = qname.indexOf(':');
+  return colon === -1 ? [undefined, qname] : [qname.slice(0, colon), qname.slice(colon + 1)];
+}
+
+/** Why the content is not sent, or null: a server takes the type in the URL as given and may store content that is no FHIR. */
+function refusedContent(content: string, config: Pick<FhirDispatcherConfig, 'format' | 'resourceType'>): string | null {
+  const type = resourceTypeOf(content, config.format);
+  if (type === null) return `The message is not a FHIR resource in ${config.format.toUpperCase()}`;
+  if (RESOURCE_TYPE_RE.test(config.resourceType) && type !== config.resourceType) {
+    return `The message is a resource of type ${type}, and this destination sends ${config.resourceType}`;
+  }
+  return null;
 }
 
 /** The FHIR spec's logical id grammar. */
