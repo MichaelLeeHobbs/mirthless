@@ -14,10 +14,11 @@ import { createDefaultTransformerStep } from './types.js';
 import { TransformerStepEditor } from './TransformerStepEditor.js';
 import { earlierStepNames } from '../../editors/surface-state.js';
 import { DelimitedSettings } from './DelimitedSettings.js';
+import { Hl7Settings } from './Hl7Settings.js';
 import { useListKeys } from '../../../hooks/use-list-keys.js';
 
-function delimitedSettings(inboundProperties: Readonly<Record<string, unknown>>): Record<string, unknown> {
-  const saved = inboundProperties['delimited'];
+function savedSettings(inboundProperties: Readonly<Record<string, unknown>>, key: 'delimited' | 'hl7'): Record<string, unknown> {
+  const saved = inboundProperties[key];
   return saved !== null && typeof saved === 'object' && !Array.isArray(saved) ? saved as Record<string, unknown> : {};
 }
 
@@ -150,8 +151,16 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
         {transformer.inboundDataType === 'DELIMITED' && (
           <Box sx={{ mt: 2 }}>
             <DelimitedSettings
-              settings={delimitedSettings(transformer.inboundProperties)}
+              settings={savedSettings(transformer.inboundProperties, 'delimited')}
               onChange={(delimited) => { onChange({ ...transformer, inboundProperties: { ...transformer.inboundProperties, delimited } }); }}
+            />
+          </Box>
+        )}
+        {transformer.inboundDataType === 'HL7V2' && (
+          <Box sx={{ mt: 2 }}>
+            <Hl7Settings
+              settings={savedSettings(transformer.inboundProperties, 'hl7')}
+              onChange={(hl7) => { onChange({ ...transformer, inboundProperties: { ...transformer.inboundProperties, hl7 } }); }}
             />
           </Box>
         )}
