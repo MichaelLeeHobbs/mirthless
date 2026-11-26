@@ -716,6 +716,12 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
   AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
 ```
 
+## A refused redeploy keeps the channel running (#480)
+
+A redeploy of a running channel used to check only its scripts before it stopped the running version. A destination setting the deploy refused, a configuration map reference that filled a setting with a value it refused, or Delimited or HL7 v2 settings that did not validate stopped and undeployed the channel, and then the redeploy failed. Now the redeploy checks all of these first, with the certificates from the store and each connector's own deploy check, answers with the refusal, and leaves the running channel as it was (D-393). A deploy script that fails and a port the new version cannot open are still found only after the stop, and leave the channel undeployed until it is deployed again or the server restarts.
+
+When several things are wrong, the refusal can now name a different one first: the channel's own settings (encryption, queued destinations and storage, the response destination, batch processing, the data type settings) come before its connectors and scripts.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.
