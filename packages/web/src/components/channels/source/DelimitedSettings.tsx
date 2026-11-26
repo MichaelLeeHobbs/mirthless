@@ -12,6 +12,7 @@ import { delimitedOptionsSchema } from '@galvanigraph/core-models';
 import { unescapeControlChars } from '@galvanigraph/core-util';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { propertyUpdaters } from '../common/connector-properties.js';
+import { settingsProblem } from './settings-problem.js';
 
 type Settings = Readonly<Record<string, unknown>>;
 
@@ -30,8 +31,7 @@ function shown(settings: Settings): ReturnType<typeof delimitedOptionsSchema.par
 }
 
 export function delimitedProblem(settings: Settings): string | undefined {
-  const parsed = delimitedOptionsSchema.safeParse(settings);
-  return parsed.success ? undefined : parsed.error.issues.map((i) => i.message).join('; ');
+  return settingsProblem(delimitedOptionsSchema, settings);
 }
 
 export function readColumnNames(text: string): string[] {

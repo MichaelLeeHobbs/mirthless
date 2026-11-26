@@ -81,6 +81,27 @@ describe('ScriptTestRunService.run', () => {
     expect(result.value.error).toContain(missing);
   });
 
+  it("reads the sample with the editor's data type settings, as deploy reads them (#474)", async () => {
+    const result = await run({
+      kind: 'transformer', dataType: 'DELIMITED', destinationSet: false, sample: '1|Test\n',
+      dataTypeProperties: { delimited: { columnDelimiter: '|', columnNames: ['mrn', 'name'] } },
+      script: 'logger.info(JSON.stringify(msg));',
+    }, undefined, BOTH_READS);
+    expect(result.ok && result.value.logs.map((l) => l.message)).toEqual(['[{"mrn":"1","name":"Test"}]']);
+  });
+
+  it('refuses data type settings that would not deploy, and runs nothing', async () => {
+    const result = await run({
+      kind: 'script', dataType: 'DELIMITED', destinationSet: false, sample: '1\n', script: 'return 1;',
+      dataTypeProperties: { delimited: { columnDelimiter: '\n' } },
+    }, undefined, BOTH_READS);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatchObject({ code: 'INVALID_INPUT', message: 'Delimited settings are invalid: Column and record delimiters must differ' });
+    expect(recordOrRefuse).not.toHaveBeenCalled();
+    expect(emitAuditEvent).not.toHaveBeenCalled();
+    expect((await run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, undefined, BOTH_READS)).ok).toBe(true);
+  });
+
   it('audits who ran a script for which channel, never the sample', async () => {
     await run(
       { kind: 'filter', dataType: 'HL7V2', destinationSet: false, channelId: CHANNEL_ID, sample: ADT, script: 'return true;' },

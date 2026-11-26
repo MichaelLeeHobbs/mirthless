@@ -57,7 +57,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvanigraph/connectors';
-import { AUDIT_ACTION, EVENT_NAME, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate, withScriptLogRun } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, EVENT_NAME, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, destinationTemplate, withScriptLogRun } from '@galvanigraph/core-models';
 import { MessageService } from './services/message.service.js';
 import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
@@ -69,6 +69,7 @@ import { AlertService, type AlertDetail } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { DESTINATION_TLS_RESOLVERS, SOURCE_TLS_RESOLVERS } from './services/connector-tls-resolver.js';
 import { ServiceError } from './lib/service-error.js';
+import { dataTypeOptionsFrom } from './lib/data-type-options.js';
 import { whyNotTaking } from './lib/taking-messages.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
@@ -221,16 +222,16 @@ export function parsedOrRaw(content: string, dataType: string, options?: DataTyp
 
 /**
  * Throws a ServiceError on settings that do not validate, so the channel
- * refuses to deploy instead of splitting rows the wrong way.
+ * refuses to deploy instead of reading its messages the wrong way.
  */
 export function dataTypeOptionsFor(channel: ChannelDetail): DataTypeOptions {
-  if (channel.inboundDataType !== 'DELIMITED') return {};
   const source = channel.transformers.find((t) => t.connectorId === null);
-  const parsed = delimitedOptionsSchema.safeParse(source?.inboundProperties['delimited'] ?? {});
-  if (!parsed.success) {
-    throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: Delimited settings are invalid: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+  try {
+    return dataTypeOptionsFrom(channel.inboundDataType, source?.inboundProperties ?? {});
+  } catch (err: unknown) {
+    if (err instanceof ServiceError) throw new ServiceError(err.code, `Channel ${channel.name}: ${err.message}`);
+    throw err;
   }
-  return { delimited: parsed.data };
 }
 
 export interface BatchRules {

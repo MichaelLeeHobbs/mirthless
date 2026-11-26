@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { useAuthStore } from '../../../stores/auth.store.js';
 import { PERMISSION } from '../../../lib/permissions.js';
-import { render, screen, cleanup, fireEvent, getDefaultNormalizer } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, getDefaultNormalizer, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ScriptTestResult } from '@galvanigraph/core-models';
 import { lightTheme } from '../../../styles/theme.js';
 import { ScriptTestPanel } from '../ScriptTestPanel.js';
 import { ScriptEditor } from '../ScriptEditor.js';
-import { ScriptTestSampleContext } from '../script-context.js';
+import { ScriptDataTypeContext, ScriptTestSampleContext } from '../script-context.js';
+import { api } from '../../../api/client.js';
 
 afterEach(() => { cleanup(); });
 
@@ -71,7 +72,7 @@ describe('ScriptTestPanel', () => {
 });
 
 describe('ScriptEditor test run button', () => {
-  const sample = { channelId: undefined, sample: '', setSample: vi.fn() };
+  const sample = { channelId: undefined, sample: '', setSample: vi.fn(), dataTypeProperties: {} };
   const signIn = (permissions: readonly string[]): void => {
     useAuthStore.setState({ user: { id: 'u1', username: 't', email: 't@x.com', role: 'deployer', permissions }, accessToken: 'tok', isAuthenticated: true });
   };
@@ -95,6 +96,23 @@ describe('ScriptEditor test run button', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Test run' }));
     expect(screen.getByRole('region', { name: 'Test run' })).toBeTruthy();
+  });
+
+  it("sends the channel's data type settings as edited, so the run reads the sample as the channel would deploy (#474)", async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ success: true, data: BASE });
+    const dataTypeProperties = { delimited: { columnDelimiter: '|' } };
+    wrap(
+      <ScriptDataTypeContext.Provider value="DELIMITED">
+        <ScriptTestSampleContext.Provider value={{ ...sample, sample: '1|a\n', dataTypeProperties }}>
+          <ScriptEditor value="return true;" onChange={vi.fn()} testKind="filter" />
+        </ScriptTestSampleContext.Provider>
+      </ScriptDataTypeContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Test run' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => { expect(post).toHaveBeenCalledOnce(); });
+    expect(post).toHaveBeenCalledWith('/scripts/test-run', expect.objectContaining({ dataType: 'DELIMITED', sample: '1|a\n', dataTypeProperties }));
+    post.mockRestore();
   });
 
   it('is absent outside a channel and for a read-only script', () => {

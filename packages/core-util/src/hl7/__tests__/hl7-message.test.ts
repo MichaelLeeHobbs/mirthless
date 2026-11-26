@@ -469,6 +469,56 @@ describe('Hl7Message getText hex escapes by MSH-18 (#194)', () => {
     msg.setText('NTE.3', 'café “q”|’');
     expect(Hl7Message.parse(msg.toString()).getText('NTE.3')).toBe('café “q”|’');
   });
+
+  it('decodes as UTF-8 when MSH-18 says plain UNICODE', () => {
+    expect(withCharset('UNICODE', 'caf\\XC3A9\\').getText('NTE.3')).toBe('café');
+  });
+
+  it('reads only the first repetition of MSH-18', () => {
+    expect(withCharset('8859/1~UNICODE UTF-8', 'caf\\XC3A9\\').getText('NTE.3')).toBe('cafÃ©');
+    expect(withCharset('UNICODE~8859/1', 'caf\\XC3A9\\').getText('NTE.3')).toBe('café');
+  });
+
+  it('reads four digits as two bytes unless the channel says the sender writes code points', () => {
+    expect(withCharset('', 'it\\X2019\\s').getText('NTE.3')).toBe('it \x19s');
+  });
+});
+
+describe('Hl7Message getText for a sender that writes code points (#194)', () => {
+  const parse = (msh18: string, nte: string): Hl7Message =>
+    Hl7Message.parse(`MSH|^~\\&|A|B|C|D|2026||ORU^R01|1|P|2.5.1||||||${msh18}\rNTE|1||${nte}`, { hexCodePoints: true });
+
+  it('reads a four-digit escape as a code point whatever MSH-18 says', () => {
+    for (const msh18 of ['', 'ASCII', '8859/1', 'UNICODE UTF-8']) {
+      expect(parse(msh18, 'dose \\X2264\\ 5 mg, it\\X2019\\s').getText('NTE.3')).toBe('dose ≤ 5 mg, it’s');
+    }
+  });
+
+  it('reads the two-digit escapes beside them by MSH-18', () => {
+    expect(parse('', '\\X93\\q\\X94\\ it\\X2019\\s').getText('NTE.3')).toBe('“q” it’s');
+  });
+
+  it('reads UTF-8 bytes as UTF-8 when MSH-18 says UTF-8', () => {
+    expect(parse('UNICODE UTF-8', 'Ren\\XC3A9\\').getText('NTE.3')).toBe('René');
+  });
+
+  it('keeps a line break written as 0D0A', () => {
+    expect(parse('', 'a\\X0D0A\\b').getText('NTE.3')).toBe('a\r\nb');
+  });
+
+  it('follows MSH-18 when a script changes it', () => {
+    const msg = parse('', 'Ren\\XC3A9\\');
+    expect(msg.getText('NTE.3')).toBe('Ren쎩');
+    msg.set('MSH.18', 'UNICODE UTF-8');
+    expect(msg.getText('NTE.3')).toBe('René');
+  });
+
+  it('changes nothing get returns or toString writes', () => {
+    const raw = 'it\\X2019\\s';
+    const msg = parse('', raw);
+    expect(msg.get('NTE.3')).toBe(raw);
+    expect(msg.toString()).toContain(`NTE|1||${raw}`);
+  });
 });
 
 describe('Hl7Message MSH-2', () => {

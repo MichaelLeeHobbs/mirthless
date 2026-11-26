@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { MAX_SCRIPT_LOG_LINES } from '@galvanigraph/core-models';
+import { MAX_SCRIPT_LOG_LINES, delimitedOptionsSchema } from '@galvanigraph/core-models';
 import {
   runScriptTest, MAX_TEST_OUTPUT_CHARS, type ScriptTestInput, type ScriptTestResult,
 } from '../script-test-run.js';
@@ -40,6 +40,23 @@ describe('runScriptTest', () => {
     expect(result.output?.split('\r')[1]).toBe('PID|1||4821193^^^HOSP^MR||SMITH^AVERY');
     // The compiled steps hand back msg itself; that is the output, not a returned value.
     expect(result.returned).toBeNull();
+  });
+
+  it('reads and writes the sample with the channel data type settings it is given, as the pipeline does (#474)', async () => {
+    const delimited = delimitedOptionsSchema.parse({ columnDelimiter: '|', columnNames: ['mrn', 'name'] });
+    const result = await run({
+      kind: 'transformer', surface: { dataType: 'DELIMITED' }, sample: '1|Test\n', dataTypeOptions: { delimited },
+      script: "logger.info(JSON.stringify(msg)); msg[0].name = 'Doe|Jr';",
+    });
+    expect(result.logs[0]?.message).toBe('[{"mrn":"1","name":"Test"}]');
+    expect(result.output).toBe('1|"Doe|Jr"\n');
+  });
+
+  it('reads HL7 v2 hex escapes as code points when the channel settings say so (#194)', async () => {
+    const sample = `${ADT}\rNTE|1||it\\X2019\\s`;
+    const script = "return msg.getText('NTE.3') === 'it’s';";
+    expect((await run({ sample, script, dataTypeOptions: { hl7: { hexCodePoints: true } } })).outcome).toBe('accepted');
+    expect((await run({ sample, script })).outcome).toBe('filtered');
   });
 
   it('reports logger output, map changes and the destinations a source script left', async () => {

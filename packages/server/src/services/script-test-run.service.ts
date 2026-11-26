@@ -5,6 +5,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { runScriptTestIsolated, type ScriptTestResult } from '@galvanigraph/engine';
 import { AUDIT_ACTION, type ScriptTestRunInput, type TemplateSource } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { dataTypeOptionsFrom } from '../lib/data-type-options.js';
 import { emitAuditEvent, type AuditContext } from '../lib/event-emitter.js';
 import { AuditService } from './audit.service.js';
 import { ChannelService } from './channel.service.js';
@@ -82,6 +83,7 @@ export class ScriptTestRunService {
       running = true;
       let result: ScriptTestResult | undefined;
       try {
+        const dataTypeOptions = dataTypeOptionsFrom(input.dataType, input.dataTypeProperties ?? {});
         const scope = await channelScope(input.channelId);
         const collections = createCollectionBridge();
         // Audited from here on, whatever happens: the script is about to run.
@@ -91,6 +93,7 @@ export class ScriptTestRunService {
               script: input.script,
               kind: input.kind,
               surface: { dataType: input.dataType, destinationSet: input.destinationSet, templateContext: input.templateContext },
+              dataTypeOptions,
               templates: scope.templates,
               sample: input.sample,
               destinations: scope.destinations,

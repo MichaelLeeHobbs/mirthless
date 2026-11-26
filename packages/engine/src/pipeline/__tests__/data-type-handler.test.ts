@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed, isHl7MessageProxy, isX12MessageProxy, createHl7Proxy } from '../data-type-handler.js';
 import { Hl7Message } from '@galvanigraph/core-util';
-import { delimitedOptionsSchema } from '@galvanigraph/core-models';
+import { delimitedOptionsSchema, hl7OptionsSchema } from '@galvanigraph/core-models';
 
 describe('DELIMITED serialization', () => {
   const delimited = delimitedOptionsSchema.parse({ columnDelimiter: '|', columnNames: ['mrn', 'name'] });
@@ -64,6 +64,15 @@ describe('parseForSandbox', () => {
     const patient = (result as { patient: { name: string; mrn: string } }).patient;
     expect(patient.name).toBe('John Doe');
     expect(patient.mrn).toBe('12345');
+  });
+
+  it('reads HL7V2 hex escapes as code points only when the HL7 settings say the sender writes them (#194)', () => {
+    const hl7 = `${SAMPLE_HL7}\rNTE|1||it\\X2019\\s`;
+    const getText = (options?: Parameters<typeof parseForSandbox>[2]): string | undefined =>
+      (parseForSandbox(hl7, 'HL7V2', options) as { getText: (p: string) => string | undefined }).getText('NTE.3');
+    expect(getText({ hl7: hl7OptionsSchema.parse({ hexCodePoints: true }) })).toBe('it’s');
+    expect(getText({ hl7: hl7OptionsSchema.parse({}) })).toBe('it \x19s');
+    expect(getText()).toBe('it \x19s');
   });
 
   it('parses DELIMITED into rows named by the given settings, or column<n> without them', () => {

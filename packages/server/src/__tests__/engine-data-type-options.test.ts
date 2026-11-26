@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { dataTypeOptionsFor, parsedOrRaw } from '../engine.js';
+import { dataTypeOptionsFrom } from '../lib/data-type-options.js';
 import type { ChannelDetail } from '../services/channel.service.js';
 
 function channel(inboundDataType: string, inboundProperties: Record<string, unknown>, connectorId: string | null = null): ChannelDetail {
@@ -25,8 +26,31 @@ describe('dataTypeOptionsFor', () => {
       .toThrow(/Census: Delimited settings are invalid: Column and record delimiters must differ/);
   });
 
+  it('reads the HL7 v2 settings, filling defaults (#194)', () => {
+    expect(dataTypeOptionsFor(channel('HL7V2', { hl7: { hexCodePoints: true } }))).toEqual({ hl7: { hexCodePoints: true } });
+    expect(dataTypeOptionsFor(channel('HL7V2', { delimited: { columnDelimiter: '\n' } }))).toEqual({ hl7: { hexCodePoints: false } });
+  });
+
+  it('refuses to deploy HL7 v2 settings that do not validate', () => {
+    expect(() => dataTypeOptionsFor(channel('HL7V2', { hl7: { hexCodePoints: 'yes' } })))
+      .toThrow(/^Channel Census: HL7 v2 settings are invalid: /);
+  });
+
   it('has no settings for other data types', () => {
-    expect(dataTypeOptionsFor(channel('HL7V2', { delimited: { columnDelimiter: '\n' } }))).toEqual({});
+    expect(dataTypeOptionsFor(channel('JSON', { delimited: { columnDelimiter: '\n' }, hl7: { hexCodePoints: 'yes' } }))).toEqual({});
+  });
+});
+
+describe('dataTypeOptionsFrom', () => {
+  it('reads settings that are not saved yet the way deploy reads them (#474)', () => {
+    expect(dataTypeOptionsFrom('DELIMITED', { delimited: { columnDelimiter: '|' } }).delimited).toMatchObject({ columnDelimiter: '|', recordDelimiter: '\n' });
+    expect(dataTypeOptionsFrom('HL7V2', { hl7: { hexCodePoints: true } })).toEqual({ hl7: { hexCodePoints: true } });
+    expect(dataTypeOptionsFrom(undefined, { hl7: { hexCodePoints: true } })).toEqual({});
+  });
+
+  it('refuses settings that do not validate, without a channel name', () => {
+    expect(() => dataTypeOptionsFrom('DELIMITED', { delimited: { columnDelimiter: '\n' } }))
+      .toThrow(/^Delimited settings are invalid: Column and record delimiters must differ$/);
   });
 });
 

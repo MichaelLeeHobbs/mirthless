@@ -27,6 +27,7 @@ const PAGES = {
   'source-javascript': { url: '/channels/c9', click: 'Source' },
   'destination-javascript': { url: '/channels/c9', click: 'Destinations' },
   'source-delimited': { url: '/channels/c6', click: ['Source', 'Source Transformer'], scrollTo: 'Source Transformer' },
+  'source-hl7': { url: '/channels/c1', click: ['Source', 'Source Transformer'], scrollTo: 'HL7 v2 settings' },
   'destination-database': { url: '/channels/c6', click: 'Destinations', scrollTo: 'Connector Settings' },
   'source-file': { url: '/channels/c6', click: 'Source', scrollTo: 'Connector Settings' },
   'source-http': { url: '/channels/c4', click: 'Source', scrollTo: 'Connector Settings' },

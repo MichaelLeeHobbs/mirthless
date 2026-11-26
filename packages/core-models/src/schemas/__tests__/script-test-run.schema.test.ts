@@ -10,6 +10,13 @@ describe('scriptTestRunSchema', () => {
     expect(parsed.destinationSet).toBe(false);
   });
 
+  it("carries the channel's data type settings as the editor has them, and refuses them when they are not an object (#474)", () => {
+    const base = { script: 'x', kind: 'script', sample: '', dataType: 'DELIMITED' } as const;
+    const dataTypeProperties = { delimited: { columnDelimiter: '|' } };
+    expect(scriptTestRunSchema.parse({ ...base, dataTypeProperties }).dataTypeProperties).toEqual(dataTypeProperties);
+    expect(scriptTestRunSchema.safeParse({ ...base, dataTypeProperties: 'delimited' }).success).toBe(false);
+  });
+
   it('allows a script with no message: no data type', () => {
     expect(scriptTestRunSchema.safeParse({ script: 'x', kind: 'script', sample: '' }).success).toBe(true);
   });

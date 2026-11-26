@@ -23,6 +23,8 @@ export const scriptTestRunSchema = z.object({
   destinationSet: z.boolean().default(false),
   /** The channel being edited: scopes templates, names destinations and sets the timeout. */
   channelId: idSchema.optional(),
+  /** The source transformer's inbound properties as the editor has them, read for the data type as deploy reads them. */
+  dataTypeProperties: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type ScriptTestRunInput = z.infer<typeof scriptTestRunSchema>;

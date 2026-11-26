@@ -9,7 +9,7 @@ import { VmSandboxExecutor } from './sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from './sandbox-context.js';
 import { ScriptRunLog } from './script-run-log.js';
 import type { BridgeDependencies, CollectionBridge } from './bridge-functions.js';
-import { parseForSandbox, serializeFromSandbox } from '../pipeline/data-type-handler.js';
+import { parseForSandbox, serializeFromSandbox, type DataTypeOptions } from '../pipeline/data-type-handler.js';
 import { DestinationSet, createDestinationSetProxy } from '../pipeline/destination-set.js';
 
 /** Also caps the returned value. */
@@ -28,6 +28,8 @@ export interface ScriptTestInput {
   readonly kind: ScriptTestKind;
   /** Its data type parses the sample; omit dataType for scripts with no message. */
   readonly surface: ScriptSurface;
+  /** The channel's settings for that data type, as the pipeline is given them. */
+  readonly dataTypeOptions?: DataTypeOptions | undefined;
   readonly templates: readonly TemplateSource[];
   readonly sample: string;
   /** The channel's destinations, for destinationSet in source scripts. */
@@ -108,7 +110,7 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
     let parsed: unknown = input.sample;
     if (dataType !== undefined) {
       try {
-        parsed = parseForSandbox(input.sample, dataType);
+        parsed = parseForSandbox(input.sample, dataType, input.dataTypeOptions);
       } catch (err: unknown) {
         // A preprocessor gets it as text, and may repair it.
         if (!PREPROCESSORS.has(input.surface.templateContext ?? '')) return errorResult(`The sample is not valid ${dataType}: ${err instanceof Error ? err.message : String(err)}`, started);
@@ -138,7 +140,7 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
     let output: string | null = null;
     if (!filter && dataType !== undefined) {
       const value = replacement(returnValue, msg);
-      output = value == null ? null : serializeFromSandbox(value, dataType, input.sample);
+      output = value == null ? null : serializeFromSandbox(value, dataType, input.sample, input.dataTypeOptions);
     }
     // A script can build a huge message.
     if (output !== null && output.length > MAX_TEST_OUTPUT_CHARS) {

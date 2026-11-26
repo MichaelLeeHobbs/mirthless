@@ -349,6 +349,23 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults.map((r) => r.metaDataId)).toEqual([1, 2, 3]);
   });
 
+  it('HL7V2 channel: scripts read hex escapes as code points when the channel settings say so (#194)', async () => {
+    const hl7 = 'MSH|^~\\&|SEND|FAC|RECV|FAC|20260329||ORU^R01|CTL001|P|2.5\rNTE|1||dose \\X2264\\ 5 mg';
+    const sentAfter = async (hexCodePoints: boolean): Promise<unknown> => {
+      const sendFn = makeSendFn();
+      const config = makeConfig({
+        dataType: 'HL7V2',
+        dataTypeOptions: { hl7: { hexCodePoints } },
+        scripts: { sourceFilter: { code: 'return msg.getText("NTE.3") === "dose ≤ 5 mg";' } },
+      });
+      const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+      const result = await processor.processMessage({ rawContent: hl7, sourceMap: {} }, AbortSignal.timeout(5_000));
+      return result.ok ? result.value.status : result.error;
+    };
+    expect(await sentAfter(true)).toBe('SENT');
+    expect(await sentAfter(false)).toBe('FILTERED');
+  });
+
   it('HL7V2 channel: msg is auto-parsed, transformer accesses fields directly', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

@@ -1,5 +1,5 @@
 import { Hl7Message, X12Message, parseDelimited, serializeDelimited } from '@galvanigraph/core-util';
-import { delimitedOptionsSchema, type DelimitedOptions } from '@galvanigraph/core-models';
+import { delimitedOptionsSchema, type DelimitedOptions, type Hl7Options } from '@galvanigraph/core-models';
 import { XMLParser } from 'fast-xml-parser';
 import { buildXmlInOriginalOrder } from './xml-order.js';
 import type { Hl7MessageProxy } from '../sandbox/bridge-functions.js';
@@ -180,6 +180,7 @@ function stringifyJsonKeepingNumbers(value: unknown, original: string): string {
 
 export interface DataTypeOptions {
   readonly delimited?: DelimitedOptions | undefined;
+  readonly hl7?: Hl7Options | undefined;
 }
 
 const DEFAULT_DELIMITED = delimitedOptionsSchema.parse({});
@@ -192,7 +193,7 @@ export function parseForSandbox(content: string, dataType: string, options?: Dat
     case 'X12':
       return createX12Proxy(X12Message.parse(content));
     case 'HL7V2': {
-      const parsed = Hl7Message.parse(content);
+      const parsed = Hl7Message.parse(content, { hexCodePoints: options?.hl7?.hexCodePoints });
       return createHl7Proxy(parsed);
     }
     case 'JSON': {
