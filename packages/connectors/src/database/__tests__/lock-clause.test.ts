@@ -44,6 +44,8 @@ describe('appendLockClause', () => {
     'SELECT * FROM t WHERE id IN (SELECT id FROM r FOR SHARE)',
     'SELECT * FROM t WHERE EXISTS (SELECT 1 FROM (SELECT id FROM r FOR SHARE) s)',
     'SELECT id, (SELECT name FROM r FOR SHARE) FROM t',
+    'SELECT * FROM t WHERE id > ALL (SELECT id FROM r FOR SHARE)',
+    'SELECT * FROM t WHERE code IS DISTINCT FROM (SELECT code FROM r LIMIT 1 FOR SHARE)',
   ])('claims the outer rows when only a subquery of a condition or a column takes a share lock: %s', (query) => {
     expect(appendLockClause(query)).toBe(`${query}${LOCK}`);
   });
