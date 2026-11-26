@@ -1,5 +1,6 @@
 import {
   ChannelRuntime,
+  readyConnectors,
   VmSandboxExecutor,
   MessageProcessor,
   DEFAULT_EXECUTION_OPTIONS,
@@ -232,6 +233,80 @@ export function dataTypeOptionsFor(channel: ChannelDetail): DataTypeOptions {
     if (err instanceof ServiceError) throw new ServiceError(err.code, `Channel ${channel.name}: ${err.message}`);
     throw err;
   }
+}
+
+/**
+ * What a deploy refuses in the channel's own settings, before it reads or opens anything. Returns the
+ * data type settings it read.
+ */
+function refuseUndeployable(channel: ChannelDetail): DataTypeOptions {
+  // Fail loud, never silent: a channel that asks for at-rest encryption must
+  // not deploy (and store PHI as plaintext) when no key is configured.
+  if (channel.encryptData && !isContentEncryptionConfigured()) {
+    throw new Error(
+      `Channel ${channel.id} has encryptData enabled but CONTENT_ENCRYPTION_KEY is not configured. ` +
+      'Refusing to deploy — message content would be stored in plaintext. ' +
+      'Set CONTENT_ENCRYPTION_KEY (64 hex chars) or disable encryptData on the channel.',
+    );
+  }
+  // A queued destination needs stored RAW+SENT content to deliver and to recover after a crash.
+  // Any other storage mode never writes SENT, so every queued message would error on delivery.
+  const storageMode = channel.messageStorageMode as MessageStorageMode;
+  if (channel.destinations.some((d) => d.queueMode !== 'NEVER') && !storageModeSupportsQueue(storageMode)) {
+    throw new Error(
+      `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
+      'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
+      `Use ${Object.values(MESSAGE_STORAGE_MODE).filter(storageModeSupportsQueue).join(' or ')} storage, or set every destination queue mode to NEVER.`,
+    );
+  }
+  // A response from a destination that does not exist would leave every
+  // sender without the answer it waits for, with nothing logged.
+  if (channel.responseMode === 'DESTINATION' && !channel.destinations.some((d) => d.name === channel.responseConnectorName)) {
+    throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: it responds from destination "${channel.responseConnectorName ?? ''}", which it does not have`);
+  }
+  // Mirth's "Process Batch" splits what the source receives into messages. Only HL7v2 batches can be
+  // split; any other data type refuses to deploy rather than treat a whole batch as one message.
+  if (channel.sourceConnectorProperties['processBatch'] === true && channel.inboundDataType !== 'HL7V2') {
+    throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: batch processing is only supported for HL7V2, not ${channel.inboundDataType}`);
+  }
+  return dataTypeOptionsFor(channel);
+}
+
+interface BuiltConnectors {
+  readonly source: SourceConnectorRuntime;
+  readonly destinations: Map<number, DestinationConnectorRuntime>;
+}
+
+/**
+ * Cert-ID references resolve to PEM here, since connectors have no DB access. Fail loud: a channel
+ * never deploys without the TLS it was configured for. Building a connector opens nothing.
+ */
+async function buildConnectors(channel: ChannelDetail): Promise<BuiltConnectors> {
+  const connectorEnv = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS), channelId: channel.id };
+  const resolveSourceTls = SOURCE_TLS_RESOLVERS[channel.sourceConnectorType];
+  const sourceProperties = resolveSourceTls
+    ? withTls(await resolveSourceTls(channel.sourceConnectorProperties), `Channel ${channel.id} source`)
+    : channel.sourceConnectorProperties;
+  const source = createSourceConnector(channel.sourceConnectorType, sourceProperties, connectorEnv) as SourceConnectorRuntime;
+
+  const destinations = new Map<number, DestinationConnectorRuntime>();
+  for (const dest of channel.destinations) {
+    const resolveDestTls = DESTINATION_TLS_RESOLVERS[dest.connectorType];
+    const destProperties = resolveDestTls
+      ? withTls(await resolveDestTls(dest.properties), `Channel ${channel.id} destination ${dest.metaDataId}`)
+      : dest.properties;
+    destinations.set(dest.metaDataId, createDestinationConnector(dest.connectorType, destProperties, connectorEnv));
+  }
+  return { source, destinations };
+}
+
+function withTls(resolved: Result<Record<string, unknown>>, connector: string): Record<string, unknown> {
+  if (!resolved.ok) throw new Error(`${connector} TLS resolution failed: ${resolved.error.message}`);
+  return resolved.value;
+}
+
+function runtimeNotDeployed(cause: Error): Error {
+  return new Error(`Failed to deploy channel runtime: ${cause.message}`);
 }
 
 export interface BatchRules {
@@ -669,29 +744,8 @@ export class EngineManager {
 
   private async deployChannel(bundle: DeploymentBundle): Promise<void> {
     const { channel } = bundle;
-
-    // Fail loud, never silent: a channel that asks for at-rest encryption must
-    // not deploy (and store PHI as plaintext) when no key is configured.
-    if (channel.encryptData && !isContentEncryptionConfigured()) {
-      throw new Error(
-        `Channel ${channel.id} has encryptData enabled but CONTENT_ENCRYPTION_KEY is not configured. ` +
-        'Refusing to deploy — message content would be stored in plaintext. ' +
-        'Set CONTENT_ENCRYPTION_KEY (64 hex chars) or disable encryptData on the channel.',
-      );
-    }
-
-    // Fail loud, never silent: a queued destination needs stored RAW+SENT content
-    // to deliver and to recover after a crash. Any other storage mode never writes
-    // SENT, so every queued message would error on delivery.
+    const dataTypeOptions = refuseUndeployable(channel);
     const storageMode = channel.messageStorageMode as MessageStorageMode;
-    const hasQueuedDestination = channel.destinations.some((d) => d.queueMode !== 'NEVER');
-    if (hasQueuedDestination && !storageModeSupportsQueue(storageMode)) {
-      throw new Error(
-        `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
-        'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
-        `Use ${Object.values(MESSAGE_STORAGE_MODE).filter(storageModeSupportsQueue).join(' or ')} storage, or set every destination queue mode to NEVER.`,
-      );
-    }
 
     const runtime = new ChannelRuntime();
     const gcm = new GlobalChannelMap();
@@ -703,42 +757,7 @@ export class EngineManager {
       encryptData: channel.encryptData,
     });
 
-    // Cert-ID references resolve to PEM here, since connectors have no DB access.
-    // Fail loud: a channel never deploys without the TLS it was configured for.
-    let sourceProperties: Record<string, unknown> = channel.sourceConnectorProperties;
-    const resolveSourceTls = SOURCE_TLS_RESOLVERS[channel.sourceConnectorType];
-    if (resolveSourceTls) {
-      const resolved = await resolveSourceTls(sourceProperties);
-      if (!resolved.ok) {
-        throw new Error(`Channel ${channel.id} source TLS resolution failed: ${resolved.error.message}`);
-      }
-      sourceProperties = resolved.value;
-    }
-    const connectorEnv = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS), channelId: channel.id };
-    const source = createSourceConnector(
-      channel.sourceConnectorType,
-      sourceProperties,
-      connectorEnv,
-    ) as SourceConnectorRuntime;
-
-    const destinations = new Map<number, DestinationConnectorRuntime>();
-    for (const dest of channel.destinations) {
-      let destProperties: Record<string, unknown> = dest.properties;
-      const resolveDestTls = DESTINATION_TLS_RESOLVERS[dest.connectorType];
-      if (resolveDestTls) {
-        const resolved = await resolveDestTls(destProperties);
-        if (!resolved.ok) {
-          throw new Error(`Channel ${channel.id} destination ${dest.metaDataId} TLS resolution failed: ${resolved.error.message}`);
-        }
-        destProperties = resolved.value;
-      }
-      const connector = createDestinationConnector(
-        dest.connectorType,
-        destProperties,
-        connectorEnv,
-      );
-      destinations.set(dest.metaDataId, connector);
-    }
+    const { source, destinations } = await buildConnectors(channel);
 
     // Alerts, the configuration map and the global map are server settings,
     // read live at every deploy; the channel's own code comes from the bundle.
@@ -840,7 +859,7 @@ export class EngineManager {
       channelId: channel.id,
       serverId: this.serverId,
       dataType: channel.inboundDataType,
-      dataTypeOptions: dataTypeOptionsFor(channel),
+      dataTypeOptions,
       scripts,
       destinations: destConfigs,
       globalChannelMap: gcm,
@@ -909,18 +928,7 @@ export class EngineManager {
       this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    // A response from a destination that does not exist would leave every
-    // sender without the answer it waits for, with nothing logged.
-    if (channel.responseMode === 'DESTINATION' && !channel.destinations.some((d) => d.name === channel.responseConnectorName)) {
-      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: it responds from destination "${channel.responseConnectorName ?? ''}", which it does not have`);
-    }
-    // A source with Mirth's "Process Batch" on splits what it receives into
-    // messages. Only HL7v2 batches can be split; any other data type refuses
-    // to deploy rather than treat a whole batch as one message.
     const batched = channel.sourceConnectorProperties['processBatch'] === true;
-    if (batched && channel.inboundDataType !== 'HL7V2') {
-      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: batch processing is only supported for HL7V2, not ${channel.inboundDataType}`);
-    }
 
     // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
@@ -973,7 +981,7 @@ export class EngineManager {
 
     const result = await runtime.deploy(runtimeConfig);
     if (!result.ok) {
-      throw new Error(`Failed to deploy channel runtime: ${result.error.message}`);
+      throw runtimeNotDeployed(result.error);
     }
 
     // Recover messages left unprocessed by a prior crash/restart on the first
@@ -1631,11 +1639,20 @@ export class EngineManager {
   }
 
   /**
-   * Throws the same error deploy would. Runs before a running channel is
-   * stopped for a redeploy, so a script that does not compile cannot take a
-   * working channel offline.
+   * Throws the error deploy would for what it refuses before it opens anything: the channel's own
+   * settings, the certificates from the store, the scripts and each connector's deploy check, in deploy's order. A
+   * redeploy runs it before it stops the running channel (#480). The deploy and undeploy scripts do
+   * not run, so one that fails is still found only by the deploy.
    */
-  async checkScripts(bundle: DeploymentBundle): Promise<void> {
+  async checkDeploy(bundle: DeploymentBundle): Promise<void> {
+    refuseUndeployable(bundle.channel);
+    const { source, destinations } = await buildConnectors(bundle.channel);
+    await this.checkScripts(bundle);
+    const { refusal } = await readyConnectors({ source, destinations });
+    if (refusal !== null) throw runtimeNotDeployed(refusal);
+  }
+
+  private async checkScripts(bundle: DeploymentBundle): Promise<void> {
     const { channel } = bundle;
     const templates = templateData(bundle);
     const ftData = filterTransformerDataOf(channel);
