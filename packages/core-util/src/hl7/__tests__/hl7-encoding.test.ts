@@ -293,6 +293,19 @@ describe('unescapeValue for a sender that writes code points (#194)', () => {
     expect(read('\\XD83DDE00\\', 'utf-8')).toBe(cp(0x1F600));
   });
 
+  it('joins a surrogate pair under UTF-8 too, though each half alone is also valid UTF-8', () => {
+    expect(read('\\XD83D\\\\XDC89\\', 'utf-8')).toBe(cp(0x1F489));
+    expect(read('\\XD83E\\\\XDDA0\\', 'utf-8')).toBe(cp(0x1F9A0));
+    expect(read('\\XD880\\\\XDC80\\', 'utf-8')).toBe(cp(0x30080));
+    expect(read('\\XD880DC80\\', 'utf-8')).toBe(cp(0x30080));
+    expect(read('a\\XD8A7\\\\XDE00\\b', 'utf-8')).toBe(`a${cp(0x39E00)}b`);
+  });
+
+  it('reads a surrogate half with no partner beside it as UTF-8 under UTF-8 when its digits are valid UTF-8', () => {
+    expect(read('\\XD8A7\\', 'utf-8')).toBe(cp(0x627));
+    expect(read('\\XDC89\\\\X2019\\', 'utf-8')).toBe(cp(0x709, 0x2019));
+  });
+
   it('keeps code-point escapes that would leave half a surrogate pair as they were written, so nothing is replaced', () => {
     expect(read('a\\XD83D\\b')).toBe('a\\XD83D\\b');
     expect(read('\\XDE00\\\\X2019\\')).toBe('\\XDE00\\\\X2019\\');

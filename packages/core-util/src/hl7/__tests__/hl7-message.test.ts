@@ -476,6 +476,7 @@ describe('Hl7Message getText hex escapes by MSH-18 (#194)', () => {
 
   it('reads only the first repetition of MSH-18', () => {
     expect(withCharset('8859/1~UNICODE UTF-8', 'caf\\XC3A9\\').getText('NTE.3')).toBe('cafÃ©');
+    expect(withCharset('UNICODE~8859/1', 'caf\\XC3A9\\').getText('NTE.3')).toBe('café');
   });
 
   it('reads four digits as two bytes unless the channel says the sender writes code points', () => {

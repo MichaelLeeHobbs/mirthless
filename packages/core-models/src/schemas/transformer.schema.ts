@@ -66,7 +66,7 @@ export const delimitedOptionsSchema = z.object({
 
 export type DelimitedOptions = z.infer<typeof delimitedOptionsSchema>;
 
-/** Kept on the source transformer as `inboundProperties.hl7` (D-386). */
+/** Kept on the source transformer as `inboundProperties.hl7` (D-392). */
 export const hl7OptionsSchema = z.strictObject({
   /**
    * The sender writes a hex escape of 4, 8, 12… digits as Unicode code points,

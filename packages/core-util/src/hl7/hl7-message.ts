@@ -8,7 +8,7 @@ import { parsePath } from './hl7-path.js';
 type SegmentData = Record<string, unknown>;
 
 export interface Hl7ParseOptions {
-  /** The sender writes a hex escape of 4, 8, 12… digits as Unicode code points (a channel's HL7 v2 setting, D-386). */
+  /** The sender writes a hex escape of 4, 8, 12… digits as Unicode code points (a channel's HL7 v2 setting, D-392). */
   readonly hexCodePoints?: boolean | undefined;
 }
 
