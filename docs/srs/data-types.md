@@ -50,7 +50,7 @@ How message content in each format is read, shown to scripts, changed, written, 
 - DATA-HL7-10: source: #194, decided 2026-11-25 (D-392). HAPI and the libraries built from it write a carriage return as `\X000d\`.
 - DATA-HL7-11: source: #194, decided 2026-11-25 (D-392). The other MSH-18 sets (8859/2 to 8859/15, UTF-16, the CJK sets) are not read, because no connector can receive a feed in them; an unknown name reads as Windows-1252, as before. MSH-20 concerns only the `\C..\` and `\M..\` escapes.
 - DATA-HL7-12: source: #194, decided 2026-11-25 (D-392); D-218. The whole run falls back, so `\XC3\\XA9\\X93\` reads as three characters. DATA-CHR-02 still holds: no byte is replaced, and the stored message keeps the escape; a warning for such a run belongs to DATA-HL7-07 (#189).
-- DATA-HL7-13: source: #194, decided 2026-11-25 (D-392): the setting describes the sender, and a destination's response comes from another system. A script's own `parseHL7(text)` reads by MSH-18 alone. #492: as #490 built it, a response transformer reads a destination's response with the setting.
+- DATA-HL7-13: source: #194, decided 2026-11-25 (D-392): the setting describes the sender, and a destination's response comes from another system. A script's own `parseHL7(text)` reads by MSH-18 alone. As #490 first built it, a response transformer read a destination's response with the setting; #492 fixed that, in the pipeline and in a response transformer's test run. A response is still read with the channel's Delimited settings, because whether it should be was not decided.
 
 ## HL7 v2 acknowledgements (ACK)
 
