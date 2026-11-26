@@ -116,7 +116,7 @@ describe('withSkippedRows', () => {
   });
 });
 
-// #445: the cases were run against PostgreSQL 17 and MySQL 8.4 with two transactions.
+// #445: the issue's three cases were run against PostgreSQL 17 and MySQL 8.4 with two transactions; the rest follow the databases' locking rules.
 describe('unheldRowsReason', () => {
   const BOTH = ['postgresql', 'mysql'] as const;
 
@@ -142,6 +142,28 @@ describe('unheldRowsReason', () => {
     expect(unheldRowsReason('WITH c AS (SELECT id FROM t WHERE EXISTS (SELECT 1 FROM o FOR UPDATE)) SELECT * FROM c FOR UPDATE', vendor)).toMatch(/WITH query/);
   });
 
+  it.each(BOTH)('does not take ALL or FROM inside a condition for a source (%s)', (vendor) => {
+    expect(unheldRowsReason('SELECT id FROM t WHERE id > ALL (SELECT id FROM o FOR UPDATE) OR id = 1', vendor)).toMatch(/only lock/);
+    expect(unheldRowsReason('SELECT ALL (SELECT max(id) FROM o FOR UPDATE) AS m, id FROM t', vendor)).toMatch(/only lock/);
+    expect(unheldRowsReason('SELECT id FROM a UNION ALL (SELECT id FROM b FOR UPDATE)', vendor)).not.toMatch(/only lock/);
+  });
+
+  it('does not take IS DISTINCT FROM for a source', () => {
+    expect(unheldRowsReason('SELECT id FROM t WHERE code IS DISTINCT FROM (SELECT code FROM o LIMIT 1 FOR UPDATE)', 'postgresql')).toMatch(/only lock/);
+  });
+
+  it('names a WITH query whose only lock is one that other lockers share', () => {
+    expect(unheldRowsReason('WITH c AS (SELECT id FROM t WHERE NOT done FOR KEY SHARE SKIP LOCKED) SELECT * FROM c', 'postgresql')).toMatch(/WITH query/);
+  });
+
+  it.each(BOTH)('names a lock that holds only the tables OF names (%s)', (vendor) => {
+    expect(unheldRowsReason('SELECT o.* FROM o JOIN i ON i.o_id = o.id FOR UPDATE OF i SKIP LOCKED LIMIT 1', vendor)).toMatch(/OF/);
+  });
+
+  it('reads a query of many subqueries', () => {
+    expect(unheldRowsReason(`SELECT ${'(SELECT 1 FOR UPDATE), '.repeat(300)}1 FROM t`, 'mysql')).toMatch(/only lock/);
+  });
+
   it.each(BOTH)('names a UNION, INTERSECT or EXCEPT (%s)', (vendor) => {
     expect(unheldRowsReason('SELECT id FROM a UNION ALL SELECT id FROM b', vendor)).toMatch(/UNION/);
     expect(unheldRowsReason('SELECT id FROM a EXCEPT SELECT id FROM b', vendor)).toMatch(/UNION/);
@@ -149,19 +171,26 @@ describe('unheldRowsReason', () => {
 
   it.each(BOTH)('takes the queries whose lock holds their rows (%s)', (vendor) => {
     for (const query of [
-      'SELECT * FROM t WHERE NOT done',
-      'SELECT * FROM t WHERE NOT done FOR UPDATE SKIP LOCKED',
+      'SELECT * FROM t WHERE done = 0',
+      'SELECT * FROM t WHERE done = 0 FOR UPDATE SKIP LOCKED',
       'SELECT * FROM t WHERE id IN (SELECT id FROM r) ORDER BY id LIMIT 5',
-      'SELECT * FROM t WHERE NOT done AND EXISTS (SELECT 1 FROM t AS any_row FOR KEY SHARE SKIP LOCKED) ORDER BY id',
       'SELECT * FROM t FOR SHARE',
-      'WITH c AS (SELECT id FROM t WHERE NOT done FOR UPDATE SKIP LOCKED) SELECT * FROM c',
-      'WITH c AS NOT MATERIALIZED (SELECT id FROM t FOR UPDATE SKIP LOCKED) SELECT * FROM c',
+      'WITH c AS (SELECT id FROM t WHERE done = 0 FOR UPDATE SKIP LOCKED) SELECT * FROM c',
       'SELECT * FROM (SELECT id FROM t FOR UPDATE SKIP LOCKED) s',
-      '(SELECT * FROM t WHERE NOT done)',
+      '(SELECT * FROM t WHERE done = 0)',
       "SELECT 'with c as (select 1) union' AS label, CAST(ts AS date) FROM t -- WITH c AS (SELECT 1)",
-      'UPDATE t SET done = true WHERE NOT done RETURNING *',
     ]) {
       expect(unheldRowsReason(query, vendor), query).toBeNull();
+    }
+  });
+
+  it('takes the PostgreSQL queries whose lock holds their rows', () => {
+    for (const query of [
+      'SELECT * FROM t WHERE NOT done AND EXISTS (SELECT 1 FROM t AS any_row FOR KEY SHARE SKIP LOCKED) ORDER BY id',
+      'WITH c AS NOT MATERIALIZED (SELECT id FROM t FOR NO KEY UPDATE SKIP LOCKED) SELECT * FROM c',
+      'UPDATE t SET done = true WHERE NOT done RETURNING *',
+    ]) {
+      expect(unheldRowsReason(query, 'postgresql'), query).toBeNull();
     }
   });
 });

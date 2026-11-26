@@ -127,7 +127,13 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
    */
   private warnIfRowsUnheld(): void {
     if (this.config.updateMode === UPDATE_MODE.NEVER) return;
-    const why = unheldRowsReason(this.config.selectQuery, this.vendor);
+    let why: string | null;
+    try {
+      why = unheldRowsReason(this.config.selectQuery, this.vendor);
+    } catch (err: unknown) {
+      this.logger.error({ ...errorInfo(err), database: this.config.database }, 'Could not check whether the SELECT query\'s lock holds its rows; deploying without that check');
+      return;
+    }
     if (why === null) return;
     this.logger.warn(
       { database: this.config.database, why },
