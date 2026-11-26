@@ -39,7 +39,13 @@ describe('processBatch', () => {
   it('says a destination failed when one did for an earlier message, behind an early answer (#484)', async () => {
     const { processOne } = playing({ ok: true, value: { messageId: 1, status: 'PROCESSED', destinationFailed: true }, error: null }, ok(2), ok(3));
 
-    expect(await processBatch('abc', run({ processOne }))).toEqual({ ok: true, value: { messageId: 3, status: 'PROCESSED', destinationFailed: true }, error: null });
+    expect(await processBatch('abc', run({ processOne }))).toEqual({ ok: true, value: { messageId: 1, status: 'PROCESSED', destinationFailed: true }, error: null });
+  });
+
+  it('reports a message recorded with an error before one whose destination failed behind an early answer', async () => {
+    const { processOne } = playing({ ok: true, value: { messageId: 1, status: 'PROCESSED', destinationFailed: true }, error: null }, ok(2, 'ERROR'), ok(3));
+
+    expect(await processBatch('abc', run({ processOne }))).toEqual({ ok: true, value: { messageId: 2, status: 'ERROR', destinationFailed: true }, error: null });
   });
 
   it('says a destination has not delivered yet when one of an earlier message is queued', async () => {
@@ -89,6 +95,29 @@ describe('processBatch', () => {
     expect(seen).toEqual(['a', 'b']);
     expect(result.ok).toBe(false);
     expect(result.error?.message).toBe('The channel was halted at message 2 of the 3 in the batch; message 3 was not processed');
+  });
+
+  it('is not taken when the halt came during the last message', async () => {
+    const halt = new AbortController();
+    const { processOne: play, seen } = playing(ok(1), ok(2), ok(3, 'ERROR'));
+    const processOne: BatchRun['processOne'] = async (part) => {
+      if (part === 'c') halt.abort();
+      return play(part);
+    };
+
+    const result = await processBatch('abc', run({ haltSignal: halt.signal, processOne }));
+
+    expect(seen).toEqual(PARTS);
+    expect(result.error?.message).toBe('The channel was halted at message 3 of the 3 in the batch');
+  });
+
+  it('names every message the halt left out', async () => {
+    const halt = new AbortController();
+    const processOne: BatchRun['processOne'] = async () => { halt.abort(); return ok(1); };
+
+    const result = await processBatch('abcd', run({ haltSignal: halt.signal, split: () => ['a', 'b', 'c', 'd'], processOne }));
+
+    expect(result.error?.message).toBe('The channel was halted at message 1 of the 4 in the batch; messages 2 to 4 were not processed');
   });
 
   it('runs every message after a halt for a source that never offers its input again, so each is recorded', async () => {

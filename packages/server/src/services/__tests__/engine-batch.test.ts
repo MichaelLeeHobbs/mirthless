@@ -141,6 +141,9 @@ describe('a batch dispatched to a channel (#415)', () => {
 
     expect(result.error?.message).toContain('halted at message 2 of the 3');
     expect(recorded).toEqual(['1', '2']);
+    // The halt was someone's choice, not a failure: a warning, not the error line that comes with the alert.
+    expect(log.warn.mock.calls.map(([, text]) => text)).toContain('HL7 batch ended by a halt; it is not taken');
+    expect(log.error.mock.calls.filter(([, text]) => String(text).includes('batch'))).toEqual([]);
   });
 
   it('ends every message after a halt for a JavaScript source, not only the one in flight', async () => {

@@ -261,12 +261,19 @@ export interface BatchRun extends BatchRules {
   readonly processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>;
 }
 
-/** What a source that keeps its input needs from every message of the batch, not only the one reported. */
-function withBatchFlags(reported: SourceDispatchOutcome, outcomes: readonly SourceDispatchOutcome[]): SourceDispatchOutcome {
+/**
+ * The first message recorded with an error, else the first whose destination failed behind an
+ * early answer, so that what the source logs names that message; with what a source that keeps
+ * its input needs from every message of the batch.
+ */
+function batchOutcome(recorded: readonly SourceDispatchOutcome[]): SourceDispatchOutcome {
+  const reported = recorded.find((o) => o.status === DISPATCH_STATUS.ERROR)
+    ?? recorded.find((o) => o.destinationFailed === true)
+    ?? recorded.at(-1)!;
   return {
     ...reported,
-    ...(outcomes.some((o) => o.queued === true) ? { queued: true as const } : {}),
-    ...(outcomes.some((o) => o.destinationFailed === true) ? { destinationFailed: true as const } : {}),
+    ...(recorded.some((o) => o.queued === true) ? { queued: true as const } : {}),
+    ...(recorded.some((o) => o.destinationFailed === true) ? { destinationFailed: true as const } : {}),
   };
 }
 
@@ -274,9 +281,14 @@ function batchNotTaken(message: string): Result<SourceDispatchOutcome> {
   return { ok: false, value: null, error: new Error(message) } as Result<SourceDispatchOutcome>;
 }
 
+const BATCH_HALTED ='The channel was halted';
+
+/** `at` is the message in flight when the halt came, from 1. */
 function haltedText(at: number, total: number): string {
+  const position = `${BATCH_HALTED} at message ${String(at)} of the ${String(total)} in the batch`;
+  if (at === total) return position;
   const rest = at + 1 === total ? `message ${String(total)} was` : `messages ${String(at + 1)} to ${String(total)} were`;
-  return `The channel was halted at message ${String(at)} of the ${String(total)} in the batch; ${rest} not processed`;
+  return `${position}; ${rest} not processed`;
 }
 
 function splitBatch(content: string, run: BatchRun): readonly string[] {
@@ -293,8 +305,7 @@ function splitBatch(content: string, run: BatchRun): readonly string[] {
  * Process each message of a batch, in order, as Mirth does, and report the batch as one outcome.
  * A message that was not recorded ends it and the batch is not taken, so the source offers it
  * again, and the messages before that one are then processed again (D-254, D-364). So does a halt,
- * after the message in flight. Otherwise the first error, if any message was recorded with one, or
- * the last message's outcome, with any message's queued or failed destination (D-393).
+ * after the message in flight, also the last one (D-393). Otherwise `batchOutcome`.
  */
 export async function processBatch(content: string, run: BatchRun): Promise<Result<SourceDispatchOutcome>> {
   const parts = tryCatch(() => splitBatch(content, run));
@@ -314,8 +325,8 @@ export async function processBatch(content: string, run: BatchRun): Promise<Resu
     const numbers = unrecorded.map((message) => String(message.number)).join(', ');
     return batchNotTaken(`Not recorded of the ${String(total)} messages in the batch: ${numbers}. ${first.reason}`);
   }
-  const reported = recorded.find((o) => o.status === DISPATCH_STATUS.ERROR) ?? recorded.at(-1)!;
-  return { ok: true, value: withBatchFlags(reported, recorded), error: null };
+  if (run.haltSignal.aborted && !run.offeredOnce) return batchNotTaken(haltedText(total, total));
+  return { ok: true, value: batchOutcome(recorded), error: null };
 }
 
 export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
@@ -986,6 +997,11 @@ export class EngineManager {
         processOne: (part) => this.track(channel.id, processOne(part, raw.sourceMap, undefined, { haltSignal })),
       });
       if (result.ok) return result;
+      // Someone halted the channel; nothing failed, and the source offers the batch again.
+      if (result.error.message.startsWith(BATCH_HALTED)) {
+        logger.warn({ channelId: channel.id, errMsg: result.error.message }, 'HL7 batch ended by a halt; it is not taken');
+        return result;
+      }
       logger.error({ channelId: channel.id, errMsg: result.error.message }, 'HL7 batch not recorded whole');
       await raiseAlert({ channelId: channel.id, errorType: 'SOURCE_CONNECTOR', errorMessage: `HL7 batch not recorded whole: ${result.error.message}`, timestamp: Date.now() });
       return result;
