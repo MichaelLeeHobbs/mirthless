@@ -108,10 +108,13 @@ export interface MessageStore {
   /** Adds to what the connector's scripts logged before. */
   storeScriptLog?(channelId: string, messageId: number, metaDataId: number, run: ScriptLogRun): Promise<Result<void>>;
 
-  /** Message, source connector, content rows and stats in one round-trip; without it the pipeline makes individual calls. */
+  /**
+   * Message, source connector, content rows and stats in one round-trip; without it the pipeline makes individual calls.
+   * With `handOff`, the same statement records the new message on the sending channel's message.
+   */
   initializeMessage?(
     channelId: string, serverId: string, connectorName: string,
-    contentRows: readonly ContentRow[], correlationId?: string,
+    contentRows: readonly ContentRow[], correlationId?: string, handOff?: HandOff,
   ): Promise<Result<{ messageId: number; correlationId: string }>>;
 
   /** Source status SENT, the sent stat and the processed mark in one round-trip. */
@@ -151,6 +154,15 @@ export interface PipelineInput {
   readonly received?: ReceivedMessage | undefined;
   /** Called once a new message is in the store, before any script or destination runs. */
   readonly onStored?: (() => void) | undefined;
+  /** The Channel Writer send this message comes from (D-393). */
+  readonly handOff?: HandOff | undefined;
+}
+
+/** A destination of another channel's message that hands this message on. */
+export interface HandOff {
+  readonly channelId: string;
+  readonly messageId: number;
+  readonly metaDataId: number;
 }
 
 export interface ReceivedMessage {
@@ -592,7 +604,7 @@ export class MessageProcessor {
       const initResult = await this.store.initializeMessage(channelId, serverId, 'Source', [
         { metaDataId: 0, contentType: CONTENT_TYPE.RAW, content: input.rawContent, dataType },
         { metaDataId: 0, contentType: CONTENT_TYPE.SOURCE_MAP, content: JSON.stringify(input.sourceMap), dataType: 'JSON' },
-      ], input.correlationId);
+      ], input.correlationId, input.handOff);
       if (!initResult.ok) throw new Error('Failed to initialize message');
       return initResult.value;
     }

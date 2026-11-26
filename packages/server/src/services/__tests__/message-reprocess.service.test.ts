@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../lib/db.js', () => ({
-  db: {
-    select: vi.fn(),
-    execute: vi.fn(),
-    update: vi.fn(),
-  },
-}));
+vi.mock('../../lib/db.js', () => {
+  const db: Record<string, unknown> = { select: vi.fn(), execute: vi.fn(), update: vi.fn(), delete: vi.fn() };
+  db['transaction'] = vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(db));
+  return { db };
+});
 
 vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
@@ -29,6 +27,7 @@ import { emitEvent } from '../../lib/event-emitter.js';
 
 const mockSelect = vi.mocked(db.select);
 const mockUpdate = vi.mocked(db.update);
+const mockDelete = vi.mocked(db.delete);
 
 function mockSelectSequence(...results: unknown[]): void {
   for (const r of results) {
@@ -65,6 +64,7 @@ function mockRawContent(content: string | null): void {
 beforeEach(() => {
   mockSelect.mockReset();
   mockUpdate.mockReset();
+  mockDelete.mockReset().mockReturnValue({ where: () => Promise.resolve() } as never);
   mockGetRuntime.mockReset();
   mockIsAtRest.mockReset();
   mockDeleteMessagesByIds.mockReset();
@@ -304,6 +304,17 @@ describe('MessageReprocessService.resendDestination', () => {
     expect(result.value).toEqual({ messageId: 5, metaDataId: 1, status: 'QUEUED' });
     // Re-enqueued with a fresh retry budget.
     expect(set).toHaveBeenCalledWith({ status: 'QUEUED', sendAttempts: 0 });
+    // Without what a target channel recorded for an earlier send, the queue sends it (D-393).
+    expect(mockDelete).toHaveBeenCalledOnce();
+  });
+
+  it('removes nothing when it did not queue the destination again', async () => {
+    mockGetRuntime.mockReturnValue(deployedWithDests('STARTED', [{ metaDataId: 1, queueMode: 'ALWAYS' }]));
+    mockSelectSequence([{ status: 'ERROR' }], [{ content: 'MSH|sent' }]);
+    mockUpdateCapture([]);
+
+    expect((await MessageReprocessService.resendDestination('ch-001', 5, 1)).ok).toBe(false);
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('re-enqueues a destination that uses variables when they were stored with the message', async () => {

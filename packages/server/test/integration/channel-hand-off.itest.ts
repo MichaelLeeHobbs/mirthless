@@ -52,15 +52,18 @@ describeIntegration('A send to another channel that a server stop interrupts (re
     /** Where the target waits while the test holds the lock. */
     readonly waitsIn?: 'transformer' | 'postprocessor' | 'nowhere';
     readonly senderQueue?: string;
+    /** Run after the wait in the target's transformer. */
+    readonly then?: string;
+    readonly targetStorage?: string;
   }
 
   /** A target that writes each message it delivers to the table, and a sender that hands its messages to it, both deployed once and the server stopped. */
-  async function pair({ waitsIn = 'transformer', senderQueue = 'NEVER' }: PairOptions = {}): Promise<Pair> {
+  async function pair({ waitsIn = 'transformer', senderQueue = 'NEVER', then = '', targetStorage = 'DEVELOPMENT' }: PairOptions = {}): Promise<Pair> {
     const common = { enabled: true, properties: { initialState: 'STARTED' }, inboundDataType: 'RAW', outboundDataType: 'RAW', responseMode: 'AUTO_AFTER_DESTINATIONS' } as const;
     const target = unwrap(await mods.ChannelService.create(createChannelSchema.parse({
-      ...common, name: `itest-401-target-${randomUUID()}`,
+      ...common, name: `itest-401-target-${randomUUID()}`, properties: { ...common.properties, messageStorageMode: targetStorage },
       sourceConnectorType: 'CHANNEL', sourceConnectorProperties: {},
-      ...(waitsIn === 'transformer' ? { transformers: [{ inboundDataType: 'RAW', outboundDataType: 'RAW', steps: [{ type: 'JAVASCRIPT', script: WAITS_FOR_THE_LOCK }] }] } : {}),
+      ...(waitsIn === 'transformer' ? { transformers: [{ inboundDataType: 'RAW', outboundDataType: 'RAW', steps: [{ type: 'JAVASCRIPT', script: `${WAITS_FOR_THE_LOCK} ${then}` }] }] } : {}),
       ...(waitsIn === 'postprocessor' ? { scripts: { postprocessor: WAITS_FOR_THE_LOCK } } : {}),
       destinations: [databaseDestination('Partner', 'NEVER', `INSERT INTO ${TABLE} VALUES (\${messageId}::bigint, \${content})`)],
     }), actor));
@@ -144,6 +147,18 @@ describeIntegration('A send to another channel that a server stop interrupts (re
     expect(unwrap(await mods.MessageService.loadContent(found.sender, messageId, 1, CONTENT_TYPE.RESPONSE))).toBe(`messageId=${String(handed)}`);
   });
 
+  it('runs the target message again with its source map, though its storage mode keeps none', { timeout: 3 * START_TIMEOUT_MS }, async () => {
+    const found = await pair({ targetStorage: 'PRODUCTION', then: "msg = String($s('sourceMessageId')) + ':' + String(msg);" });
+    const messageId = await received(found.sender);
+    await startAndDie(mods.pool);
+    const handed = await stoppedInTheTarget(found, ROUTED);
+
+    await restart();
+    await finished(found);
+
+    expect(await delivered()).toEqual([{ messageId: handed, content: `${String(messageId)}:order` }]);
+  });
+
   it('delivers once when the server stopped after the target delivered and before it finished', { timeout: 3 * START_TIMEOUT_MS }, async () => {
     const found = await pair({ waitsIn: 'postprocessor' });
     await received(found.sender);
@@ -172,22 +187,39 @@ describeIntegration('A send to another channel that a server stop interrupts (re
     expect(await messagesOf(found.target)).toHaveLength(1);
   });
 
-  it('tells the sender the target failed it, and hands it on no second time', { timeout: 3 * START_TIMEOUT_MS }, async () => {
+  it('hands it on again when the target failed the message it had, which may be the stop\'s doing', { timeout: 3 * START_TIMEOUT_MS }, async () => {
     const found = await pair();
     const messageId = await received(found.sender);
     await startAndDie(mods.pool);
     const handed = await stoppedInTheTarget(found, ROUTED);
-    await mods.pool.query(`ALTER TABLE ${TABLE} ADD CONSTRAINT refuses CHECK (content <> 'order')`);
+    await mods.pool.query(`ALTER TABLE ${TABLE} ADD CONSTRAINT refuses CHECK (message_id <> ${String(handed)})`);
 
     await restart();
     await finished(found);
 
-    expect(await delivered()).toEqual([]);
-    expect(await messagesOf(found.target)).toEqual([{ id: handed, processed: true }]);
+    const [first, again, ...more] = await messagesOf(found.target);
+    expect([first, more]).toEqual([{ id: handed, processed: true }, []]);
+    expect(await delivered()).toEqual([{ messageId: again!.id, content: 'order' }]);
     expect(await statusesOf(found.sender)).toEqual([
-      { message: messageId, connector: 0, status: 'ERROR' }, { message: messageId, connector: 1, status: 'ERROR' },
+      { message: messageId, connector: 0, status: 'SENT' }, { message: messageId, connector: 1, status: 'SENT' },
     ]);
-    expect(unwrap(await mods.MessageService.loadContent(found.sender, messageId, 1, CONTENT_TYPE.ERROR))).toContain(`message ${String(handed)}`);
+  });
+
+  it('hands it on again when the target\'s message is gone', { timeout: 3 * START_TIMEOUT_MS }, async () => {
+    const found = await pair();
+    await received(found.sender);
+    await startAndDie(mods.pool);
+    const handed = await stoppedInTheTarget(found, ROUTED);
+    for (const table of ['message_content', 'connector_messages']) await mods.pool.query(`DELETE FROM ${table} WHERE channel_id = $1`, [found.target]);
+    await mods.pool.query('DELETE FROM messages WHERE channel_id = $1', [found.target]);
+
+    await restart();
+    await finished(found);
+
+    const [again, ...more] = await messagesOf(found.target);
+    expect(more).toEqual([]);
+    expect(again!.id).not.toBe(handed);
+    expect(await delivered()).toEqual([{ messageId: again!.id, content: 'order' }]);
   });
 
   it('hands a message on again when a person resends it', async () => {
