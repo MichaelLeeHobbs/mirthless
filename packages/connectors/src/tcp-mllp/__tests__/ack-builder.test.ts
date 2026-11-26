@@ -72,6 +72,28 @@ describe('classifyAckResponse', () => {
   it('tolerates a bare MSA segment without an MSH', () => {
     expect(classifyAckResponse('MSA|AA|123').accepted).toBe(true);
   });
+
+  // What a partner can only mean as an accept is one (#414); what cannot be one is refused.
+  it.each([
+    ['a segment named MSAX after an MSH', 'MSH|^~\\&|A\rMSAX|AA|1'],
+    ['a bare segment named MSAX', 'MSAX|AA|1'],
+    ['a bare segment named MSA1', 'MSA1|AA|1'],
+  ])('refuses %s: it is no MSA', (_what, response) => {
+    expect(classifyAckResponse(response)).toMatchObject({ accepted: false, errorMessage: 'Unparseable acknowledgement response' });
+  });
+
+  it.each([
+    ['in lower case', 'MSH|^~\\&|A\rMSA|aa|1'],
+    ['with a component after it, which HL7 tells a receiver to ignore', 'MSH|^~\\&|A\rMSA|AA^1|1'],
+    ['bare, with a component after it', 'MSA|AA^1|1'],
+    ['bare, in lower case', 'MSA|ca|1'],
+  ])('accepts AA or CA %s, the same with or without an MSH', (_what, response) => {
+    expect(classifyAckResponse(response).accepted).toBe(true);
+  });
+
+  it('refuses a bare AE with a component after it', () => {
+    expect(classifyAckResponse('MSA|AE^1|1')).toMatchObject({ accepted: false, ackCode: 'AE' });
+  });
 });
 
 describe('fallback ACK', () => {

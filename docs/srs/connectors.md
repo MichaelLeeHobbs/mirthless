@@ -90,7 +90,7 @@ What a channel's source and destinations guarantee to the partner system on the 
 |---|---|---|---|---|
 | CONN-TCP-01 | The TCP/MLLP source shall find every framed message in the bytes it receives however the network splits or joins them, and shall process the messages of one connection one at a time and answer them in the order received. | P1 | Test | Proposed |
 | CONN-TCP-02 | In automatic acknowledgement mode the TCP/MLLP source shall answer every complete frame, one it cannot read as HL7 included, with MSA-1 `AA` when the message was accepted or filtered and `AE` when it was not, and never with `AR`. | P1 | Test | Proposed |
-| CONN-TCP-03 | The TCP/MLLP destination shall accept only an acknowledgement whose MSA-1 is `AA` or `CA` and whose MSA-2 is empty or equals the MSH-10 it sent or that field's first component; any other answer, an unreadable one, or a connection closed before one shall be recorded as an error with the code and text received. | P1 | Test | Proposed |
+| CONN-TCP-03 | The TCP/MLLP destination shall accept only an acknowledgement with a segment named `MSA` whose MSA-1, up to its first component and in either case, is `AA` or `CA`, and whose MSA-2 is empty, equals the MSH-10 it sent or that field's first component, or is any value when the message it sent has no MSH-10; any other answer, an unreadable one, or a connection closed before one shall be recorded as an error with the code and text received. | P1 | Test | Proposed |
 | CONN-TCP-04 | The TCP/MLLP connector shall let a channel set the bytes that start and end a message, in hexadecimal and of any length, for what it receives, sends and answers; with none set it shall use MLLP's. | P1 | Test | Proposed |
 | CONN-TCP-05 | While its partner refuses connections, the TCP/MLLP destination shall wait 1 second after each failed attempt of a connection, or a quarter of its connection wait time when that is shorter, and shall log the outage once until the partner is reached again. | P1 | Test | Proposed |
 | CONN-TCP-06 | The TCP/MLLP destination shall have a setting, off by default, that connects when the channel starts, keeps the connection open while idle for any length of time, and reconnects when it drops. | P2 | Test | Proposed |
@@ -103,7 +103,7 @@ What a channel's source and destinations guarantee to the partner system on the 
 
 - CONN-TCP-01: source: docs/user/connector-reference.md "TCP_MLLP: what it does"; D-024; docs/design/12-connector-parity-gap-analysis.md "Split-packet / multi-msg-per-chunk resync".
 - CONN-TCP-02: source: docs/user/connector-reference.md "TCP_MLLP: what it does"; D-134, D-231. conflict: D-135 answers `AR` for a filtered message, D-231 `AA`; the later decision kept. What the acknowledgement contains is DATA-ACK-01 and DATA-ACK-02.
-- CONN-TCP-03: source: docs/user/connector-reference.md "TCP_MLLP: what it does"; D-136, D-220, D-292.
+- CONN-TCP-03: source: docs/user/connector-reference.md "TCP_MLLP: what it does"; D-136, D-220, D-292; D-394 (refuse only what cannot be an accept, #414).
 - CONN-TCP-04: source: D-253; docs/user/connector-reference.md `frameStart`, `frameEnd`; docs/design/12-connector-parity-gap-analysis.md rank 3. The start may be empty, the end may not. The editor has no field (ROADMAP "Editor controls").
 - CONN-TCP-05: source: D-336, #352; docs/user/connector-reference.md `acquireTimeoutMs`.
 - CONN-TCP-06: source: #311. The issue also wants reconnect backoff and the state on the dashboard (MON-CST-01).

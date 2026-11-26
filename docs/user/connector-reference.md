@@ -93,6 +93,12 @@ A stop or a pause takes no new messages. The message in hand on each connection 
 
 The destination waits for the partner's acknowledgement and reads MSA-1. AA or CA is SENT. Anything else is an ERROR with the code and MSA-3 text in the error message: a NAK (AE, AR, CE, CR), a missing MSA-1, an acknowledgement it cannot parse, an MSA-2 that names a different message control ID (MSA-2 must equal the whole sent MSH-10 or its first component), or the connection closing before an acknowledgement arrives. An ERROR is retried only if the destination's queue is on.
 
+What reads as an accept, so that a partner that took the message is not sent it again:
+
+- The acknowledgement is read as an HL7 message when it has an MSH, and otherwise from the first segment named exactly `MSA` (`MSAX` or `MSA1` is not one).
+- MSA-1 is read up to its first `^`, as HL7 tells a receiver to ignore components it does not expect: `AA^1` is AA. Case does not matter: `aa` is AA. Leading or trailing spaces do: ` AA` is an ERROR.
+- An empty MSA-2 is accepted, since some partners leave it out. When the message sent has no MSH-10 (it is not HL7, or its MSH-10 is empty), there is nothing to compare, and any MSA-2 is accepted.
+
 ### TCP_MLLP security
 
 TLS is turned on by the presence of a `tls` object holding PEM text. The channel editor has no TLS control for this connector, and the server does not resolve certificate IDs for it, so the PEM goes into the properties through the API or a channel import.

@@ -126,6 +126,24 @@ describe('an MLLP source that passes a destination\'s answer through (#414)', ()
   });
 });
 
+describe('an MLLP destination whose partner answers without an MSA segment (#414)', () => {
+  it('reads ERROR, and the source answers AE', async () => {
+    captureServer = await startMllpCaptureServer(() => 'MSAX|AA|12345');
+    const port = await freePort();
+    const channel = await deployChannel({
+      channelId: '00000000-0000-0000-0000-msaxnotmsa01',
+      dataType: 'HL7V2',
+      source: mllpSource(port),
+      destinations: [{ metaDataId: 1, name: 'Lab', connector: mllpDestination(captureServer.port, { responseTimeout: 5_000 }) }],
+    });
+    deployed.push(channel);
+
+    expect(await sendMllp(port, HL7_ADT)).toContain('MSA|AE|12345');
+    expect(channel.store.connectorMessages.find((m) => m.metaDataId === 1)?.status).toBe('ERROR');
+    expect(channel.store.contentOf(1, 1, CONTENT_TYPE.ERROR)).toContain('Unparseable acknowledgement');
+  });
+});
+
 describe('a channel stopped while a message is on its way', () => {
   it('delivers it and answers its sender, and leaves the one behind it unanswered and unrecorded (#413)', async () => {
     let sending = (): void => undefined;
