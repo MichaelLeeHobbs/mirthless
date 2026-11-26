@@ -2,8 +2,11 @@
 // (usually MRNs or accession numbers) in the query string (#229).
 
 import { createRequire } from 'module';
-import type { Request, RequestHandler } from 'express';
+import type { ServerResponse } from 'node:http';
+import type { Request, RequestHandler, Response } from 'express';
 import type { Logger } from 'pino';
+import { errorInfo, isPlainObject } from '@galvanigraph/core-util';
+import { internalCause } from '../lib/controller-helpers.js';
 
 // createRequire for ESM/CJS interop: pino-http is a CJS package.
 const require = createRequire(import.meta.url);
@@ -48,15 +51,44 @@ function requestSerializer(includeHeaders: boolean): (req: Serialized) => Serial
   };
 }
 
+const CAUSE = Symbol('internalCause');
+type NotedResponse = ServerResponse & { [CAUSE]?: { readonly cause: unknown } };
+
+/**
+ * Notes what an INTERNAL answer was made from. Its request line is the one log
+ * line every such answer leaves: many controllers answer without logging (#473).
+ */
+function noteInternalCause(res: Response): void {
+  const json = res.json.bind(res);
+  res.json = (body: unknown): Response => {
+    const noted = isPlainObject(body) ? internalCause(body['error']) : undefined;
+    if (noted !== undefined) (res as NotedResponse)[CAUSE] = noted;
+    return json(body);
+  };
+}
+
+/** Only `errorInfo`'s fields: the cause of a failed statement can quote a value (D-347). */
+function withCause(res: ServerResponse, logged: object): object {
+  const noted = (res as NotedResponse)[CAUSE];
+  return noted === undefined ? logged : { ...logged, err: errorInfo(noted.cause) };
+}
+
 /** Never logs pino-http's `query` field. `includeHeaders` comes from LOG_HTTP_HEADERS. */
 export function requestLogger(logger: Logger, includeHeaders: boolean): RequestHandler {
-  return pinoHttp({
+  const log = pinoHttp({
     logger,
     customProps: (req) => ({ requestId: (req as Request).id }),
     autoLogging: { ignore: (req) => UNLOGGED_PATHS.has((req as Request).url) },
+    customLogLevel: (_req, res) => ((res as NotedResponse)[CAUSE] === undefined ? 'info' : 'error'),
+    customSuccessObject: (_req, res, logged) => withCause(res, logged),
+    customErrorObject: (_req, res, _err, logged) => withCause(res, logged),
     serializers: {
       req: requestSerializer(includeHeaders),
       ...(includeHeaders ? {} : { res: (res: Serialized) => ({ statusCode: res['statusCode'] }) }),
     },
   });
+  return (req, res, next) => {
+    noteInternalCause(res);
+    log(req, res, next);
+  };
 }
