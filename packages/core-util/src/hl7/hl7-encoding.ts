@@ -82,12 +82,13 @@ export type HexEscapeCharset = 'utf-8' | 'windows-1252';
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
- * MSH-18 values are HL7 table 0211. Anything but UTF-8, including no MSH-18,
- * `ASCII` and `8859/1`, is read as Windows-1252, as browsers read a `latin1` label.
+ * MSH-18 values are HL7 table 0211. Plain `UNICODE` (HL7 2.3) is read as UTF-8,
+ * as HAPI and nHapi read it. Anything else, including no MSH-18, `ASCII` and
+ * `8859/1`, is read as Windows-1252, as browsers read a `latin1` label.
  */
 export function hexEscapeCharset(msh18: string | undefined): HexEscapeCharset {
   const name = (msh18 ?? '').toUpperCase().replace(/[\s_-]/g, '');
-  return name === 'UNICODEUTF8' || name === 'UTF8' ? 'utf-8' : 'windows-1252';
+  return name === 'UNICODEUTF8' || name === 'UTF8' || name === 'UNICODE' ? 'utf-8' : 'windows-1252';
 }
 
 function decodeUtf8(bytes: Uint8Array): string | undefined {
@@ -100,17 +101,76 @@ function decodeUtf8(bytes: Uint8Array): string | undefined {
   }
 }
 
-/** `\XC3\\XA9\` is the bytes C3 A9. */
-function decodeHexRun(run: string, escapeChar: string, charset: HexEscapeCharset): string {
-  const codes: number[] = [];
-  for (const piece of run.split(escapeChar)) {
-    for (let i = 1; i < piece.length; i += 2) {
-      codes.push(parseInt(piece.substring(i, i + 2), 16));
-    }
-  }
-  const bytes = Uint8Array.from(codes);
+function hexBytes(digits: string): Uint8Array {
+  const bytes = new Uint8Array(digits.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(digits.substring(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+
+function decodeBytes(digits: string, charset: HexEscapeCharset): string {
+  const bytes = hexBytes(digits);
   const utf8 = charset === 'utf-8' ? decodeUtf8(bytes) : undefined;
   return utf8 ?? decodeWindows1252(bytes);
+}
+
+/** HAPI, and the libraries that descend from it, write a carriage return as `\X000d\`. */
+const WIDE_LINE_BREAKS = /^(?:000[AaDd])+$/;
+const LINE_BREAKS = /^(?:0[AaDd])+$/;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * For a sender that writes code points (#194, D-386): digits in fours, other
+ * than line breaks, and other than UTF-8 bytes in a message MSH-18 says is UTF-8.
+ */
+function isCodeUnits(digits: string, charset: HexEscapeCharset): boolean {
+  if (digits.length % 4 !== 0 || LINE_BREAKS.test(digits)) return false;
+  if (charset !== 'utf-8') return true;
+  const bytes = hexBytes(digits);
+  return !bytes.some((b) => b >= 0x80) || decodeUtf8(bytes) === undefined;
+}
+
+function codeUnits(digits: string): string {
+  let text = '';
+  for (let i = 0; i < digits.length; i += 4) text += String.fromCharCode(parseInt(digits.substring(i, i + 4), 16));
+  return text;
+}
+
+/** How a hex escape's digits are read: the charset MSH-18 names, and whether the channel's sender writes code points. */
+interface HexEscapeReading {
+  readonly charset: HexEscapeCharset;
+  readonly codePoints: boolean;
+}
+
+/**
+ * `\XC3\\XA9\` is the bytes C3 A9. Bytes next to each other decode together;
+ * code points next to each other too, and when they would leave half a
+ * surrogate pair they are kept as written rather than replaced.
+ */
+function decodeHexRun(run: string, escapeChar: string, reading: HexEscapeReading): string {
+  let text = '';
+  let bytes = '';
+  let units = '';
+  let unitsWritten = '';
+  const endUnits = (): void => {
+    text += LONE_SURROGATE.test(units) ? unitsWritten : units;
+    units = '';
+    unitsWritten = '';
+  };
+  for (const piece of run.split(escapeChar).filter((p) => p !== '')) {
+    const written = piece.slice(1);
+    const digits = WIDE_LINE_BREAKS.test(written) ? written.replace(/00(0[AaDd])/g, '$1') : written;
+    if (reading.codePoints && isCodeUnits(digits, reading.charset)) {
+      text += decodeBytes(bytes, reading.charset);
+      bytes = '';
+      units += codeUnits(digits);
+      unitsWritten += `${escapeChar}${piece}${escapeChar}`;
+    } else {
+      endUnits();
+      bytes += digits;
+    }
+  }
+  endUnits();
+  return text + decodeBytes(bytes, reading.charset);
 }
 
 /**
@@ -119,7 +179,7 @@ function decodeHexRun(run: string, escapeChar: string, charset: HexEscapeCharset
  * such as `\H\` and `\.br\` are kept. Adjacent `\X..\` escapes decode as one
  * byte run, so a UTF-8 character split across two escapes still decodes.
  */
-export function unescapeValue(value: string, enc: Hl7Encoding, charset: HexEscapeCharset = 'windows-1252'): string {
+export function unescapeValue(value: string, enc: Hl7Encoding, charset: HexEscapeCharset = 'windows-1252', codePoints = false): string {
   const e = escapeRegex(enc.escapeChar);
   const single: Readonly<Record<string, string>> = {
     E: enc.escapeChar, F: enc.fieldSep, S: enc.componentSep, T: enc.subComponentSep, R: enc.repetitionSep,
@@ -128,7 +188,7 @@ export function unescapeValue(value: string, enc: Hl7Encoding, charset: HexEscap
   return value.replace(pattern, (match: string, code: string | undefined) => {
     // The second alternative is the only other way to match, so a match without a code is a hex run.
     if (code !== undefined) return single[code] ?? match;
-    return decodeHexRun(match, enc.escapeChar, charset);
+    return decodeHexRun(match, enc.escapeChar, { charset, codePoints });
   });
 }
 

@@ -4,6 +4,7 @@ export { detectEncoding, encodingCharsString, escapeValue, unescapeValue, hexEsc
 export type { Hl7Path } from './hl7-path.js';
 export { parsePath } from './hl7-path.js';
 
+export type { Hl7ParseOptions } from './hl7-message.js';
 export { Hl7Message } from './hl7-message.js';
 
 export { splitHl7Batch } from './hl7-batch.js';

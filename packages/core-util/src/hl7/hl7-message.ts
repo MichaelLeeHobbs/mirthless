@@ -7,13 +7,20 @@ import { parsePath } from './hl7-path.js';
 /** Nested record: field → repetition → component → subComponent → value */
 type SegmentData = Record<string, unknown>;
 
+export interface Hl7ParseOptions {
+  /** The sender writes a hex escape of 4, 8, 12… digits as Unicode code points (a channel's HL7 v2 setting, D-386). */
+  readonly hexCodePoints?: boolean | undefined;
+}
+
 export class Hl7Message {
   private readonly segments: SegmentData[];
   private readonly _encoding: Hl7Encoding;
+  private readonly hexCodePoints: boolean;
 
-  private constructor(segments: SegmentData[], encoding: Hl7Encoding) {
+  private constructor(segments: SegmentData[], encoding: Hl7Encoding, hexCodePoints: boolean) {
     this.segments = segments;
     this._encoding = encoding;
+    this.hexCodePoints = hexCodePoints;
   }
 
   get encoding(): Hl7Encoding {
@@ -29,7 +36,7 @@ export class Hl7Message {
     return this.get('MSH.10') ?? '';
   }
 
-  static parse(raw: string): Hl7Message {
+  static parse(raw: string, options: Hl7ParseOptions = {}): Hl7Message {
     if (!raw || typeof raw !== 'string') {
       throw new Error('HL7 message must be a non-empty string');
     }
@@ -47,7 +54,7 @@ export class Hl7Message {
       segments.push(parseSegment(line, encoding));
     }
 
-    return new Hl7Message(segments, encoding);
+    return new Hl7Message(segments, encoding, options.hexCodePoints === true);
   }
 
   /**
@@ -84,7 +91,7 @@ export class Hl7Message {
     const raw = this.get(path);
     if (raw === undefined) return undefined;
     const hasHex = raw.includes(`${this._encoding.escapeChar}X`);
-    return unescapeValue(raw, this._encoding, hasHex ? hexEscapeCharset(this.get('MSH.18')) : undefined);
+    return unescapeValue(raw, this._encoding, hasHex ? hexEscapeCharset(this.get('MSH.18')) : undefined, this.hexCodePoints);
   }
 
   /**

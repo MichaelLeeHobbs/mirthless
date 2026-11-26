@@ -218,9 +218,27 @@ describe('unescapeValue hex escapes (#194)', () => {
     for (const utf8 of ['UNICODE UTF-8', ' Unicode_UTF8 ', 'UTF 8', 'utf-8']) {
       expect(hexEscapeCharset(utf8)).toBe('utf-8');
     }
-    for (const other of [undefined, '', 'ASCII', '8859/1', '8859/15', 'UNICODE UTF-16', 'UNICODE']) {
+    for (const other of [undefined, '', 'ASCII', '8859/1', '8859/15', 'UNICODE UTF-16']) {
       expect(hexEscapeCharset(other)).toBe('windows-1252');
     }
+  });
+
+  it('reads plain UNICODE in MSH-18 as UTF-8, as HAPI and nHapi read it', () => {
+    expect(hexEscapeCharset('UNICODE')).toBe('utf-8');
+    expect(hexEscapeCharset(' unicode ')).toBe('utf-8');
+  });
+
+  it('reads the four-digit escapes HAPI writes for a line break as CR and LF, not a NUL before each', () => {
+    for (const charset of ['windows-1252', 'utf-8'] as const) {
+      expect(unescapeValue('a\\X000D\\b\\X000a\\c', enc, charset)).toBe('a\rb\nc');
+      expect(unescapeValue('\\X000d\\\\X000a\\', enc, charset)).toBe('\r\n');
+      expect(unescapeValue('\\X000D000A\\', enc, charset)).toBe('\r\n');
+    }
+  });
+
+  it('changes no other four-digit escape that holds a line break byte', () => {
+    expect(unescapeValue('\\X0D00\\', enc)).toBe('\r\0');
+    expect(unescapeValue('\\X000D41\\', enc)).toBe('\0\rA');
   });
 
   it('decodes the single-character escapes the same way under UTF-8', () => {
@@ -245,5 +263,70 @@ describe('unescapeValue hex escapes (#194)', () => {
 
   it('does not join hex escapes that another escape separates', () => {
     expect(unescapeValue('\\XC3\\\\E\\\\XA9\\', enc, 'utf-8')).toBe(`${cp(0xC3)}\\${cp(0xA9)}`);
+  });
+
+  it('reads four digits as two bytes when the sender is not said to write code points', () => {
+    expect(unescapeValue('\\X2019\\', enc)).toBe(' \x19');
+    expect(unescapeValue('\\X2264\\', enc, 'utf-8')).toBe('"d');
+  });
+});
+
+describe('unescapeValue for a sender that writes code points (#194)', () => {
+  const enc = standardEncoding();
+  const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
+  const read = (text: string, charset: 'utf-8' | 'windows-1252' = 'windows-1252'): string => unescapeValue(text, enc, charset, true);
+
+  it('reads an escape of four digits as one code point, whatever the charset', () => {
+    for (const charset of ['windows-1252', 'utf-8'] as const) {
+      expect(read('the patient\\X2019\\s', charset)).toBe(`the patient${cp(0x2019)}s`);
+      expect(read('dose \\X2264\\ 5 mg', charset)).toBe(`dose ${cp(0x2264)} 5 mg`);
+    }
+  });
+
+  it('reads eight or twelve digits as two or three code points', () => {
+    expect(read('\\X201C201D\\')).toBe(cp(0x201C, 0x201D));
+    expect(read('\\X00E920190041\\', 'utf-8')).toBe(cp(0xE9, 0x2019, 0x41));
+  });
+
+  it('joins a surrogate pair written as two escapes into one character', () => {
+    expect(read('\\XD83D\\\\XDE00\\')).toBe(cp(0x1F600));
+    expect(read('\\XD83DDE00\\', 'utf-8')).toBe(cp(0x1F600));
+  });
+
+  it('keeps code-point escapes that would leave half a surrogate pair as they were written, so nothing is replaced', () => {
+    expect(read('a\\XD83D\\b')).toBe('a\\XD83D\\b');
+    expect(read('\\XDE00\\\\X2019\\')).toBe('\\XDE00\\\\X2019\\');
+    expect(read('\\X2019\\\\XA0\\\\XD83D\\')).toBe(`${cp(0x2019, 0xA0)}\\XD83D\\`);
+  });
+
+  it('reads two-digit escapes beside code points by the charset, so a sender that mixes the forms reads right', () => {
+    expect(read('\\XA0\\the patient\\X2019\\s \\X93\\chart')).toBe(`${cp(0xA0)}the patient${cp(0x2019)}s ${cp(0x201C)}chart`);
+    expect(read('\\X2019\\\\X93\\\\X94\\')).toBe(cp(0x2019, 0x201C, 0x201D));
+    expect(read('\\XC3\\\\XA9\\\\X2019\\', 'utf-8')).toBe(cp(0xE9, 0x2019));
+  });
+
+  it('reads an escape of six digits as three bytes', () => {
+    expect(read('\\XE28099\\', 'utf-8')).toBe(cp(0x2019));
+    expect(read('\\X414243\\')).toBe('ABC');
+  });
+
+  it('keeps a run made only of 0D and 0A as line breaks', () => {
+    expect(read('a\\X0D0A\\b')).toBe('a\r\nb');
+    expect(read('\\X0A0D0A0D\\', 'utf-8')).toBe('\n\r\n\r');
+    expect(read('\\X000D\\\\X2019\\\\X000a\\')).toBe(`\r${cp(0x2019)}\n`);
+  });
+
+  it('reads an escape as UTF-8 when the charset is UTF-8 and its digits are valid UTF-8 with a byte of 0x80 or more', () => {
+    expect(read('Ren\\XC3A9\\', 'utf-8')).toBe(`Ren${cp(0xE9)}`);
+    expect(read('\\XE28099E28099\\', 'utf-8')).toBe(cp(0x2019, 0x2019));
+    expect(read('Ren\\XC3A9\\\\X2019\\', 'utf-8')).toBe(`Ren${cp(0xE9, 0x2019)}`);
+  });
+
+  it('reads the same digits as a code point when the charset is not UTF-8', () => {
+    expect(read('Ren\\XC3A9\\')).toBe(`Ren${cp(0xC3A9)}`);
+  });
+
+  it('leaves the single-character escapes and malformed hex escapes as before', () => {
+    expect(read('a\\F\\b\\E\\c\\XABC\\')).toBe('a|b\\c\\XABC\\');
   });
 });
