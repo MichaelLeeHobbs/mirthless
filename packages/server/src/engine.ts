@@ -248,9 +248,35 @@ export function batchRulesFor(channel: Pick<ChannelDetail, 'sourceConnectorType'
   };
 }
 
+interface MessageHooks {
+  readonly onStored?: (() => void) | undefined;
+  /** The halt signal the message takes, where it is not the channel's at the time (an HL7 batch's). */
+  readonly haltSignal?: AbortSignal | undefined;
+}
+
 export interface BatchRun extends BatchRules {
+  /** The channel's halt signal when the batch came in; every message of the batch takes it (#484). */
+  readonly haltSignal: AbortSignal;
   readonly split: (content: string) => string[];
   readonly processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>;
+}
+
+/** What a source that keeps its input needs from every message of the batch, not only the one reported. */
+function withBatchFlags(reported: SourceDispatchOutcome, outcomes: readonly SourceDispatchOutcome[]): SourceDispatchOutcome {
+  return {
+    ...reported,
+    ...(outcomes.some((o) => o.queued === true) ? { queued: true as const } : {}),
+    ...(outcomes.some((o) => o.destinationFailed === true) ? { destinationFailed: true as const } : {}),
+  };
+}
+
+function batchNotTaken(message: string): Result<SourceDispatchOutcome> {
+  return { ok: false, value: null, error: new Error(message) } as Result<SourceDispatchOutcome>;
+}
+
+function haltedText(at: number, total: number): string {
+  const rest = at + 1 === total ? `message ${String(total)} was` : `messages ${String(at + 1)} to ${String(total)} were`;
+  return `The channel was halted at message ${String(at)} of the ${String(total)} in the batch; ${rest} not processed`;
 }
 
 function splitBatch(content: string, run: BatchRun): readonly string[] {
@@ -266,26 +292,30 @@ function splitBatch(content: string, run: BatchRun): readonly string[] {
 /**
  * Process each message of a batch, in order, as Mirth does, and report the batch as one outcome.
  * A message that was not recorded ends it and the batch is not taken, so the source offers it
- * again, and the messages before that one are then processed again (D-254, D-364). Otherwise the
- * first error, if any message was recorded with one, or the last message's outcome.
+ * again, and the messages before that one are then processed again (D-254, D-364). So does a halt,
+ * after the message in flight. Otherwise the first error, if any message was recorded with one, or
+ * the last message's outcome, with any message's queued or failed destination (D-393).
  */
 export async function processBatch(content: string, run: BatchRun): Promise<Result<SourceDispatchOutcome>> {
   const parts = tryCatch(() => splitBatch(content, run));
   if (!parts.ok) return { ok: false, value: null, error: parts.error } as Result<SourceDispatchOutcome>;
-  let outcome: Result<SourceDispatchOutcome> | undefined;
-  let failure: Result<SourceDispatchOutcome> | undefined;
+  const total = parts.value.length;
+  const recorded: SourceDispatchOutcome[] = [];
   const unrecorded: { readonly number: number; readonly reason: string }[] = [];
   for (const [index, part] of parts.value.entries()) {
     if (unrecorded.length > 0 && !run.offeredOnce) break;
-    outcome = await run.processOne(part);
-    if (!outcome.ok) unrecorded.push({ number: index + 1, reason: outcome.error.message });
-    else if (outcome.value.status === DISPATCH_STATUS.ERROR) failure ??= outcome;
+    if (run.haltSignal.aborted && !run.offeredOnce) return batchNotTaken(haltedText(index, total));
+    const outcome = await run.processOne(part);
+    if (outcome.ok) recorded.push(outcome.value);
+    else unrecorded.push({ number: index + 1, reason: outcome.error.message });
   }
   const [first] = unrecorded;
-  if (first === undefined) return failure ?? outcome!;
-  const numbers = unrecorded.map((message) => String(message.number)).join(', ');
-  const error = new Error(`Not recorded of the ${String(parts.value.length)} messages in the batch: ${numbers}. ${first.reason}`);
-  return { ok: false, value: null, error } as Result<SourceDispatchOutcome>;
+  if (first !== undefined) {
+    const numbers = unrecorded.map((message) => String(message.number)).join(', ');
+    return batchNotTaken(`Not recorded of the ${String(total)} messages in the batch: ${numbers}. ${first.reason}`);
+  }
+  const reported = recorded.find((o) => o.status === DISPATCH_STATUS.ERROR) ?? recorded.at(-1)!;
+  return { ok: true, value: withBatchFlags(reported, recorded), error: null };
 }
 
 export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
@@ -924,19 +954,19 @@ export class EngineManager {
 
     // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
-    const processOne = async (rawContent: string, sourceMap?: Record<string, unknown>, received?: ReceivedMessage, onStored?: () => void): Promise<Result<SourceDispatchOutcome>> => {
+    const processOne = async (rawContent: string, sourceMap?: Record<string, unknown>, received?: ReceivedMessage, hooks?: MessageHooks): Promise<Result<SourceDispatchOutcome>> => {
       activity.lastAt = Date.now();
       // Channel-to-channel routing sets it.
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
         : undefined;
       const result = await processor.processMessage(
-        { rawContent, sourceMap: sourceMap ?? {}, correlationId, received, onStored },
+        { rawContent, sourceMap: sourceMap ?? {}, correlationId, received, onStored: hooks?.onStored },
         // Aborted by a halt, which cancels the scripts and sends in progress.
         // There is no deadline for the message as a whole: each script is
         // limited by the channel's script timeout and each send by its
         // connector's timeout.
-        runtime.haltSignal,
+        hooks?.haltSignal ?? runtime.haltSignal,
       );
       if (!result.ok) return result;
       messagesProcessedTotal.inc();
@@ -949,7 +979,12 @@ export class EngineManager {
       this.track(channel.id, processOne(rawContent, sourceMap));
 
     const processHl7Batch = async (raw: { readonly content: string; readonly sourceMap: Record<string, unknown> }): Promise<Result<SourceDispatchOutcome>> => {
-      const result = await processBatch(raw.content, { ...batchRulesFor(channel), split: splitHl7Batch, processOne: (part) => processMessage(part, raw.sourceMap) });
+      // Read once: a halt issues a new signal, which the messages after it must not take.
+      const { haltSignal } = runtime;
+      const result = await processBatch(raw.content, {
+        ...batchRulesFor(channel), haltSignal, split: splitHl7Batch,
+        processOne: (part) => this.track(channel.id, processOne(part, raw.sourceMap, undefined, { haltSignal })),
+      });
       if (result.ok) return result;
       logger.error({ channelId: channel.id, errMsg: result.error.message }, 'HL7 batch not recorded whole');
       await raiseAlert({ channelId: channel.id, errorType: 'SOURCE_CONNECTOR', errorMessage: `HL7 batch not recorded whole: ${result.error.message}`, timestamp: Date.now() });
@@ -963,7 +998,7 @@ export class EngineManager {
       queues: queueConsumers,
       onMessage: async (raw) => (batched
         ? processHl7Batch(raw)
-        : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) })))),
+        : this.track(channel.id, processOne(raw.content, raw.sourceMap, undefined, { onStored: () => raw.onStored?.({ recoverable: shouldStoreContent(storageMode, CONTENT_TYPE.RAW) }) }))),
     };
 
     // Taken before the channel can receive anything: every unprocessed message
