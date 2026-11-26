@@ -70,7 +70,7 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
       if (!this.started) throw new Error('Dispatcher not started');
       if (signal.aborted) throw new Error('Send aborted');
 
-      // No retry can change the message or the setting, and a queue would wait behind it for ever (D-402).
+      // No retry can change the message or the setting, and a queue would wait behind it for ever (D-401).
       const refused = refusedContent(message.content, this.config);
       if (refused !== null) return { status: 'ERROR' as const, content: '', errorMessage: `${refused}, so nothing was sent`, final: true as const };
 
