@@ -208,9 +208,14 @@ export class AuthService {
    */
   static async refreshSession(refreshToken: string, metadata?: SessionMetadata): Promise<Result<LoginResult>> {
     return tryCatch(async () => {
-      // Verify token signature (throws on tamper/expiry). We rely on the DB
+      // Only these refusals are UNAUTHORIZED: anything else is a failure to read,
+      // and the controller keeps the cookie for it (#473). We rely on the DB
       // session + a fresh user check below rather than the token's own claims.
-      verifyRefreshToken(refreshToken);
+      try {
+        verifyRefreshToken(refreshToken);
+      } catch {
+        throw new ServiceError('UNAUTHORIZED', 'Invalid refresh token');
+      }
 
       // Consume the session in one statement: of two concurrent refreshes with
       // the same token, only one gets the row back, so a token works once (#174).
@@ -220,14 +225,14 @@ export class AuthService {
         .returning({ userId: sessions.userId, expiresAt: sessions.expiresAt });
 
       if (!session || session.expiresAt < new Date()) {
-        throw new Error('Invalid refresh token');
+        throw new ServiceError('UNAUTHORIZED', 'Invalid refresh token');
       }
 
       // Re-validate the user on every refresh: a disabled or deleted user must not
       // be able to keep rotating tokens. Their session is already gone.
       const user = await currentUserResponse(session.userId);
       if (!user) {
-        throw new Error('Invalid refresh token');
+        throw new ServiceError('UNAUTHORIZED', 'Invalid refresh token');
       }
 
       const tokens = await this.createTokens(session.userId, metadata);
