@@ -129,6 +129,11 @@ export const CONTENT_TYPE = {
   PROCESSING_ERROR: 13,
   /** Of the connector's scripts (scripting/script-log.ts). */
   SCRIPT_LOG: 14,
+  /**
+   * On a Channel Writer's message: the message the target channel recorded for the send under way,
+   * written by the target and removed when the send returns (D-403). Not content: no PHI, never encrypted.
+   */
+  HAND_OFF: 15,
 } as const;
 export type ContentType = (typeof CONTENT_TYPE)[keyof typeof CONTENT_TYPE];
 

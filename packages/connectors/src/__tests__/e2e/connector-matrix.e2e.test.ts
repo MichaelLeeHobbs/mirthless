@@ -16,7 +16,11 @@ import {
   HttpReceiver,
   HttpDispatcher,
   FhirDispatcher,
+  ChannelReceiver,
+  getChannelDispatcher,
 } from '../../index.js';
+import type { AddressInfo } from 'node:net';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { deployChannel, teardownAll, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 import { freePort } from '../../__fixtures__/free-port.js';
@@ -204,6 +208,52 @@ describe('FHIR connector (POST a resource in → transform to FHIR → POST to a
     expect(resource.name[0]?.family).toBe('DOE');
     expect(resource.name[0]?.given[0]).toBe('JOHN');
   });
+});
+
+describe('FHIR connector: what it posts, and where (#414)', () => {
+  it('fills the base URL and headers from the message, and posts nothing that is not a resource of its type', async () => {
+    const received: { path: string; site: string; body: string }[] = [];
+    const fhirServer = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => { body += String(chunk); });
+      req.on('end', () => {
+        received.push({ path: req.url ?? '', site: String(req.headers['x-site'] ?? ''), body });
+        res.writeHead(201, { 'Content-Type': 'application/fhir+json' });
+        res.end(body);
+      });
+    });
+    await new Promise<void>((resolve) => { fhirServer.listen(0, '127.0.0.1', resolve); });
+    servers.push(fhirServer);
+    const { port } = fhirServer.address() as AddressInfo;
+    const CH = '00000000-0000-0000-0000-connfhir0002';
+
+    const channel = await deployChannel({
+      channelId: CH,
+      dataType: 'RAW',
+      source: new ChannelReceiver({ channelId: CH }),
+      transformer: "$c('tenant', 'east'); $c('site', 'E1'); return msg;",
+      destinations: [{
+        metaDataId: 1,
+        name: 'FHIR Out',
+        connector: new FhirDispatcher({
+          baseUrl: `http://127.0.0.1:${String(port)}/\${tenant}`, resourceType: 'Patient', method: 'POST',
+          authType: 'NONE', authConfig: {}, format: 'json', timeout: 5_000, headers: { 'X-Site': '${site}' },
+        }),
+      }],
+    });
+    deployed.push(channel);
+    const dispatch = getChannelDispatcher(CH);
+
+    await dispatch?.({ content: '{"resourceType":"Patient","name":[{"family":"DOE"}]}', sourceMap: {} });
+    await dispatch?.({ content: '{"resourceType":"Observation","status":"final"}', sourceMap: {} });
+    await dispatch?.({ content: 'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|1|P|2.5', sourceMap: {} });
+
+    expect(received).toEqual([{ path: '/east/Patient', site: 'E1', body: '{"resourceType":"Patient","name":[{"family":"DOE"}]}' }]);
+    const statuses = channel.store.connectorMessages.filter((m) => m.metaDataId === 1).map((m) => m.status);
+    expect(statuses).toEqual(['SENT', 'ERROR', 'ERROR']);
+    expect(channel.store.contentOf(2, 1, CONTENT_TYPE.ERROR)).toContain('a resource of type Observation, and this destination sends Patient');
+    expect(channel.store.contentOf(3, 1, CONTENT_TYPE.ERROR)).toContain('not a FHIR resource in JSON');
+  }, 15_000);
 });
 
 const HTTP_SRC_PORT = await freePort();

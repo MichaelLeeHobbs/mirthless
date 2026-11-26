@@ -106,6 +106,7 @@ export {
 export {
   ChannelReceiver,
   ChannelDispatcher,
+  resolveTarget,
   registerChannel,
   unregisterChannel,
   getChannelDispatcher,

@@ -239,20 +239,29 @@ export class MessageReprocessService {
         throw new ServiceError('CONFLICT', `Destination ${String(metaDataId)} uses the message's variables (${used.join(', ')}), and none are stored for message ${String(messageId)}; a resend would go without them. Reprocess the whole message instead.`);
       }
 
-      // Re-enqueue with a fresh retry budget; the running consumer picks it up.
-      const requeued = await db
-        .update(connectorMessages)
-        .set({ status: 'QUEUED', sendAttempts: 0 })
-        .where(and(
-          eq(connectorMessages.channelId, channelId),
-          eq(connectorMessages.messageId, messageId),
-          eq(connectorMessages.metaDataId, metaDataId),
-          eq(connectorMessages.status, cm.status),
-        ))
-        .returning({ messageId: connectorMessages.messageId });
-      if (requeued.length === 0) {
-        throw new ServiceError('CONFLICT', `Message ${String(messageId)} was not resent: it was deleted, or its status for "${dest.name}" changed, meanwhile. Look at it again.`);
-      }
+      // Re-enqueue with a fresh retry budget; the running consumer picks it up. What a target channel
+      // recorded for an earlier send goes with it: a resend is sent, whatever an interrupted send delivered (D-403).
+      await db.transaction(async (tx) => {
+        const requeued = await tx
+          .update(connectorMessages)
+          .set({ status: 'QUEUED', sendAttempts: 0 })
+          .where(and(
+            eq(connectorMessages.channelId, channelId),
+            eq(connectorMessages.messageId, messageId),
+            eq(connectorMessages.metaDataId, metaDataId),
+            eq(connectorMessages.status, cm.status),
+          ))
+          .returning({ messageId: connectorMessages.messageId });
+        if (requeued.length === 0) {
+          throw new ServiceError('CONFLICT', `Message ${String(messageId)} was not resent: it was deleted, or its status for "${dest.name}" changed, meanwhile. Look at it again.`);
+        }
+        await tx.delete(messageContent).where(and(
+          eq(messageContent.channelId, channelId),
+          eq(messageContent.messageId, messageId),
+          eq(messageContent.metaDataId, metaDataId),
+          eq(messageContent.contentType, CONTENT_TYPE.HAND_OFF),
+        ));
+      });
 
       emitEvent({
         level: 'INFO', name: 'MESSAGE_RESEND_QUEUED', outcome: 'SUCCESS',
