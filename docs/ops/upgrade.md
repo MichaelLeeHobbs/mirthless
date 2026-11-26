@@ -731,6 +731,10 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
   AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
 ```
 
+## An MLLP source in PASSTHROUGH answers a failed message with AE (#414)
+
+An MLLP source whose `responseMode` is PASSTHROUGH answered a message recorded with an ERROR status with the response the pipeline picked, often the AA of a destination that worked while another failed, so the sender took it as delivered. It now answers AE, as AUTO_ACK does, unless the response is a partner's own refusal, which is passed through as before. A sender that resends on AE now sends such a message again, and the destinations that worked get it again, as for any channel that reports a failed destination (D-211).
+
 ## A Channel Writer reads what happened in the target channel (#414)
 
 A CHANNEL destination read SENT when its target channel answers before its destinations ("On receipt" or "After source transformer") and something failed there after that. It now reads ERROR and raises its alert (D-393). Under the default response mode of the sending channel, "After destinations", the sending channel's own sender now gets an error for such a message, for example an MLLP NAK, where it got an AA. Look at channels that hand messages to a channel that answers before its destinations.
@@ -739,7 +743,7 @@ A CHANNEL destination that queues no longer sends a message again once the targe
 
 ## A server stop no longer delivers a send to another channel twice (#401)
 
-A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-397). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel whose storage mode keeps raw content (Development, Production or Raw) now keeps the source map of a message it receives from a Channel Writer as well: one small row (channel and message ids, no message content) for each message.
+A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-400). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel whose storage mode keeps raw content (Development, Production or Raw) now keeps the source map of a message it receives from a Channel Writer as well: one small row (channel and message ids, no message content) for each message.
 
 ## Standard upgrade (Docker)
 

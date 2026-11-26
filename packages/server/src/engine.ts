@@ -257,7 +257,7 @@ interface MessageHooks {
   readonly onStored?: (() => void) | undefined;
   /** The halt signal the message takes, where it is not the channel's at the time (an HL7 batch's). */
   readonly haltSignal?: AbortSignal | undefined;
-  /** The Channel Writer send the message comes from, for a channel that records it (D-397). */
+  /** The Channel Writer send the message comes from, for a channel that records it (D-400). */
   readonly handOff?: HandOff | undefined;
 }
 
@@ -492,7 +492,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
     storeCustomMetadata: (channelId, messageId, metaDataId, metadata) =>
       MessageService.storeCustomMetadata(channelId, messageId, metaDataId, metadata),
     initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId, handOff) => {
-      // Whatever the mode: a run again without it can route the message another way than the send that is not sent again (D-397).
+      // Whatever the mode: a run again without it can route the message another way than the send that is not sent again (D-400).
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType) || (handOff && r.contentType === CONTENT_TYPE.SOURCE_MAP));
       if (!encrypt) {
         return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId, { handOff });

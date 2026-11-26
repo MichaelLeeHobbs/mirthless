@@ -131,7 +131,7 @@ export const CONTENT_TYPE = {
   SCRIPT_LOG: 14,
   /**
    * On a Channel Writer's message: the message the target channel recorded for the send under way,
-   * written by the target and removed when the send returns (D-397). Not content: no PHI, never encrypted.
+   * written by the target and removed when the send returns (D-400). Not content: no PHI, never encrypted.
    */
   HAND_OFF: 15,
 } as const;

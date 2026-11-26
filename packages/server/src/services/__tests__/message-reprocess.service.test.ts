@@ -305,7 +305,7 @@ describe('MessageReprocessService.resendDestination', () => {
     expect(result.value).toEqual({ messageId: 5, metaDataId: 1, status: 'QUEUED' });
     // Re-enqueued with a fresh retry budget.
     expect(set).toHaveBeenCalledWith({ status: 'QUEUED', sendAttempts: 0 });
-    // Without what a target channel recorded for an earlier send, the queue sends it (D-397).
+    // Without what a target channel recorded for an earlier send, the queue sends it (D-400).
     expect(mockDelete).toHaveBeenCalledExactlyOnceWith(messageContent);
   });
 
