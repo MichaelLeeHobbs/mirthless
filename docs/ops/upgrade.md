@@ -731,6 +731,12 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
   AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
 ```
 
+## A refused redeploy keeps the channel running (#480)
+
+A redeploy of a running channel used to check only its scripts before it stopped the running version. A destination setting the deploy refused, a configuration map reference that filled a setting with a value it refused, or Delimited or HL7 v2 settings that did not validate stopped and undeployed the channel, and then the redeploy failed. Now the redeploy checks all of these first, with the certificates from the store and each connector's own deploy check, answers with the refusal, and leaves the running channel as it was (D-397). A deploy script that fails and a port the new version cannot open are still found only after the stop, and leave the channel undeployed until it is deployed again or the server restarts.
+
+When several things are wrong, the refusal can now name a different one first: the channel's own settings (encryption, queued destinations and storage, the response destination, batch processing, the data type settings) come before its connectors and scripts.
+
 ## An MLLP source in PASSTHROUGH answers a failed message with AE (#414)
 
 An MLLP source whose `responseMode` is PASSTHROUGH answered a message recorded with an ERROR status with the response the pipeline picked, often the AA of a destination that worked while another failed, so the sender took it as delivered. It now answers AE, as AUTO_ACK does, unless the response is a partner's own refusal, which is passed through as before. A sender that resends on AE now sends such a message again, and the destinations that worked get it again, as for any channel that reports a failed destination (D-211).
@@ -740,6 +746,10 @@ An MLLP source whose `responseMode` is PASSTHROUGH answered a message recorded w
 A CHANNEL destination read SENT when its target channel answers before its destinations ("On receipt" or "After source transformer") and something failed there after that. It now reads ERROR and raises its alert (D-393). Under the default response mode of the sending channel, "After destinations", the sending channel's own sender now gets an error for such a message, for example an MLLP NAK, where it got an AA. Look at channels that hand messages to a channel that answers before its destinations.
 
 A CHANNEL destination that queues no longer sends a message again once the target has stored it with an error (an HL7 batch the target stored only in part is still sent again), which made a new message in the target for every retry and delivered it again to the target's destinations that worked. It ends ERROR at once. A failure that has gone away (a partner that was down, a lookup that timed out) used to be cleared by the next retry: reprocess the message in the target channel instead.
+
+## A DATABASE source warns when its lock may hold nothing (#445)
+
+A DATABASE source with an update mode now logs a WARN at deploy when its query, as the poll sends it, may claim none of the rows it returns: a `WITH` query or, on MySQL, a subquery in `FROM` without a `FOR UPDATE SKIP LOCKED` of its own, a query whose only lock is in a subquery of a condition, or `UNION`, `INTERSECT` or `EXCEPT`. Two sources (or two servers) on the same table can then take the same row, as they could before. The channel deploys all the same (D-400). A `FOR SHARE` in a subquery after `> ALL (` or `IS DISTINCT FROM (` was taken for the query's own and made `FOR UPDATE`, so the query's rows were not claimed; it is now left as written and the query gets `FOR UPDATE SKIP LOCKED`. Look for `may hold none of the rows` in the server log after the upgrade, and give the query that reads the rows a lock of its own ([DATABASE limits](../user/connector-reference.md#database-limits)).
 
 ## An email refused for some recipients reads ERROR (#414)
 
