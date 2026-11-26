@@ -77,6 +77,21 @@ export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
  * go only into the response, which is stored with the message as its content is: the error text also reaches
  * alerts and the log.
  */
+/**
+ * nodemailer fails a send whose every recipient was refused with `EENVELOPE`, whose text quotes the server's reply,
+ * which often holds the address. Nobody got it, so the ERROR is not final; the addresses go only into the response.
+ */
+function allRefused(err: unknown): ConnectorResponse | null {
+  if (!(err instanceof Error) || (err as { code?: unknown }).code !== 'EENVELOPE') return null;
+  const rejected = (err as { rejected?: unknown }).rejected;
+  if (!Array.isArray(rejected) || !rejected.every((address) => typeof address === 'string')) return null;
+  return {
+    status: 'ERROR',
+    content: `accepted=, rejected=${rejected.join(', ')}`,
+    errorMessage: `The mail server refused all ${String(rejected.length)} recipients; the response names each`,
+  };
+}
+
 function partlyRefused(result: SmtpSendResult): ConnectorResponse {
   const total = result.accepted.length + result.rejected.length;
   return {
@@ -166,7 +181,12 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
         // caller's signal and a hard timeout.
         const result = await withTimeoutSignal(
           transport.sendMail(mailOptions), SEND_TIMEOUT_MS, 'SMTP sendMail', signal,
-        );
+        ).catch((err: unknown) => {
+          const refused = allRefused(err);
+          if (refused === null) throw err;
+          return refused;
+        });
+        if ('status' in result) return result;
         const accepted = result.accepted.length;
         const rejected = result.rejected.length;
         // Every recipient rejected = nothing delivered. Reporting SENT here would

@@ -1,15 +1,15 @@
 import * as net from 'node:net';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import { ChannelReceiver, SmtpDispatcher, clearChannelRegistry, getChannelDispatcher } from '../../index.js';
 import { deployChannel, teardownAll, type DeployedChannel } from './support/e2e-harness.js';
 
-/** The mail an SMTP server took: its recipients and its DATA. */
 interface Taken { readonly recipients: string[]; data: string }
 
 /**
- * A mail server that refuses every recipient whose address starts with `gone`, as one whose mailbox does not exist
- * answers RCPT TO, and takes the email for the others. No library offers that without a download.
+ * A mail server that refuses every recipient whose address starts with `gone`, as Postfix answers RCPT TO for a
+ * mailbox that does not exist, quoting the address, and takes the email for the others. It offers PIPELINING, as
+ * most servers do, so nodemailer sends the whole envelope at once. No library offers that without a download.
  */
 async function startRefusingSmtpServer(): Promise<{ readonly port: number; readonly taken: Taken[]; close(): void }> {
   const taken: Taken[] = [];
@@ -28,13 +28,17 @@ async function startRefusingSmtpServer(): Promise<{ readonly port: number; reado
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === 'EHLO' || verb === 'HELO') socket.write('250 test\r\n');
+        if (verb === 'EHLO') socket.write('250-test\r\n250 PIPELINING\r\n');
+        else if (verb === 'HELO') socket.write('250 test\r\n');
         else if (verb === 'MAIL') socket.write('250 2.1.0 ok\r\n');
         else if (verb === 'RCPT') {
           const address = /<([^>]*)>/.exec(line)?.[1] ?? '';
-          if (address.startsWith('gone')) socket.write('550 5.1.1 no such mailbox\r\n');
+          if (address.startsWith('gone')) socket.write(`550 5.1.1 <${address}>: Recipient address rejected: User unknown\r\n`);
           else { current.recipients.push(address); socket.write('250 2.1.5 ok\r\n'); }
-        } else if (verb === 'DATA') { inData = true; socket.write('354 go ahead\r\n'); }
+        } else if (verb === 'DATA') {
+          if (current.recipients.length === 0) socket.write('554 5.5.1 no valid recipients\r\n');
+          else { inData = true; socket.write('354 go ahead\r\n'); }
+        }
         else if (verb === 'QUIT') { socket.end('221 bye\r\n'); }
         else socket.write('250 ok\r\n');
       }
@@ -57,33 +61,53 @@ afterEach(async () => {
   clearChannelRegistry();
 });
 
+async function deployMail(id: string, to: string, queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS'): Promise<DeployedChannel> {
+  const CH = `00000000-0000-0000-0000-${id}`;
+  const channel = await deployChannel({
+    channelId: CH,
+    dataType: 'RAW',
+    source: new ChannelReceiver({ channelId: CH }),
+    destinations: [{
+      metaDataId: 1, name: 'Mail', queueMode, retryIntervalMs: 50,
+      connector: new SmtpDispatcher({
+        host: '127.0.0.1', port: mailServer?.port ?? 0, secure: false, requireTLS: false,
+        from: 'engine@example.com', to, cc: '', bcc: '',
+        subject: 'Result', bodyTemplate: '${msg}', contentType: 'text/plain', attachContent: false,
+      }),
+    }],
+  });
+  deployed.push(channel);
+  await getChannelDispatcher(CH)?.({ content: 'K+ 4.1', sourceMap: {} });
+  return channel;
+}
+
+const statusOf = (channel: DeployedChannel): string | undefined => channel.store.connectorMessages.find((m) => m.metaDataId === 1)?.status;
+
 describe('an SMTP destination whose mail server refuses one of two recipients (#414)', () => {
-  it('reads ERROR, is not queued again, and the recipient who got it gets it once', async () => {
+  it.each([
+    ['sent at once, queuing on failure', 'smtppartly01', 'ON_FAILURE'],
+    ['sent from the queue', 'smtppartly02', 'ALWAYS'],
+  ] as const)('reads ERROR when %s, is not sent again, and keeps who got it', async (_how, id, queueMode) => {
     mailServer = await startRefusingSmtpServer();
-    const CH = '00000000-0000-0000-0000-smtppartly01';
-    const channel = await deployChannel({
-      channelId: CH,
-      dataType: 'RAW',
-      source: new ChannelReceiver({ channelId: CH }),
-      destinations: [{
-        metaDataId: 1, name: 'Mail', queueMode: 'ON_FAILURE', retryIntervalMs: 50,
-        connector: new SmtpDispatcher({
-          host: '127.0.0.1', port: mailServer.port, secure: false, requireTLS: false,
-          from: 'engine@example.com', to: 'ward@example.com, gone@example.com', cc: '', bcc: '',
-          subject: 'Result', bodyTemplate: '${msg}', contentType: 'text/plain', attachContent: false,
-        }),
-      }],
-    });
-    deployed.push(channel);
 
-    const dispatched = await getChannelDispatcher(CH)?.({ content: 'K+ 4.1', sourceMap: {} });
+    const channel = await deployMail(id, 'ward@example.com, gone@example.com', queueMode);
+    await vi.waitFor(() => { expect(statusOf(channel)).toBe('ERROR'); }, { timeout: 10_000, interval: 10 });
 
-    expect(dispatched?.ok && dispatched.value.status).toBe('ERROR');
-    expect(channel.store.connectorMessages.find((m) => m.metaDataId === 1)?.status).toBe('ERROR');
-    expect(channel.store.contentOf(1, 1, CONTENT_TYPE.RESPONSE)).toContain('rejected=gone@example.com');
+    expect(channel.store.contentOf(1, 1, CONTENT_TYPE.RESPONSE)).toContain('accepted=ward@example.com, rejected=gone@example.com');
     const reason = channel.store.contentOf(1, 1, CONTENT_TYPE.ERROR) ?? '';
     expect(reason).toContain('refused 1 of 2 recipients');
     expect(reason).not.toContain('@');
     expect(mailServer.taken.map((mail) => mail.recipients)).toEqual([['ward@example.com']]);
+  });
+
+  it('names nobody in the error when the server refused every recipient, quoting the address in its reply', async () => {
+    mailServer = await startRefusingSmtpServer();
+
+    const channel = await deployMail('smtpnobody01', 'gone@example.com, gone2@example.com', 'NEVER');
+
+    expect(statusOf(channel)).toBe('ERROR');
+    expect(channel.store.contentOf(1, 1, CONTENT_TYPE.ERROR)).toBe('The mail server refused all 2 recipients; the response names each');
+    expect(channel.store.contentOf(1, 1, CONTENT_TYPE.RESPONSE)).toContain('rejected=gone@example.com, gone2@example.com');
+    expect(mailServer.taken).toEqual([]);
   });
 });

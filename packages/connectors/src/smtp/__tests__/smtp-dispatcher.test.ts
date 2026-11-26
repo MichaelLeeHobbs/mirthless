@@ -238,6 +238,34 @@ describe('SmtpDispatcher.send', () => {
     expect(result.ok && result.value.final).toBeUndefined();
   });
 
+  it('names nobody in the error when the mail server refused every recipient, as nodemailer reports it', async () => {
+    const refused = Object.assign(new Error("Can't send mail - all recipients were rejected: 550 5.1.1 <gone@example.com>: User unknown"), {
+      code: 'EENVELOPE', rejected: ['gone@example.com', 'left@example.com'],
+    });
+    const transport = makeMockTransport({ sendMail: vi.fn(async () => { throw refused; }) });
+    const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value).toEqual({
+      status: 'ERROR',
+      content: 'accepted=, rejected=gone@example.com, left@example.com',
+      errorMessage: 'The mail server refused all 2 recipients; the response names each',
+    });
+  });
+
+  it('passes on another failure of the mail server as it came', async () => {
+    const transport = makeMockTransport({ sendMail: vi.fn(async () => { throw Object.assign(new Error('Greeting never received'), { code: 'ETIMEDOUT' }); }) });
+    const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.message).toContain('Greeting never received');
+  });
+
   it('calls sendMail with correct options for text/plain', async () => {
     const transport = makeMockTransport();
     const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));

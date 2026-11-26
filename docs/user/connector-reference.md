@@ -579,7 +579,7 @@ SMTP can only send; it cannot receive messages. Use [EMAIL](#email) to read a ma
 
 It sends one email per message. The subject, body and attachment fields may use `${msg}` (the message content), `${messageId}`, `${channelId}`, `${metaDataId}` and other `${name}` message variables.
 
-The send is SENT only when the mail server accepted every recipient. When it refused them all, nobody got the email and the send is an ERROR that is retried as any other, if the destination queues. When it refused some, the send is an ERROR that is never sent again, whatever the queue mode, because a resend would mail the recipients who got it a second time (D-395). The error says how many were refused; the response, which is stored with the message, names the recipients accepted and refused. To reach the refused ones, send them the message yourself, or fix the address and reprocess the message, which mails everybody again.
+The send is SENT only when the mail server accepted every recipient. When it refused them all, nobody got the email and the send is an ERROR that is retried as any other, if the destination queues. When it refused some, the send is an ERROR that is never sent again, whatever the queue mode, because a resend would mail the recipients who got it a second time (D-395). In both cases the error says how many were refused and names nobody, because it also goes to alerts and the log; the response, which is stored with the message, names the recipients accepted and refused. To reach the refused ones, send them the message yourself, or fix the address and reprocess the message, which mails everybody again.
 
 ### SMTP security
 
