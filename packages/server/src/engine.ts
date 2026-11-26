@@ -70,6 +70,7 @@ import { EmailService } from './services/email.service.js';
 import { DESTINATION_TLS_RESOLVERS, SOURCE_TLS_RESOLVERS } from './services/connector-tls-resolver.js';
 import { ServiceError } from './lib/service-error.js';
 import { dataTypeOptionsFrom } from './lib/data-type-options.js';
+import { batchRefusal } from './lib/batch-source.js';
 import { whyNotTaking } from './lib/taking-messages.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { buildFileRoots } from './lib/file-roots.js';
@@ -956,12 +957,11 @@ export class EngineManager {
       throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: it responds from destination "${channel.responseConnectorName ?? ''}", which it does not have`);
     }
     // A source with Mirth's "Process Batch" on splits what it receives into
-    // messages. Only HL7v2 batches can be split; any other data type refuses
-    // to deploy rather than treat a whole batch as one message.
+    // messages. Only HL7v2 text can be split; anything else refuses to deploy
+    // rather than treat a whole batch as one message or record none of it.
     const batched = channel.sourceConnectorProperties['processBatch'] === true;
-    if (batched && channel.inboundDataType !== 'HL7V2') {
-      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: batch processing is only supported for HL7V2, not ${channel.inboundDataType}`);
-    }
+    const unbatchable = batchRefusal(channel);
+    if (unbatchable !== null) throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: ${unbatchable}`);
 
     // Used by the source connector and the sendMessage API.
     const activity = { lastAt: Date.now() };
