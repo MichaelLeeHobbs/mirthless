@@ -248,6 +248,10 @@ export class QueueConsumer {
 
     const attempts = (msg.sendAttempts ?? 0) + 1;
     const reason = sendFailureReason(sendResult);
+    if (sendResult.ok && sendResult.value.final === true) {
+      await this.giveUp(msg, reason);
+      return 'DONE';
+    }
     const retriesUsed = attempts - 1;
     if (this.config.retryCount > 0 && retriesUsed >= this.config.retryCount) {
       await this.giveUp(msg, `Delivery failed after ${String(attempts)} attempt(s): ${reason}`);

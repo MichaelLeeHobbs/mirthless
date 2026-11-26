@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
-import { DISPATCH_STATUS, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
+import { DISPATCH_STATUS, variableNames, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse, type DispatchResult } from '../base.js';
 import { getChannelDispatcher, hasChannel } from './channel-registry.js';
 
 export interface ChannelDispatcherConfig {
@@ -18,6 +18,27 @@ const hopDepth = new AsyncLocalStorage<number>();
 /** By the shared placeholder rule (D-275); an unknown name is left as written. */
 export function resolveTarget(target: string, variables: Readonly<Record<string, unknown>> | undefined): string {
   return fillPlaceholders(target, recordLookup(variables ?? {}));
+}
+
+/**
+ * A target that recorded the message with an error, reported or hidden by its response mode, is an
+ * ERROR here: SENT would hide the failure from this channel's status and alerts. The target keeps the
+ * message, where it can be reprocessed, so the ERROR is final: a resend would be a second message there (D-393).
+ */
+function handedOff(target: string, result: DispatchResult, waitForResponse: boolean): ConnectorResponse {
+  const id = String(result.messageId);
+  if (result.status === DISPATCH_STATUS.ERROR) {
+    return { status: 'ERROR', content: '', errorMessage: `Target channel ${target} recorded message ${id} with an ERROR status`, final: true };
+  }
+  if (result.destinationFailed === true) {
+    return {
+      status: 'ERROR',
+      content: waitForResponse ? result.response ?? '' : '',
+      errorMessage: `Target channel ${target} recorded message ${id} with an error that its response mode does not report`,
+      final: true,
+    };
+  }
+  return { status: 'SENT', content: waitForResponse && result.response ? result.response : `messageId=${id}` };
 }
 
 export class ChannelDispatcher implements DestinationConnectorRuntime {
@@ -97,21 +118,7 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
         };
       }
 
-      // The target took the message but recorded it with an error. Reporting
-      // SENT here would hide the failure from this channel's status and alerts.
-      if (result.value.status === DISPATCH_STATUS.ERROR) {
-        return {
-          status: 'ERROR' as const,
-          content: '',
-          errorMessage: `Target channel ${target} recorded message ${String(result.value.messageId)} with an ERROR status`,
-        };
-      }
-
-      const responseContent = this.config.waitForResponse && result.value.response
-        ? result.value.response
-        : `messageId=${String(result.value.messageId)}`;
-
-      return { status: 'SENT' as const, content: responseContent };
+      return handedOff(target, result.value, this.config.waitForResponse);
     });
   }
 

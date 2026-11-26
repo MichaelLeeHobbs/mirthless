@@ -731,6 +731,12 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
   AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
 ```
 
+## A Channel Writer reads what happened in the target channel (#414)
+
+A CHANNEL destination read SENT when its target channel answers before its destinations ("On receipt" or "After source transformer") and something failed there after that. It now reads ERROR and raises its alert (D-393). Under the default response mode of the sending channel, "After destinations", the sending channel's own sender now gets an error for such a message, for example an MLLP NAK, where it got an AA. Look at channels that hand messages to a channel that answers before its destinations.
+
+A CHANNEL destination that queues no longer sends a message again once the target has stored it with an error (an HL7 batch the target stored only in part is still sent again), which made a new message in the target for every retry and delivered it again to the target's destinations that worked. It ends ERROR at once. A failure that has gone away (a partner that was down, a lookup that timed out) used to be cleared by the next retry: reprocess the message in the target channel instead.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

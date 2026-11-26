@@ -134,6 +134,53 @@ describe('a channel stopped while a message is on its way', () => {
   });
 });
 
+/** A partner that refuses every message. */
+function refusing(): CaptureDestination {
+  const destination = new CaptureDestination();
+  vi.spyOn(destination, 'send').mockResolvedValue({ ok: true, value: { status: 'ERROR', content: '', errorMessage: 'partner refused it' }, error: null });
+  return destination;
+}
+
+describe('a channel hand-off to a target where a destination fails (#414)', () => {
+  const statusOf = (channel: DeployedChannel, metaDataId: number): string | undefined =>
+    channel.store.connectorMessages.find((m) => m.metaDataId === metaDataId)?.status;
+
+  it.each([
+    ['answers before its destinations, from the queue', true, 'ALWAYS', 'with an error that its response mode does not report'],
+    ['reports the failure, after a direct send that queues on failure', false, 'ON_FAILURE', 'with an ERROR status'],
+  ] as const)('reads ERROR in the sender and is not sent again when the target %s', async (_how, answersBeforeDestinations, queueMode, why) => {
+    const CH_A = `00000000-0000-0000-0000-handoff${answersBeforeDestinations ? 'b' : 'r'}000a`;
+    const CH_B = `00000000-0000-0000-0000-handoff${answersBeforeDestinations ? 'b' : 'r'}000b`;
+    const sink = new CaptureDestination();
+    const port = await freePort();
+
+    const target = await deployChannel({
+      channelId: CH_B,
+      dataType: 'RAW',
+      source: new ChannelReceiver({ channelId: CH_B }),
+      answersBeforeDestinations,
+      destinations: [{ metaDataId: 1, name: 'Delivered', connector: sink }, { metaDataId: 2, name: 'Refused', connector: refusing() }],
+    });
+    const sender = await deployChannel({
+      channelId: CH_A,
+      dataType: 'HL7V2',
+      source: mllpSource(port),
+      destinations: [{
+        metaDataId: 1, name: 'To B', queueMode, retryIntervalMs: 50,
+        connector: new ChannelDispatcher({ targetChannelId: CH_B, waitForResponse: true }),
+      }],
+    });
+    deployed.push(sender, target);
+
+    await sendMllp(port, HL7_ADT);
+    await vi.waitFor(() => { expect(statusOf(sender, 1)).toBe('ERROR'); }, DELIVERY_WAIT);
+
+    expect(sender.store.contentOf(1, 1, CONTENT_TYPE.ERROR)).toContain(`recorded message 1 ${why}`);
+    expect(target.store.messageCount()).toBe(1);
+    expect(sink.received).toHaveLength(1);
+  });
+});
+
 describe('cascade across channels (A → B → C), converting the payload at each hop', () => {
   it('routes HL7 into A, converts to JSON in B, to XML in C, delivering the final XML', async () => {
     const CH_A = '00000000-0000-0000-0000-cascade0000a';
