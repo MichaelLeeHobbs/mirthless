@@ -17,10 +17,12 @@
 -- has waited that long, which NOWAIT never does. It tries for 5 seconds, then
 -- fails. So it waits only while it holds no partition of the channel, a read
 -- that takes the tables in another order cannot deadlock with it, and a read
--- waits behind it for at most that second. A backup under way holds a lock on
--- every table, so a purge then fails. Nothing is read through the parent
--- tables before the locks are had, since a lock on a parent held through the
--- wait would hold up the creation of a channel and every insert behind it.
+-- of the busy partition waits behind it for at most that second for each try.
+-- Once it has them, reads of the channel's partitions wait for the count and
+-- the truncate. A backup under way holds a lock on every table, so a purge
+-- then fails. Nothing is read through the parent tables before the locks are
+-- had, since a lock on a parent held through the wait would hold up the
+-- creation of a channel and every insert behind it.
 CREATE OR REPLACE FUNCTION public.purge_deleted_channel(p_channel_id uuid)
 RETURNS TABLE (purged_messages bigint, purged_undelivered bigint)
 LANGUAGE plpgsql

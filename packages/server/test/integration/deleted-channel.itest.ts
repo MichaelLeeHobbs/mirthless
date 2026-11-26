@@ -330,6 +330,10 @@ describeIntegration('the messages of deleted channels (real Postgres)', () => {
         const started = Date.now();
         await channel();
         expect(Date.now() - started).toBeLessThan(1_000);
+        // A read of that partition waits behind the purge's request only until that wait ends.
+        const reading = Date.now();
+        await mods.pool.query('SELECT count(*) FROM connector_messages WHERE channel_id = $1', [id]);
+        expect(Date.now() - reading).toBeLessThan(2_000);
         await holder.query('COMMIT');
 
         expect((await purging).status).toBe(200);
