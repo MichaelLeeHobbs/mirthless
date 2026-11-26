@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
-import { ALL_CHANNELS, PERMISSIONS, holdsPermission, idSchema, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, PERMISSIONS, SOCKET_ERROR, holdsPermission, idSchema, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
 import { createThrottle, errorInfo, type Throttle } from '@galvanigraph/core-util';
 import { config } from '../config/index.js';
 import { loadUserStanding } from './principal.js';
@@ -71,22 +71,33 @@ export async function authMiddleware(
 ): Promise<void> {
   const token = socket.handshake.auth['token'];
   if (typeof token !== 'string' || token.length === 0) {
-    next(new Error('Authentication required'));
+    next(new Error(SOCKET_ERROR.AUTH_REQUIRED));
     return;
   }
 
+  let decoded: ReturnType<typeof verifyAccessToken>;
   try {
-    const decoded = verifyAccessToken(token);
-    const userData = await loadSocketUser(decoded.userId, decoded.sessionId, decoded.type);
-    if (!userData) {
-      next(new Error('Authentication required'));
-      return;
-    }
-    socket.data['user'] = userData;
-    next();
+    decoded = verifyAccessToken(token);
   } catch {
-    next(new Error('Authentication required'));
+    next(new Error(SOCKET_ERROR.AUTH_REQUIRED));
+    return;
   }
+
+  let userData: SocketUserData | null;
+  try {
+    userData = await loadSocketUser(decoded.userId, decoded.sessionId, decoded.type);
+  } catch (err: unknown) {
+    // Refused either way, but as unavailable, so the web does not sign the person out (#473).
+    logger.error({ ...errorInfo(err) }, 'Could not read a socket caller\'s credentials');
+    next(new Error(SOCKET_ERROR.UNAVAILABLE));
+    return;
+  }
+  if (!userData) {
+    next(new Error(SOCKET_ERROR.AUTH_REQUIRED));
+    return;
+  }
+  socket.data['user'] = userData;
+  next();
 }
 
 function roomPermission(room: string): Permission | null {
@@ -108,7 +119,11 @@ interface RevalidatableSocket {
 /** True when the socket stays connected. */
 export async function revalidateSocket(socket: RevalidatableSocket): Promise<boolean> {
   const current = socket.data['user'] as SocketUserData | undefined;
-  const fresh = current ? await loadSocketUser(current.userId, current.sessionId, current.type).catch(() => null) : null;
+  // A failed read disconnects too: what the socket may see can't be confirmed (#473).
+  const fresh = current ? await loadSocketUser(current.userId, current.sessionId, current.type).catch((err: unknown) => {
+    logger.warn({ ...errorInfo(err), socketId: socket.id }, 'Disconnecting socket: its access could not be checked');
+    return null;
+  }) : null;
   if (!fresh) {
     logger.info({ socketId: socket.id }, 'Disconnecting socket: session revoked or access removed');
     socket.disconnect(true);

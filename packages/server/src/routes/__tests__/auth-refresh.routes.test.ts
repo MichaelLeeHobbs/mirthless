@@ -8,13 +8,13 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { builtInRolePermissions } from '../../db/seeds/roles.js';
 
-const state = vi.hoisted(() => ({ role: 'deployer', insertedUserAgents: [] as unknown[] }));
+const state = vi.hoisted(() => ({ role: 'deployer', insertedUserAgents: [] as unknown[], deleteFails: false, tokenRefused: false }));
 
 vi.mock('../../lib/db.js', () => {
   const session = { userId: 'u-1', expiresAt: new Date(Date.now() + 3_600_000) };
   const db = {
     // Each refresh consumes the session (DELETE ... RETURNING); the resolver reads the user.
-    delete: () => ({ where: () => ({ returning: () => Promise.resolve([session]) }) }),
+    delete: () => ({ where: () => ({ returning: () => (state.deleteFails ? Promise.reject(new Error('Connection terminated due to connection timeout')) : Promise.resolve([session])) }) }),
     insert: () => ({
       values: (v: { userAgent?: unknown }) => {
         state.insertedUserAgents.push(v.userAgent);
@@ -32,11 +32,12 @@ vi.mock('../../lib/principal.js', async () => {
   };
 });
 vi.mock('../../lib/jwt.js', () => ({
-  verifyRefreshToken: vi.fn(() => ({ userId: 'u-1' })),
+  verifyRefreshToken: vi.fn(() => { if (state.tokenRefused) throw new Error('invalid signature'); return { userId: 'u-1' }; }),
   signRefreshToken: vi.fn(() => 'next-refresh'),
   signAccessToken: vi.fn(() => 'next-access'),
   tokenExpiresAt: vi.fn(() => new Date(Date.now() + 3_600_000)),
 }));
+vi.mock('../../lib/logger.js', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn(), emitAuditEvent: vi.fn() }));
 vi.mock('../../middleware/rate-limit.middleware.js', () => ({
   authRateLimiter: (_req: unknown, _res: unknown, next: () => void): void => { next(); },
@@ -63,6 +64,8 @@ afterAll(async () => {
 beforeEach(() => {
   state.role = 'deployer';
   state.insertedUserAgents.length = 0;
+  state.deleteFails = false;
+  state.tokenRefused = false;
 });
 
 interface RefreshBody {
@@ -113,5 +116,26 @@ describe('POST /auth/refresh', () => {
   it('records the refreshing client on the new session', async () => {
     await refresh();
     expect(state.insertedUserAgents).toEqual(['itest-browser']);
+  });
+});
+
+describe('POST /auth/refresh when the database cannot be read (#473)', () => {
+  const post = (): Promise<Response> => fetch(`${base}/auth/refresh`, { method: 'POST', headers: { cookie: 'refreshToken=current-refresh' } });
+
+  it('answers 503 and keeps the refresh cookie, so the person stays signed in', async () => {
+    state.deleteFails = true;
+    const res = await post();
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ success: false, error: { code: 'UNAVAILABLE', message: expect.any(String) } });
+    expect(res.headers.get('set-cookie')).toBeNull();
+    const logger = (await import('../../lib/logger.js')).default;
+    expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ errMsg: 'Connection terminated due to connection timeout' }), expect.any(String));
+  });
+
+  it('still answers a refresh token that does not verify 401 and clears the cookie', async () => {
+    state.tokenRefused = true;
+    const res = await post();
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toMatch(/^refreshToken=;/);
   });
 });

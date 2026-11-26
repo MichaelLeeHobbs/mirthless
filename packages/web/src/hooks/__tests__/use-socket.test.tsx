@@ -21,7 +21,8 @@ const fakeSocket = vi.hoisted(() => {
 const io = vi.hoisted(() => vi.fn(() => fakeSocket));
 vi.mock('socket.io-client', () => ({ io }));
 
-const { useSocketConnection, useThrottledSocketEvent, LIVE_REFRESH_INTERVAL_MS } = await import('../use-socket.js');
+const { useSocketConnection, useThrottledSocketEvent, LIVE_REFRESH_INTERVAL_MS, SOCKET_RETRY_MS } = await import('../use-socket.js');
+const { SOCKET_ERROR } = await import('@galvanigraph/core-models');
 const { connectSocket, disconnectSocket } = await import('../../lib/socket.js');
 const { useAuthStore } = await import('../../stores/auth.store.js');
 
@@ -76,6 +77,42 @@ describe('useSocketConnection', () => {
     act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it('stays signed in and tries again later when the server cannot check the handshake (#473)', () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      useAuthStore.getState().setAuth(USER, 'token', false);
+      renderHook(() => { useSocketConnection(); });
+
+      act(() => { fakeSocket.listeners.get('connect_error')?.(new Error(SOCKET_ERROR.UNAVAILABLE)); });
+      expect(fakeSocket.connect).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS); });
+
+      expect(fakeSocket.connect).toHaveBeenCalledTimes(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not try again after the page that opened the socket has gone', () => {
+    vi.useFakeTimers();
+    try {
+      useAuthStore.getState().setAuth(USER, 'token', false);
+      const { unmount } = renderHook(() => { useSocketConnection(); });
+
+      act(() => { fakeSocket.listeners.get('connect_error')?.(new Error(SOCKET_ERROR.UNAVAILABLE)); });
+      unmount();
+      act(() => { vi.advanceTimersByTime(SOCKET_RETRY_MS); });
+
+      expect(fakeSocket.connect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stays signed in when a refresh replaces a token the server had just rotated', async () => {
