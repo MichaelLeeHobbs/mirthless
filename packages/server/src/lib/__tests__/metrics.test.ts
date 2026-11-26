@@ -1,9 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   registry,
   httpRequestDuration,
   httpRequestTotal,
 } from '../metrics.js';
+
+// A metric that is taken every 100 ms takes one for each 100 ms since the last, by process.hrtime (#487).
+it('a test that fakes timers leaves the clock of the metrics alone', () => {
+  const before = process.hrtime.bigint();
+  vi.useFakeTimers();
+  try {
+    expect(process.hrtime.bigint()).toBeGreaterThan(before);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 describe('Prometheus Metrics Registry', () => {
   it('exports a Registry instance', () => {

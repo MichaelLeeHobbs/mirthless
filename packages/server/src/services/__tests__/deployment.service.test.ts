@@ -34,6 +34,7 @@ vi.mock('../../engine.js', () => ({
 const mockChannelService = {
   getById: vi.fn(),
   listLiveForDeploy: vi.fn(),
+  isLive: vi.fn(),
 };
 
 const mockListAllDependencies = vi.fn();
@@ -128,6 +129,7 @@ beforeEach(() => {
     const saved = await mockChannelService.getById(id) as Result<object>;
     return saved.ok ? ok(bundle(saved.value)) : saved;
   });
+  mockChannelService.isLive.mockResolvedValue(ok(true));
   mockRecords.record.mockResolvedValue(okVoid);
   mockRecords.markUndeployed.mockResolvedValue(okVoid);
   mockRecords.listRecorded.mockResolvedValue(ok(new Map()));
@@ -894,6 +896,29 @@ describe('DeploymentService', () => {
 
       expect(result.ok).toBe(true);
       expect(mockEngine.deploy).not.toHaveBeenCalled();
+    });
+
+    it('leaves a channel someone deleted while the server was starting undeployed (#202)', async () => {
+      mockChannelService.listLiveForDeploy.mockResolvedValue(ok([summary('a'), summary('b')]));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+      mockChannelService.isLive.mockImplementation(async (id: string) => ok(id !== 'a'));
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(result.ok).toBe(true);
+      expect(deployedOrder()).toEqual(['b']);
+    });
+
+    it('reports a channel of which it cannot read whether it was deleted as not redeployed', async () => {
+      mockChannelService.listLiveForDeploy.mockResolvedValue(ok([summary('a'), summary('b')]));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+      mockChannelService.isLive.mockImplementation(async (id: string) => (id === 'a' ? { ok: false, value: null, error: new Error('connection terminated') } : ok(true)));
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain('ch-a');
+      expect(deployedOrder()).toEqual(['b']);
     });
 
     it('reads each channel\'s record just before deploying it, not once for all', async () => {

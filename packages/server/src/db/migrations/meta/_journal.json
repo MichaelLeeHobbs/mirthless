@@ -204,6 +204,13 @@
       "when": 1795571761137,
       "tag": "0028_destination_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795641065994,
+      "tag": "0029_purge_deleted_channel",
+      "breakpoints": true
     }
   ]
 }

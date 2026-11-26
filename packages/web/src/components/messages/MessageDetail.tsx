@@ -28,6 +28,7 @@ import { PERMISSION } from '../../lib/permissions.js';
 interface MessageDetailProps {
   readonly channelId: string;
   readonly messageId: number;
+  readonly channelDeleted: boolean;
 }
 
 const CONTENT_TABS = [
@@ -93,7 +94,12 @@ function ConnectorContentTabs({ connector }: { readonly connector: ConnectorDeta
   );
 }
 
-export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps): ReactNode {
+function resendTitle(canResend: boolean, channelDeleted: boolean): string {
+  if (canResend) return 'Resend to this destination (queue-enabled destinations only; use Reprocess for others)';
+  return channelDeleted ? 'The channel is deleted: its messages cannot be sent again' : 'Requires messages:reprocess permission';
+}
+
+export function MessageDetailPanel({ channelId, messageId, channelDeleted }: MessageDetailProps): ReactNode {
   const { data: detail, isLoading, error } = useMessageDetail(channelId, messageId);
   const deleteMutation = useDeleteMessage();
   const resendMutation = useResendDestination();
@@ -103,7 +109,7 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
   const [resendTarget, setResendTarget] = useState<number | null>(null);
   const { has } = usePermissions();
   const canDelete = has(PERMISSION.MESSAGES_DELETE);
-  const canResend = has(PERMISSION.MESSAGES_REPROCESS);
+  const canResend = has(PERMISSION.MESSAGES_REPROCESS) && !channelDeleted;
 
   if (isLoading) {
     return (
@@ -227,7 +233,7 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
             )}
             <Box sx={{ flexGrow: 1 }} />
             {activeConnector.metaDataId > 0 && (
-              <Tooltip title={canResend ? 'Resend to this destination (queue-enabled destinations only; use Reprocess for others)' : 'Requires messages:reprocess permission'}>
+              <Tooltip title={resendTitle(canResend, channelDeleted)}>
                 <span>
                   <Button
                     size="small"

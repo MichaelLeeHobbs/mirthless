@@ -18,12 +18,12 @@ export interface RuntimeRole {
 const DOC = 'docs/ops/upgrade.md#database-roles';
 
 /**
- * The owner functions the runtime role may call (migrations 0016, 0017 and
- * 0022). The seed, which runs as this role, records a grant baseline.
+ * The owner functions the runtime role may call (migrations 0016, 0017, 0022
+ * and 0029). The seed, which runs as this role, records a grant baseline.
  */
 const OWNER_FUNCTIONS = [
   'public.create_channel_partitions(uuid)', 'public.purge_events(integer)', 'public.ensure_audit_partitions()',
-  'public.record_grant_baseline(text)',
+  'public.record_grant_baseline(text)', 'public.purge_deleted_channel(uuid)',
 ] as const;
 
 /** `role` and `database` arrive quoted. Nothing here grants TRUNCATE, REFERENCES, TRIGGER or CREATE. */

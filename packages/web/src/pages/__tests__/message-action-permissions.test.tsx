@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lightTheme } from '../../styles/theme.js';
 
 let granted: readonly string[] = [];
+let channelDeleted = false;
 const idle = (): Record<string, unknown> => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
 const ERRORED = { channelId: 'c1', channelName: 'ADT', messageId: 7, status: 'ERROR', receivedAt: '2026-11-15T10:00:00Z' };
 
@@ -17,7 +18,7 @@ vi.mock('../../hooks/use-permissions.js', () => ({
 }));
 vi.mock('../../hooks/use-channels.js', () => ({ useChannel: () => ({ data: { name: 'ADT', destinations: [], encryptData: false } }) }));
 vi.mock('../../hooks/use-messages.js', () => ({
-  useMessageSearch: () => ({ data: { items: [], total: 0, limit: 25, offset: 0 }, isLoading: false, error: null, refetch: vi.fn() }),
+  useMessageSearch: () => ({ data: { items: [], channelDeleted, total: 0, limit: 25, offset: 0 }, isLoading: false, error: null, refetch: vi.fn() }),
 }));
 vi.mock('../../hooks/use-socket.js', () => ({ useSocketEvent: vi.fn(), useSocketRoom: vi.fn(), useThrottledSocketEvent: vi.fn() }));
 vi.mock('../../hooks/use-message-actions.js', () => ({ useReprocessMessage: idle, useBulkDeleteMessages: idle }));
@@ -26,8 +27,8 @@ vi.mock('../../hooks/use-cross-channel-search.js', () => ({
   useCrossChannelSearch: () => ({ data: { items: [ERRORED], total: 1 }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() }),
 }));
 vi.mock('../../components/messages/MessageSearchBar.js', () => ({ MessageSearchBar: () => null }));
-vi.mock('../../components/messages/MessageDetail.js', () => ({ MessageDetailPanel: () => null }));
-vi.mock('../../components/messages/BulkMessageActionsToolbar.js', () => ({ BulkMessageActionsToolbar: () => null }));
+vi.mock('../../components/messages/MessageDetail.js', () => ({ MessageDetailPanel: (props: { channelDeleted: boolean }) => `detail of a ${props.channelDeleted ? 'deleted' : 'live'} channel` }));
+vi.mock('../../components/messages/BulkMessageActionsToolbar.js', () => ({ BulkMessageActionsToolbar: (props: { channelDeleted: boolean }) => `bulk actions of a ${props.channelDeleted ? 'deleted' : 'live'} channel` }));
 vi.mock('../../components/messages/MessageTable.js', () => ({
   MessageTable: ({ onSelect }: { onSelect: (id: number) => void }) => (
     <button type="button" onClick={() => { onSelect(7); }}>select message 7</button>
@@ -58,7 +59,7 @@ function renderAt(path: string, element: React.ReactNode, permissions: readonly 
 
 const button = (name: string): HTMLButtonElement => screen.getByRole('button', { name }) as HTMLButtonElement;
 
-afterEach(() => { cleanup(); });
+afterEach(() => { cleanup(); channelDeleted = false; });
 
 describe('MessageBrowserPage message actions', () => {
   function openMessage(permissions: readonly string[]): void {
@@ -76,6 +77,22 @@ describe('MessageBrowserPage message actions', () => {
     openMessage(['channels:read', 'messages:read', 'channels:deploy', 'channels:delete']);
     expect(button('Reprocess').disabled).toBe(true);
     expect(button('Delete').disabled).toBe(true);
+  });
+
+  it('says that the channel is deleted, and offers no reprocessing then, but deletion (#202)', () => {
+    channelDeleted = true;
+    openMessage(['channels:read', 'messages:read', 'messages:reprocess', 'messages:delete']);
+
+    expect(screen.getByRole('alert').textContent).toContain('This channel is deleted. Its messages are kept');
+    expect(button('Reprocess').disabled).toBe(true);
+    expect(button('Delete').disabled).toBe(false);
+    expect(document.body.textContent).toMatch(/detail of a deleted channel.*bulk actions of a deleted channel/);
+  });
+
+  it('says nothing of the kind of a channel that is there', () => {
+    openMessage(['channels:read', 'messages:read', 'messages:reprocess', 'messages:delete']);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(document.body.textContent).toMatch(/detail of a live channel.*bulk actions of a live channel/);
   });
 
   it('names the missing message permission in the tooltip', () => {

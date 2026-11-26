@@ -12,6 +12,8 @@ export const AUDIT_ACTION = {
   ACCESS_DENIED: 'ACCESS_DENIED',
   /** Written before the purge runs. */
   EVENTS_PURGED: 'EVENTS_PURGED',
+  /** All messages of a deleted channel were removed: how many, how many of them undelivered, and why. Written in the purge's transaction. */
+  MESSAGES_PURGED: 'MESSAGES_PURGED',
   /** Written by drop_expired_audit_partitions() before it drops months (migration 0017). */
   AUDIT_PARTITIONS_DROPPED: 'AUDIT_PARTITIONS_DROPPED',
   // PHI reads, written fail-closed before the content is sent (lib/audited-read.ts).
@@ -66,8 +68,15 @@ export const AUDIT_ACTION = {
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
 
 /** Recorded in the audit log and the file's header (D-312); one line, so it cannot break out of a CSV header comment. */
-export const exportReasonSchema = z.string().trim().min(3, 'Say why you are exporting this (at least 3 characters).').max(500)
-  .refine((v) => !/[\r\n]/.test(v), 'The reason must be one line.');
+function reasonSchema(missing: string): z.ZodString {
+  return z.string().trim().min(3, missing).max(500).refine((v) => !/[\r\n]/.test(v), 'The reason must be one line.');
+}
+
+export const exportReasonSchema = reasonSchema('Say why you are exporting this (at least 3 characters).');
+
+export const purgeDeletedChannelSchema = z.object({ reason: reasonSchema('Say why you are removing the messages (at least 3 characters).') });
+
+export type PurgeDeletedChannelInput = z.infer<typeof purgeDeletedChannelSchema>;
 
 export const backupExportQuerySchema = z.object({ reason: exportReasonSchema });
 

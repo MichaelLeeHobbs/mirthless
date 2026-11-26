@@ -83,7 +83,7 @@ export function useChannelCrud(): ChannelCrud {
         <DialogTitle>Delete Channel</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action can be undone by an administrator.
+            Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? The channel cannot be brought back. Its messages are kept, and pruned by its settings if pruning is on.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

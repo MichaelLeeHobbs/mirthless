@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { FAKED_TIMERS } from './test/fake-timers.js';
 
 export default defineConfig({
   test: {
@@ -9,6 +10,7 @@ export default defineConfig({
     // Tests that compile or run scripts take seconds on a loaded machine (#125). A hung
     // test still fails, just later; tests about a time limit set their own short budget.
     testTimeout: 30_000,
+    fakeTimers: { toFake: [...FAKED_TIMERS] },
     pool: 'forks',
     setupFiles: ['./test/setup.ts'],
     coverage: {

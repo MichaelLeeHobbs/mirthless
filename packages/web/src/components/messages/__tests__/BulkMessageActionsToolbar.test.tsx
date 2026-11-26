@@ -35,7 +35,7 @@ describe('BulkMessageActionsToolbar', () => {
 
   it('renders nothing when no messages are selected', () => {
     renderToolbar(
-      <BulkMessageActionsToolbar channelId="c1" selectedIds={new Set()} onClear={() => {}} />,
+      <BulkMessageActionsToolbar channelId="c1" channelDeleted={false} selectedIds={new Set()} onClear={() => {}} />,
     );
     expect(screen.queryByRole('toolbar')).toBeNull();
   });
@@ -43,7 +43,7 @@ describe('BulkMessageActionsToolbar', () => {
   it('shows the selected count and both actions', () => {
     setPermissions([PERMISSION.MESSAGES_REPROCESS, PERMISSION.MESSAGES_DELETE]);
     renderToolbar(
-      <BulkMessageActionsToolbar channelId="c1" selectedIds={new Set([1, 2, 3])} onClear={() => {}} />,
+      <BulkMessageActionsToolbar channelId="c1" channelDeleted={false} selectedIds={new Set([1, 2, 3])} onClear={() => {}} />,
     );
     expect(screen.getByText('3 selected')).toBeTruthy();
     expect(screen.getByRole('button', { name: /reprocess/i })).not.toHaveProperty('disabled', true);
@@ -54,7 +54,7 @@ describe('BulkMessageActionsToolbar', () => {
     setPermissions([PERMISSION.MESSAGES_DELETE]);
     apiFetch.mockResolvedValue({ success: true, data: { deletedCount: 1, refusedIds: [2] } });
     const onClear = vi.fn();
-    renderToolbar(<BulkMessageActionsToolbar channelId="c1" selectedIds={new Set([1, 2])} onClear={onClear} />);
+    renderToolbar(<BulkMessageActionsToolbar channelId="c1" channelDeleted={false} selectedIds={new Set([1, 2])} onClear={onClear} />);
 
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
     const dialog = await screen.findByRole('dialog');
@@ -66,10 +66,19 @@ describe('BulkMessageActionsToolbar', () => {
     expect(useNotificationStore.getState().notifications).toEqual([expect.objectContaining({ severity: 'warning', message: expect.stringContaining('not deleted: #2') as string })]);
   });
 
+  it('offers no reprocessing of the messages of a deleted channel, and their deletion (#202)', () => {
+    setPermissions([PERMISSION.MESSAGES_REPROCESS, PERMISSION.MESSAGES_DELETE]);
+    renderToolbar(
+      <BulkMessageActionsToolbar channelId="c1" channelDeleted selectedIds={new Set([1])} onClear={() => {}} />,
+    );
+    expect(screen.getByRole('button', { name: /reprocess/i })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: /^delete$/i })).toHaveProperty('disabled', false);
+  });
+
   it('disables actions when the user lacks permissions', () => {
     setPermissions([]);
     renderToolbar(
-      <BulkMessageActionsToolbar channelId="c1" selectedIds={new Set([1])} onClear={() => {}} />,
+      <BulkMessageActionsToolbar channelId="c1" channelDeleted={false} selectedIds={new Set([1])} onClear={() => {}} />,
     );
     const reprocess = screen.getByRole('button', { name: /reprocess/i });
     const del = screen.getByRole('button', { name: /^delete$/i });

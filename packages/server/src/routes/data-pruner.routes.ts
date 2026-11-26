@@ -1,6 +1,6 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { idSchema } from '@galvanigraph/core-models';
+import { idSchema, purgeDeletedChannelSchema } from '@galvanigraph/core-models';
 import { DataPrunerController } from '../controllers/data-pruner.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
@@ -20,6 +20,19 @@ router.get(
   '/statistics',
   requirePermission('settings:read'),
   DataPrunerController.getStatistics,
+);
+
+router.get(
+  '/deleted-channels',
+  requirePermission('settings:read'),
+  DataPrunerController.listDeletedChannels,
+);
+
+router.post(
+  '/deleted-channels/:channelId',
+  requirePermission('settings:write'),
+  validate({ params: channelIdParamsSchema, body: purgeDeletedChannelSchema }),
+  DataPrunerController.purgeDeletedChannel,
 );
 
 router.post(

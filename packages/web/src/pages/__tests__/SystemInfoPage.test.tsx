@@ -37,6 +37,10 @@ vi.mock('../../hooks/use-pruner.js', () => ({
   useUpdatePrunerSchedule: () => ({ mutate: vi.fn(), isPending: false }),
   useRunPrunerNow: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+vi.mock('../../hooks/use-deleted-channels.js', () => ({
+  useDeletedChannels: () => ({ data: [], isLoading: false, error: null, refetch: vi.fn() }),
+  usePurgeDeletedChannel: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock('../../hooks/use-backup.js', () => ({
   useBackup: () => ({ mutate: vi.fn(), isPending: false }),
   useRestore: () => ({ mutate: vi.fn(), isPending: false }),

@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { FAKED_TIMERS } from './test/fake-timers.js';
 import { INTEGRATION_LIMIT_MS, INTEGRATION_WAIT_MS } from './test/time-budgets.js';
 
 // Apart from vitest.config.ts: its `*.test.ts` glob keeps these `.itest.ts`
@@ -15,6 +16,7 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: INTEGRATION_LIMIT_MS,
     hookTimeout: INTEGRATION_LIMIT_MS,
+    fakeTimers: { toFake: [...FAKED_TIMERS] },
     expect: { poll: { timeout: INTEGRATION_WAIT_MS } },
     // The child processes the suites start take it too.
     env: { DATABASE_CONNECT_TIMEOUT_MS: String(INTEGRATION_WAIT_MS), AUDIT_WRITE_TIMEOUT_MS: String(INTEGRATION_WAIT_MS) },

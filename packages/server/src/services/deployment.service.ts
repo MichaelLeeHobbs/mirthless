@@ -8,6 +8,7 @@ import { ChannelDependencyService, orderByDependencies } from './channel-depende
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { ConfigMapService } from './config-map.service.js';
 import { resolveConfigReferences } from '../lib/config-references.js';
+import { inTurn } from '../lib/channel-turns.js';
 import { getEngine } from '../engine.js';
 import type { DeployedChannel, SourceDispatchOutcome } from '../engine.js';
 import logger from '../lib/logger.js';
@@ -113,27 +114,6 @@ async function recordOrUndo(bundle: DeploymentBundle, context: AuditContext | un
   throw new ServiceError('INTERNAL', `Channel was not deployed: the deployment could not be recorded, so a restart would not run it. ${recorded.error.message}`);
 }
 
-/** The deploy, undeploy or redeploy of each channel in progress, as the tail of a queue. */
-const channelQueues = new Map<string, Promise<unknown>>();
-
-/**
- * Run `fn` once every earlier deploy, undeploy or redeploy of the same channel
- * has finished, so the running channel and its deployment record change
- * together: an undeploy cannot land between a deploy and its record, and the
- * startup redeploy cannot bring back a version someone replaced meanwhile.
- */
-async function serialized<T>(channelId: string, fn: () => Promise<T>): Promise<T> {
-  const previous = channelQueues.get(channelId) ?? Promise.resolve();
-  const run = previous.then(fn, fn);
-  const tail = run.then(() => undefined, () => undefined);
-  channelQueues.set(channelId, tail);
-  try {
-    return await run;
-  } finally {
-    if (channelQueues.get(channelId) === tail) channelQueues.delete(channelId);
-  }
-}
-
 /** Start (and pause) a just-deployed channel as its initial state asks. */
 async function applyInitialState(channel: ChannelDetail, context: AuditContext | undefined): Promise<ChannelState> {
   const deployed = getEngine().getRuntime(channel.id);
@@ -236,7 +216,7 @@ export class DeploymentService {
    * as saved now, and record that as its deployment: what a restart runs.
    */
   static async deploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
-    return tryCatch(() => serialized(channelId, async () => {
+    return tryCatch(() => inTurn(channelId, async () => {
       if (getEngine().getRuntime(channelId)) {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is already deployed`);
       }
@@ -253,7 +233,7 @@ export class DeploymentService {
    * is only marked, so it can be kept off.
    */
   static async undeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
-    return tryCatch(() => serialized(channelId, async () => {
+    return tryCatch(() => inTurn(channelId, async () => {
       if (!getEngine().getRuntime(channelId)) return markRecordOnly(channelId, context);
       assertUndeployable(channelId);
       await markUndeployed(channelId, true);
@@ -274,7 +254,7 @@ export class DeploymentService {
    * record still holds the old one, and a restart brings that back.
    */
   static async redeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
-    return tryCatch(() => serialized(channelId, async () => {
+    return tryCatch(() => inTurn(channelId, async () => {
       const engine = getEngine();
       const existing = engine.getRuntime(channelId);
       const priorState: ChannelState = (existing?.runtime.getState() ?? 'UNDEPLOYED') as ChannelState;
@@ -474,7 +454,7 @@ export class DeploymentService {
       // it deploys, in turn with any deploy or undeploy of it made meanwhile.
       for (const ch of channels) {
         if (notAdopted.has(ch.id)) continue;
-        if (!(await serialized(ch.id, () => redeployLatestRecord(ch)))) failedNames.push(ch.name);
+        if (!(await inTurn(ch.id, () => redeployLatestRecord(ch)))) failedNames.push(ch.name);
       }
       if (failedNames.length > 0) {
         throw new ServiceError('INTERNAL', `${failedNames.length} of ${channels.length} channels failed to redeploy: ${failedNames.join(', ')}`);
@@ -529,6 +509,15 @@ function emitNotRedeployed(ch: ChannelDeployEntry, level: 'WARN' | 'ERROR', reas
 async function redeployLatestRecord(ch: ChannelDeployEntry): Promise<boolean> {
   if (getEngine().getRuntime(ch.id)) {
     logger.info({ channelId: ch.id, channelName: ch.name }, 'Channel was deployed while the server was starting; leaving it as it is');
+    return true;
+  }
+  const live = await ChannelService.isLive(ch.id);
+  if (!live.ok) {
+    logger.error({ channelId: ch.id, channelName: ch.name, ...errorInfo(live.error) }, 'Could not read whether the channel is still there');
+    return false;
+  }
+  if (!live.value) {
+    logger.info({ channelId: ch.id, channelName: ch.name }, 'Channel was deleted while the server was starting, so it was not deployed');
     return true;
   }
   const recorded = await DeploymentRecordService.listRecorded([ch.id]);
@@ -590,7 +579,7 @@ async function adoptPendingChannels(channels: readonly ChannelDeployEntry[]): Pr
   const failed: string[] = [];
   for (const ch of channels.filter((c) => pending.value.has(c.id))) {
     // In turn with a deploy of the same channel, so adoption never overwrites one.
-    const adopted = await serialized(ch.id, () => DeploymentRecordService.adoptSaved(ch.id));
+    const adopted = await inTurn(ch.id, () => DeploymentRecordService.adoptSaved(ch.id));
     if (!adopted.ok) {
       logger.error({ channelId: ch.id, channelName: ch.name, ...errorInfo(adopted.error) }, 'Could not record the saved configuration as the channel\'s deployment');
       failed.push(ch.id);

@@ -39,12 +39,13 @@ On every start the migration step, as the owner, creates the server role if it i
 | `SELECT, INSERT, UPDATE, DELETE` on every table in `public` | Channels, users, settings, messages and the rest; `DELETE` is for the data pruner, deleting messages, sessions, map entries and the like |
 | Only `SELECT, INSERT` on `events` | The audit trail is appended and read, never rewritten or deleted row by row |
 | `EXECUTE` on `purge_events(integer)` | **Purge Old Events** on the Events page. This owner function (migration 0016) deletes only events at least one day old, the minimum the API allows, so a stolen connection cannot erase recent events |
+| `EXECUTE` on `purge_deleted_channel(uuid)` | **Deleted channels** on the Data pruner page. Only a table's owner may empty it at once. This owner function (migration 0029) empties the five message tables of one channel that is deleted, and nothing else |
 | `USAGE` on every sequence in `public` | `nextval()` for the serial ids |
 | `EXECUTE` on `create_channel_partitions(uuid)` | Only a table's owner may add a partition to it. This owner function (migration 0016) creates the six message partitions of a channel that exists, and nothing else |
 | Default privileges for tables and sequences the owner creates later | The partitions that function creates, and the next migration's tables, get the same grants at once |
 | Ownership of schema `pgboss` and everything in it | The job queue (pg-boss, which runs the scheduled data pruner) creates, migrates and maintains its own tables while the server runs. Migration 0016 creates the schema, so the role needs no `CREATE` on the database. The schema holds no PHI, and owning it gives no rights outside it. On an install whose server ran as the owner, the step hands over the tables pg-boss made, jobs included |
 
-Nothing grants `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE` on `public`. The step revokes table and sequence grants before granting, so the list above is the whole of what the role holds on them, and revokes `EXECUTE` on the two owner functions from `PUBLIC` again in case a restore dropped that. It sets the password as a SCRAM-SHA-256 verifier computed in the container, so the password itself never reaches Postgres or its logs.
+Nothing grants `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE` on `public`. The step revokes table and sequence grants before granting, so the list above is the whole of what the role holds on them, and revokes `EXECUTE` on the owner functions from `PUBLIC` again in case a restore dropped that. It sets the password as a SCRAM-SHA-256 verifier computed in the container, so the password itself never reaches Postgres or its logs.
 
 The container stops instead of starting when the server role is the owner (`POSTGRES_APP_USER` set to the owner's name), has superuser, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS, or is a member of any role (a member can `SET ROLE` to it even without inheriting its rights, for example to the owner, a superuser role or `pg_read_server_files`), and when `POSTGRES_APP_PASSWORD` equals `POSTGRES_PASSWORD`. After granting, it connects as the server role and checks the same again. Change `POSTGRES_APP_PASSWORD` and restart to rotate the password.
 
@@ -442,6 +443,14 @@ The receiver never read it: an email arrives as the mail server holds it, attach
 ## The Email source keeps every byte of an email (#369)
 
 An email that is not valid UTF-8, such as one in ISO-8859-1 with 8-bit parts, had those bytes replaced by U+FFFD. It is now read with each byte as the character of its number, and `charset` in the source map says `latin1` instead of `utf-8` (D-388). A script that worked around U+FFFD in such emails sees the characters now. With the post-action `DELETE` such an email is marked read, as before. `attachmentCount`, which was always 0, is the number of attachments (null for an email that is made of too much to count). Messages already stored keep their U+FFFD.
+
+## Messages of deleted channels (#202)
+
+Deleting a channel has always kept its messages, and the data pruner left them alone. It no longer does: a channel deleted from now on goes on being pruned by the settings it had (30 days when it had pruning on and no age), at the next scheduled run or **Run Now**. Turn its pruning off before you delete a channel whose messages are to stay; nobody can change its settings afterwards. Messages that are not processed or wait on a queue are not pruned.
+
+Channels deleted before the upgrade keep their messages: migration 0029 turns their pruning off. The Data pruner page lists every deleted channel that still has messages, and an administrator can remove them there, for a reason and with a record in the audit log (D-389). To have one of them pruned after all, run `UPDATE channels SET pruning_enabled = true, pruning_max_age_days = <days> WHERE id = '<id>';` as the owner.
+
+A custom role or API key with `settings:write` can remove them too. A channel that is being deployed or undeployed can no longer be deleted: the delete is refused, and can be tried again once that is done.
 
 ## An alert's regex must compile (#133)
 

@@ -32,6 +32,7 @@ vi.mock('../../lib/logger.js', () => ({
 
 const { ChannelController } = await import('../channel.controller.js');
 const { ServiceError } = await import('../../lib/service-error.js');
+const { inTurn } = await import('../../lib/channel-turns.js');
 const { standingFor } = await import('../../../test/standing.js');
 
 function makeRes(): Response {
@@ -354,6 +355,34 @@ describe('ChannelController', () => {
       await ChannelController.delete(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('is refused at once while a deploy of the channel is under way, and deletes nothing (#202)', async () => {
+      const id = '00000000-0000-0000-0000-000000000001';
+      let deployed: () => void = () => undefined;
+      const deploy = inTurn(id, () => new Promise<void>((resolve) => { deployed = resolve; }));
+      const res = makeRes();
+      try {
+        await ChannelController.delete(makeReq({ params: { id } as Request['params'] }), res);
+
+        expect(res.status).toHaveBeenCalledWith(409);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.objectContaining({ message: expect.stringContaining('being deployed') }) }));
+        expect(mockService.delete).not.toHaveBeenCalled();
+      } finally {
+        deployed();
+        await deploy;
+      }
+    });
+
+    it('deletes a channel once what was under way on it is done', async () => {
+      const id = '00000000-0000-0000-0000-000000000001';
+      await inTurn(id, () => Promise.resolve());
+      mockService.delete.mockResolvedValueOnce({ ok: true, value: undefined, error: null });
+      const res = makeRes();
+
+      await ChannelController.delete(makeReq({ params: { id } as Request['params'] }), res);
+
+      expect(res.status).toHaveBeenCalledWith(204);
     });
 
     it('returns 409 and deletes nothing while the channel is deployed', async () => {

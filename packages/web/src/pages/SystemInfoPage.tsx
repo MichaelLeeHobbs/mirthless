@@ -13,6 +13,7 @@ import { useSystemInfo, type SystemInfo } from '../hooks/use-system-info.js';
 import { useNotification } from '../stores/notification.store.js';
 import { BackupRestoreSection } from '../components/system/BackupRestoreSection.js';
 import { PrunerSection } from '../components/system/PrunerSection.js';
+import { DeletedChannelsSection } from '../components/system/DeletedChannelsSection.js';
 import { LogViewer } from '../components/system/LogViewer.js';
 import { SystemOverview } from '../components/system/SystemOverview.js';
 import { PageHeader } from '../components/common/PageHeader.js';
@@ -96,7 +97,7 @@ export function SystemInfoPage(): ReactNode {
       <Box role="tabpanel" aria-label={active.label}>
         {onOverview ? <OverviewTab query={query} /> : null}
         {active.slug === 'logs' ? <LogViewer /> : null}
-        {active.slug === 'pruner' ? <PrunerSection /> : null}
+        {active.slug === 'pruner' ? <><PrunerSection /><DeletedChannelsSection /></> : null}
         {active.slug === 'backup' ? <BackupRestoreSection /> : null}
       </Box>
     </Box>

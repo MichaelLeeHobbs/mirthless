@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
+import type { PurgeDeletedChannelInput } from '@galvanigraph/core-models';
 import { DataPrunerService } from '../services/data-pruner.service.js';
+import { DeletedChannelService } from '../services/deleted-channel.service.js';
 import { SWEEP_BUDGET_MS } from '../services/leftover-rows.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
@@ -68,6 +70,30 @@ export class DataPrunerController {
       return;
     }
 
+    res.json({ success: true, data: result.value });
+  }
+
+  static async listDeletedChannels(req: Request, res: Response): Promise<void> {
+    const result = await DeletedChannelService.list(await channelScopeOf(req, 'settings:read'));
+    if (!result.ok) {
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list deleted channels');
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+    res.json({ success: true, data: result.value });
+  }
+
+  static async purgeDeletedChannel(req: Request, res: Response): Promise<void> {
+    const channelId = req.params['channelId'] as string;
+    const { reason } = req.body as PurgeDeletedChannelInput;
+    const result = await DeletedChannelService.purge(channelId, reason, auditContext(req));
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger[status >= 500 ? 'error' : 'warn']({ channelId, errMsg: result.error.message, stack: result.error.stack }, 'The messages of a deleted channel were not removed');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+    logger.warn({ channelId, ...result.value }, 'All messages of a deleted channel were removed');
     res.json({ success: true, data: result.value });
   }
 }

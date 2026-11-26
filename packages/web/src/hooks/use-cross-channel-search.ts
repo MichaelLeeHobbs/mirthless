@@ -5,6 +5,7 @@ export interface CrossChannelSearchItem {
   readonly messageId: number;
   readonly channelId: string;
   readonly channelName: string;
+  readonly channelDeleted: boolean;
   readonly receivedAt: string;
   readonly processed: boolean;
   readonly status: string | null;

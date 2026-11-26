@@ -16,10 +16,12 @@ import { DELETE_WARNING, deleteNotice } from '../../lib/message-delete.js';
 interface BulkMessageActionsToolbarProps {
   readonly channelId: string;
   readonly selectedIds: ReadonlySet<number>;
+  /** Of a deleted channel: there is nothing to reprocess them with. */
+  readonly channelDeleted: boolean;
   readonly onClear: () => void;
 }
 
-export function BulkMessageActionsToolbar({ channelId, selectedIds, onClear }: BulkMessageActionsToolbarProps): ReactNode {
+export function BulkMessageActionsToolbar({ channelId, selectedIds, channelDeleted, onClear }: BulkMessageActionsToolbarProps): ReactNode {
   const { has } = usePermissions();
   const { notify } = useNotification();
   const reprocess = useBulkReprocessMessages();
@@ -27,7 +29,7 @@ export function BulkMessageActionsToolbar({ channelId, selectedIds, onClear }: B
   const [confirmReprocess, setConfirmReprocess] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const canReprocess = has(PERMISSION.MESSAGES_REPROCESS);
+  const canReprocess = has(PERMISSION.MESSAGES_REPROCESS) && !channelDeleted;
   const canDelete = has(PERMISSION.MESSAGES_DELETE);
   const count = selectedIds.size;
 

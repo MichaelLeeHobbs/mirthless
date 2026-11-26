@@ -246,6 +246,23 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(await failureCode(runtime, `SELECT create_channel_partitions('${randomUUID()}'::uuid)`)).toBe('23503');
   });
 
+  it('empties the message tables of a deleted channel through purge_deleted_channel, and of no other', async () => {
+    const [deleted, live] = [await newChannel(runtime), await newChannel(runtime)];
+    for (const id of [deleted, live]) {
+      await runtime.query('SELECT create_channel_partitions($1::uuid)', [id]);
+      await runtime.query('INSERT INTO messages (channel_id) VALUES ($1)', [id]);
+    }
+    const left = async (id: string): Promise<number | null> => (await runtime.query('SELECT 1 FROM messages WHERE channel_id = $1', [id])).rowCount;
+    expect(await failureCode(runtime, `SELECT purge_deleted_channel('${deleted}')`)).toBe('22023');
+
+    await runtime.query('UPDATE channels SET deleted_at = now() WHERE id = $1', [deleted]);
+    await runtime.query('SELECT purge_deleted_channel($1)', [deleted]);
+
+    expect([await left(deleted), await left(live)]).toEqual([0, 1]);
+    expect(await failureCode(runtime, `SELECT purge_deleted_channel('${randomUUID()}')`)).toBe('22023');
+    expect(await failureCode(runtime, 'SELECT purge_deleted_channel(NULL)')).toBe('22023');
+  });
+
   it('appends and reads audit events but cannot rewrite or delete one', async () => {
     const name = `ROLE_ITEST_${SUFFIX}`;
     await runtime.query(`INSERT INTO events (level, name, outcome) VALUES ('INFO', $1, 'SUCCESS')`, [name]);
@@ -389,6 +406,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(await failureCode(runtime, 'CREATE TABLE itest_scratch (id integer)')).toBe(INSUFFICIENT_PRIVILEGE);
     expect(await failureCode(runtime, 'DROP FUNCTION create_channel_partitions(uuid)')).toBe(INSUFFICIENT_PRIVILEGE);
     expect(await failureCode(runtime, 'DROP FUNCTION purge_events(integer)')).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(await failureCode(runtime, 'DROP FUNCTION purge_deleted_channel(uuid)')).toBe(INSUFFICIENT_PRIVILEGE);
   });
 
   it('cannot alter or drop a partition the server created for a channel', async () => {

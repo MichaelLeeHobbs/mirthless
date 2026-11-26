@@ -72,6 +72,14 @@ describe('channelImportSchema connector types', () => {
   });
 });
 
+// The pruner deletes what is older: with 0 or less that is every finished message (#202).
+describe('channelImportSchema pruning age', () => {
+  const parses = (pruningMaxAgeDays: unknown): boolean => channelImportSchema.safeParse(importFile([{ ...entry('TCP_MLLP', []), pruningMaxAgeDays }])).success;
+
+  it.each([null, 1, 365])('takes what the channel API takes: %s', (days) => { expect(parses(days)).toBe(true); });
+  it.each([0, -1, 0.5, '7'])('refuses what it refuses: %s', (days) => { expect(parses(days)).toBe(false); });
+});
+
 describe('channelImportSchema script timeout', () => {
   const importedTimeout = (fields: Record<string, unknown>): number | undefined => {
     const result = channelImportSchema.safeParse(importFile([{ ...entry('TCP_MLLP', []), ...fields }]));

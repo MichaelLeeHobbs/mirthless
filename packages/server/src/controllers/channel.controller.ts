@@ -19,7 +19,8 @@ import { assertCertificatesInScope } from '../services/connector-tls-resolver.js
 import { GrantService } from '../services/grant.service.js';
 import { db } from '../lib/db.js';
 import { tryCatch } from 'stderr-lib';
-import { isServiceError } from '../lib/service-error.js';
+import { isServiceError, ServiceError } from '../lib/service-error.js';
+import { inTurn, turnUnderWay } from '../lib/channel-turns.js';
 import { errorInfo } from '@galvanigraph/core-util';
 
 /** Never unmasked: no answer to a write records a credential read. */
@@ -158,11 +159,15 @@ export class ChannelController {
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     // A deployed channel keeps receiving and routing messages after its row is
     // soft-deleted, with nothing left in the UI to stop it. Require undeploy first.
-    if (getEngine().getRuntime(id)) {
-      res.status(409).json({ success: false, error: { code: 'CONFLICT', message: 'Cannot delete a deployed channel. Stop and undeploy it first.' } });
-      return;
-    }
-    const result = await ChannelService.delete(id, context);
+    // Refused at once while a deploy or undeploy is under way, which can take as long as its sends.
+    const result = await tryCatch(async () => {
+      if (turnUnderWay(id)) throw new ServiceError('CONFLICT', 'The channel is being deployed or undeployed. Try again once that is done.');
+      await inTurn(id, async () => {
+        if (getEngine().getRuntime(id)) throw new ServiceError('CONFLICT', 'Cannot delete a deployed channel. Stop and undeploy it first.');
+        const deleted = await ChannelService.delete(id, context);
+        if (!deleted.ok) throw deleted.error;
+      });
+    });
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

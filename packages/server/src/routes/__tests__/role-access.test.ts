@@ -62,6 +62,7 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'DELETE', path: '/api/v1/users/:id', permission: 'users:delete', handler: UserController.delete },
   { method: 'PUT', path: '/api/v1/settings/bulk', permission: 'settings:write', handler: SettingsController.bulkUpsert },
   { method: 'POST', path: '/api/v1/admin/prune', permission: 'settings:write', handler: DataPrunerController.pruneAll },
+  { method: 'POST', path: '/api/v1/admin/prune/deleted-channels/:channelId', permission: 'settings:write', handler: DataPrunerController.purgeDeletedChannel },
   { method: 'DELETE', path: '/api/v1/events', permission: 'settings:write', handler: EventController.purge },
   { method: 'GET', path: '/api/v1/events/export', permission: 'events:read', handler: EventExportController.exportEvents },
   { method: 'GET', path: '/api/v1/audit', permission: 'audit:read', handler: AuditController.list },
