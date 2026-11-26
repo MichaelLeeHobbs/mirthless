@@ -731,6 +731,12 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
   AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
 ```
 
+## A refused redeploy keeps the channel running (#480)
+
+A redeploy of a running channel used to check only its scripts before it stopped the running version. A destination setting the deploy refused, a configuration map reference that filled a setting with a value it refused, or Delimited or HL7 v2 settings that did not validate stopped and undeployed the channel, and then the redeploy failed. Now the redeploy checks all of these first, with the certificates from the store and each connector's own deploy check, answers with the refusal, and leaves the running channel as it was (D-397). A deploy script that fails and a port the new version cannot open are still found only after the stop, and leave the channel undeployed until it is deployed again or the server restarts.
+
+When several things are wrong, the refusal can now name a different one first: the channel's own settings (encryption, queued destinations and storage, the response destination, batch processing, the data type settings) come before its connectors and scripts.
+
 ## An MLLP source in PASSTHROUGH answers a failed message with AE (#414)
 
 An MLLP source whose `responseMode` is PASSTHROUGH answered a message recorded with an ERROR status with the response the pipeline picked, often the AA of a destination that worked while another failed, so the sender took it as delivered. It now answers AE, as AUTO_ACK does, unless the response is a partner's own refusal, which is passed through as before. A sender that resends on AE now sends such a message again, and the destinations that worked get it again, as for any channel that reports a failed destination (D-211).
@@ -744,6 +750,10 @@ A CHANNEL destination that queues no longer sends a message again once the targe
 ## A server stop no longer delivers a send to another channel twice (#401)
 
 A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-400). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel whose storage mode keeps raw content (Development, Production or Raw) now keeps the source map of a message it receives from a Channel Writer as well: one small row (channel and message ids, no message content) for each message.
+
+## An email refused for some recipients reads ERROR (#414)
+
+An SMTP destination read SENT when the mail server refused some of the recipients and took the others, and said only how many. It now reads ERROR and raises its alert, the response names the recipients accepted and refused, and the message is not sent again by a queue, which would mail the others twice (D-398). An address that a mail server has always refused, for a recipient nobody noticed was gone, now makes every such message an error: remove it from the destination's settings.
 
 ## Standard upgrade (Docker)
 

@@ -249,6 +249,12 @@ export class QueueConsumer {
     const attempts = (msg.sendAttempts ?? 0) + 1;
     const reason = sendFailureReason(sendResult);
     if (sendResult.ok && sendResult.value.final === true) {
+      // The only record of what the partner did with the message, such as who got an email.
+      if (sendResult.value.content !== '') {
+        await this.saved(msg, 'the response of a failed destination', this.store.storeContent(
+          this.config.channelId, msg.messageId, msg.metaDataId, CONTENT_TYPE.RESPONSE, sendResult.value.content, 'TEXT',
+        ));
+      }
       await this.giveUp(msg, reason);
       return 'DONE';
     }
