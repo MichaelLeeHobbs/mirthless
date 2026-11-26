@@ -366,6 +366,48 @@ describe('MessageProcessor', () => {
     expect(await sentAfter(false)).toBe('FILTERED');
   });
 
+  it("DATA-HL7-13: a response transformer reads a destination's HL7 answer by its own MSH-18, not the sender's code-point setting (#492)", async () => {
+    const hl7 = 'MSH|^~\\&|SEND|FAC|RECV|FAC|20260329||ORU^R01|CTL001|P|2.5\rNTE|1||dose \\X2264\\ 5 mg';
+    const answer = 'MSH|^~\\&|RECV|FAC|SEND|FAC|20260329||ACK^R01|ACK001|P|2.5\rMSA|AA|CTL001\rNTE|1||it\\X2019\\s';
+    const store = makeStore();
+    const config = makeConfig({
+      dataType: 'HL7V2',
+      dataTypeOptions: { hl7: { hexCodePoints: true } },
+      // The message the channel received keeps the setting at the source and the destination: without it, these filter the message.
+      scripts: { sourceFilter: { code: 'return msg.getText("NTE.3") === "dose ≤ 5 mg";' } },
+      destinations: [{
+        metaDataId: 1, name: 'Dest 1', enabled: true, queueMode: 'NEVER',
+        scripts: {
+          filter: { code: 'return msg.getText("NTE.3") === "dose ≤ 5 mg";' },
+          responseTransformer: { code: 'return msg.getText("NTE.3");' },
+        },
+      }],
+    });
+    const processor = new MessageProcessor(sandbox, store, makeSendFn({ status: 'SENT', content: answer }), config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage({ rawContent: hl7, sourceMap: {} }, AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('SENT');
+    expect(store.storeContent).toHaveBeenCalledWith(expect.any(String), 1, 1, CONTENT_TYPE.RESPONSE_TRANSFORMED, 'it \x19s', 'HL7V2');
+  });
+
+  it("a response transformer on a Delimited channel still reads the answer with the channel's Delimited settings", async () => {
+    const store = makeStore();
+    const config = makeConfig({
+      dataType: 'DELIMITED',
+      dataTypeOptions: { delimited: delimitedOptionsSchema.parse({ columnDelimiter: '|', columnNames: ['code', 'text'] }) },
+      destinations: [{
+        metaDataId: 1, name: 'Dest 1', enabled: true, queueMode: 'NEVER',
+        scripts: { responseTransformer: { code: 'return msg[0].text;' } },
+      }],
+    });
+    const processor = new MessageProcessor(sandbox, store, makeSendFn({ status: 'SENT', content: 'AA|accepted\n' }), config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage({ rawContent: '1|Test\n', sourceMap: {} }, AbortSignal.timeout(5_000));
+
+    expect(store.storeContent).toHaveBeenCalledWith(expect.any(String), 1, 1, CONTENT_TYPE.RESPONSE_TRANSFORMED, 'accepted', 'DELIMITED');
+  });
+
   it('HL7V2 channel: msg is auto-parsed, transformer accesses fields directly', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

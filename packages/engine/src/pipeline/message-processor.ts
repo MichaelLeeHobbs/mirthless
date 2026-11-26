@@ -7,7 +7,7 @@ import { ScriptRunLog, type ScriptLogSink, type ScriptRunAt } from '../sandbox/s
 import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
-import { parseForSandbox, serializeFromSandbox, serializeTransformed, type DataTypeOptions } from './data-type-handler.js';
+import { parseForSandbox, responseDataTypeOptions, serializeFromSandbox, serializeTransformed, type DataTypeOptions } from './data-type-handler.js';
 import { mergeVariables, renderDestinationTemplate } from './destination-template.js';
 import { reportUnsaved } from './report-unsaved.js';
 import { sendFailureReason } from './send-failure.js';
@@ -769,12 +769,14 @@ export class MessageProcessor {
         // untransformed response: ERROR could trigger a duplicate redelivery.
         let responseContent = response.content;
         if (dest.scripts.responseTransformer) {
+          const responseOptions = responseDataTypeOptions(this.config.dataTypeOptions);
           const rtResult = await this.runScript(
             { messageId, metaDataId: dest.metaDataId, script: 'Response transformer' }, dest.scripts.responseTransformer, response.content, input, signal, destMaps,
+            undefined, responseOptions,
           );
           if (rtResult.ok) {
             const transformed = scriptReplacement(rtResult.value.returnValue, rtResult.value.msg);
-            responseContent = serializeFromSandbox(transformed, dataType, response.content, this.config.dataTypeOptions);
+            responseContent = serializeFromSandbox(transformed, dataType, response.content, responseOptions);
             await this.saved(messageId, dest.metaDataId, 'the transformed response of a delivered destination', [
               this.store.storeContent(channelId, messageId, dest.metaDataId, CONTENT_TYPE.RESPONSE_TRANSFORMED, responseContent, dataType),
             ]);
@@ -952,11 +954,12 @@ export class MessageProcessor {
     signal: AbortSignal,
     mapState: PipelineMapState,
     extras?: Readonly<Record<string, unknown>> | undefined,
+    options: DataTypeOptions | undefined = this.config.dataTypeOptions,
   ): Promise<Result<ExecutionResult>> {
     // Content a transformer turned into another format no longer parses: pass the raw string.
     let parsedMsg: unknown;
     try {
-      parsedMsg = parseForSandbox(content, this.config.dataType, this.config.dataTypeOptions);
+      parsedMsg = parseForSandbox(content, this.config.dataType, options);
     } catch {
       parsedMsg = content;
     }
