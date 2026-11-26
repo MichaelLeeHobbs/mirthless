@@ -57,7 +57,8 @@ describe('AuthService.refreshSession', () => {
 
     const result = await AuthService.refreshSession('some-token');
 
-    expect(result.ok).toBe(false);
+    // UNAUTHORIZED is what clears the cookie; any other failure keeps the person signed in (#473).
+    expect(result).toMatchObject({ ok: false, error: { name: 'ServiceError', code: 'UNAUTHORIZED' } });
     expect(mockDeleteReturning).toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
   });
@@ -67,16 +68,37 @@ describe('AuthService.refreshSession', () => {
 
     const result = await AuthService.refreshSession('some-token');
 
-    expect(result.ok).toBe(false);
+    // UNAUTHORIZED is what clears the cookie; any other failure keeps the person signed in (#473).
+    expect(result).toMatchObject({ ok: false, error: { name: 'ServiceError', code: 'UNAUTHORIZED' } });
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it('rejects when no session was consumed (unknown or already used token)', async () => {
     const result = await AuthService.refreshSession('some-token');
 
-    expect(result.ok).toBe(false);
+    // UNAUTHORIZED is what clears the cookie; any other failure keeps the person signed in (#473).
+    expect(result).toMatchObject({ ok: false, error: { name: 'ServiceError', code: 'UNAUTHORIZED' } });
     expect(mockSelect).not.toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a token that does not verify, before consuming anything', async () => {
+    const { verifyRefreshToken } = await import('../../lib/jwt.js');
+    vi.mocked(verifyRefreshToken).mockImplementationOnce(() => { throw new Error('invalid signature'); });
+
+    const result = await AuthService.refreshSession('some-token');
+
+    expect(result).toMatchObject({ ok: false, error: { name: 'ServiceError', code: 'UNAUTHORIZED' } });
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it('fails with the read\'s own error, not UNAUTHORIZED, when the session cannot be read', async () => {
+    mockDeleteReturning.mockRejectedValueOnce(new Error('Connection terminated due to connection timeout'));
+
+    const result = await AuthService.refreshSession('some-token');
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? undefined : result.error.message).toBe('Connection terminated due to connection timeout');
   });
 
   it('rejects an expired session', async () => {
@@ -84,7 +106,8 @@ describe('AuthService.refreshSession', () => {
 
     const result = await AuthService.refreshSession('some-token');
 
-    expect(result.ok).toBe(false);
+    // UNAUTHORIZED is what clears the cookie; any other failure keeps the person signed in (#473).
+    expect(result).toMatchObject({ ok: false, error: { name: 'ServiceError', code: 'UNAUTHORIZED' } });
     expect(mockInsert).not.toHaveBeenCalled();
   });
 });

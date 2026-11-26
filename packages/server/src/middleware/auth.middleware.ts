@@ -1,6 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { ChannelGroupId, FoldedGrants } from '@galvanigraph/core-models';
-import { verifyAccessToken } from '../lib/jwt.js';
+import { errorInfo } from '@galvanigraph/core-util';
+import { verifyAccessToken, type AccessTokenPayload } from '../lib/jwt.js';
+import { errorResponse, mapErrorToStatus } from '../lib/controller-helpers.js';
+import { ServiceError } from '../lib/service-error.js';
 import { isSessionLive } from '../lib/session-live.js';
 import { loadUserStanding, roleLabel } from '../lib/principal.js';
 import logger from '../lib/logger.js';
@@ -88,17 +91,58 @@ function attach(req: Request, user: UserStanding): void {
   req.principal = { userId: user.id, grants: user.grants };
 }
 
-/** Every failure answers the same 401, so a caller learns nothing about which part was wrong. */
-async function authenticateKey(req: Request, res: Response, next: NextFunction, token: string): Promise<void> {
+/** Every refusal answers the same 401, so a caller learns nothing about which part was wrong. */
+async function authenticateKey(req: Request, res: Response, token: string): Promise<boolean> {
   const key = await ApiKeyService.resolve(token);
   if (!key) {
     deny(req, res, DENY_REASON.BAD_TOKEN);
-    return;
+    return false;
   }
   attach(req, key.standing);
   req.apiKeyId = key.keyId;
   noteKeyUse(key.keyId, req.ip);
-  next();
+  return true;
+}
+
+/** True when the request may go on; otherwise it has been answered. */
+async function authenticateSession(req: Request, res: Response, payload: AccessTokenPayload): Promise<boolean> {
+  const user = await loadUserStanding(payload.userId);
+
+  if (!user) {
+    deny(req, res, DENY_REASON.USER_NOT_FOUND);
+    return false;
+  }
+
+  if (!user.enabled) {
+    deny(req, res, DENY_REASON.ACCOUNT_DISABLED, user.id);
+    return false;
+  }
+
+  if (!(await isSessionLive(payload.sessionId, user.id))) {
+    deny(req, res, DENY_REASON.SESSION_REVOKED, user.id);
+    return false;
+  }
+
+  // Enforced here, or the flag is cosmetic and a known default credential (the
+  // seeded admin) grants full API access indefinitely.
+  if (user.mustChangePassword && !isPasswordChangeExempt(req)) {
+    deny(req, res, DENY_REASON.PASSWORD_CHANGE_REQUIRED, user.id);
+    return false;
+  }
+
+  attach(req, user);
+  req.sessionId = payload.sessionId;
+  return true;
+}
+
+/**
+ * The credential may be good: refusing it would sign people out and record a
+ * denial that was none (#473). Nothing is attached, so the request stops here.
+ */
+function answerUnreadable(req: Request, res: Response, error: unknown): void {
+  logger.error({ ...errorInfo(error), requestId: req.id }, 'Could not read the caller\'s credentials');
+  const unavailable = new ServiceError('UNAVAILABLE', 'Credentials cannot be checked right now; try again shortly');
+  res.status(mapErrorToStatus(unavailable)).json({ success: false, error: errorResponse(unavailable) });
 }
 
 export async function authenticate(
@@ -119,44 +163,24 @@ export async function authenticate(
   }
 
   const token = authHeader.slice(7);
-
-  try {
-    if (looksLikeKeyToken(token)) {
-      await authenticateKey(req, res, next, token);
+  const isKey = looksLikeKeyToken(token);
+  let payload: AccessTokenPayload | undefined;
+  if (!isKey) {
+    try {
+      payload = verifyAccessToken(token);
+    } catch (error) {
+      logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');
+      deny(req, res, DENY_REASON.BAD_TOKEN);
       return;
     }
-
-    const payload = verifyAccessToken(token);
-
-    const user = await loadUserStanding(payload.userId);
-
-    if (!user) {
-      deny(req, res, DENY_REASON.USER_NOT_FOUND);
-      return;
-    }
-
-    if (!user.enabled) {
-      deny(req, res, DENY_REASON.ACCOUNT_DISABLED, user.id);
-      return;
-    }
-
-    if (!(await isSessionLive(payload.sessionId, user.id))) {
-      deny(req, res, DENY_REASON.SESSION_REVOKED, user.id);
-      return;
-    }
-
-    // Enforced here, or the flag is cosmetic and a known default credential (the
-    // seeded admin) grants full API access indefinitely.
-    if (user.mustChangePassword && !isPasswordChangeExempt(req)) {
-      deny(req, res, DENY_REASON.PASSWORD_CHANGE_REQUIRED, user.id);
-      return;
-    }
-
-    attach(req, user);
-    req.sessionId = payload.sessionId;
-    next();
-  } catch (error) {
-    logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');
-    deny(req, res, DENY_REASON.BAD_TOKEN);
   }
+
+  let passed: boolean;
+  try {
+    passed = payload === undefined ? await authenticateKey(req, res, token) : await authenticateSession(req, res, payload);
+  } catch (error) {
+    answerUnreadable(req, res, error);
+    return;
+  }
+  if (passed) next();
 }
