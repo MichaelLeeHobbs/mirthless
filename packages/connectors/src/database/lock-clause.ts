@@ -78,3 +78,64 @@ export function withSkippedRows(lockingQuery: string, vendor: DatabaseVendor): s
   }
   return all + lockingQuery.slice(copied);
 }
+
+interface Parenthesis {
+  readonly open: number;
+  readonly close: number;
+  /** The code before it, without the space at its end. */
+  readonly before: string;
+}
+
+/** Every pair of parentheses in the code, in the order they open. One left open runs to the end. */
+function parenthesesOf(code: string): readonly Parenthesis[] {
+  const found: Parenthesis[] = [];
+  const opened: number[] = [];
+  const pair = (open: number, close: number): Parenthesis => ({ open, close, before: code.slice(0, open).trimEnd() });
+  for (let i = 0; i < code.length; i += 1) {
+    if (code[i] === '(') opened.push(i);
+    const open = code[i] === ')' ? opened.pop() : undefined;
+    if (open !== undefined) found.push(pair(open, i));
+  }
+  return [...found, ...opened.map((open) => pair(open, code.length))];
+}
+
+/** Whether the lock at `index` holds the rows of the query in `scope` (null: the whole query) reads. */
+function holdsRowsOf(parentheses: readonly Parenthesis[], index: number, scope: Parenthesis | null): boolean {
+  const from = scope?.open ?? -1;
+  const to = scope?.close ?? Number.POSITIVE_INFINITY;
+  if (index <= from || index >= to) return false;
+  return parentheses
+    .filter((p) => p.open > from && p.open < index && index < p.close)
+    .every((p) => OPENS_A_SOURCE.test(p.before));
+}
+
+const LOCKS = /\bfor\s+(?:no\s+key\s+update|key\s+share|update|share)\b/gi;
+/** The body of a WITH query: what follows its AS, or AS [NOT] MATERIALIZED. */
+const OPENS_A_WITH_QUERY = /\b(?:as|materialized)$/i;
+/** On MySQL, a query in FROM or JOIN, which a lock outside it does not reach. */
+const OPENS_A_DERIVED_TABLE = /(?:\b(?:from|join|straight_join|lateral)|[,(])$/i;
+const COMBINES = /\b(?:union|intersect|except)\b/i;
+
+/**
+ * Why the lock a poll sends may hold none of the rows its query returns, so that two sources can take
+ * one row (#445); null when it holds them. Read from the text alone, it errs towards a reason: a query
+ * whose WITH query only filters a table the main query reads is named, and a view is not seen.
+ */
+export function unheldRowsReason(selectQuery: string, vendor: DatabaseVendor = DATABASE_VENDOR.POSTGRESQL): string | null {
+  const code = codeOnly(appendLockClause(selectQuery, vendor), vendor);
+  if (!SELECTS.test(code)) return null;
+  const parentheses = parenthesesOf(code);
+  const locks = [...code.matchAll(LOCKS)].map((m) => m.index);
+  const locked = (scope: Parenthesis | null): boolean => locks.some((at) => holdsRowsOf(parentheses, at, scope));
+  const queries = parentheses.filter((p) => SELECTS.test(code.slice(p.open + 1, p.close)));
+
+  if (!locked(null)) return 'its only lock is in a subquery of a condition or a column, which holds that subquery\'s rows, not the ones the query returns';
+  if (queries.some((p) => OPENS_A_WITH_QUERY.test(p.before) && !locked(p))) {
+    return 'it reads through a WITH query, and a lock outside that query does not hold its rows';
+  }
+  if (vendor === DATABASE_VENDOR.MYSQL && queries.some((p) => OPENS_A_DERIVED_TABLE.test(p.before) && !locked(p))) {
+    return 'it reads a subquery in FROM, and on MySQL a lock outside that subquery does not hold its rows';
+  }
+  if (COMBINES.test(code)) return 'it combines queries with UNION, INTERSECT or EXCEPT, and a lock holds the rows of one of them at most';
+  return null;
+}
