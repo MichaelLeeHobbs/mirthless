@@ -62,6 +62,12 @@ vi.mock('../alert.service.js', () => ({
   AlertService: { listEnabled: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }), onChange: vi.fn() },
 }));
 
+const mockResolveTls = vi.fn();
+vi.mock('../connector-tls-resolver.js', () => ({
+  SOURCE_TLS_RESOLVERS: { HTTP: mockResolveTls },
+  DESTINATION_TLS_RESOLVERS: { HTTP: mockResolveTls },
+}));
+
 vi.mock('../email.service.js', () => ({
   EmailService: { sendMail: vi.fn() },
 }));
@@ -142,6 +148,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGlobalMapList.mockResolvedValue(OK_EMPTY);
   mockConfigMapList.mockResolvedValue(OK_EMPTY);
+  mockResolveTls.mockImplementation(async (props: Record<string, unknown>) => ({ ok: true, value: props, error: null }));
 });
 
 async function deployError(bundle: DeploymentBundle = bundleOf(makeChannel())): Promise<string> {
@@ -340,5 +347,81 @@ describe('EngineManager.deploy with a connector that cannot be built', () => {
     const { createSourceConnector } = await import('@galvanigraph/connectors');
     vi.mocked(createSourceConnector).mockImplementationOnce((type, p) => actual.createSourceConnector(type, p));
     expect(await deployError(bundleOf(makeChannel({ sourceConnectorProperties: props })))).toBe(factoryError);
+  });
+});
+
+const BAD_DELIMITED = {
+  inboundDataType: 'DELIMITED',
+  transformers: [{
+    id: 't1', connectorId: null, inboundDataType: 'DELIMITED', outboundDataType: 'DELIMITED',
+    inboundProperties: { delimited: { columnDelimiter: '' } }, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null, steps: [],
+  }],
+};
+const DEPLOY_SCRIPT_THROWS = { scripts: [{ scriptType: 'DEPLOY', script: "throw new Error('the deploy script ran');" }] };
+
+function tcpDestination(fields: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    metaDataId: 1, name: 'Out', enabled: true, connectorType: 'TCP_MLLP', properties: { host: 'h', port: 6662 },
+    queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 0, rotateQueue: false, ...fields,
+  };
+}
+
+// A redeploy runs this before it stops the running channel (#480), so it must refuse what deploy
+// refuses before it opens anything, with the same error, and never deploy or start the channel.
+describe('EngineManager.checkDeploy', () => {
+  /** A Channel Reader's undeploy unregisters the running channel's id, so the check never undeploys what it built. */
+  async function checkError(bundle: DeploymentBundle): Promise<string> {
+    const { createSourceConnector, createDestinationConnector } = await import('@galvanigraph/connectors');
+    const engine = new EngineManager('test-server');
+    const outcome = await engine.checkDeploy(bundle).then(() => 'passed', (e: unknown) => (e as Error).message);
+    expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
+    const built = [...vi.mocked(createSourceConnector).mock.results, ...vi.mocked(createDestinationConnector).mock.results];
+    for (const { value } of built) expect((value as { onUndeploy: ReturnType<typeof vi.fn> }).onUndeploy).not.toHaveBeenCalled();
+    return outcome;
+  }
+
+  async function refusingDestination(): Promise<void> {
+    const { createDestinationConnector } = await import('@galvanigraph/connectors');
+    const built = vi.mocked(createDestinationConnector)('TCP_MLLP', {});
+    vi.mocked(createDestinationConnector).mockReturnValueOnce({
+      ...built, onDeploy: vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('Host is required') }),
+    });
+  }
+
+  it.each<[string, Record<string, unknown>, (() => Promise<void>) | undefined]>([
+    ['a response from a destination it does not have', { responseMode: 'DESTINATION', responseConnectorName: 'Old Name' }, undefined],
+    ['a queued destination on RAW storage', { messageStorageMode: 'RAW', destinations: [tcpDestination({ queueMode: 'ALWAYS' })] }, undefined],
+    ['Delimited settings that do not validate', BAD_DELIMITED, undefined],
+    ['batch processing on a data type it cannot split', { inboundDataType: 'JSON', sourceConnectorProperties: { port: 6661, processBatch: true } }, undefined],
+    ['a source filter that does not compile', sourceFilter(rule({ script: 'return msg.get("MSH.9.1" === ;' })), undefined],
+    ['a certificate from the store it cannot read', { sourceConnectorType: 'HTTP' }, async () => {
+      mockResolveTls.mockResolvedValueOnce({ ok: false, value: null, error: new Error('certificate 7 not found') });
+    }],
+    ['a destination whose connector refuses its settings', { destinations: [tcpDestination()] }, refusingDestination],
+  ])('refuses %s with the error deploy gives', async (_what, overrides, arrange) => {
+    const bundle = bundleOf(makeChannel(overrides));
+    await arrange?.();
+    const checked = await checkError(bundle);
+    await arrange?.();
+    const deployed = await deployError(bundle);
+
+    expect(checked).not.toBe('passed');
+    expect(checked).toBe(deployed);
+  });
+
+  it('passes a channel that deploys, and neither deploys, starts nor runs its deploy script', async () => {
+    const { createSourceConnector } = await import('@galvanigraph/connectors');
+
+    expect(await checkError(bundleOf(makeChannel({ destinations: [tcpDestination()], ...DEPLOY_SCRIPT_THROWS })))).toBe('passed');
+
+    const source = vi.mocked(createSourceConnector).mock.results.at(-1)?.value as { onDeploy: ReturnType<typeof vi.fn>; onStart: ReturnType<typeof vi.fn> };
+    expect(source.onDeploy).toHaveBeenCalledOnce();
+    expect(source.onStart).not.toHaveBeenCalled();
+  });
+});
+
+describe('EngineManager.deploy of data type settings it refuses', () => {
+  it('refuses them before it runs the deploy script', async () => {
+    expect(await deployError(bundleOf(makeChannel({ ...BAD_DELIMITED, ...DEPLOY_SCRIPT_THROWS })))).toContain('Delimited settings are invalid');
   });
 });
