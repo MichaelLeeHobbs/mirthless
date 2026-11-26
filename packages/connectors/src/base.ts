@@ -127,6 +127,11 @@ export interface ConnectorResponse {
   readonly status: 'SENT' | 'ERROR';
   readonly content: string;
   readonly errorMessage?: string;
+  /**
+   * On an ERROR: the partner kept the message although it failed there, so sending it again would
+   * give the partner a second copy. The send ends ERROR and is not queued for a retry (D-393).
+   */
+  readonly final?: true;
 }
 
 export interface DestinationConnectorRuntime extends ConnectorLifecycle {
