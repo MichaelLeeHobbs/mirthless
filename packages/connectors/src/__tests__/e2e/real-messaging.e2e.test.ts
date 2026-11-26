@@ -122,6 +122,8 @@ describe('an MLLP source that passes a destination\'s answer through (#414)', ()
 
     expect(answer).toContain(expected);
     expect(answer.includes('|LAA|')).toBe(second === 'AA');
+    // Built by the source, not the refusing partner's own answer.
+    expect(answer).not.toContain('|LAE|');
     expect(captureServer.received).toHaveLength(1);
   });
 });

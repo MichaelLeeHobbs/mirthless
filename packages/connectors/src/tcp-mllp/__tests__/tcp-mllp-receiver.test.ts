@@ -317,6 +317,18 @@ describe('TcpMllpReceiver acknowledgements', () => {
     expect(response).toContain('MSA|AE|MSGID123');
   });
 
+  it.each([
+    ['a partner\'s refusal, with its code and text', 'MSH|^~\\&|LAB|B|A|C|20260101||ACK|X1|P|2.5\rMSA|AR|MSGID123|Invalid PID-3', 'MSA|AR|MSGID123|Invalid PID-3'],
+    ['nothing but an answer that is not HL7', 'CUSTOM|RESPONSE', 'MSA|AE|MSGID123'],
+  ])('PASSTHROUGH mode answers a message recorded with an ERROR status whose response is %s', async (_what, picked, expected) => {
+    receiver = new TcpMllpReceiver(makeConfig({ responseMode: MLLP_RESPONSE_MODE.PASSTHROUGH }));
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, status: DISPATCH_STATUS.ERROR, response: picked })));
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    expect(await connectAndSend(TEST_PORT, VALID_HL7)).toContain(expected);
+  });
+
   it('PASSTHROUGH mode passes a filtered message\'s response through', async () => {
     receiver = new TcpMllpReceiver(makeConfig({ responseMode: MLLP_RESPONSE_MODE.PASSTHROUGH }));
     receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, status: DISPATCH_STATUS.FILTERED, response: 'CUSTOM|RESPONSE' })));

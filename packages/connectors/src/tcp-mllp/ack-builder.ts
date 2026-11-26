@@ -74,8 +74,9 @@ export function classifyAckResponse(response: string, sent?: SentControlId): Ack
 }
 
 /**
- * Falls back to a segment scan for responses that omit MSH. Only a segment named MSA counts, and MSA-1 is
- * read up to its first `^`, as the parse does: HL7 tells a receiver to ignore components it does not expect.
+ * Falls back to a segment scan for responses that omit MSH or have no MSA the parse found. Only a segment named
+ * MSA counts, and MSA-1 is its first value, up to a `^`, `~` or `&`, as the parse reads it: HL7 tells a receiver
+ * to ignore components it does not expect.
  */
 function extractMsa(response: string): { code: string; controlId?: string; text?: string } | undefined {
   try {
@@ -92,7 +93,7 @@ function extractMsa(response: string): { code: string; controlId?: string; text?
   for (const seg of response.split(/[\r\n]+/)) {
     const fields = seg.split('|');
     if (fields[0] === 'MSA') {
-      const code = (fields[1] ?? '').split('^')[0] ?? '';
+      const code = (fields[1] ?? '').split(/[\^~&]/)[0] ?? '';
       return { code, ...(fields[2] ? { controlId: fields[2] } : {}), ...(fields[3] ? { text: fields[3] } : {}) };
     }
   }

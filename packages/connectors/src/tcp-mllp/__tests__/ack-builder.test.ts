@@ -87,6 +87,9 @@ describe('classifyAckResponse', () => {
     ['with a component after it, which HL7 tells a receiver to ignore', 'MSH|^~\\&|A\rMSA|AA^1|1'],
     ['bare, with a component after it', 'MSA|AA^1|1'],
     ['bare, in lower case', 'MSA|ca|1'],
+    ['with a repetition after it', 'MSH|^~\\&|A\rMSA|AA~AE|1'],
+    ['bare, with a repetition after it', 'MSA|AA~AE|1'],
+    ['bare, with a subcomponent after it', 'MSA|AA&x|1'],
   ])('accepts AA or CA %s, the same with or without an MSH', (_what, response) => {
     expect(classifyAckResponse(response).accepted).toBe(true);
   });
