@@ -349,3 +349,9 @@ export const SOCKET_EVENT = {
   SERVER_LOG: 'server:log',
 } as const;
 export type SocketEvent = (typeof SOCKET_EVENT)[keyof typeof SOCKET_EVENT];
+
+/** Why the server refused a socket's handshake. The web signs out only for the first (#473). */
+export const SOCKET_ERROR = {
+  AUTH_REQUIRED: 'Authentication required',
+  UNAVAILABLE: 'Server unavailable',
+} as const;
