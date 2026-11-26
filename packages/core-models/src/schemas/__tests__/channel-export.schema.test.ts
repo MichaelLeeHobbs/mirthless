@@ -72,6 +72,26 @@ describe('channelImportSchema connector types', () => {
   });
 });
 
+// The database holds one column per name in a channel (#450).
+describe('channelImportSchema metadata column names', () => {
+  const column = { name: 'PatientId', dataType: 'STRING', mappingExpression: null };
+
+  it('refuses a channel with two columns of one name, naming the channel and the column', () => {
+    const bad = { ...entry('TCP_MLLP', []), name: 'Orders', metadataColumns: [column, { ...column, dataType: 'NUMBER' }] };
+    const result = channelImportSchema.safeParse(importFile([bad]));
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([expect.objectContaining({
+      path: ['channels', 0, 'metadataColumns', 1, 'name'], message: 'Channel "Orders": two metadata columns are named "PatientId"',
+    })]);
+  });
+
+  it('imports a channel whose columns have names of their own', () => {
+    const good = { ...entry('TCP_MLLP', []), metadataColumns: [column, { ...column, name: 'OrderDate' }] };
+    expect(channelImportSchema.safeParse(importFile([good])).success).toBe(true);
+  });
+});
+
 // The pruner deletes what is older: with 0 or less that is every finished message (#202).
 describe('channelImportSchema pruning age', () => {
   const parses = (pruningMaxAgeDays: unknown): boolean => channelImportSchema.safeParse(importFile([{ ...entry('TCP_MLLP', []), pruningMaxAgeDays }])).success;

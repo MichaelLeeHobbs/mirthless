@@ -2,11 +2,16 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
 import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { uniqueConstraint } from '../lib/pg-error.js';
 import { emitSuccessEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { dataSources } from '../db/schema/index.js';
 import { encryptContent, decryptContent, isContentEncryptionConfigured } from '../lib/content-crypto.js';
 import { dataSourcePoolManager, type PooledDataSource } from './data-source-pool-manager.js';
+
+function nameTaken(name: string): ServiceError {
+  return new ServiceError('ALREADY_EXISTS', `Data source "${name}" already exists`);
+}
 
 // Response types never include the password.
 
@@ -86,7 +91,7 @@ export class DataSourceService {
   static async create(input: CreateDataSourceInput, context?: AuditContext): Promise<Result<DataSourceSummary>> {
     return tryCatch(async () => {
       const [existing] = await db.select({ id: dataSources.id }).from(dataSources).where(eq(dataSources.name, input.name));
-      if (existing) throw new ServiceError('ALREADY_EXISTS', `Data source "${input.name}" already exists`);
+      if (existing) throw nameTaken(input.name);
 
       // Encrypt before touching the DB so a missing key fails loud without a row.
       const passwordEncrypted = encryptPassword(input.password);
@@ -107,7 +112,9 @@ export class DataSourceService {
           statementTimeoutMs: input.statementTimeoutMs,
           maxRows: input.maxRows,
         })
-        .returning();
+        .returning()
+        // Two requests at once can both pass the check above; the one that loses gets its answer.
+        .catch((err: unknown) => { throw uniqueConstraint(err) === dataSources.name.uniqueName ? nameTaken(input.name) : err; });
 
       emitSuccessEvent('DATASOURCE_UPDATED', context, { action: 'create', dataSourceName: input.name });
       return toSummary(row!);
@@ -121,7 +128,7 @@ export class DataSourceService {
 
       if (input.name && input.name !== existing.name) {
         const [dup] = await db.select({ id: dataSources.id }).from(dataSources).where(eq(dataSources.name, input.name));
-        if (dup) throw new ServiceError('ALREADY_EXISTS', `Data source "${input.name}" already exists`);
+        if (dup) throw nameTaken(input.name);
       }
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -138,7 +145,8 @@ export class DataSourceService {
       if (input.statementTimeoutMs !== undefined) updates['statementTimeoutMs'] = input.statementTimeoutMs;
       if (input.maxRows !== undefined) updates['maxRows'] = input.maxRows;
 
-      const [row] = await db.update(dataSources).set(updates).where(eq(dataSources.id, id)).returning();
+      const [row] = await db.update(dataSources).set(updates).where(eq(dataSources.id, id)).returning()
+        .catch((err: unknown) => { throw input.name && uniqueConstraint(err) === dataSources.name.uniqueName ? nameTaken(input.name) : err; });
       await dataSourcePoolManager.invalidate(id);
       emitSuccessEvent('DATASOURCE_UPDATED', context, { action: 'update', dataSourceId: id });
       return toSummary(row!);

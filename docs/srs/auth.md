@@ -156,7 +156,7 @@ How people and programs prove who they are: accounts and passwords, sign-in and 
 | AUTH-KEY-08 | The system shall let an API key read at most a set number of rows (messages and collection records, not messages it submits) in a UTC day, 5,000 by default and counted across restarts, and shall refuse a read that would pass the limit, or whose day's count it cannot determine, before it sends any row. | P1 | Test | Proposed |
 | AUTH-KEY-09 | The system shall hold an API key's daily row limit in total across reads sent at the same time. | P1 | Test | Proposed |
 | AUTH-KEY-10 | When access an API key's issuer lost only by the passing of time is given back, the system shall accept the key again if it is given back at least until the key's end, and shall otherwise disable the key. | P1 | Test | Proposed |
-| AUTH-KEY-11 | An API key disabled because an edit narrowed its issuer's access shall stay disabled until a person enables it. | P1 | Test | Proposed |
+| AUTH-KEY-11 | An API key disabled because an edit narrowed its issuer's access shall stay disabled until a person enables it, and the system shall refuse to enable it, saying why, while its issuer does not hold what the key holds until the key ends. | P1 | Test | Proposed |
 | AUTH-KEY-12 | The system shall send an alert, at most hourly per key, when a request carries the correct secret of an ended, revoked, disabled or uncovered key that worked in the last 7 days. | P2 | Test | Proposed |
 
 - AUTH-KEY-01: source: access-control.md "API keys" (the token is shown once); capabilities.md "API tokens for machine callers"; D-313.
@@ -169,7 +169,7 @@ How people and programs prove who they are: accounts and passwords, sign-in and 
 - AUTH-KEY-08: source: srs-debate 2026-11-24, finding A18 (Domain 3; Scope agrees). conflict: access-control.md counts sends as rows, because a send's answer carries message content (D-321); as written there, result 5,001 of the day waits until midnight. Decision D-A4. Replaces AUTH-KEY-06: when this row is accepted, that row becomes Superseded by AUTH-KEY-08.
 - AUTH-KEY-09: source: srs-debate 2026-11-24, finding A18 (Tester 7).
 - AUTH-KEY-10: source: srs-debate 2026-11-24, finding A19 (Contractor 9, split by Tester). Adds the return that AUTH-KEY-03 left unstated. Reworded in place 2026-11-25 to say for how long the access must come back (#419, decided by the developer).
-- AUTH-KEY-11: source: srs-debate 2026-11-24, finding A19 (Contractor 9, split by Tester).
+- AUTH-KEY-11: source: srs-debate 2026-11-24, finding A19 (Contractor 9, split by Tester). Reworded in place 2026-11-25: enabling such a key was answered 200 and the key shown active, and every request with it was refused (#450, decided by the developer).
 - AUTH-KEY-12: source: srs-debate 2026-11-24, finding A20 (Domain 3, reworded by Tester; Scope against). Decision D-A5.
 
 ## Cutting someone off (CUT)

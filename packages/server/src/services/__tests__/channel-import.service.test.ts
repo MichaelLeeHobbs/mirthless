@@ -193,6 +193,23 @@ describe('ChannelImportService.importChannels', () => {
   });
 });
 
+// The Mirth importer and a backup restore reach the import without the request schema (#450).
+describe('ChannelImportService metadata column names', () => {
+  it('reports a channel with two columns of one name and still imports the rest of the file', async () => {
+    const column = { name: 'PatientId', dataType: 'STRING', mappingExpression: null };
+    const entries = [
+      makeEntry({ id: 'ch-bad', name: 'Orders', metadataColumns: [column, { ...column, dataType: 'NUMBER' }] }),
+      makeEntry({ id: 'ch-good', name: 'Good Channel', metadataColumns: [column] }),
+    ];
+
+    const result = await ChannelImportService.importChannels(entries, 'SKIP');
+
+    expect(result.ok && result.value).toEqual({
+      created: 1, updated: 0, skipped: 0, errors: ['Channel "Orders": two metadata columns are named "PatientId"; not imported'],
+    });
+  });
+});
+
 // #109
 
 describe('ChannelImportService connector direction', () => {

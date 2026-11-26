@@ -8,6 +8,7 @@ import {
   type ChannelGroupId,
   isSourceConnectorType,
   isDestinationConnectorType,
+  repeatedColumnIndex,
   toScriptLanguage,
   type ChannelExportEntry,
   type CollisionMode,
@@ -117,6 +118,12 @@ export function connectorDirectionError(entry: ChannelExportEntry): string | nul
   return null;
 }
 
+/** The Mirth importer and a backup restore give their channels to the import without the request schema. */
+export function columnNameError(entry: ChannelExportEntry): string | null {
+  const i = repeatedColumnIndex(entry.metadataColumns);
+  return i < 0 ? null : `Channel "${entry.name}": two metadata columns are named "${entry.metadataColumns[i]!.name}"; not imported`;
+}
+
 interface ImportRun {
   readonly context: AuditContext | undefined;
   readonly placement: ImportPlacement;
@@ -129,7 +136,7 @@ async function importSingleChannel(
   mode: CollisionMode,
   run: ImportRun,
 ): Promise<ImportOutcome> {
-  const unusable = connectorDirectionError(entry) ?? numberError(entry);
+  const unusable = connectorDirectionError(entry) ?? numberError(entry) ?? columnNameError(entry);
   if (unusable) return unusable;
   try {
     const [existing] = await db

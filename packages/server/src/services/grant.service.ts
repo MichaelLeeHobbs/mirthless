@@ -226,7 +226,7 @@ export function issuerCovers(issuer: FoldedGrants, key: FoldedGrants): boolean {
 }
 
 /** The issuer must be enabled and hold what the key holds now and until it ends. */
-async function keyStillCovered(tx: AuditTransaction, key: { keyUserId: string; issuedBy: string; expiresAt: Date }): Promise<boolean> {
+export async function keyStillCovered(tx: AuditTransaction, key: { keyUserId: string; issuedBy: string; expiresAt: Date }): Promise<boolean> {
   const held = await queryUserStanding(tx, key.keyUserId);
   const issuer = await queryUserStanding(tx, key.issuedBy);
   if (held === null || issuer?.enabled !== true || !issuerCovers(issuer.grants, held.grants)) return false;

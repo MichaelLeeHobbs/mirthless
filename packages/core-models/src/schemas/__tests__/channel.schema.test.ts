@@ -9,6 +9,7 @@ import {
   channelPropertiesSchema,
   destinationInputSchema,
   metadataColumnInputSchema,
+  repeatedColumnIndex,
 } from '../channel.schema.js';
 import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../../constants.js';
 
@@ -692,6 +693,38 @@ describe('createChannelSchema — destinations array', () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect(result.data.metadataColumns).toHaveLength(2);
+  });
+});
+
+// The database holds one column per name in a channel; two answered 500 (#450).
+describe('metadata column names', () => {
+  const BASE_PAYLOAD = { name: 'C', inboundDataType: 'RAW', outboundDataType: 'RAW', sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {} };
+  const columns = [
+    { name: 'PatientId', dataType: 'STRING', mappingExpression: null },
+    { name: 'OrderDate', dataType: 'TIMESTAMP', mappingExpression: null },
+    { name: 'PatientId', dataType: 'NUMBER', mappingExpression: null },
+  ];
+
+  it.each([
+    ['create', createChannelSchema, BASE_PAYLOAD],
+    ['update', updateChannelSchema, { revision: 1 }],
+  ] as const)('%s refuses two columns of one name, and names it', (_how, schema, base) => {
+    const result = schema.safeParse({ ...base, metadataColumns: columns });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([expect.objectContaining({
+      path: ['metadataColumns', 2, 'name'], message: 'Two metadata columns are named "PatientId"; give each its own name',
+    })]);
+  });
+
+  it('takes names that differ only in case, as the database does', () => {
+    expect(createChannelSchema.safeParse({ ...BASE_PAYLOAD, metadataColumns: [columns[0], { ...columns[0], name: 'patientid' }] }).success).toBe(true);
+  });
+
+  it('finds the first column whose name came before it', () => {
+    expect(repeatedColumnIndex(columns)).toBe(2);
+    expect(repeatedColumnIndex(columns.slice(0, 2))).toBe(-1);
+    expect(repeatedColumnIndex([])).toBe(-1);
   });
 });
 
