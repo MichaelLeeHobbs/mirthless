@@ -73,6 +73,16 @@ function failingAt(id: number): void {
   });
 }
 
+/** Halts the channel while the store records that message. */
+function haltingAt(id: number): void {
+  const record = ms.initializeMessage.getMockImplementation()!;
+  ms.initializeMessage.mockImplementation(async (...args: unknown[]) => {
+    const raw = (args[3] as Array<{ content: string }>)[0]!.content;
+    if (raw.includes(`|B-${String(id)}|`)) await engine.getRuntime(CHANNEL_ID)!.runtime.halt();
+    return record(...args);
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   recorded = [];
@@ -120,6 +130,35 @@ describe('a batch dispatched to a channel (#415)', () => {
 
     expect(result.ok).toBe(false);
     expect(recorded).toEqual(['1', '3']);
+  });
+
+  it('runs no message after a halt in the middle of the batch, and is not taken (#484, #441)', async () => {
+    const dispatch = await deploy();
+    failingAt(-1);
+    haltingAt(2);
+
+    const result = await dispatch({ content: [part(1), part(2), part(3)].join('\r'), sourceMap: {} });
+
+    expect(result.error?.message).toContain('halted at message 2 of the 3');
+    expect(recorded).toEqual(['1', '2']);
+    // The halt was someone's choice, not a failure: a warning, not the error line that comes with the alert.
+    expect(log.warn.mock.calls.map(([, text]) => text)).toContain('HL7 batch ended by a halt; it is not taken');
+    expect(log.error.mock.calls.filter(([, text]) => String(text).includes('batch'))).toEqual([]);
+  });
+
+  it('ends every message after a halt for a JavaScript source, not only the one in flight', async () => {
+    const dispatch = await deploy({
+      sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { processBatch: true, script: 'return null;' },
+      scripts: [{ scriptType: 'PREPROCESSOR', script: 'return rawData;' }],
+    });
+    failingAt(-1);
+    haltingAt(1);
+
+    await dispatch({ content: [part(1), part(2), part(3)].join('\r'), sourceMap: {} });
+
+    expect(recorded).toEqual(['1', '2', '3']);
+    const ended = ms.updateConnectorMessageStatus.mock.calls.filter((call) => call[2] === 0 && call[3] === 'ERROR').map((call) => call[1]);
+    expect(ended).toEqual([1, 2, 3]);
   });
 
   it('records nothing of a batch with U+0000 in plain text, and raises an alert', async () => {
