@@ -131,7 +131,7 @@ export const CONTENT_TYPE = {
   SCRIPT_LOG: 14,
   /**
    * On a Channel Writer's message: the message the target channel recorded for the send under way,
-   * written by the target and removed when the send returns (D-394). Not content: no PHI, never encrypted.
+   * written by the target and removed when the send returns (D-397). Not content: no PHI, never encrypted.
    */
   HAND_OFF: 15,
 } as const;
@@ -354,3 +354,9 @@ export const SOCKET_EVENT = {
   SERVER_LOG: 'server:log',
 } as const;
 export type SocketEvent = (typeof SOCKET_EVENT)[keyof typeof SOCKET_EVENT];
+
+/** Why the server refused a socket's handshake. The web signs out only for the first (#473). */
+export const SOCKET_ERROR = {
+  AUTH_REQUIRED: 'Authentication required',
+  UNAVAILABLE: 'Server unavailable',
+} as const;

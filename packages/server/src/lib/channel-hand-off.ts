@@ -1,7 +1,7 @@
 // A Channel Writer's send waits for the target channel's whole pipeline, so a server stop can end it
 // after the target recorded the message. The target records it on the sender's message as well
 // (`CONTENT_TYPE.HAND_OFF`), and the send removes that once it returns: a send that finds one was
-// interrupted, and does not make a second message in the target (D-394).
+// interrupted, and does not make a second message in the target (D-397).
 
 import { setTimeout as pause } from 'node:timers/promises';
 import { z } from 'zod/v4';

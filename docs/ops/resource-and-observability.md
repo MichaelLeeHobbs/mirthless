@@ -63,7 +63,7 @@ A channel script's time limit does not stop every script. One it does not stop h
 
 ## A send to another channel that a server stop interrupts
 
-A CHANNEL destination waits for its target channel's whole pipeline. A stop in between leaves the sender's destination RECEIVED (or PENDING on its queue) and the target's message open. At the next start the target's crash recovery runs its message, and the sender's send finds what the target recorded and does not make a second message (D-394):
+A CHANNEL destination waits for its target channel's whole pipeline. A stop in between leaves the sender's destination RECEIVED (or PENDING on its queue) and the target's message open. At the next start the target's crash recovery runs its message, and the sender's send finds what the target recorded and does not make a second message (D-397):
 
 - The log has an INFO line, `A send to another channel that a server stop interrupted had been delivered there; it is not sent again`, naming the sending message and destination and the target's message. The destination reads SENT with `messageId=<n>`, or ERROR when the target failed that message: reprocess it in the target.
 - The send waits, at most 5 minutes, while the target channel runs the message. A sender whose target is not started yet sends again, as before: give it a dependency on the target, so the target starts first.

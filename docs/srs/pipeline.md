@@ -111,7 +111,7 @@ How a message moves through a channel: its stages and statuses, the destinations
 - PIPE-REC-02: source: #401 (one message became 28 and all 28 were sent). Conflict: D-213 and D-233 run it again as a new message and close the original; #401 and the work it cites keep the same message, kept here as the later intent. D-345 (#408) does this.
 - PIPE-REC-03: source: D-213; docs/user/connector-reference.md "Every destination" (the partner can get the interrupted message twice). Delivery is at least once (README Out of scope), so the repeat must be visible; nothing marks it today. The mark itself is an assumption from the Purpose.
 - PIPE-REC-04: source: #401 "A limit on reruns", which asks for a decision first; the number and the choice of error over holding the channel are the drafter's default.
-- PIPE-REC-05: source: #401 "Channel destinations", reproduced in `channel-hand-off.itest.ts`; D-394 does it for a Channel destination, with D-393's ERROR for a message the receiving channel failed. Not yet: `routeMessage` in a script that runs again, a receiving channel that splits batches or keeps no raw content, and one that is not started when the sender sends again (#401).
+- PIPE-REC-05: source: #401 "Channel destinations", reproduced in `channel-hand-off.itest.ts`; D-397 does it for a Channel destination, with D-393's ERROR for a message the receiving channel failed. Not yet: `routeMessage` in a script that runs again, a receiving channel that splits batches or keeps no raw content, and one that is not started when the sender sends again (#401).
 - PIPE-REC-06: source: D-130, D-233, D-343 (recovery waits for an earlier deployment); #339 (a resend is not checked against a send in progress).
 
 ## Batches and attachments (BAT)

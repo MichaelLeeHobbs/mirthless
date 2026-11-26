@@ -125,7 +125,8 @@ export function generateOpenAPISpec(): OpenAPISpec {
                 user: { $ref: '#/components/schemas/User' },
               },
             }),
-            '401': openApiErrorResponse('Invalid or expired refresh token'),
+            '401': openApiErrorResponse('Invalid or expired refresh token; the refresh cookie is cleared'),
+            '503': openApiErrorResponse('UNAVAILABLE: the session could not be read; the refresh cookie is kept, so try again'),
           },
         },
       },
@@ -1051,7 +1052,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
-          description: 'JWT access token from /auth/login',
+          description: 'JWT access token from /auth/login, or an API key. A credential that is refused answers 401 (403 for a disabled account or a password that must be changed). When the server cannot read the credential, any route answers 503 UNAVAILABLE: the credential may be good, so keep it and try again.',
         },
       },
       schemas: {

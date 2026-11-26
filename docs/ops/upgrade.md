@@ -701,6 +701,21 @@ GROUP BY c.channel_id;
 
 This reads the whole table, so run it at a quiet time. Start the server only on a database that is restored completely, as [Backup & restore](backup-restore.md#restore-with-pg_restore) says: rows of messages that are not restored yet look left behind.
 
+## Process Batch on a source that hands over no text (#441)
+
+A channel with `processBatch` on deployed although its source hands over content that is never an HL7 batch: a Database source (a JSON row), a DICOM source (a file's path), an Email source (the whole email, headers first), a File source with `binary` on, or an HTTP, Kafka or AMQP source whose charset is `base64`. No message of it was ever recorded, and a Database source with `updateMode` `ALWAYS` marked its rows anyway, so they were lost; an Email source left each email unread and raised an alert at every poll. Such a channel now fails to deploy (D-395), at a restart too, which reports it as a channel that failed to redeploy. Before upgrading, turn `processBatch` off on such a channel, or change its source, and redeploy it: a restart deploys what was last deployed, not what was saved. The editor has no field for `processBatch`, so turn it off through the API or by exporting, editing and importing the channel. A Mirth import holds such a channel disabled, with the reason in its description.
+
+This lists them by their saved settings. A channel saved with `processBatch` off but not redeployed since still fails at the restart, so redeploy every channel it lists, and any you changed without redeploying:
+
+```sql
+SELECT id, name, source_connector_type FROM channels
+WHERE deleted_at IS NULL AND (source_connector_properties->>'processBatch') = 'true'
+  AND (source_connector_type IN ('DATABASE', 'DICOM', 'EMAIL')
+    OR (source_connector_type = 'FILE' AND (source_connector_properties->>'binary') = 'true')
+    OR (source_connector_type = 'HTTP' AND source_connector_properties->>'bodyCharset' = 'base64')
+    OR (source_connector_type IN ('KAFKA', 'AMQP') AND source_connector_properties->>'charset' = 'base64'));
+```
+
 ## Delimited columns keep their order (#372)
 
 A Delimited row that a script changed was written back with its columns swapped or one short when column names were whole numbers (`2`, `1`) or `__proto__`. Columns are now written in the order they were read (D-378). Messages sent before stay as they were, so check them with the partner. Look at the channels with such names before the upgrade: a partner that reads the columns swapped must stop doing that, and a script that swaps them back, or gives such a row another order, must give the row as an array instead or stop. Such a script and the server have to change together: disable the channel before the upgrade, so that it stays down, change the script after it, and enable and deploy the channel.
@@ -724,7 +739,7 @@ A CHANNEL destination that queues no longer sends a message again once the targe
 
 ## A server stop no longer delivers a send to another channel twice (#401)
 
-A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-394). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel whose storage mode keeps raw content (Development, Production or Raw) now keeps the source map of a message it receives from a Channel Writer as well: one small row (channel and message ids, no message content) for each message.
+A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-397). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel whose storage mode keeps raw content (Development, Production or Raw) now keeps the source map of a message it receives from a Channel Writer as well: one small row (channel and message ids, no message content) for each message.
 
 ## Standard upgrade (Docker)
 

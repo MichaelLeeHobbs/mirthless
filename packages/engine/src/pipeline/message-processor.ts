@@ -156,7 +156,7 @@ export interface PipelineInput {
   readonly received?: ReceivedMessage | undefined;
   /** Called once a new message is in the store, before any script or destination runs. */
   readonly onStored?: (() => void) | undefined;
-  /** The Channel Writer send this message comes from (D-394). */
+  /** The Channel Writer send this message comes from (D-397). */
   readonly handOff?: HandOff | undefined;
 }
 
