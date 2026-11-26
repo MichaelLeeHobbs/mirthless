@@ -718,9 +718,15 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
 
 ## A refused redeploy keeps the channel running (#480)
 
-A redeploy of a running channel used to check only its scripts before it stopped the running version. A destination setting the deploy refused, a configuration map reference that filled a setting with a value it refused, or Delimited or HL7 v2 settings that did not validate stopped and undeployed the channel, and then the redeploy failed. Now the redeploy checks all of these first, with the certificates from the store and each connector's own deploy check, answers with the refusal, and leaves the running channel as it was (D-393). A deploy script that fails and a port the new version cannot open are still found only after the stop, and leave the channel undeployed until it is deployed again or the server restarts.
+A redeploy of a running channel used to check only its scripts before it stopped the running version. A destination setting the deploy refused, a configuration map reference that filled a setting with a value it refused, or Delimited or HL7 v2 settings that did not validate stopped and undeployed the channel, and then the redeploy failed. Now the redeploy checks all of these first, with the certificates from the store and each connector's own deploy check, answers with the refusal, and leaves the running channel as it was (D-394). A deploy script that fails and a port the new version cannot open are still found only after the stop, and leave the channel undeployed until it is deployed again or the server restarts.
 
 When several things are wrong, the refusal can now name a different one first: the channel's own settings (encryption, queued destinations and storage, the response destination, batch processing, the data type settings) come before its connectors and scripts.
+
+## A Channel Writer reads what happened in the target channel (#414)
+
+A CHANNEL destination read SENT when its target channel answers before its destinations ("On receipt" or "After source transformer") and something failed there after that. It now reads ERROR and raises its alert (D-393). Under the default response mode of the sending channel, "After destinations", the sending channel's own sender now gets an error for such a message, for example an MLLP NAK, where it got an AA. Look at channels that hand messages to a channel that answers before its destinations.
+
+A CHANNEL destination that queues no longer sends a message again once the target has stored it with an error (an HL7 batch the target stored only in part is still sent again), which made a new message in the target for every retry and delivered it again to the target's destinations that worked. It ends ERROR at once. A failure that has gone away (a partner that was down, a lookup that timed out) used to be cleared by the next retry: reprocess the message in the target channel instead.
 
 ## Standard upgrade (Docker)
 

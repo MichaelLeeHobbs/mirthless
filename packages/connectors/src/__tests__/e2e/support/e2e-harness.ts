@@ -32,16 +32,25 @@ function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
 }
 
-/** Maps status as the server's `toDispatchStatus` does under the default response mode. */
-export function toDispatchResult(result: Result<ProcessedMessage>): Awaited<ReturnType<ChannelRuntimeConfig['onMessage']>> {
+/**
+ * Maps status as the server's `toSourceOutcome` does under the default response mode, or, with
+ * `answersBeforeDestinations`, under "After source transformer": a destination's failure is then
+ * not the status but `destinationFailed`.
+ */
+export function toDispatchResult(
+  result: Result<ProcessedMessage>,
+  answersBeforeDestinations = false,
+): Awaited<ReturnType<ChannelRuntimeConfig['onMessage']>> {
   if (!result.ok) return result;
-  const { messageId, status, response, queued } = result.value;
-  const dispatchStatus = status === 'FILTERED' ? 'FILTERED' : status === 'ERROR' ? 'ERROR' : 'PROCESSED';
+  const { messageId, status, errorStage, response, queued } = result.value;
+  const hidden = answersBeforeDestinations && status === 'ERROR' && errorStage === 'DESTINATION';
+  const dispatchStatus = status === 'FILTERED' ? 'FILTERED' : status === 'ERROR' && !hidden ? 'ERROR' : 'PROCESSED';
   return ok({
     messageId,
     status: dispatchStatus,
     ...(response === undefined ? {} : { response }),
     ...(queued ? { queued } : {}),
+    ...(hidden ? { destinationFailed: true } : {}),
   });
 }
 
@@ -206,6 +215,8 @@ export interface ChannelSpec {
   readonly destinations: ReadonlyArray<DestinationSpec>;
   /** A fresh in-memory store when absent. */
   readonly store?: InMemoryStore;
+  /** The response mode "After source transformer" instead of the default (see `toDispatchResult`). */
+  readonly answersBeforeDestinations?: boolean;
 }
 
 export interface DeployedChannel {
@@ -349,7 +360,7 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
     onMessage: async (raw) => toDispatchResult(await processor.processMessage(
       { rawContent: raw.content, sourceMap: raw.sourceMap, onStored: () => raw.onStored?.({ recoverable: true }) },
       AbortSignal.timeout(30_000),
-    )),
+    ), spec.answersBeforeDestinations),
   };
 
   const deployResult = await runtime.deploy(runtimeConfig);

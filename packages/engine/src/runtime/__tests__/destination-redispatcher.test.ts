@@ -257,6 +257,16 @@ describe('DestinationRedispatcher', () => {
     });
   });
 
+  it('ends in ERROR, not on the queue, a failure the partner calls final (#414)', async () => {
+    send.mockResolvedValue(ok({ status: 'ERROR', content: '', errorMessage: 'target recorded it with an error', final: true }));
+
+    expect(await redispatch('ON_FAILURE')).toMatchObject({ ok: true, value: 'ERROR' });
+
+    expect(store.enqueue).not.toHaveBeenCalled();
+    expect(statuses()).toEqual([[7, DESTINATION, 'ERROR']]);
+    expect(kept()).toEqual([[CONTENT_TYPE.ERROR, 'target recorded it with an error']]);
+  });
+
   describe('the channel stops', () => {
     it.each(['NEVER', 'ALWAYS'] as const)('before the send: the destination stays as it was under queue mode %s', async (queueMode) => {
       run.abort();

@@ -185,6 +185,15 @@ export interface DataTypeOptions {
 
 const DEFAULT_DELIMITED = delimitedOptionsSchema.parse({});
 
+/**
+ * A destination's response comes from another system, and the HL7 setting
+ * describes the channel's sender, so a response is read by its own MSH-18
+ * (DATA-HL7-13). Whether the Delimited settings should apply was not decided, so they still do.
+ */
+export function responseDataTypeOptions(options: DataTypeOptions | undefined): DataTypeOptions {
+  return { delimited: options?.delimited };
+}
+
 /** Throws on malformed content for typed data types (HL7V2, JSON, XML, DELIMITED, X12). */
 export function parseForSandbox(content: string, dataType: string, options?: DataTypeOptions): unknown {
   switch (dataType) {

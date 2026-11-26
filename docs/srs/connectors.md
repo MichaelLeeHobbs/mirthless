@@ -202,10 +202,10 @@ What a channel's source and destinations guarantee to the partner system on the 
 
 | ID | Requirement | Pri | Verify | Status |
 |---|---|---|---|---|
-| CONN-CHN-01 | A Channel destination shall hand its message to another channel on the same server, and shall record an error when that channel is not running or records the message with an error. | P1 | Test | Proposed |
+| CONN-CHN-01 | A Channel destination shall hand its message to another channel on the same server, and shall record an error when that channel is not running or records the message with an error, whether or not that channel's response mode reports the error to its own sender. | P1 | Test | Proposed |
 | CONN-CHN-02 | A Channel destination shall refuse, and record as an error, a message that has already passed through 10 channel hops, so that a routing loop ends. | P1 | Test | Proposed |
 
-- CONN-CHN-01: source: docs/user/connector-reference.md "CHANNEL: what it does"; D-231. Double delivery after a server stop during a hand-off is #401 (PIPE).
+- CONN-CHN-01: source: docs/user/connector-reference.md "CHANNEL: what it does"; D-231; D-393 (an error the target's response mode hides is an error here, and is not sent again, as PIPE-QUE-09 says). Double delivery after a server stop during a hand-off is #401 (PIPE).
 - CONN-CHN-02: source: docs/user/connector-reference.md "CHANNEL: what it does", "CHANNEL limits".
 
 ## SMTP (SMTP)
