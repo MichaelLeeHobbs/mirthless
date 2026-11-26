@@ -95,6 +95,43 @@ describe('apiFetch refresh', () => {
     expect(result.success).toBe(false);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
+
+  // The server cannot check the session, which says nothing about it (#473).
+  it.each([
+    ['answers 503', (): Promise<Response> => Promise.resolve(json(503, { success: false, error: { code: 'UNAVAILABLE', message: 'try again' } }))],
+    ['is rate limited', (): Promise<Response> => Promise.resolve(json(429, { success: false }))],
+    ['cannot be reached', (): Promise<Response> => Promise.reject(new TypeError('Failed to fetch'))],
+  ])('stays signed in, with the same token, when the refresh %s', async (_label, refreshAnswer) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(401, { success: false }))
+      .mockImplementationOnce(refreshAnswer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await apiFetch('/channels');
+
+    expect(result).toEqual({ success: false, error: { code: 'UNAVAILABLE', message: expect.any(String) } });
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    expect(useAuthStore.getState().accessToken).toBe('old-token');
+  });
+
+  it('signs out when the refresh is refused with another 4xx', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(json(401, { success: false }))
+      .mockResolvedValueOnce(json(403, { success: false })));
+
+    await apiFetch('/channels');
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it('stays signed in when a request answers 503', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(503, { success: false, error: { code: 'UNAVAILABLE', message: 'try again' } })));
+
+    const result = await apiFetch('/channels');
+
+    expect(result).toEqual({ success: false, error: { code: 'UNAVAILABLE', message: 'try again' } });
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
 });
 
 describe('access check (D-310)', () => {

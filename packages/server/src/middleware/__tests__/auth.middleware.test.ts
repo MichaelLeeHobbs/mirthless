@@ -194,6 +194,68 @@ describe('authenticate: API keys (D-313)', () => {
   });
 });
 
+describe('authenticate: a failure to read is not a refusal (#473)', () => {
+  const KEY = 'gf_0f8fad5b-d9cb-469f-a165-70867728950e_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ';
+  const outage = (): Error => new Error('Connection terminated due to connection timeout');
+
+  async function answerTo(req: Request): Promise<{ res: ReturnType<typeof makeRes>; next: ReturnType<typeof vi.fn> }> {
+    const res = makeRes();
+    const next = vi.fn();
+    await authenticate(req, res, next);
+    return { res, next };
+  }
+
+  async function expectUnavailable(req: Request): Promise<void> {
+    const logger = (await import('../../lib/logger.js')).default;
+    const { res, next } = await answerTo(req);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ success: false, error: { code: 'UNAVAILABLE', message: expect.any(String) } });
+    expect(mockEmit).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errMsg: 'Connection terminated due to connection timeout' }),
+      expect.any(String),
+    );
+  }
+
+  it('answers 503 and records no refusal when the user cannot be read', async () => {
+    const { loadUserStanding } = await import('../../lib/principal.js');
+    vi.mocked(loadUserStanding).mockRejectedValueOnce(outage());
+    await expectUnavailable(makeReq('GET', '/api/v1/channels'));
+  });
+
+  it('answers 503 when the session cannot be read', async () => {
+    userRow = { id: 'u1', username: 'admin', email: 'a@b.c', role: 'admin', enabled: true, mustChangePassword: false };
+    const { isSessionLive } = await import('../../lib/session-live.js');
+    vi.mocked(isSessionLive).mockRejectedValueOnce(outage());
+    await expectUnavailable(makeReq('GET', '/api/v1/channels'));
+  });
+
+  it('answers 503 when an API key cannot be read', async () => {
+    mockResolveKey.mockRejectedValueOnce(outage());
+    await expectUnavailable({ method: 'GET', originalUrl: '/api/v1/channels', headers: { authorization: `Bearer ${KEY}` } } as unknown as Request);
+  });
+
+  it('still answers 401 for a token that does not verify, without reading anything', async () => {
+    const { loadUserStanding } = await import('../../lib/principal.js');
+    mockVerify.mockImplementation(() => { throw new Error('invalid signature'); });
+    const { res, next } = await answerTo(makeReq('GET', '/api/v1/channels'));
+    expect(res.statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
+    expect(loadUserStanding).not.toHaveBeenCalled();
+  });
+
+  it('still answers a revoked session 401 once the reads succeed', async () => {
+    userRow = { id: 'u1', username: 'admin', email: 'a@b.c', role: 'admin', enabled: true, mustChangePassword: false };
+    const { isSessionLive } = await import('../../lib/session-live.js');
+    vi.mocked(isSessionLive).mockResolvedValueOnce(false);
+    const { res, next } = await answerTo(makeReq('GET', '/api/v1/channels'));
+    expect(res.statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
+    expect(mockEmit).toHaveBeenCalledWith(expect.objectContaining({ action: 'ACCESS_DENIED', userId: 'u1', attributes: expect.objectContaining({ reason: 'session_revoked' }) }));
+  });
+});
+
 describe('keyInQuery', () => {
   it('looks only at the query string', () => {
     expect(keyInQuery('/api/v1/channels/gf_0f8fad5b-d9cb-469f')).toBe(false);
