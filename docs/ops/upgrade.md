@@ -739,7 +739,7 @@ A CHANNEL destination that queues no longer sends a message again once the targe
 
 ## An email refused for some recipients reads ERROR (#414)
 
-An SMTP destination read SENT when the mail server refused some of the recipients and took the others, and said only how many. It now reads ERROR and raises its alert, the response names the recipients accepted and refused, and the message is not sent again by a queue, which would mail the others twice (D-395). An address that a mail server has always refused, for a recipient nobody noticed was gone, now makes every such message an error: remove it from the destination's settings.
+An SMTP destination read SENT when the mail server refused some of the recipients and took the others, and said only how many. It now reads ERROR and raises its alert, the response names the recipients accepted and refused, and the message is not sent again by a queue, which would mail the others twice (D-398). An address that a mail server has always refused, for a recipient nobody noticed was gone, now makes every such message an error: remove it from the destination's settings.
 
 ## Standard upgrade (Docker)
 

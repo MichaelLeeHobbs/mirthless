@@ -73,7 +73,7 @@ export interface SmtpSendResult {
 export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
 
 /**
- * Some recipients got the email: a resend would mail them again, so the ERROR is final (D-395). The addresses
+ * Some recipients got the email: a resend would mail them again, so the ERROR is final (D-398). The addresses
  * go only into the response, which is stored with the message as its content is: the error text also reaches
  * alerts and the log.
  */
