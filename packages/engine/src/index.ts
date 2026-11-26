@@ -26,7 +26,7 @@ export type {
   StoreFailure,
   StoreReadFailure,
 } from './pipeline/message-processor.js';
-export { ChannelRuntime } from './runtime/channel-runtime.js';
+export { ChannelRuntime, readyConnectors } from './runtime/channel-runtime.js';
 export type {
   RuntimeConnector,
   RuntimeSourceConnector,
