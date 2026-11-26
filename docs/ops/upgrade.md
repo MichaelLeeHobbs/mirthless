@@ -731,6 +731,10 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
   AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
 ```
 
+## An MLLP source in PASSTHROUGH answers a failed message with AE (#414)
+
+An MLLP source whose `responseMode` is PASSTHROUGH answered a message recorded with an ERROR status with the response the pipeline picked, often the AA of a destination that worked while another failed, so the sender took it as delivered. It now answers AE, as AUTO_ACK does, unless the response is a partner's own refusal, which is passed through as before. A sender that resends on AE now sends such a message again, and the destinations that worked get it again, as for any channel that reports a failed destination (D-211).
+
 ## A Channel Writer reads what happened in the target channel (#414)
 
 A CHANNEL destination read SENT when its target channel answers before its destinations ("On receipt" or "After source transformer") and something failed there after that. It now reads ERROR and raises its alert (D-393). Under the default response mode of the sending channel, "After destinations", the sending channel's own sender now gets an error for such a message, for example an MLLP NAK, where it got an AA. Look at channels that hand messages to a channel that answers before its destinations.
@@ -740,6 +744,10 @@ A CHANNEL destination that queues no longer sends a message again once the targe
 ## A FHIR destination sends only a resource of its type, and fills `${name}` (#414)
 
 A FHIR destination posted whatever the message held to `<baseUrl>/<resourceType>`, and read SENT when the server took it: a resource of another type, or content that is no FHIR resource. Such a message is now an ERROR and is not sent, and a queue does not retry it (D-397). A channel whose server took that until now stops delivering it: set `resourceType` to the type the transformer builds, or give the channel one FHIR destination per type and a filter on each. A `resourceType` that is an operation, such as `$process-message`, still takes any resource. `baseUrl` and header values are now filled with the message's `${name}` variables; a setting that holds `${...}` as text, filled by nothing until now, is sent with the value of a variable of that name if the message has one. A base URL whose configuration reference does not resolve (a mistyped `${FHIR_BASE}`) used to fail the deploy and now deploys, as an HTTP destination's URL does; each message then fails. Check that the channel's messages arrive after the upgrade.
+
+## An email refused for some recipients reads ERROR (#414)
+
+An SMTP destination read SENT when the mail server refused some of the recipients and took the others, and said only how many. It now reads ERROR and raises its alert, the response names the recipients accepted and refused, and the message is not sent again by a queue, which would mail the others twice (D-398). An address that a mail server has always refused, for a recipient nobody noticed was gone, now makes every such message an error: remove it from the destination's settings.
 
 ## Standard upgrade (Docker)
 
