@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import { exportedLanguageSchema as exportLanguage } from './script-language.schema.js';
-import { channelPropertiesSchema, sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
+import { channelPropertiesSchema, sourceConnectorTypeSchema, destinationConnectorTypeSchema, repeatedColumnIndex } from './channel.schema.js';
 import { idSchema } from './id.schema.js';
 
 // Script languages and response transformers are optional so files exported
@@ -161,10 +161,20 @@ function checkImportConnectorTypes(channel: z.infer<typeof channelExportEntrySch
   });
 }
 
+function checkImportColumnNames(channel: z.infer<typeof channelExportEntrySchema>, ctx: z.RefinementCtx): void {
+  const i = repeatedColumnIndex(channel.metadataColumns);
+  if (i < 0) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['metadataColumns', i, 'name'],
+    message: `Channel "${channel.name}": two metadata columns are named "${channel.metadataColumns[i]!.name}"`,
+  });
+}
+
 export const channelImportSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  channels: z.array(channelExportEntrySchema.superRefine(checkImportConnectorTypes)),
+  channels: z.array(channelExportEntrySchema.superRefine(checkImportConnectorTypes).superRefine(checkImportColumnNames)),
   collisionMode: z.enum(['SKIP', 'OVERWRITE', 'CREATE_NEW']),
   /** The group new channels join; see GrantService.placeNewChannel (D-310). */
   groupId: idSchema.optional(),

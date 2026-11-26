@@ -57,6 +57,18 @@ export const metadataColumnInputSchema = z.object({
 
 export type MetadataColumnInput = z.infer<typeof metadataColumnInputSchema>;
 
+/** The position of the first column that has the name of one before it, or -1. A channel's columns are one per name, as the database holds them. */
+export function repeatedColumnIndex(columns: ReadonlyArray<{ readonly name: string }>): number {
+  const names = columns.map((c) => c.name);
+  return names.findIndex((name, i) => names.indexOf(name) !== i);
+}
+
+function uniqueColumnNames(columns: ReadonlyArray<{ readonly name: string }>, ctx: z.RefinementCtx): void {
+  const i = repeatedColumnIndex(columns);
+  if (i < 0) return;
+  ctx.addIssue({ code: 'custom', path: [i, 'name'], message: `Two metadata columns are named "${columns[i]!.name}"; give each its own name` });
+}
+
 /** One left out is JavaScript on create and keeps its stored language on update (D-294). */
 export const channelScriptLanguagesSchema = z.object({
   deploy: scriptLanguageSchema.optional(),
@@ -97,7 +109,7 @@ export const createChannelSchema = z.object({
   properties: channelPropertiesSchema.optional(),
   scripts: channelScriptsSchema.optional(),
   destinations: z.array(destinationInputSchema).optional(),
-  metadataColumns: z.array(metadataColumnInputSchema).optional(),
+  metadataColumns: z.array(metadataColumnInputSchema).superRefine(uniqueColumnNames).optional(),
   filters: z.array(filterInputSchema).optional(),
   transformers: z.array(transformerInputSchema).optional(),
   /** The group the new channel joins; see GrantService.placeNewChannel (D-310). */
@@ -150,7 +162,7 @@ const updateChannelBaseSchema = withoutDefaults(createChannelSchema.omit({ group
   properties: withoutDefaults(channelPropertiesSchema).partial().optional(),
   scripts: withoutDefaults(channelScriptsSchema).partial().optional(),
   destinations: z.array(updateDestinationInputSchema).optional(),
-  metadataColumns: z.array(withoutDefaults(metadataColumnInputSchema)).optional(),
+  metadataColumns: z.array(withoutDefaults(metadataColumnInputSchema)).superRefine(uniqueColumnNames).optional(),
   filters: z.array(updateFilterInputSchema).optional(),
   transformers: z.array(updateTransformerInputSchema).optional(),
   revision: z.number().int().positive(),
