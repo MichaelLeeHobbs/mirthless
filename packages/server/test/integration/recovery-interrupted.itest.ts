@@ -3,15 +3,9 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { CONTENT_TYPE, createChannelSchema } from '@galvanigraph/core-models';
-import { adminActor, describeIntegration, loadServerModules, unwrap, waitForBlocked, WAIT, type ServerModules, type TestActor } from './_setup.js';
-
-const CHILD = fileURLToPath(new URL('./support/starting-server-child.ts', import.meta.url));
-const SERVER = fileURLToPath(new URL('../..', import.meta.url));
-/** A child loads the whole server through tsx first, as one that gets 60 s in restart-deploys-recorded does. */
-const START_TIMEOUT_MS = 60_000;
+import { adminActor, describeIntegration, loadServerModules, unwrap, WAIT, type ServerModules, type TestActor } from './_setup.js';
+import { START_TIMEOUT_MS, startAndDie, WAITS_FOR_THE_LOCK } from './support/killed-server.js';
 
 describeIntegration('A message interrupted again and again (real Postgres, killed processes)', () => {
   let mods: ServerModules;
@@ -47,7 +41,7 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
       inboundDataType: 'RAW', outboundDataType: 'RAW',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: { script: 'return [];', pollingIntervalMs: 600_000 },
       responseMode: 'AUTO_AFTER_DESTINATIONS',
-      transformers: [{ inboundDataType: 'RAW', outboundDataType: 'RAW', steps: [{ type: 'JAVASCRIPT', script: "try { await getResource('none'); } catch (e) { /* it has none */ } msg = 'ran:' + String(msg);" }] }],
+      transformers: [{ inboundDataType: 'RAW', outboundDataType: 'RAW', steps: [{ type: 'JAVASCRIPT', script: `${WAITS_FOR_THE_LOCK} msg = 'ran:' + String(msg);` }] }],
       destinations: [{ name: 'Partner', connectorType: 'JAVASCRIPT', properties: { script: "return 'ok';" } }],
     }), actor));
     created.push(channel.id);
@@ -63,39 +57,6 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
       { metaDataId: 0, contentType: CONTENT_TYPE.SOURCE_MAP, content: '{}', dataType: 'JSON' },
     ]));
     return Number(messageId);
-  }
-
-  /** Start a server and kill it once its recovery is running the message's script again. */
-  async function startAndDie(): Promise<void> {
-    const locker = await mods.pool.connect();
-    try {
-      await locker.query('BEGIN');
-      await locker.query('LOCK TABLE resources IN ACCESS EXCLUSIVE MODE');
-      await dieOnceBlocked();
-    } finally {
-      await locker.query('ROLLBACK');
-      locker.release();
-    }
-  }
-
-  async function dieOnceBlocked(): Promise<void> {
-    const child = spawn(process.execPath, ['--import', 'tsx', CHILD], { cwd: SERVER, stdio: 'pipe' });
-    let output = '';
-    for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-    const ended = new Promise<Error>((resolve) => {
-      child.once('error', resolve);
-      child.once('close', (code, signal) => { resolve(new Error(`The server ended by itself (${String(code ?? signal)}): ${output}`)); });
-    });
-    let early: Error | null;
-    try {
-      early = await Promise.race([waitForBlocked(mods.pool, 'select %"resources"', START_TIMEOUT_MS).then(() => null), ended]);
-    } catch (err) {
-      throw new Error(`${String(err)}: ${output}`, { cause: err });
-    } finally {
-      child.kill('SIGKILL');
-      await ended;
-    }
-    if (early !== null) throw early;
   }
 
   async function restart(): Promise<string | null> {
@@ -118,7 +79,7 @@ describeIntegration('A message interrupted again and again (real Postgres, kille
     const { id } = await stoppedChannel();
     const messageId = await unfinishedMessage(id);
 
-    for (let i = 0; i < more; i += 1) await startAndDie();
+    for (let i = 0; i < more; i += 1) await startAndDie(mods.pool);
     expect(await restart()).toBeNull();
 
     await vi.waitFor(async () => { expect(await messagesOf(id)).not.toContainEqual(expect.objectContaining({ processed: false })); }, WAIT);

@@ -61,6 +61,15 @@ A channel script's time limit does not stop every script. One it does not stop h
 - A liveness probe that restarts the server sooner than the watchdog does loses the hold, and the same message can hang the server again after each restart. Give it a failure window longer than twice your longest script timeout plus 70 seconds (reading a script's result has a limit of the same length).
 - The watchdog is off from when a debugger port is opened until it is closed or the server restarts: a breakpoint looks like a stuck script. The server logs a warning then, and an ERROR when the watchdog's thread stops, which is started again after 10 seconds.
 
+## A send to another channel that a server stop interrupts
+
+A CHANNEL destination waits for its target channel's whole pipeline. A stop in between leaves the sender's destination RECEIVED (or PENDING on its queue) and the target's message open. At the next start the target's crash recovery runs its message, and the sender's send finds what the target recorded and does not make a second message (D-403):
+
+- The log has an INFO line, `A send to another channel that a server stop interrupted had been delivered there; it is not sent again`, naming the sending message and destination and the target's message. The destination reads SENT with `messageId=<n>`, or ERROR when the target failed that message: reprocess it in the target.
+- The send waits, at most 5 minutes, while the target channel runs the message. A sender whose target is not started yet sends again, as before: give it a dependency on the target, so the target starts first.
+- An ERROR line, `Could not read or remove what the target channel recorded for a send`, means the database failed that read or delete. The send went ahead, so the target may hold the message twice.
+- Not covered: a `routeMessage` call in a script, a target that splits HL7 batches, and a target whose storage mode keeps no raw content. Those are sent again after a stop, as before.
+
 ---
 
 ## Metrics (`/metrics`, Prometheus)
