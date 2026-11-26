@@ -129,7 +129,7 @@ export interface ConnectorResponse {
   readonly errorMessage?: string;
   /**
    * On an ERROR: sending it again would do harm or cannot help. The partner kept the message although it
-   * failed there, so it would get a second copy (D-393), or the message can never be sent as it is (D-401).
+   * failed there, so it would get a second copy (D-393), or the message can never be sent as it is (D-402).
    * The send ends ERROR and is not queued for a retry.
    */
   readonly final?: true;
