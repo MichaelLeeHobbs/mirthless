@@ -45,6 +45,16 @@ describe('internalCause', () => {
     expect(internalCause(errorResponse(undefined))).toEqual({ cause: undefined });
   });
 
+  it('gives the error behind any other 500, such as a missing content key', () => {
+    const error = new ServiceError('CONFIG_ERROR', 'CONTENT_ENCRYPTION_KEY is not set');
+    expect(internalCause(errorResponse(error))).toEqual({ cause: error });
+  });
+
+  it('survives details added to the body in place', () => {
+    const body = Object.assign(errorResponse(new Error('boom')), { details: { field: 'name' } });
+    expect(internalCause(body)).toBeDefined();
+  });
+
   it('gives nothing for another code, a body made elsewhere, or no object', () => {
     expect(internalCause(errorResponse(new ServiceError('NOT_FOUND', 'x')))).toBeUndefined();
     expect(internalCause({ code: 'INTERNAL', message: 'Internal server error' })).toBeUndefined();

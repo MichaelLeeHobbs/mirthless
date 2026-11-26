@@ -52,17 +52,26 @@ function requestSerializer(includeHeaders: boolean): (req: Serialized) => Serial
 }
 
 const CAUSE = Symbol('internalCause');
-type NotedResponse = ServerResponse & { [CAUSE]?: { readonly cause: unknown } };
+const CLOSED_FIRST = Symbol('closedBeforeAnswer');
+type NotedResponse = ServerResponse & { [CAUSE]?: { readonly cause: unknown }; [CLOSED_FIRST]?: true };
 
 /**
- * Notes what an INTERNAL answer was made from. Its request line is the one log
- * line every such answer leaves: many controllers answer without logging (#473).
+ * Notes what a 500 answer was made from. Its request line is the one log line
+ * every such answer leaves: many controllers answer without logging (#473).
  */
-function noteInternalCause(res: Response): void {
+function noteInternalCause(req: Request, res: Response, logger: Logger): void {
+  // Runs before pino-http's listener, which writes the line of a request whose
+  // client left before the answer then, without the cause (a proxy's timeout).
+  res.once('close', () => { if (!res.writableEnded) (res as NotedResponse)[CLOSED_FIRST] = true; });
   const json = res.json.bind(res);
   res.json = (body: unknown): Response => {
     const noted = isPlainObject(body) ? internalCause(body['error']) : undefined;
-    if (noted !== undefined) (res as NotedResponse)[CAUSE] = noted;
+    if (noted !== undefined) {
+      (res as NotedResponse)[CAUSE] = noted;
+      if ((res as NotedResponse)[CLOSED_FIRST] === true) {
+        logger.error({ requestId: req.id, method: req.method, url: urlWithoutQueryValues(req.originalUrl), err: errorInfo(noted.cause) }, 'Request failed after its client had gone');
+      }
+    }
     return json(body);
   };
 }
@@ -88,7 +97,7 @@ export function requestLogger(logger: Logger, includeHeaders: boolean): RequestH
     },
   });
   return (req, res, next) => {
-    noteInternalCause(res);
+    noteInternalCause(req, res, logger);
     log(req, res, next);
   };
 }

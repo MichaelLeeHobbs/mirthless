@@ -19,16 +19,19 @@ export function mapErrorToStatus(error: unknown): number {
   return 500;
 }
 
-/** The error behind each INTERNAL body made here, so its request's log line can carry it (#473). */
+/**
+ * The error behind each body made here for a 500 (INTERNAL or CONFIG_ERROR), so
+ * its request's log line can carry it (#473). Keyed by the body: send it as made.
+ */
 const internalCauses = new WeakMap<object, { readonly cause: unknown }>();
 
 export function errorResponse(error: unknown): { code: string; message: string } {
   const body = isServiceError(error) ? { code: error.code, message: error.message } : { code: 'INTERNAL', message: 'Internal server error' };
-  if (body.code === 'INTERNAL') internalCauses.set(body, { cause: error });
+  if (mapErrorToStatus(error) === 500) internalCauses.set(body, { cause: error });
   return body;
 }
 
-/** What an `error` body that `errorResponse` answered INTERNAL was made from. */
+/** What an `error` body that `errorResponse` made for a 500 was made from. */
 export function internalCause(body: unknown): { readonly cause: unknown } | undefined {
   return typeof body === 'object' && body !== null ? internalCauses.get(body) : undefined;
 }

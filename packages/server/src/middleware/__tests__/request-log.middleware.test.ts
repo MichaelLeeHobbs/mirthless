@@ -101,6 +101,7 @@ describe('urlWithoutQueryValues', () => {
 // At `warn`, an INTERNAL answer used to leave no line at all, and at `info` no cause (#473).
 describe('requestLogger: an INTERNAL answer carries its cause', () => {
   let h: Harness;
+  let arrived: () => void = () => undefined;
 
   function failingRead(): Error {
     // As a QueryError: its message names the statement, its cause can quote a value (D-347).
@@ -121,6 +122,13 @@ describe('requestLogger: an INTERNAL answer carries its cause', () => {
     app.get('/unexpected', answer(failingRead()));
     app.get('/internal', answer(new ServiceError('INTERNAL', 'Could not read the channel')));
     app.get('/thrown-string', answer('socket hang up'));
+    app.get('/config', answer(new ServiceError('CONFIG_ERROR', 'CONTENT_ENCRYPTION_KEY is not set')));
+    app.get('/internal-as-400', (_req, res) => { res.status(400).json({ success: false, error: errorResponse(new Error('odd status')) }); });
+    // Answers only once its client has gone, as a slow search does after a proxy's timeout.
+    app.get('/abandoned', (req, res) => {
+      res.once('close', () => { answer(failingRead())(req, res); });
+      arrived();
+    });
     app.get('/missing', answer(new ServiceError('NOT_FOUND', 'Channel not found')));
     app.get('/busy', answer(new ServiceError('UNAVAILABLE', 'Try again')));
     const server = app.listen(0, '127.0.0.1');
@@ -157,6 +165,31 @@ describe('requestLogger: an INTERNAL answer carries its cause', () => {
     before = h.lines.length;
     await call('/thrown-string', 500);
     expect(await linesAfter(before)).toEqual([expect.objectContaining({ level: 50, err: { errMsg: 'socket hang up' } })]);
+  });
+
+  it('logs any other 500, and an INTERNAL body sent with another status', async () => {
+    let before = h.lines.length;
+    await call('/config', 500);
+    expect(await linesAfter(before)).toEqual([expect.objectContaining({ level: 50, err: expect.objectContaining({ errMsg: 'CONTENT_ENCRYPTION_KEY is not set' }) })]);
+    before = h.lines.length;
+    await call('/internal-as-400', 400);
+    expect(await linesAfter(before)).toEqual([expect.objectContaining({ level: 50, err: expect.objectContaining({ errMsg: 'odd status' }) })]);
+  });
+
+  it('logs the cause of an answer made after the client had gone', async () => {
+    const before = h.lines.length;
+    const reached = new Promise<void>((resolve) => { arrived = resolve; });
+    const controller = new AbortController();
+    const request = fetch(`${h.base}/abandoned?q=${MRN}`, { signal: controller.signal }).catch(() => undefined);
+    await reached;
+    controller.abort();
+    await request;
+
+    const lines = await linesAfter(before);
+    expect(lines).toEqual([expect.objectContaining({
+      level: 50, requestId: 'req-473', url: '/abandoned?q', err: expect.objectContaining({ errMsg: 'select "messages" failed: connection timeout' }),
+    })]);
+    expect(h.lines.slice(before).join('')).not.toContain(MRN);
   });
 
   it('writes nothing at warn for an answer that is not INTERNAL', async () => {

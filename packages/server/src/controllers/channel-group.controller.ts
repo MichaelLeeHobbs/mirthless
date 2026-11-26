@@ -124,7 +124,7 @@ export class ChannelGroupController {
       logger.warn({ errMsg: result.error.message, channelId }, 'Failed to set channel groups');
       // A refused grant names the permissions the actor lacks on the channel.
       const details = isServiceError(result.error) ? result.error.details : undefined;
-      res.status(status).json({ success: false, error: { ...errorResponse(result.error), ...(details ? { details } : {}) } });
+      res.status(status).json({ success: false, error: Object.assign(errorResponse(result.error), details ? { details } : {}) });
       return;
     }
 
