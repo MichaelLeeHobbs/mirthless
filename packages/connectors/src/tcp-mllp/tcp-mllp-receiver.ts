@@ -7,7 +7,7 @@ import type {
   RawMessage,
   DispatchResult,
 } from '../base.js';
-import { DISPATCH_STATUS } from '../base.js';
+import { DISPATCH_STATUS, dispatchFailure } from '../base.js';
 import { MllpParser, frameBytes, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
 import type { TlsServerOptions } from '../tls.js';
 import { buildAck, type AckCode } from './ack-builder.js';
@@ -303,10 +303,13 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     return frameBytes(Buffer.from(buildAck(content, ackCodeFor(result)), this.config.charset), this.config.framing);
   }
 
-  /** Null when there is no response to pass through, so the sender gets an ACK or NAK: it is never left without an answer. */
+  /**
+   * Null when there is no response to pass through, so the sender gets an ACK or NAK: it is never left without an answer.
+   * A message recorded with an ERROR status gets the NAK, because the response may be the AA of a destination that worked.
+   */
   private passthroughFrame(result: Result<DispatchResult>): Buffer | null {
     if (this.config.responseMode !== MLLP_RESPONSE_MODE.PASSTHROUGH) return null;
-    if (!result.ok || result.value.response === undefined) return null;
+    if (!result.ok || dispatchFailure(result) !== null || result.value.response === undefined) return null;
     try {
       return wrapMllp(result.value.response, this.config.charset, this.config.framing);
     } catch (err) {

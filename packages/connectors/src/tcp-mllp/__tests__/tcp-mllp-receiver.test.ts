@@ -305,6 +305,27 @@ describe('TcpMllpReceiver acknowledgements', () => {
     expect(response).toBe('CUSTOM|RESPONSE');
   });
 
+  it('PASSTHROUGH mode answers a message recorded with an ERROR status with AE, not a destination\'s answer (#414)', async () => {
+    receiver = new TcpMllpReceiver(makeConfig({ responseMode: MLLP_RESPONSE_MODE.PASSTHROUGH }));
+    const accept = 'MSH|^~\\&|LAB|B|A|C|20260101||ACK|X1|P|2.5\rMSA|AA|MSGID123';
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, status: DISPATCH_STATUS.ERROR, response: accept })));
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const response = await connectAndSend(TEST_PORT, VALID_HL7);
+
+    expect(response).toContain('MSA|AE|MSGID123');
+  });
+
+  it('PASSTHROUGH mode passes a filtered message\'s response through', async () => {
+    receiver = new TcpMllpReceiver(makeConfig({ responseMode: MLLP_RESPONSE_MODE.PASSTHROUGH }));
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, status: DISPATCH_STATUS.FILTERED, response: 'CUSTOM|RESPONSE' })));
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    expect(await connectAndSend(TEST_PORT, VALID_HL7)).toBe('CUSTOM|RESPONSE');
+  });
+
   it('processes and ACKs two frames in one chunk strictly in order', async () => {
     const order: string[] = [];
     receiver = new TcpMllpReceiver(makeConfig());

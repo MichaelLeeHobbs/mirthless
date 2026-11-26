@@ -93,6 +93,39 @@ describe('real message through a single channel (TCP → transform → TCP)', ()
   });
 });
 
+describe('an MLLP source that passes a destination\'s answer through (#414)', () => {
+  const ackFrom = (code: string) => (message: string): string =>
+    `MSH|^~\\&|LAB|B|A|C|20260101||ACK|L${code}|P|2.5\rMSA|${code}|${message.split('\r')[0]?.split('|')[9] ?? ''}`;
+  let refusing: MllpCaptureServer | null = null;
+  afterEach(() => { refusing?.close(); refusing = null; });
+
+  it.each([
+    ['answers the sender with AE when another destination refused it', 'AE', 'MSA|AE|12345'],
+    ['passes the answer through when every destination took it', 'AA', 'MSA|AA|12345'],
+  ] as const)('%s', async (_what, second, expected) => {
+    captureServer = await startMllpCaptureServer(ackFrom('AA'));
+    refusing = await startMllpCaptureServer(ackFrom(second));
+    const port = await freePort();
+    const channel = await deployChannel({
+      channelId: `00000000-0000-0000-0000-passthru000${second === 'AE' ? '1' : '2'}`,
+      dataType: 'HL7V2',
+      source: mllpSource(port, { responseMode: 'PASSTHROUGH' }),
+      responseFrom: 'Lab',
+      destinations: [
+        { metaDataId: 1, name: 'Lab', connector: mllpDestination(captureServer.port, { responseTimeout: 5_000 }) },
+        { metaDataId: 2, name: 'Billing', connector: mllpDestination(refusing.port, { responseTimeout: 5_000 }) },
+      ],
+    });
+    deployed.push(channel);
+
+    const answer = await sendMllp(port, HL7_ADT);
+
+    expect(answer).toContain(expected);
+    expect(answer.includes('|LAA|')).toBe(second === 'AA');
+    expect(captureServer.received).toHaveLength(1);
+  });
+});
+
 describe('a channel stopped while a message is on its way', () => {
   it('delivers it and answers its sender, and leaves the one behind it unanswered and unrecorded (#413)', async () => {
     let sending = (): void => undefined;
