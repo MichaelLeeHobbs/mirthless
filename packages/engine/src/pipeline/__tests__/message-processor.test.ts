@@ -373,11 +373,14 @@ describe('MessageProcessor', () => {
     const config = makeConfig({
       dataType: 'HL7V2',
       dataTypeOptions: { hl7: { hexCodePoints: true } },
-      // The message the channel received keeps the setting: without it, this filters the message.
+      // The message the channel received keeps the setting at the source and the destination: without it, these filter the message.
       scripts: { sourceFilter: { code: 'return msg.getText("NTE.3") === "dose ≤ 5 mg";' } },
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true, queueMode: 'NEVER',
-        scripts: { responseTransformer: { code: 'return msg.getText("NTE.3");' } },
+        scripts: {
+          filter: { code: 'return msg.getText("NTE.3") === "dose ≤ 5 mg";' },
+          responseTransformer: { code: 'return msg.getText("NTE.3");' },
+        },
       }],
     });
     const processor = new MessageProcessor(sandbox, store, makeSendFn({ status: 'SENT', content: answer }), config, DEFAULT_EXECUTION_OPTIONS);

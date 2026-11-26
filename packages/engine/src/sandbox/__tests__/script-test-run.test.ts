@@ -60,12 +60,13 @@ describe('runScriptTest', () => {
   });
 
   it("DATA-HL7-13: a response transformer's test run reads the sample answer by its own MSH-18, as the pipeline does (#492)", async () => {
-    const result = await run({
-      kind: 'transformer', surface: { dataType: 'HL7V2', templateContext: 'DESTINATION_RESPONSE_TRANSFORMER' },
+    const readIn = async (templateContext: 'DESTINATION_RESPONSE_TRANSFORMER' | 'DESTINATION_FILTER_TRANSFORMER'): Promise<string | undefined> => (await run({
+      kind: 'transformer', surface: { dataType: 'HL7V2', templateContext },
       sample: `${ADT}\rNTE|1||it\\X2019\\s`, dataTypeOptions: { hl7: { hexCodePoints: true } },
       script: "logger.info(JSON.stringify(msg.getText('NTE.3')));",
-    });
-    expect(result.logs[0]?.message).toBe(JSON.stringify('it \x19s'));
+    })).logs[0]?.message;
+    expect(await readIn('DESTINATION_RESPONSE_TRANSFORMER')).toBe(JSON.stringify('it \x19s'));
+    expect(await readIn('DESTINATION_FILTER_TRANSFORMER')).toBe(JSON.stringify('it’s'));
   });
 
   it('reports logger output, map changes and the destinations a source script left', async () => {
