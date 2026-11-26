@@ -1,4 +1,4 @@
-// Kept on the source transformer as inboundProperties.hl7 (D-386), and
+// Kept on the source transformer as inboundProperties.hl7 (D-392), and
 // validated with the schema deploy checks, so a bad setting shows before deploying.
 
 import type { ReactNode } from 'react';
@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import { hl7OptionsSchema } from '@galvanigraph/core-models';
 import { getBool, propertyUpdaters } from '../common/connector-properties.js';
+import { settingsProblem } from './settings-problem.js';
 
 type Settings = Readonly<Record<string, unknown>>;
 
@@ -17,14 +18,12 @@ interface Hl7SettingsProps {
 }
 
 export function Hl7Settings({ settings, onChange }: Hl7SettingsProps): ReactNode {
-  const parsed = hl7OptionsSchema.safeParse(settings);
+  const problem = settingsProblem(hl7OptionsSchema, settings);
   const { update: set } = propertyUpdaters(settings, onChange);
   return (
     <>
       <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 1.5 }}>HL7 v2 settings</Typography>
-      {!parsed.success && (
-        <Alert severity="error" sx={{ mb: 2 }}>The channel will not deploy: {parsed.error.issues.map((i) => i.message).join('; ')}</Alert>
-      )}
+      {problem !== undefined && <Alert severity="error" sx={{ mb: 2 }}>The channel will not deploy: {problem}</Alert>}
       <FormControlLabel label="The sender writes hex escapes as Unicode code points"
         control={<Switch checked={getBool(settings, 'hexCodePoints', false)} onChange={(_e, on) => { set('hexCodePoints', on); }} />} />
       <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
