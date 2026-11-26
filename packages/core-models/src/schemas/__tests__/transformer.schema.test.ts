@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { transformerStepInputSchema, transformerInputSchema, delimitedOptionsSchema } from '../transformer.schema.js';
+import { transformerStepInputSchema, transformerInputSchema, delimitedOptionsSchema, hl7OptionsSchema } from '../transformer.schema.js';
+
+describe('hl7OptionsSchema', () => {
+  it('reads hex escapes as bytes when nothing is set', () => {
+    expect(hl7OptionsSchema.parse({})).toEqual({ hexCodePoints: false });
+  });
+
+  it('keeps the code-point setting', () => {
+    expect(hl7OptionsSchema.parse({ hexCodePoints: true })).toEqual({ hexCodePoints: true });
+  });
+
+  it('refuses a setting that is not a boolean, and a key it does not know', () => {
+    expect(hl7OptionsSchema.safeParse({ hexCodePoints: 'yes' }).success).toBe(false);
+    expect(hl7OptionsSchema.safeParse({ hexCodepoints: true }).success).toBe(false);
+  });
+});
 
 describe('delimitedOptionsSchema', () => {
   it('fills every setting from {} with comma-separated, double-quoted lines', () => {

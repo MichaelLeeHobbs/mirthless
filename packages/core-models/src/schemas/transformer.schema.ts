@@ -65,3 +65,14 @@ export const delimitedOptionsSchema = z.object({
   });
 
 export type DelimitedOptions = z.infer<typeof delimitedOptionsSchema>;
+
+/** Kept on the source transformer as `inboundProperties.hl7` (D-386). */
+export const hl7OptionsSchema = z.strictObject({
+  /**
+   * The sender writes a hex escape of 4, 8, 12… digits as Unicode code points,
+   * which MSH-18 has no value for: HL7 leaves what the digits mean to sender and receiver.
+   */
+  hexCodePoints: z.boolean().default(false),
+});
+
+export type Hl7Options = z.infer<typeof hl7OptionsSchema>;

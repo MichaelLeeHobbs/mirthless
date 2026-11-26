@@ -124,6 +124,7 @@ export function ScriptEditor({
       templateContext: surface.templateContext as ScriptTestRunRequest['templateContext'],
       destinationSet: surface.destinationSet === true,
       channelId: testSample.channelId,
+      dataTypeProperties: testSample.dataTypeProperties,
     });
   };
   // Ctrl+Enter in the editor runs the latest script, so the action reads it through a ref.

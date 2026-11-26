@@ -21,6 +21,8 @@ export interface ScriptTestSample {
   readonly channelId: string | undefined;
   readonly sample: string;
   readonly setSample: (sample: string) => void;
+  /** The source transformer's inbound properties as edited, so a test run reads the sample as the channel would deploy (#474). */
+  readonly dataTypeProperties: Readonly<Record<string, unknown>>;
 }
 
 export const ScriptTestSampleContext = createContext<ScriptTestSample | undefined>(undefined);

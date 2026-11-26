@@ -177,8 +177,8 @@ export function ChannelEditorPage(): ReactNode {
   // One sample message for every script's test run on this page; memory only (PHI).
   const [sampleMessage, setSampleMessage] = useState('');
   const testSample = useMemo(
-    () => ({ channelId: id, sample: sampleMessage, setSample: setSampleMessage }),
-    [id, sampleMessage],
+    () => ({ channelId: id, sample: sampleMessage, setSample: setSampleMessage, dataTypeProperties: sourceTransformer.inboundProperties }),
+    [id, sampleMessage, sourceTransformer.inboundProperties],
   );
   const sourceConnectorProperties = watch('sourceConnectorProperties');
 
