@@ -215,6 +215,8 @@ export interface ChannelSpec {
   readonly destinations: ReadonlyArray<DestinationSpec>;
   /** A fresh in-memory store when absent. */
   readonly store?: InMemoryStore;
+  /** The destination whose response answers the source, as the response mode "Destination" sets it. */
+  readonly responseFrom?: string;
   /** The response mode "After source transformer" instead of the default (see `toDispatchResult`). */
   readonly answersBeforeDestinations?: boolean;
 }
@@ -310,6 +312,7 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
     dataType: spec.dataType,
     scripts: sourceScripts as ChannelScripts,
     destinations: destConfigs,
+    ...(spec.responseFrom === undefined ? {} : { responseSource: { kind: 'DESTINATION' as const, destinationName: spec.responseFrom } }),
   };
 
   const destByMeta = new Map(spec.destinations.map((d) => [d.metaDataId, d]));

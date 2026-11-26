@@ -10,7 +10,7 @@ import type {
 import { DISPATCH_STATUS } from '../base.js';
 import { MllpParser, frameBytes, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
 import type { TlsServerOptions } from '../tls.js';
-import { buildAck, type AckCode } from './ack-builder.js';
+import { buildAck, classifyAckResponse, type AckCode } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 const IDLE_SOCKET_TIMEOUT_MS = 300_000;
@@ -303,10 +303,15 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     return frameBytes(Buffer.from(buildAck(content, ackCodeFor(result)), this.config.charset), this.config.framing);
   }
 
-  /** Null when there is no response to pass through, so the sender gets an ACK or NAK: it is never left without an answer. */
+  /**
+   * Null when there is no response to pass through, so the sender gets an ACK or NAK: it is never left without an answer.
+   * A message recorded with an ERROR status keeps only a response that is a partner's own refusal, with its code and text:
+   * any other may be the AA of a destination that worked, and gets the NAK.
+   */
   private passthroughFrame(result: Result<DispatchResult>): Buffer | null {
     if (this.config.responseMode !== MLLP_RESPONSE_MODE.PASSTHROUGH) return null;
     if (!result.ok || result.value.response === undefined) return null;
+    if (ackCodeFor(result) === 'AE' && !isRefusal(result.value.response)) return null;
     try {
       return wrapMllp(result.value.response, this.config.charset, this.config.framing);
     } catch (err) {
@@ -317,6 +322,12 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
       return null;
     }
   }
+}
+
+/** An HL7 acknowledgement whose MSA-1 is neither an accept nor missing. */
+function isRefusal(response: string): boolean {
+  const { ackCode } = classifyAckResponse(response);
+  return ackCode !== '' && ackCode !== 'AA' && ackCode !== 'CA';
 }
 
 function ackCodeFor(result: Result<DispatchResult>): AckCode {

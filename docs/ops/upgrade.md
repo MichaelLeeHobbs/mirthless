@@ -737,6 +737,10 @@ A redeploy of a running channel used to check only its scripts before it stopped
 
 When several things are wrong, the refusal can now name a different one first: the channel's own settings (encryption, queued destinations and storage, the response destination, batch processing, the data type settings) come before its connectors and scripts.
 
+## An MLLP source in PASSTHROUGH answers a failed message with AE (#414)
+
+An MLLP source whose `responseMode` is PASSTHROUGH answered a message recorded with an ERROR status with the response the pipeline picked, often the AA of a destination that worked while another failed, so the sender took it as delivered. It now answers AE, as AUTO_ACK does, unless the response is a partner's own refusal, which is passed through as before. A sender that resends on AE now sends such a message again, and the destinations that worked get it again, as for any channel that reports a failed destination (D-211).
+
 ## A Channel Writer reads what happened in the target channel (#414)
 
 A CHANNEL destination read SENT when its target channel answers before its destinations ("On receipt" or "After source transformer") and something failed there after that. It now reads ERROR and raises its alert (D-393). Under the default response mode of the sending channel, "After destinations", the sending channel's own sender now gets an error for such a message, for example an MLLP NAK, where it got an AA. Look at channels that hand messages to a channel that answers before its destinations.
