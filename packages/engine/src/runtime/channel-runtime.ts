@@ -43,6 +43,26 @@ const EARLIER_ENDS_MS = 10_000;
 /** How long a stop waits for work in the background to end. */
 const BACKGROUND_ENDS_MS = 10_000;
 
+/**
+ * Each connector's deploy check, the source first, up to the first that refuses. A caller that only
+ * checks (#480) must not undeploy what it readied: a Channel Reader's undeploy unregisters its channel id.
+ */
+export async function readyConnectors(
+  config: Pick<ChannelRuntimeConfig, 'source' | 'destinations'>,
+): Promise<{ readonly readied: readonly RuntimeConnector[]; readonly refusal: Error | null }> {
+  const readied: RuntimeConnector[] = [];
+  const connectors: ReadonlyArray<readonly [string, RuntimeConnector]> = [
+    ['Source', config.source],
+    ...[...config.destinations].map(([id, dest]) => [`Destination ${String(id)}`, dest] as const),
+  ];
+  for (const [name, connector] of connectors) {
+    const result = await connector.onDeploy();
+    if (!result.ok) return { readied, refusal: new Error(`${name} deploy failed: ${result.error.message}`) };
+    readied.push(connector);
+  }
+  return { readied, refusal: null };
+}
+
 /** A connector that throws must not leave those after it running. */
 async function haltConnector(connector: RuntimeConnector): Promise<Result<void>> {
   const called = await tryCatch(() => connector.onHalt());
@@ -67,18 +87,10 @@ export class ChannelRuntime {
         throw new Error(`Cannot deploy: channel is ${this.state}`);
       }
 
-      const deployed: RuntimeConnector[] = [];
-      const connectors: ReadonlyArray<readonly [string, RuntimeConnector]> = [
-        ['Source', config.source],
-        ...[...config.destinations].map(([id, dest]) => [`Destination ${String(id)}`, dest] as const),
-      ];
-      for (const [name, connector] of connectors) {
-        const result = await connector.onDeploy();
-        if (!result.ok) {
-          await Promise.all(deployed.map((c) => c.onUndeploy()));
-          throw new Error(`${name} deploy failed: ${result.error.message}`);
-        }
-        deployed.push(connector);
+      const { readied, refusal } = await readyConnectors(config);
+      if (refusal !== null) {
+        await Promise.all(readied.map((c) => c.onUndeploy()));
+        throw refusal;
       }
 
       config.source.setDispatcher(config.onMessage);

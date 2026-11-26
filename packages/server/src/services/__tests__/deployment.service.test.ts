@@ -22,7 +22,7 @@ const mockEngine = {
   }),
   getRuntime: vi.fn().mockImplementation((id: string) => deployedChannels.get(id)),
   getAll: vi.fn().mockReturnValue(deployedChannels),
-  checkScripts: vi.fn().mockResolvedValue(undefined),
+  checkDeploy: vi.fn().mockResolvedValue(undefined),
   sendMessage: vi.fn(),
   dispose: vi.fn(),
 };
@@ -136,6 +136,7 @@ beforeEach(() => {
   mockRecords.listPendingAdoptions.mockResolvedValue(ok(new Set()));
   mockRecords.dropAdoptions.mockResolvedValue(okVoid);
   mockEngine.deploy.mockResolvedValue(undefined);
+  mockReferences.mockResolvedValue(ok(new Map()));
   mockRuntime.getState.mockReturnValue('STOPPED');
   mockRuntime.start.mockResolvedValue({ ok: true, value: undefined, error: null });
   mockRuntime.stop.mockResolvedValue({ ok: true, value: undefined, error: null });
@@ -653,10 +654,12 @@ describe('DeploymentService', () => {
       await DeploymentService.redeploy(CHANNEL_ID);
 
       expect(mockRecords.loadSaved).toHaveBeenCalledOnce();
-      const checked = mockEngine.checkScripts.mock.calls[0]?.[0] as Bundle;
+      const loaded = (await mockRecords.loadSaved.mock.results[0]?.value) as Result<Bundle>;
+      const checked = mockEngine.checkDeploy.mock.calls[0]?.[0] as Bundle;
       const deployed = mockEngine.deploy.mock.calls[0]?.[0] as Bundle;
-      expect(mockRecords.record.mock.calls[0]?.[0]).toBe(checked);
-      // The engine gets the same bundle with configuration map references resolved.
+      expect(mockRecords.record.mock.calls[0]?.[0]).toBe(loaded.value);
+      // The engine checks and deploys the same bundle, with configuration map references resolved.
+      expect(checked.templates).toBe(loaded.value?.templates);
       expect(deployed.templates).toBe(checked.templates);
       expect(deployed.globalScripts).toBe(checked.globalScripts);
       expect(deployed.channel).toEqual(checked.channel);
@@ -687,7 +690,7 @@ describe('DeploymentService', () => {
       mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
       mockRuntime.getState.mockReturnValue('STARTED');
       deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
-      mockEngine.checkScripts.mockRejectedValueOnce(new Error('Script Test/sourceFilter.ts failed to compile: Unexpected token'));
+      mockEngine.checkDeploy.mockRejectedValueOnce(new Error('Script Test/sourceFilter.ts failed to compile: Unexpected token'));
 
       const result = await DeploymentService.redeploy(CHANNEL_ID);
 
@@ -700,15 +703,93 @@ describe('DeploymentService', () => {
       expect(deployedChannels.has(CHANNEL_ID)).toBe(true);
     });
 
-    it('checks the saved scripts before stopping a running channel', async () => {
+    it('checks the saved channel as deploy would before stopping a running channel', async () => {
       mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
       mockRuntime.getState.mockReturnValue('STARTED');
       deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
 
       await DeploymentService.redeploy(CHANNEL_ID);
 
-      expect(mockEngine.checkScripts).toHaveBeenCalledWith(bundle(CHANNEL_DETAIL));
-      expect(mockEngine.checkScripts.mock.invocationCallOrder[0]!).toBeLessThan(mockRuntime.stop.mock.invocationCallOrder[0]!);
+      expect(mockEngine.checkDeploy).toHaveBeenCalledWith(bundle(CHANNEL_DETAIL));
+      expect(mockEngine.checkDeploy.mock.invocationCallOrder[0]!).toBeLessThan(mockRuntime.stop.mock.invocationCallOrder[0]!);
+    });
+
+    /** A started channel whose saved destination has these settings. */
+    function runningWithDestination(properties: Record<string, unknown>): void {
+      mockChannelService.getById.mockResolvedValue(ok({
+        ...CHANNEL_DETAIL,
+        destinations: [{ id: 'd1', metaDataId: 1, name: 'Lab system', enabled: true, connectorType: 'TCP_MLLP', properties, queueMode: 'NEVER' }],
+      }));
+      mockRuntime.getState.mockReturnValue('STARTED');
+      register();
+    }
+
+    async function expectStillRunning(refusal: string): Promise<void> {
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(result.error.message).toContain(refusal);
+      expect(mockRuntime.stop).not.toHaveBeenCalled();
+      expect(mockEngine.undeploy).not.toHaveBeenCalled();
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+      expect(deployedChannels.has(CHANNEL_ID)).toBe(true);
+    }
+
+    it('leaves a running channel untouched when a saved destination setting is refused', async () => {
+      runningWithDestination({ host: 'lab.example', port: 'not-a-port' });
+
+      await expectStillRunning('Destination "Lab system" (metaDataId 1)');
+    });
+
+    it('leaves a running channel untouched when a configuration map reference now resolves to a refused value', async () => {
+      runningWithDestination({ host: 'lab.example', port: '${lab.port}' });
+      mockReferences.mockResolvedValueOnce(ok(new Map([['lab.port', 'not-a-port']])));
+
+      await expectStillRunning('Destination "Lab system" (metaDataId 1)');
+    });
+
+    it('leaves a running channel untouched when the engine check refuses the saved channel', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockRuntime.getState.mockReturnValue('STARTED');
+      register();
+      mockEngine.checkDeploy.mockRejectedValueOnce(new ServiceError('INVALID_INPUT', 'Channel Test Channel: Delimited settings are invalid: Too small'));
+
+      await expectStillRunning('Delimited settings are invalid');
+    });
+
+    it('gives the engine check the channel with its configuration map references resolved', async () => {
+      runningWithDestination({ host: '${lab.host}', port: 6662 });
+      mockReferences.mockResolvedValue(ok(new Map([['lab.host', 'lab.example']])));
+
+      await DeploymentService.redeploy(CHANNEL_ID);
+
+      const checked = mockEngine.checkDeploy.mock.calls[0]?.[0] as Bundle;
+      expect(checked.channel.destinations[0]?.properties).toEqual({ host: 'lab.example', port: 6662 });
+    });
+
+    it('redeploys a setting whose reference resolves to a value it takes, though the reference text alone is refused', async () => {
+      runningWithDestination({ host: 'lab.example', port: '${lab.port}' });
+      mockRuntime.getState.mockReturnValue('STOPPED');
+      mockReferences.mockResolvedValue(ok(new Map([['lab.port', '6662']])));
+
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('deploys the channel it checked, not the configuration map as it is after the stop', async () => {
+      runningWithDestination({ host: '${lab.host}', port: 6662 });
+      mockRuntime.getState.mockReturnValue('STOPPED');
+      mockReferences.mockResolvedValueOnce(ok(new Map([['lab.host', 'checked.example']])));
+      mockReferences.mockResolvedValue(ok(new Map([['lab.host', 'edited.example']])));
+
+      await DeploymentService.redeploy(CHANNEL_ID);
+
+      const deployed = mockEngine.deploy.mock.calls[0]?.[0] as Bundle;
+      expect(deployed.channel.destinations[0]?.properties).toEqual({ host: 'checked.example', port: 6662 });
+      expect(mockReferences).toHaveBeenCalledOnce();
     });
 
     it('deploys directly when the channel is not currently deployed', async () => {

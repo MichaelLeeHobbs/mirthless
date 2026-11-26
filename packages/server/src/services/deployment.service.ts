@@ -35,6 +35,11 @@ interface DeployBundleOptions {
    * does; the startup redeploy, which runs what is already recorded, does not.
    */
   readonly record: boolean;
+  /**
+   * The channel as `deployableChannel` made it, when the caller checked that one already. A redeploy
+   * deploys what it checked, not the configuration map as it is after the stop.
+   */
+  readonly checked?: ChannelDetail;
 }
 
 export interface ChannelStatus {
@@ -67,6 +72,13 @@ async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDeta
     sourceConnectorProperties: channel.sourceConnectorType === 'CHANNEL' ? { ...sourceProps, channelId: channel.id } : sourceProps,
     destinations: channel.destinations.map((d) => ({ ...d, properties: resolveConfigReferences(d.properties, references.value) })),
   };
+}
+
+/** The channel as the engine deploys it, its connector settings checked after the references are filled. */
+async function deployableChannel(channel: ChannelDetail): Promise<ChannelDetail> {
+  const deployChannel = await withConfigReferences(channel);
+  validateConnectors(deployChannel);
+  return deployChannel;
 }
 
 function validateConnectors(channel: ChannelDetail): void {
@@ -138,8 +150,7 @@ async function deployBundle(bundle: DeploymentBundle, context: AuditContext | un
   if (engine.getRuntime(channelId)) {
     throw new ServiceError('CONFLICT', `Channel ${channelId} is already deployed`);
   }
-  const deployChannel = await withConfigReferences(bundle.channel);
-  validateConnectors(deployChannel);
+  const deployChannel = options.checked ?? await deployableChannel(bundle.channel);
   if (options.typeCheck) await typeCheckChannel(bundle);
 
   await engine.deploy({ ...bundle, channel: deployChannel });
@@ -259,12 +270,14 @@ export class DeploymentService {
       const existing = engine.getRuntime(channelId);
       const priorState: ChannelState = (existing?.runtime.getState() ?? 'UNDEPLOYED') as ChannelState;
       const bundle = await loadSaved(channelId);
+      let checked: ChannelDetail | undefined;
 
       if (existing) {
-        // Compile the saved configuration BEFORE touching the running channel.
-        // A script that does not compile then fails the redeploy and the
-        // channel keeps running on its current configuration.
-        await engine.checkScripts(bundle);
+        // Check the saved configuration as deploy would BEFORE touching the running channel (#480):
+        // what deploy refuses before it opens anything then fails the redeploy, and the channel
+        // keeps running on its current configuration.
+        checked = await deployableChannel(bundle.channel);
+        await engine.checkDeploy({ ...bundle, channel: checked });
         await typeCheckChannel(bundle);
 
         if (priorState === 'STARTED' || priorState === 'PAUSED') {
@@ -274,7 +287,7 @@ export class DeploymentService {
         await undeployRuntime(channelId, context);
       }
 
-      const deployed = await deployBundle(bundle, context, { typeCheck: true, record: true });
+      const deployed = await deployBundle(bundle, context, { typeCheck: true, record: true, ...(checked === undefined ? {} : { checked }) });
       return { channelId, state: await restoreState(channelId, priorState, deployed.state, context) };
     }));
   }

@@ -731,6 +731,12 @@ WHERE c.inbound_data_type = 'DELIMITED' AND c.deleted_at IS NULL
   AND coalesce(t.inbound_properties->'delimited'->'columnNames', '[]') <> '[]';
 ```
 
+## A refused redeploy keeps the channel running (#480)
+
+A redeploy of a running channel used to check only its scripts before it stopped the running version. A destination setting the deploy refused, a configuration map reference that filled a setting with a value it refused, or Delimited or HL7 v2 settings that did not validate stopped and undeployed the channel, and then the redeploy failed. Now the redeploy checks all of these first, with the certificates from the store and each connector's own deploy check, answers with the refusal, and leaves the running channel as it was (D-397). A deploy script that fails and a port the new version cannot open are still found only after the stop, and leave the channel undeployed until it is deployed again or the server restarts.
+
+When several things are wrong, the refusal can now name a different one first: the channel's own settings (encryption, queued destinations and storage, the response destination, batch processing, the data type settings) come before its connectors and scripts.
+
 ## An MLLP source in PASSTHROUGH answers a failed message with AE (#414)
 
 An MLLP source whose `responseMode` is PASSTHROUGH answered a message recorded with an ERROR status with the response the pipeline picked, often the AA of a destination that worked while another failed, so the sender took it as delivered. It now answers AE, as AUTO_ACK does, unless the response is a partner's own refusal, which is passed through as before. A sender that resends on AE now sends such a message again, and the destinations that worked get it again, as for any channel that reports a failed destination (D-211).
