@@ -2,7 +2,7 @@ import { stderr, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, SourceHealthHandler, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { toPoolConfig, type DatabasePool, type TxQuery } from './connection-pool.js';
-import { appendLockClause, withSkippedRows } from './lock-clause.js';
+import { appendLockClause, unheldRowsReason, withSkippedRows } from './lock-clause.js';
 import { prepare } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
 import { UnmarkedRows, rowKey, type Row, type TakenRow } from './unmarked-rows.js';
@@ -117,7 +117,28 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
       if (this.config.updateMode !== UPDATE_MODE.NEVER && !this.config.updateQuery) {
         throw new Error('Update query is required when updateMode is not NEVER');
       }
+      this.warnIfRowsUnheld();
     });
+  }
+
+  /**
+   * A warning, not a refusal (#445): one source alone takes no row twice, and channels run today on
+   * such queries. The query is not logged: it can hold values of rows.
+   */
+  private warnIfRowsUnheld(): void {
+    if (this.config.updateMode === UPDATE_MODE.NEVER) return;
+    let why: string | null;
+    try {
+      why = unheldRowsReason(this.config.selectQuery, this.vendor);
+    } catch (err: unknown) {
+      this.logger.error({ ...errorInfo(err), database: this.config.database }, 'Could not check whether the SELECT query\'s lock holds its rows; deploying without that check');
+      return;
+    }
+    if (why === null) return;
+    this.logger.warn(
+      { database: this.config.database, why },
+      'The SELECT query\'s lock may hold none of the rows it returns, so two sources on the same table can take the same row. Give the query that reads the rows a FOR UPDATE SKIP LOCKED of its own',
+    );
   }
 
   async onStart(): Promise<Result<void>> {
