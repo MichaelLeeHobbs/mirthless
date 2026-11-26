@@ -138,6 +138,26 @@ describe('QueueConsumer', () => {
       );
     });
 
+    it('gives up at once, retries left or not, on a failure the partner calls final (#414)', async () => {
+      const store = makeStore();
+      const onError = vi.fn().mockResolvedValue(undefined);
+      const sendFn = makeSendFn({ status: 'ERROR', content: '', errorMessage: 'target recorded it with an error', final: true });
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([
+        { channelId: '00000000-0000-0000-0000-000000000001', messageId: 12, metaDataId: 1, sendAttempts: 0 },
+      ]));
+
+      consumer = new QueueConsumer(makeConfig({ retryCount: 0, onError }), store, sendFn);
+      await consumer.poll();
+
+      expect(store.release).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 12, 1, 'ERROR');
+      expect(store.updateConnectorMessageStatus).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 12, 1, 'QUEUED');
+      expect(store.storeContent).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000001', 12, 1, 11,
+        expect.stringContaining('target recorded it with an error'), 'TEXT',
+      );
+      expect(onError).toHaveBeenCalledOnce();
+    });
+
     it('stores error content and raises an alert when it gives up on a message', async () => {
       const store = makeStore();
       const sendFn: SendToDestination = vi.fn().mockResolvedValue(fail('Connection refused'));

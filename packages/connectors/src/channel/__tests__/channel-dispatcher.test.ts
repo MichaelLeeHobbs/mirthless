@@ -228,6 +228,49 @@ describe('ChannelDispatcher.send', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('ERROR');
     expect(result.value.errorMessage).toContain('recorded message 9 with an ERROR status');
+    // It is in the target's store: a resend would be a second message there (#414).
+    expect(result.value.final).toBe(true);
+  });
+
+  it('returns a final ERROR when the target recorded an error that its response mode does not report (#414)', async () => {
+    registerChannel('target-ch-001', async () => ({
+      ok: true as const, value: { messageId: 9, status: 'PROCESSED' as const, response: 'ACK', destinationFailed: true }, error: null,
+    }));
+    const dispatcher = new ChannelDispatcher(makeConfig({ waitForResponse: true }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value).toEqual({
+      status: 'ERROR',
+      content: 'ACK',
+      errorMessage: 'Target channel target-ch-001 recorded message 9 with an error that its response mode does not report',
+      final: true,
+    });
+  });
+
+  it.each([
+    ['without waiting for the response', false, { messageId: 9, response: 'ACK', destinationFailed: true }],
+    ['waiting, when the target gave no response', true, { messageId: 9, destinationFailed: true }],
+  ])('returns the hidden failure with no content %s', async (_how, waitForResponse, value) => {
+    registerChannel('target-ch-001', async () => ({ ok: true as const, value, error: null }));
+    const dispatcher = new ChannelDispatcher(makeConfig({ waitForResponse }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value).toMatchObject({ status: 'ERROR', content: '', final: true });
+  });
+
+  it('leaves an ERROR the target did not record open to a retry', async () => {
+    registerChannel('target-ch-001', async () => ({ ok: false as const, value: null, error: stderr('store down') }));
+    const dispatcher = new ChannelDispatcher(makeConfig());
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value).toMatchObject({ status: 'ERROR' });
+    expect(result.ok && result.value.final).toBeUndefined();
   });
 
   it('returns SENT when the target channel filtered the message', async () => {
