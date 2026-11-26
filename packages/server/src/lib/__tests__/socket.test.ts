@@ -54,6 +54,7 @@ import {
   LIVE_EVENT_COALESCE_MS, _resetIO, audienceRooms, ALL_CHANNELS_ROOM,
 } from '../socket.js';
 import { builtInRolePermissions } from '../../db/seeds/roles.js';
+import { SOCKET_ERROR } from '@galvanigraph/core-models';
 import type { Server as SocketIOServer } from 'socket.io';
 
 function createValidToken(payload: { userId: string; sessionId?: string; type: string }): string {
@@ -209,6 +210,42 @@ describe('Socket.IO Auth & Room Management', () => {
 
       expect((next.mock.calls[0]![0] as Error).message).toBe('Authentication required');
       expect(mockIsSessionLive).toHaveBeenCalledWith('s1', 'user-1');
+    });
+
+    it('refuses the handshake as unavailable, not as unauthenticated, when the user cannot be read (#473)', async () => {
+      const { loadUserStanding } = await import('../principal.js');
+      vi.mocked(loadUserStanding).mockRejectedValueOnce(new Error('Connection terminated due to connection timeout'));
+      const socket = createMockSocket(createValidToken({ userId: 'user-1', sessionId: 's1', type: 'access' }));
+      const next = vi.fn();
+
+      await authMiddleware(socket, next);
+
+      expect((next.mock.calls[0]![0] as Error).message).toBe(SOCKET_ERROR.UNAVAILABLE);
+      expect(SOCKET_ERROR.UNAVAILABLE.toLowerCase()).not.toMatch(/auth|unauthorized|jwt/);
+      expect(socket.data['user']).toBeUndefined();
+      const logger = (await import('../logger.js')).default;
+      expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ errMsg: 'Connection terminated due to connection timeout' }), expect.any(String));
+    });
+
+    it('refuses the handshake as unavailable when the session cannot be read', async () => {
+      mockIsSessionLive.mockRejectedValueOnce(new Error('connection lost'));
+      const next = vi.fn();
+
+      await authMiddleware(createMockSocket(createValidToken({ userId: 'user-1', sessionId: 's1', type: 'access' })), next);
+
+      expect((next.mock.calls[0]![0] as Error).message).toBe(SOCKET_ERROR.UNAVAILABLE);
+    });
+
+    it('disconnects a connected socket whose access cannot be checked, and logs why', async () => {
+      const { loadUserStanding } = await import('../principal.js');
+      vi.mocked(loadUserStanding).mockRejectedValueOnce(new Error('connection lost'));
+      const socket = connectedSocket(['dashboard']);
+
+      expect(await revalidateSocket(socket)).toBe(false);
+      expect(socket.disconnect).toHaveBeenCalledWith(true);
+      const logger = (await import('../logger.js')).default;
+      expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ errMsg: 'connection lost', socketId: 'sock-1' }), expect.any(String));
+      expect(logger.info).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('revoked'));
     });
 
     it('rejects the handshake while the user must change their password', async () => {

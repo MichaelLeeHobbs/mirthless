@@ -11,7 +11,13 @@ interface RefreshResult {
   readonly user: { readonly profile: AuthUser; readonly mustChangePassword: boolean } | null;
 }
 
-let refreshPromise: Promise<RefreshResult | null> | null = null;
+/**
+ * A 5xx, a 429 or no answer says nothing about the session, so it keeps the
+ * person signed in (#473). Any other refusal signs them out.
+ */
+type RefreshOutcome = RefreshResult | 'refused' | 'unavailable';
+
+let refreshPromise: Promise<RefreshOutcome> | null = null;
 
 interface FetchOptions {
   readonly method?: string;
@@ -61,13 +67,16 @@ export function accessKey(user: AuthUser | null): string {
 /**
  * A refresh rotates the session, so another caller still holding the old token
  * (a socket mid-handshake) comes here too rather than signing out on the spot.
+ * Null when there is no new token: signed out, or still signed in when the
+ * server could not refresh.
  */
 export async function refreshOrSignOut(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = refreshSession().finally(() => { refreshPromise = null; });
   }
   const refreshed = await refreshPromise;
-  if (refreshed) {
+  if (refreshed === 'unavailable') return null;
+  if (refreshed !== 'refused') {
     applyRefresh(refreshed);
     return refreshed.accessToken;
   }
@@ -103,30 +112,33 @@ export async function checkAccess(force = false): Promise<void> {
     refreshPromise = refreshSession().finally(() => { refreshPromise = null; });
   }
   const refreshed = await refreshPromise;
-  if (!refreshed?.user) return;
+  if (typeof refreshed === 'string' || !refreshed.user) return;
   applyRefresh(refreshed);
   if (accessKey(refreshed.user.profile) !== before) useAuthStore.getState().setAccessChanged(new Date().toISOString());
 }
 
-async function refreshSession(): Promise<RefreshResult | null> {
+async function refreshSession(): Promise<RefreshOutcome> {
+  let response: Response;
   try {
-    const response = await fetch(`${BASE_URL}/auth/refresh`, {
+    response = await fetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
     });
+  } catch {
+    return 'unavailable';
+  }
+  if (response.status === 429 || response.status >= 500) return 'unavailable';
+  if (!response.ok) return 'refused';
 
-    if (!response.ok) {
-      return null;
-    }
-
+  try {
     const json: unknown = await response.json();
-    if (!isPlainObject(json) || json['success'] !== true || !isPlainObject(json['data'])) return null;
+    if (!isPlainObject(json) || json['success'] !== true || !isPlainObject(json['data'])) return 'refused';
     const { accessToken, user } = json['data'];
-    if (typeof accessToken !== 'string') return null;
+    if (typeof accessToken !== 'string') return 'refused';
     return { accessToken, user: readRefreshedUser(user) };
   } catch {
-    return null;
+    return 'refused';
   }
 }
 
@@ -184,6 +196,11 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
 
     if (refreshedToken) {
       response = await makeRequest(refreshedToken);
+    } else if (useAuthStore.getState().isAuthenticated) {
+      return {
+        success: false,
+        error: { code: 'UNAVAILABLE', message: 'The server could not renew your session. Try again shortly.' },
+      };
     } else {
       return {
         success: false,
