@@ -1,6 +1,7 @@
 // A name two requests take at once (#450). Both pass the check made before the
 // write: here the other one's row is held uncommitted, so the check misses it
-// and the write waits on the unique index until it commits.
+// and the write waits on the unique index until it commits. The data source
+// cases store an encrypted password, so they need CONTENT_ENCRYPTION_KEY.
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -61,21 +62,28 @@ describeIntegration('a name two requests take at once (real Postgres)', () => {
   }
 
   /** `request` runs while another transaction has written `held`, and that one commits once the request waits on it. */
-  async function whileHeld<T>(held: string, params: readonly unknown[], waitsWith: string, request: () => Promise<T>): Promise<T> {
+  async function whileHeld<T extends ApiAnswer<unknown>>(held: string, params: readonly unknown[], waitsWith: string, request: () => Promise<T>): Promise<T> {
     const holder = await mods.pool.connect();
     try {
       await holder.query('BEGIN');
       await holder.query(held, [...params]);
-      const answer = request();
-      try {
-        await waitForBlocked(mods.pool, waitsWith);
-      } finally {
-        await holder.query('COMMIT');
-      }
-      return await answer;
-    } finally {
-      holder.release();
+    } catch (err) {
+      holder.release(err as Error);
+      throw err;
     }
+    const answer = request();
+    try {
+      await waitForBlocked(mods.pool, waitsWith);
+    } catch (err) {
+      // A request that never waited answered at once: its answer says why.
+      await holder.query('ROLLBACK');
+      holder.release();
+      const early = await answer;
+      throw new Error(`${(err as Error).message}; the request answered ${String(early.status)} ${JSON.stringify(early.json.error)}`);
+    }
+    await holder.query('COMMIT');
+    holder.release();
+    return answer;
   }
 
   async function nameOf(table: string, id: string): Promise<string> {

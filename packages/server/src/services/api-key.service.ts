@@ -187,7 +187,7 @@ export class ApiKeyService {
         if (issuer?.enabled !== true) throw new ServiceError('CONFLICT', 'Its issuer is disabled; replace the key to take it over');
         // Nor does one whose issuer was narrowed, which is how such a key came to be disabled (#450).
         if (!(await keyStillCovered(tx, { keyUserId: key.userId, issuedBy: key.issuedBy, expiresAt: key.expiresAt }))) {
-          throw new ServiceError('CONFLICT', 'Its issuer no longer holds what the key holds; replace the key to take it over');
+          throw new ServiceError('CONFLICT', 'Its issuer does not hold what the key holds until the key ends; replace the key to take it over');
         }
         const [held] = await readKeys(tx, id);
         await assertActorCovers(tx, actor.userId, (held?.permissions ?? []) as Permission[], held?.groupIds ?? null, key.expiresAt);

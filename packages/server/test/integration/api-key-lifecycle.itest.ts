@@ -80,7 +80,7 @@ describeIntegration('API keys: narrowing, Replace and offboarding (real Postgres
       const refused = await apiCall(base, admin.token, 'PATCH', `/api-keys/${key.key.id}/enabled`, { enabled: true });
 
       expect(refused.status).toBe(409);
-      expect(refused.json.error).toEqual({ code: 'CONFLICT', message: 'Its issuer no longer holds what the key holds; replace the key to take it over' });
+      expect(refused.json.error).toEqual({ code: 'CONFLICT', message: 'Its issuer does not hold what the key holds until the key ends; replace the key to take it over' });
       expect((await view(key.key.id)).status).toBe('disabled');
       const next = await apiCall<IssuedApiKey>(base, admin.token, 'POST', `/api-keys/${key.key.id}/replace`, { mode: 'leak' });
       expect(next.status).toBe(201);

@@ -191,12 +191,15 @@ describe('TagService', () => {
 
     it('passes on a unique violation of another constraint as it is', async () => {
       pushResponse([]);
-      mockReturning.mockRejectedValueOnce({ cause: { code: '23505', constraint: 'some_other_unique' } });
+      mockReturning.mockRejectedValueOnce(Object.assign(new Error('duplicate key on another index'), {
+        cause: { code: '23505', constraint: 'some_other_unique' },
+      }));
 
       const result = await TagService.create({ name: 'Production', color: '#FF0000' });
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
+      expect(result.error.message).toBe('duplicate key on another index');
       expect(result.error).not.toHaveProperty('code', 'ALREADY_EXISTS');
     });
   });
