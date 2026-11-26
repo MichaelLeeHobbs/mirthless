@@ -749,7 +749,7 @@ A CHANNEL destination that queues no longer sends a message again once the targe
 
 ## A server stop no longer delivers a send to another channel twice (#401)
 
-A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-400). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel whose storage mode keeps raw content (Development, Production or Raw) now keeps the source map of a message it receives from a Channel Writer as well: one small row (channel and message ids, no message content) for each message.
+A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-403). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel whose storage mode keeps raw content (Development, Production or Raw) now keeps the source map of a message it receives from a Channel Writer as well: one small row (channel and message ids, no message content) for each message.
 
 ## An email refused for some recipients reads ERROR (#414)
 

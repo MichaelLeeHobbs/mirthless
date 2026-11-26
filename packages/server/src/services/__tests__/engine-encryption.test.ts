@@ -156,7 +156,7 @@ describe('message store adapter — encryptData enabled', () => {
     expect(dec.ok && dec.value === PHI).toBe(true);
   });
 
-  describe('a message another channel hands on (D-400)', () => {
+  describe('a message another channel hands on (D-403)', () => {
     const handOff = { channelId: '11111111-1111-4111-8111-111111111111', messageId: 7, metaDataId: 1 };
     const rows = [
       { metaDataId: 0, contentType: CONTENT_TYPE.RAW, content: PHI, dataType: 'HL7V2' },

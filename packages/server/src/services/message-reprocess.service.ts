@@ -240,7 +240,7 @@ export class MessageReprocessService {
       }
 
       // Re-enqueue with a fresh retry budget; the running consumer picks it up. What a target channel
-      // recorded for an earlier send goes with it: a resend is sent, whatever an interrupted send delivered (D-400).
+      // recorded for an earlier send goes with it: a resend is sent, whatever an interrupted send delivered (D-403).
       await db.transaction(async (tx) => {
         const requeued = await tx
           .update(connectorMessages)
