@@ -722,6 +722,10 @@ A CHANNEL destination read SENT when its target channel answers before its desti
 
 A CHANNEL destination that queues no longer sends a message again once the target has stored it with an error (an HL7 batch the target stored only in part is still sent again), which made a new message in the target for every retry and delivered it again to the target's destinations that worked. It ends ERROR at once. A failure that has gone away (a partner that was down, a lookup that timed out) used to be cleared by the next retry: reprocess the message in the target channel instead.
 
+## A FHIR destination sends only a resource of its type, and fills `${name}` (#414)
+
+A FHIR destination posted whatever the message held to `<baseUrl>/<resourceType>`, and read SENT when the server took it: a resource of another type, or content that is no FHIR resource. Such a message is now an ERROR and is not sent (D-397). A channel whose server took that until now stops delivering it: set `resourceType` to the type the transformer builds, or give the channel one FHIR destination per type and a filter on each. A `resourceType` that is an operation, such as `$process-message`, still takes any resource. `baseUrl` and header values are now filled with the message's `${name}` variables; a setting that holds `${...}` as text, filled by nothing until now, is sent with the value of a variable of that name if the message has one.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

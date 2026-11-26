@@ -236,7 +236,7 @@ What a channel's source and destinations guarantee to the partner system on the 
 | CONN-FHIR-04 | A FHIR source shall accept creates, updates and transaction Bundles of chosen R4 resource types over HTTPS, and shall answer each, refusals included, with the status FHIR defines and, for an error, an OperationOutcome. | P2 | Test | Proposed |
 | CONN-FHIR-05 | A FHIR source shall make one message of each create, update or transaction Bundle of chosen R4 resource types received over HTTPS, answer it in FHIR's form, errors as an OperationOutcome, and answer no read or search. | P2 | Test | Proposed |
 
-- CONN-FHIR-01: source: docs/user/connector-reference.md "FHIR: what it does", `method`; #349 step 1. conflict: the reference takes the type from a setting that defaults to Patient; #349 wants it per message, kept.
+- CONN-FHIR-01: source: docs/user/connector-reference.md "FHIR: what it does", `method`; #349 step 1. conflict: the reference takes the type from a setting that defaults to Patient; #349 wants it per message, kept. Until #349 builds that, D-397 refuses a resource whose type is not the setting's, and content that is no FHIR resource.
 - CONN-FHIR-02: source: #349 step 1 and its acceptance list.
 - CONN-FHIR-03: source: #349 step 1 and its acceptance list.
 - CONN-FHIR-04: source: docs/user/capabilities.md "Receive FHIR (as a source)" (No); #349 step 3; ROADMAP V12. It receives messages and is not a FHIR server (README Out of scope).
