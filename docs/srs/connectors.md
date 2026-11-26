@@ -212,9 +212,9 @@ What a channel's source and destinations guarantee to the partner system on the 
 
 | ID | Requirement | Pri | Verify | Status |
 |---|---|---|---|---|
-| CONN-SMTP-01 | The SMTP destination shall record a message as SENT only when the mail server accepted it for every recipient, and shall otherwise record an error that names the recipients refused and the recipients accepted. | P1 | Test | Proposed |
+| CONN-SMTP-01 | The SMTP destination shall record a message as SENT only when the mail server accepted it for every recipient, and shall otherwise record an error that says how many were refused, with a response stored with the message that names the recipients refused and the recipients accepted. | P1 | Test | Proposed |
 
-- CONN-SMTP-01: source: `packages/connectors/src/smtp/smtp-dispatcher.ts` (an error when every recipient is refused; SENT with a count when some are), so the all-refused half is from code only; interfaces/connector.md CPI-DST-02 (a part refused is an error). CONN-DST-09 keeps it from being sent again.
+- CONN-SMTP-01: source: `packages/connectors/src/smtp/smtp-dispatcher.ts` (an error when every recipient is refused; SENT with a count when some are), so the all-refused half is from code only; interfaces/connector.md CPI-DST-02 (a part refused is an error). CONN-DST-09 keeps it from being sent again. D-395: the addresses go into the response, not the error text, which also reaches alerts and the log; this narrows CPI-DST-02 for recipients.
 
 ## Email (EML)
 

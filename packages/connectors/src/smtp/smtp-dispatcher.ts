@@ -72,6 +72,22 @@ export interface SmtpSendResult {
 
 export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
 
+/**
+ * Some recipients got the email: a resend would mail them again, so the ERROR is final (D-395). The addresses
+ * go only into the response, which is stored with the message as its content is: the error text also reaches
+ * alerts and the log.
+ */
+function partlyRefused(result: SmtpSendResult): ConnectorResponse {
+  const total = result.accepted.length + result.rejected.length;
+  return {
+    status: 'ERROR',
+    content: `messageId=${result.messageId}, accepted=${result.accepted.join(', ')}, rejected=${result.rejected.join(', ')}`,
+    errorMessage: `The mail server refused ${String(result.rejected.length)} of ${String(total)} recipients. `
+      + 'The others got the email, so it is not sent again; the response names each',
+    final: true,
+  };
+}
+
 function builtInValues(content: string, message: ConnectorMessage): Readonly<Record<string, string>> {
   return {
     msg: content,
@@ -162,6 +178,7 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
             errorMessage: 'All recipients rejected',
           };
         }
+        if (rejected > 0) return partlyRefused(result);
         return {
           status: 'SENT' as const,
           content: `messageId=${result.messageId}, accepted=${String(accepted)}, rejected=${String(rejected)}`,

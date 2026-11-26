@@ -204,6 +204,40 @@ describe('SmtpDispatcher.send', () => {
     }
   });
 
+  it('returns a final ERROR when some recipients are refused, naming them only in the response (#414)', async () => {
+    const transport = makeMockTransport({
+      sendMail: vi.fn(async () => ({
+        messageId: '<test-id@example.com>',
+        accepted: ['ward@example.com', 'lab@example.com'],
+        rejected: ['gone@example.com'],
+      })),
+    });
+    const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value).toEqual({
+      status: 'ERROR',
+      content: 'messageId=<test-id@example.com>, accepted=ward@example.com, lab@example.com, rejected=gone@example.com',
+      errorMessage: 'The mail server refused 1 of 3 recipients. The others got the email, so it is not sent again; the response names each',
+      final: true,
+    });
+  });
+
+  it('leaves an email refused for every recipient open to a retry: nobody got it', async () => {
+    const transport = makeMockTransport({
+      sendMail: vi.fn(async () => ({ messageId: '<id>', accepted: [], rejected: ['a@example.com', 'b@example.com'] })),
+    });
+    const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value).toMatchObject({ status: 'ERROR', errorMessage: 'All recipients rejected' });
+    expect(result.ok && result.value.final).toBeUndefined();
+  });
+
   it('calls sendMail with correct options for text/plain', async () => {
     const transport = makeMockTransport();
     const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
