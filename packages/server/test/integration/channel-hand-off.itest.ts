@@ -5,7 +5,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { CONTENT_TYPE, createChannelSchema } from '@galvanigraph/core-models';
-import { adminActor, describeIntegration, loadServerModules, unwrap, WAIT, type ServerModules, type TestActor } from './_setup.js';
+import { adminActor, deleteTestChannel, describeIntegration, loadServerModules, unwrap, WAIT, type ServerModules, type TestActor } from './_setup.js';
 import { databaseDestination } from './_database-destination.js';
 import { START_TIMEOUT_MS, startAndDie, WAITS_FOR_THE_LOCK } from './support/killed-server.js';
 
@@ -38,7 +38,8 @@ describeIntegration('A send to another channel that a server stop interrupts (re
 
   afterEach(async () => {
     await shutdown.undeployAll(engineMod.getEngine(), silent);
-    for (const id of created.splice(0)) await mods.ChannelService.setEnabled(id, false);
+    // Gone, not only disabled: a suite after this one lists channels a page at a time.
+    for (const id of created.splice(0).reverse()) await deleteTestChannel(mods, id);
     await mods.pool.query(`DROP TABLE IF EXISTS ${TABLE}`);
   });
 
