@@ -18,7 +18,7 @@ function fail(res: Response, error: unknown, what: string): void {
   const status = mapErrorToStatus(error);
   if (status === 500) logger.error({ errMsg: error instanceof Error ? error.message : String(error) }, `Failed to ${what}`);
   const details = isServiceError(error) ? error.details : undefined;
-  res.status(status).json({ success: false, error: { ...errorResponse(error), ...(details ? { details } : {}) } });
+  res.status(status).json({ success: false, error: Object.assign(errorResponse(error), details ? { details } : {}) });
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { errorResponse, mapErrorToStatus } from '../controller-helpers.js';
+import { errorResponse, internalCause, mapErrorToStatus } from '../controller-helpers.js';
 import { ServiceError } from '../service-error.js';
 
 describe('mapErrorToStatus', () => {
@@ -34,5 +34,31 @@ describe('errorResponse', () => {
 
   it('hides anything else behind INTERNAL', () => {
     expect(errorResponse(new Error('password=hunter2 at db'))).toEqual({ code: 'INTERNAL', message: 'Internal server error' });
+  });
+});
+
+describe('internalCause', () => {
+  it('gives the error an INTERNAL body was made from, even one that is undefined', () => {
+    const error = new Error('boom');
+    expect(internalCause(errorResponse(error))).toEqual({ cause: error });
+    expect(internalCause(errorResponse(new ServiceError('INTERNAL', 'x')))?.cause).toBeInstanceOf(ServiceError);
+    expect(internalCause(errorResponse(undefined))).toEqual({ cause: undefined });
+  });
+
+  it('gives the error behind any other 500, such as a missing content key', () => {
+    const error = new ServiceError('CONFIG_ERROR', 'CONTENT_ENCRYPTION_KEY is not set');
+    expect(internalCause(errorResponse(error))).toEqual({ cause: error });
+  });
+
+  it('survives details added to the body in place', () => {
+    const body = Object.assign(errorResponse(new Error('boom')), { details: { field: 'name' } });
+    expect(internalCause(body)).toBeDefined();
+  });
+
+  it('gives nothing for another code, a body made elsewhere, or no object', () => {
+    expect(internalCause(errorResponse(new ServiceError('NOT_FOUND', 'x')))).toBeUndefined();
+    expect(internalCause({ code: 'INTERNAL', message: 'Internal server error' })).toBeUndefined();
+    expect(internalCause('INTERNAL')).toBeUndefined();
+    expect(internalCause(null)).toBeUndefined();
   });
 });
