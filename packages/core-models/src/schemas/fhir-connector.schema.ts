@@ -14,7 +14,9 @@ export const FHIR_METHODS = ['POST', 'PUT'] as const;
 export const FHIR_AUTH_TYPES = ['NONE', 'BASIC', 'BEARER', 'API_KEY'] as const;
 export const FHIR_FORMATS = ['json', 'xml'] as const;
 
+/** One that names a variable is filled per message, and only then is it a URL. */
 function isUrl(value: string): boolean {
+  if (value.includes('${')) return true;
   try {
     new URL(value);
     return true;

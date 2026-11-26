@@ -624,7 +624,7 @@ The send is SENT only when the mail server accepted every recipient. When it ref
 
 FHIR can only send; it cannot receive messages. There is no FHIR source.
 
-It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT. A 3xx is an ERROR naming the redirect target, because redirects are not followed: following one would turn the POST into a GET with no body, and nothing would be created. Any other status is an ERROR. The response is read as [the HTTP destination](#http-what-it-does) reads it.
+It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format, of the type `resourceType` names: a JSON object with that `resourceType`, or an XML document whose root element has that name in the `http://hl7.org/fhir` namespace. Only the first 8 KB are read for the root element, so it must start there. Anything else is an ERROR and is not sent, and no queue sends it again, since it can never go as it is: HL7 v2 text, JSON or XML that is no FHIR resource, a resource in the other format, or a resource of another type, which a server could store under the wrong type (D-401). Write a transformer that builds the resource first. A `resourceType` that is not a type name, such as `$process-message` or `Patient/$validate`, is an operation, and takes a resource of any type. `baseUrl` and header values may name `${name}` message variables, filled per message by the shared rule (D-275): a name the message lacks is left as written. A 2xx response is SENT. A 3xx is an ERROR naming the redirect target, because redirects are not followed: following one would turn the POST into a GET with no body, and nothing would be created. Any other status is an ERROR. The response is read as [the HTTP destination](#http-what-it-does) reads it.
 
 ### FHIR security
 
@@ -634,8 +634,8 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 
 | Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | Yes | FHIR server base URL, an absolute URL without a user name or password. Use the final address: a redirect is an ERROR. |
-| `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
+| `baseUrl` | Yes | FHIR server base URL, an absolute URL without a user name or password. Use the final address: a redirect is an ERROR. May be a `${name}` reference filled per message. |
+| `resourceType` | No | Resource type in the URL, which the message's resource must have. Defaults to `Patient`, so set it for any other resource. A value that is not a type name is an operation and takes any resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
 | `authType` | No | `NONE` (default), `BASIC`, `BEARER` or `API_KEY`. Each type other than `NONE` refuses to deploy without its credentials below. |
 | `authUsername` | No | Basic username. Required for `BASIC`. |
@@ -645,7 +645,7 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 | `authApiKey` | No | API key value. Required for `API_KEY`. |
 | `format` | No | `json` (default) or `xml`. |
 | `timeout` | No | Milliseconds before the send is an ERROR, a whole number from 1 to 2147483647. Defaults to 30000. |
-| `headers` | No | Extra request headers, as a name-to-value map. Text saved by the old editor is read as `Name: value` lines. |
+| `headers` | No | Extra request headers, as a name-to-value map. Text saved by the old editor is read as `Name: value` lines. Values may name `${name}` message variables. |
 
 ### FHIR limits
 
