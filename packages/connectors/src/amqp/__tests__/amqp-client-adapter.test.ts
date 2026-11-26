@@ -183,6 +183,11 @@ describe('createAmqpPublisher', () => {
 
     await expect(publisher.publish(outbound)).rejects.toThrow("NOT_FOUND - no exchange 'hl7' in vhost '/'");
     expect(publisher.isOpen).toBe(false);
+
+    // A send that took the publisher before it read as closed, and publishes after: amqplib throws.
+    const channel = lastModel().channel;
+    vi.spyOn(channel, 'publish').mockImplementation(() => { throw new Error('Channel closed'); });
+    await expect(publisher.publish(outbound)).rejects.toThrow("NOT_FOUND - no exchange 'hl7' in vhost '/'");
   });
 
   it('fails a message the broker nacked', async () => {

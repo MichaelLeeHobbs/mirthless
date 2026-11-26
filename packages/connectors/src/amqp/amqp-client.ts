@@ -277,7 +277,8 @@ export const createAmqpPublisher: AmqpPublisherFactory = async (config) => {
           }
         });
       } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
+        // A publish after the close: amqplib throws "Channel closed" itself.
+        reject(closedBy ?? (err instanceof Error ? err : new Error(String(err))));
       }
     }),
     close: async (timeoutMs): Promise<void> => {
