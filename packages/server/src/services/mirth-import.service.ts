@@ -32,6 +32,7 @@ import {
 } from './mirth-steps.js';
 import { getBoolean, getNestedRecord, getNumber, getString, stringList, toRecordList } from './mirth-xml.js';
 import { withCopies } from '../lib/import-copies.js';
+import { batchRefusal } from '../lib/batch-source.js';
 import { isPlainObject, unescapeControlChars } from '@galvanigraph/core-util';
 import { DATABASE_VENDOR, unknownPlaceholders } from '@galvanigraph/connectors';
 
@@ -103,9 +104,10 @@ export class MirthImportService {
       const holds: Record<string, readonly string[]> = {};
       for (const mirthChannel of mirthChannels) {
         const channelHolds = [...backupHeld, ...disablingSettings(mirthChannel)];
-        const channel = convertChannel(mirthChannel, channelHolds, warnings);
-        channels.push(channel);
-        if (channelHolds.length > 0) holds[channel.id] = channelHolds;
+        // With what the conversion adds, so an OVERWRITE of an enabled channel is refused for it too.
+        const converted = convertChannel(mirthChannel, channelHolds, warnings);
+        channels.push(converted.channel);
+        if (converted.holds.length > 0) holds[converted.channel.id] = converted.holds;
       }
       const codeTemplateLibraries = extractCodeTemplateLibraries(parsed, mirthChannels, warnings);
 
@@ -276,11 +278,8 @@ function convertChannel(
   mirthChannel: Record<string, unknown>,
   disabling: readonly string[],
   warnings: string[],
-): ChannelExportEntry {
+): { readonly channel: ChannelExportEntry; readonly holds: readonly string[] } {
   const name = getString(mirthChannel, 'name') ?? 'Unnamed Channel';
-  const holds = channelEnabled(mirthChannel) ? disabling : [];
-  const enabled = channelEnabled(mirthChannel) && holds.length === 0;
-  const description = withHoldNote(getString(mirthChannel, 'description'), holds);
   const fileId = getString(mirthChannel, 'id') ?? randomUUID();
   const id = idSchema.safeParse(fileId).data ?? fileId;
 
@@ -300,6 +299,12 @@ function convertChannel(
   const destinations = convertDestinations(mirthChannel, { channelName: name, inboundDataType, warnings });
   const response = mapResponseVariable(sourceConnector, destinations, name, warnings);
   const sourceConnectorProperties = withSourceResponseMode(sourceConnectorResult, response.responseMode);
+  // The deploy would refuse it: imported enabled, it would fail at the next deploy instead.
+  const batchHold = batchRefusal({ inboundDataType, sourceConnectorType: sourceConnectorResult.type, sourceConnectorProperties });
+  const allHolds = [...disabling, ...(batchHold === null ? [] : [batchHold])];
+  const holds = channelEnabled(mirthChannel) ? allHolds : [];
+  const enabled = channelEnabled(mirthChannel) && holds.length === 0;
+  const description = withHoldNote(getString(mirthChannel, 'description'), holds);
 
   const outboundDataType = extractDataType(sourceConnector, 'outbound') ?? 'HL7V2';
 
@@ -344,7 +349,7 @@ function convertChannel(
   if (holds.length > 0) {
     warnings.push(`Channel "${name}": imported disabled because ${holds.join(' and ')}; enable it once you have decided how it should run here`);
   }
-  return entry;
+  return { channel: entry, holds: allHolds };
 }
 
 /**
