@@ -747,6 +747,10 @@ A CHANNEL destination read SENT when its target channel answers before its desti
 
 A CHANNEL destination that queues no longer sends a message again once the target has stored it with an error (an HL7 batch the target stored only in part is still sent again), which made a new message in the target for every retry and delivered it again to the target's destinations that worked. It ends ERROR at once. A failure that has gone away (a partner that was down, a lookup that timed out) used to be cleared by the next retry: reprocess the message in the target channel instead.
 
+## A DATABASE source warns when its lock may hold nothing (#445)
+
+A DATABASE source with an update mode now logs a WARN at deploy when its query, as the poll sends it, may claim none of the rows it returns: a `WITH` query or, on MySQL, a subquery in `FROM` without a `FOR UPDATE SKIP LOCKED` of its own, a query whose only lock is in a subquery of a condition, or `UNION`, `INTERSECT` or `EXCEPT`. Two sources (or two servers) on the same table can then take the same row, as they could before. The channel deploys all the same (D-400). A `FOR SHARE` in a subquery after `> ALL (` or `IS DISTINCT FROM (` was taken for the query's own and made `FOR UPDATE`, so the query's rows were not claimed; it is now left as written and the query gets `FOR UPDATE SKIP LOCKED`. Look for `may hold none of the rows` in the server log after the upgrade, and give the query that reads the rows a lock of its own ([DATABASE limits](../user/connector-reference.md#database-limits)).
+
 ## An email refused for some recipients reads ERROR (#414)
 
 An SMTP destination read SENT when the mail server refused some of the recipients and took the others, and said only how many. It now reads ERROR and raises its alert, the response names the recipients accepted and refused, and the message is not sent again by a queue, which would mail the others twice (D-398). An address that a mail server has always refused, for a recipient nobody noticed was gone, now makes every such message an error: remove it from the destination's settings.

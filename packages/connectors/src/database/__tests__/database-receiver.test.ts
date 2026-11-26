@@ -150,6 +150,41 @@ describe('DatabaseReceiver', () => {
       const result = await receiver.onDeploy();
       expect(result.ok).toBe(true);
     });
+
+    // #445: two sources can take one row, and the database gives no error.
+    describe('with a query whose lock may hold none of its rows', () => {
+      const CTE = 'WITH c AS (SELECT id FROM messages WHERE processed = false) SELECT * FROM c';
+      const claiming = { updateMode: UPDATE_MODE.ALWAYS, updateQuery: 'UPDATE messages SET processed = true WHERE id = ${id}' };
+
+      it('deploys, and warns with why, without the query', async () => {
+        const { logger, warnings } = makeMockLogger();
+        receiver = new DatabaseReceiver(makeConfig({ ...claiming, selectQuery: CTE }), undefined, logger);
+
+        const result = await receiver.onDeploy();
+
+        expect(result.ok).toBe(true);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]?.msg).toContain('two sources on the same table can take the same row');
+        expect(warnings[0]?.obj).toEqual({ database: 'testdb', why: expect.stringContaining('WITH query') });
+        expect(JSON.stringify(warnings[0])).not.toContain('processed = false');
+      });
+
+      it('says nothing without an update mode, which claims no row', async () => {
+        const { logger, warnings } = makeMockLogger();
+        receiver = new DatabaseReceiver(makeConfig({ selectQuery: CTE }), undefined, logger);
+
+        expect((await receiver.onDeploy()).ok).toBe(true);
+        expect(warnings).toEqual([]);
+      });
+
+      it('says nothing for a plain SELECT', async () => {
+        const { logger, warnings } = makeMockLogger();
+        receiver = new DatabaseReceiver(makeConfig(claiming), undefined, logger);
+
+        expect((await receiver.onDeploy()).ok).toBe(true);
+        expect(warnings).toEqual([]);
+      });
+    });
   });
 
   describe('onStart', () => {
