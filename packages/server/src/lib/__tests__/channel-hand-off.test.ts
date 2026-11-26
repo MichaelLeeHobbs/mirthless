@@ -31,7 +31,7 @@ function storeWith(recorded: Result<string | null>, states: readonly Result<Stat
 
 function channelSend(overrides: Partial<ChannelSend> = {}): ChannelSend & { readonly send: ReturnType<typeof vi.fn> } {
   const send = vi.fn(async () => SENT_NOW);
-  return { key: KEY, target: TARGET, halt: new AbortController().signal, deadline: new AbortController().signal, ...overrides, send };
+  return { key: KEY, target: TARGET, halt: new AbortController().signal, waitUntil: new AbortController().signal, ...overrides, send };
 }
 
 describe('handOffIn', () => {
@@ -68,13 +68,25 @@ describe('sendOnce', () => {
     expect(store.forget).toHaveBeenCalledExactlyOnceWith(KEY);
   });
 
-  it('removes it after a send that failed too', async () => {
+  it('removes it after a failure that is final: the target stored the message', async () => {
     const store = storeWith(ok(null));
     const send = channelSend();
-    send.send.mockResolvedValueOnce(ok({ status: 'ERROR', content: '' }));
+    send.send.mockResolvedValueOnce(ok({ status: 'ERROR', content: '', final: true }));
 
-    expect(await sendOnce(send, store)).toEqual(ok({ status: 'ERROR', content: '' }));
+    expect(await sendOnce(send, store)).toEqual(ok({ status: 'ERROR', content: '', final: true }));
     expect(store.forget).toHaveBeenCalledOnce();
+  });
+
+  it.each<[string, Result<DestinationResponse>]>([
+    ['an ERROR that is retried', ok({ status: 'ERROR', content: '', errorMessage: 'Target channel is not deployed or not registered' })],
+    ['a send that threw', failed('Send aborted')],
+  ])('keeps it after %s, which made no message in the target', async (_what, outcome) => {
+    const store = storeWith(ok(RECORDED), [ok({ processed: false, status: 'RECEIVED' })], { isStarted: vi.fn(() => false) });
+    const send = channelSend();
+    send.send.mockResolvedValueOnce(outcome);
+
+    expect(await sendOnce(send, store)).toEqual(outcome);
+    expect(store.forget).not.toHaveBeenCalled();
   });
 
   it.each(['SENT', 'FILTERED'])('does not send again what the target finished %s, and says which message it is', async (status) => {
@@ -170,9 +182,9 @@ describe('sendOnce', () => {
     });
 
     it("sends once the send's time is up", async () => {
-      const deadline = new AbortController();
-      const store = storeWith(ok(RECORDED), [open, open], { pause: vi.fn(async () => { deadline.abort(); }) });
-      const send = channelSend({ deadline: deadline.signal });
+      const waitUntil = new AbortController();
+      const store = storeWith(ok(RECORDED), [open, open], { pause: vi.fn(async () => { waitUntil.abort(); }) });
+      const send = channelSend({ waitUntil: waitUntil.signal });
 
       expect(await sendOnce(send, store)).toEqual(SENT_NOW);
       expect(store.pause).toHaveBeenCalledOnce();
@@ -182,7 +194,7 @@ describe('sendOnce', () => {
       const halt = new AbortController();
       halt.abort();
       const store = storeWith(ok(RECORDED), [open]);
-      const send = channelSend({ halt: halt.signal, deadline: halt.signal });
+      const send = channelSend({ halt: halt.signal, waitUntil: halt.signal });
 
       const result = await sendOnce(send, store);
 

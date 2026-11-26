@@ -24,6 +24,7 @@ vi.mock('../message-delete-helper.js', () => ({
 import { MessageReprocessService } from '../message-reprocess.service.js';
 import { db } from '../../lib/db.js';
 import { emitEvent } from '../../lib/event-emitter.js';
+import { messageContent } from '../../db/schema/index.js';
 
 const mockSelect = vi.mocked(db.select);
 const mockUpdate = vi.mocked(db.update);
@@ -305,7 +306,7 @@ describe('MessageReprocessService.resendDestination', () => {
     // Re-enqueued with a fresh retry budget.
     expect(set).toHaveBeenCalledWith({ status: 'QUEUED', sendAttempts: 0 });
     // Without what a target channel recorded for an earlier send, the queue sends it (D-394).
-    expect(mockDelete).toHaveBeenCalledOnce();
+    expect(mockDelete).toHaveBeenCalledExactlyOnceWith(messageContent);
   });
 
   it('removes nothing when it did not queue the destination again', async () => {

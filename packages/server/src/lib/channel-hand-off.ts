@@ -10,9 +10,9 @@ import { idSchema, wholeNumberSchema } from '@galvanigraph/core-models';
 import type { DestinationResponse, HandOff } from '@galvanigraph/engine';
 
 // A queued send's message id is the text Postgres returns for a bigint.
-const messageIdSchema = wholeNumberSchema(1);
-const handOffSchema = z.object({ channelId: idSchema, messageId: messageIdSchema, metaDataId: messageIdSchema });
-const handedToSchema = z.object({ channelId: idSchema, messageId: messageIdSchema });
+const positiveWholeNumber = wholeNumberSchema(1);
+const handOffSchema = z.object({ channelId: idSchema, messageId: positiveWholeNumber, metaDataId: positiveWholeNumber });
+const handedToSchema = z.object({ channelId: idSchema, messageId: positiveWholeNumber });
 type HandedTo = z.infer<typeof handedToSchema>;
 
 /** A source status the pipeline writes only when it is done with the message; any failure in it, reported or hidden, is ERROR. */
@@ -48,8 +48,8 @@ export interface ChannelSend {
   /** The channel the destination sends to now; null when that cannot be told, or for a first send, which nothing came before. */
   readonly target: string | null;
   readonly halt: AbortSignal;
-  /** The halt and the send's time limit. */
-  readonly deadline: AbortSignal;
+  /** The halt and how long to wait for an unfinished target message. The send after it has a time limit of its own. */
+  readonly waitUntil: AbortSignal;
   readonly send: () => Promise<Result<DestinationResponse>>;
 }
 
@@ -69,6 +69,9 @@ export async function sendOnce(channelSend: ChannelSend, store: HandOffStore): P
   const earlier = await finishedBefore(channelSend, store);
   if (earlier === HALTED) return { ok: false, value: null, error: new Error('Interrupted: the channel was halted') } as Result<DestinationResponse>;
   const result = earlier === null ? await channelSend.send() : { ok: true as const, value: asSent(earlier), error: null };
+  // A failure that may be retried made no message in the target: a record left by an interrupted send still names its message.
+  const settled = result.ok && (result.value.status === 'SENT' || result.value.final === true);
+  if (!settled) return result;
   const forgotten = await store.forget(channelSend.key);
   if (!forgotten.ok) store.onUnread(channelSend.key, forgotten.error);
   return result;
@@ -81,7 +84,7 @@ function asSent({ to, failed }: Earlier): DestinationResponse {
     : { status: 'SENT', content: `messageId=${id}` };
 }
 
-async function finishedBefore({ key, target, halt, deadline }: ChannelSend, store: HandOffStore): Promise<Earlier | null | typeof HALTED> {
+async function finishedBefore({ key, target, halt, waitUntil }: ChannelSend, store: HandOffStore): Promise<Earlier | null | typeof HALTED> {
   if (target === null) return null;
   const stored = await store.handedTo(key);
   if (!stored.ok) {
@@ -105,8 +108,8 @@ async function finishedBefore({ key, target, halt, deadline }: ChannelSend, stor
     if (found === null || found.processed) return null;
     if (halt.aborted) return HALTED;
     // Not finished, and nothing finishes it now.
-    if (deadline.aborted || !store.isStarted(to.channelId)) return null;
-    await store.pause(deadline);
+    if (waitUntil.aborted || !store.isStarted(to.channelId)) return null;
+    await store.pause(waitUntil);
   }
 }
 

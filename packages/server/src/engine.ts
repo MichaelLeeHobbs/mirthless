@@ -898,9 +898,10 @@ export class EngineManager {
       const sent = variables && Object.keys(variables).length > 0 ? variables : undefined;
       // Connectors apply their own configured timeouts; this is the backstop
       // that keeps a send from hanging forever if one does not.
-      const deadline = AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]);
+      const backstop = (): AbortSignal => AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]);
+      // From when it begins: a Channel Writer may first have waited for the target.
       const send = async (): Promise<Result<DestinationResponse>> => {
-        const called = await tryCatch(() => connector.send({ ...messageFor(metaDataId, messageId, content), correlationId, variables: sent }, deadline));
+        const called = await tryCatch(() => connector.send({ ...messageFor(metaDataId, messageId, content), correlationId, variables: sent }, backstop()));
         // One that throws fails this send, not the whole message with its other destinations.
         return called.ok ? called.value : called;
       };
@@ -908,7 +909,7 @@ export class EngineManager {
       if (target === undefined) return send();
       const resolved = firstSend ? null : resolveTarget(target, sent);
       const key = { channelId: channel.id, messageId, metaDataId };
-      return sendOnce({ key, target: resolved?.includes('${') ? null : resolved, halt: signal, deadline, send }, this.handOffStore);
+      return sendOnce({ key, target: resolved?.includes('${') ? null : resolved, halt: signal, waitUntil: backstop(), send }, this.handOffStore);
     };
     const sendFn = sendVia(false);
 

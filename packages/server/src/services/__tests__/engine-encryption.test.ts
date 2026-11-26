@@ -149,12 +149,36 @@ describe('message store adapter — encryptData enabled', () => {
     expect(mockInitializeMessage).toHaveBeenCalledTimes(1);
     const call = mockInitializeMessage.mock.calls[0]!;
     const rows = call[3] as { content: string }[];
-    const encryptedFlag = call[5] as boolean;
-    expect(encryptedFlag).toBe(true);
+    expect(call[5]).toEqual({ encrypted: true, handOff: undefined });
     expect(isEncryptedEnvelope(rows[0]!.content)).toBe(true);
     expect(rows[0]!.content).not.toContain('Jane Doe');
     const dec = decryptContent(rows[0]!.content);
     expect(dec.ok && dec.value === PHI).toBe(true);
+  });
+
+  describe('a message another channel hands on (D-394)', () => {
+    const handOff = { channelId: '11111111-1111-4111-8111-111111111111', messageId: 7, metaDataId: 1 };
+    const rows = [
+      { metaDataId: 0, contentType: CONTENT_TYPE.RAW, content: PHI, dataType: 'HL7V2' },
+      { metaDataId: 0, contentType: CONTENT_TYPE.SOURCE_MAP, content: '{"connectorType":"CHANNEL"}', dataType: 'JSON' },
+    ];
+    const production = (encryptData: boolean): ReturnType<typeof createMessageStoreAdapter> => createMessageStoreAdapter({
+      messageStorageMode: 'PRODUCTION', removeContentOnCompletion: false, removeAttachmentsOnCompletion: false, encryptData,
+    });
+    const storedTypes = (): unknown => (mockInitializeMessage.mock.calls[0]![3] as { contentType: number }[]).map((r) => r.contentType);
+
+    it.each([false, true])('keeps its source map, which the storage mode would leave out, and records the send (encrypted: %s)', async (encrypted) => {
+      await production(encrypted).initializeMessage!('ch1', 'srv', 'Source', rows, undefined, handOff);
+
+      expect(storedTypes()).toEqual([CONTENT_TYPE.RAW, CONTENT_TYPE.SOURCE_MAP]);
+      expect(mockInitializeMessage.mock.calls[0]![5]).toEqual(encrypted ? { encrypted: true, handOff } : { handOff });
+    });
+
+    it('leaves the source map out for any other message', async () => {
+      await production(false).initializeMessage!('ch1', 'srv', 'Source', rows);
+
+      expect(storedTypes()).toEqual([CONTENT_TYPE.RAW]);
+    });
   });
 
   it('fails loudly (does not store plaintext) when encryption fails', async () => {

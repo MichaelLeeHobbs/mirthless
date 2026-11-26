@@ -227,6 +227,9 @@ describeIntegration('A send to another channel that a server stop interrupts (re
     await restart();
     const { messageId } = unwrap(await deployment.DeploymentService.sendMessage(found.sender, 'order'));
     await finished(found);
+    // As an interrupted send would have left it: the queue would take the target's message as this send.
+    const [handed] = await messagesOf(found.target);
+    unwrap(await mods.MessageService.storeContent(found.sender, messageId, 1, CONTENT_TYPE.HAND_OFF, JSON.stringify({ channelId: found.target, messageId: handed!.id }), 'JSON'));
 
     unwrap(await reprocess.MessageReprocessService.resendDestination(found.sender, messageId, 1));
     await vi.waitFor(async () => { expect(await delivered()).toHaveLength(2); }, WAIT);
