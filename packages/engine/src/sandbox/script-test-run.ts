@@ -9,7 +9,7 @@ import { VmSandboxExecutor } from './sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from './sandbox-context.js';
 import { ScriptRunLog } from './script-run-log.js';
 import type { BridgeDependencies, CollectionBridge } from './bridge-functions.js';
-import { parseForSandbox, serializeFromSandbox, type DataTypeOptions } from '../pipeline/data-type-handler.js';
+import { parseForSandbox, responseDataTypeOptions, serializeFromSandbox, type DataTypeOptions } from '../pipeline/data-type-handler.js';
 import { DestinationSet, createDestinationSetProxy } from '../pipeline/destination-set.js';
 
 /** Also caps the returned value. */
@@ -87,6 +87,13 @@ function scriptBody(input: ScriptTestInput): Result<string> {
   return { ok: true, value: input.script, error: null };
 }
 
+/** A response transformer's sample stands for a destination's answer, which the pipeline reads with these. */
+function sampleOptions(input: ScriptTestInput): DataTypeOptions | undefined {
+  return input.surface.templateContext === CODE_TEMPLATE_CONTEXT.DESTINATION_RESPONSE_TRANSFORMER
+    ? responseDataTypeOptions(input.dataTypeOptions)
+    : input.dataTypeOptions;
+}
+
 /** A loop that logs must not send megabytes back to the browser. */
 function loggedLines(log: ScriptRunLog): { level: string; message: string }[] {
   const run = log.run();
@@ -106,11 +113,12 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
   return tryCatch(async (): Promise<ScriptTestResult> => {
     const started = Date.now();
     const dataType = input.surface.dataType;
+    const options = sampleOptions(input);
 
     let parsed: unknown = input.sample;
     if (dataType !== undefined) {
       try {
-        parsed = parseForSandbox(input.sample, dataType, input.dataTypeOptions);
+        parsed = parseForSandbox(input.sample, dataType, options);
       } catch (err: unknown) {
         // A preprocessor gets it as text, and may repair it.
         if (!PREPROCESSORS.has(input.surface.templateContext ?? '')) return errorResult(`The sample is not valid ${dataType}: ${err instanceof Error ? err.message : String(err)}`, started);
@@ -140,7 +148,7 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
     let output: string | null = null;
     if (!filter && dataType !== undefined) {
       const value = replacement(returnValue, msg);
-      output = value == null ? null : serializeFromSandbox(value, dataType, input.sample, input.dataTypeOptions);
+      output = value == null ? null : serializeFromSandbox(value, dataType, input.sample, options);
     }
     // A script can build a huge message.
     if (output !== null && output.length > MAX_TEST_OUTPUT_CHARS) {
