@@ -249,6 +249,19 @@ describe('ChannelDispatcher.send', () => {
     });
   });
 
+  it.each([
+    ['without waiting for the response', false, { messageId: 9, response: 'ACK', destinationFailed: true }],
+    ['waiting, when the target gave no response', true, { messageId: 9, destinationFailed: true }],
+  ])('returns the hidden failure with no content %s', async (_how, waitForResponse, value) => {
+    registerChannel('target-ch-001', async () => ({ ok: true as const, value, error: null }));
+    const dispatcher = new ChannelDispatcher(makeConfig({ waitForResponse }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value).toMatchObject({ status: 'ERROR', content: '', final: true });
+  });
+
   it('leaves an ERROR the target did not record open to a retry', async () => {
     registerChannel('target-ch-001', async () => ({ ok: false as const, value: null, error: stderr('store down') }));
     const dispatcher = new ChannelDispatcher(makeConfig());
