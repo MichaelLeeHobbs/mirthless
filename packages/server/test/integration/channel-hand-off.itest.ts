@@ -187,8 +187,8 @@ describeIntegration('A send to another channel that a server stop interrupts (re
     expect(await messagesOf(found.target)).toHaveLength(1);
   });
 
-  it('hands it on again when the target failed the message it had, which may be the stop\'s doing', { timeout: 3 * START_TIMEOUT_MS }, async () => {
-    const found = await pair();
+  it('reads ERROR when the target failed the message it had, and hands it on no second time, though the sender queues on failure', { timeout: 3 * START_TIMEOUT_MS }, async () => {
+    const found = await pair({ senderQueue: 'ON_FAILURE' });
     const messageId = await received(found.sender);
     await startAndDie(mods.pool);
     const handed = await stoppedInTheTarget(found, ROUTED);
@@ -197,12 +197,12 @@ describeIntegration('A send to another channel that a server stop interrupts (re
     await restart();
     await finished(found);
 
-    const [first, again, ...more] = await messagesOf(found.target);
-    expect([first, more]).toEqual([{ id: handed, processed: true }, []]);
-    expect(await delivered()).toEqual([{ messageId: again!.id, content: 'order' }]);
+    expect(await delivered()).toEqual([]);
+    expect(await messagesOf(found.target)).toEqual([{ id: handed, processed: true }]);
     expect(await statusesOf(found.sender)).toEqual([
-      { message: messageId, connector: 0, status: 'SENT' }, { message: messageId, connector: 1, status: 'SENT' },
+      { message: messageId, connector: 0, status: 'ERROR' }, { message: messageId, connector: 1, status: 'ERROR' },
     ]);
+    expect(unwrap(await mods.MessageService.loadContent(found.sender, messageId, 1, CONTENT_TYPE.ERROR))).toContain(`recorded message ${String(handed)}, from a send a server stop interrupted`);
   });
 
   it('hands it on again when the target\'s message is gone', { timeout: 3 * START_TIMEOUT_MS }, async () => {
@@ -235,15 +235,16 @@ describeIntegration('A send to another channel that a server stop interrupts (re
     expect(await messagesOf(found.target)).toHaveLength(2);
   });
 
-  it('hands a message on again at each retry after the target failed it', async () => {
+  it('hands a message on at a retry once the target runs', async () => {
     const found = await pair({ waitsIn: 'nowhere', senderQueue: 'ON_FAILURE' });
-    await mods.pool.query(`ALTER TABLE ${TABLE} ADD CONSTRAINT refuses CHECK (content <> 'order')`);
     await restart();
+    unwrap(await deployment.DeploymentService.stop(found.target, actor));
     unwrap(await deployment.DeploymentService.sendMessage(found.sender, 'order'));
-    await vi.waitFor(async () => { expect((await messagesOf(found.target)).length).toBeGreaterThanOrEqual(2); }, WAIT);
+    await vi.waitFor(async () => { expect(await statusesOf(found.sender)).toContainEqual(expect.objectContaining({ connector: 1, status: 'QUEUED' })); }, WAIT);
 
-    await mods.pool.query(`ALTER TABLE ${TABLE} DROP CONSTRAINT refuses`);
+    unwrap(await deployment.DeploymentService.start(found.target, actor));
     await vi.waitFor(async () => { expect(await delivered()).toHaveLength(1); }, WAIT);
-    await vi.waitFor(async () => { expect(await statusesOf(found.sender)).toContainEqual(expect.objectContaining({ connector: 1, status: 'SENT' })); }, WAIT);
+    await finished(found);
+    expect(await messagesOf(found.target)).toHaveLength(1);
   });
 });

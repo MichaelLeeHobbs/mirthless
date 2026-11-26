@@ -678,7 +678,7 @@ export class MessageService {
    *
    * `encrypted` only marks the rows; the caller must already have encrypted each row's content.
    * `handOff` is the Channel Writer send the message comes from: the same statement records the
-   * message on the sender's message, so a send a server stop interrupts can tell it was recorded (D-393).
+   * message on the sender's message, so a send a server stop interrupts can tell it was recorded (D-394).
    */
   static async initializeMessage(
     channelId: string,

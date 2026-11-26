@@ -104,14 +104,14 @@ How a message moves through a channel: its stages and statuses, the destinations
 | PIPE-REC-02 | A message interrupted by a server stop before it was routed shall be run again as the same message, so that however often the server stops meanwhile there is one message and one delivery per destination. | P1 | Test | Proposed |
 | PIPE-REC-03 | After a server stop the system shall send an interrupted message only to destinations that had no final outcome, never again to one shown as sent or filtered, and shall show on the message each destination whose interrupted send it repeated. | P1 | Test | Proposed |
 | PIPE-REC-04 | When the same message has been interrupted by a server stop 3 times, the system shall not run it again by itself; it shall show it as error, raise an alert, and leave it for a person to run. | P1 | Test | Proposed |
-| PIPE-REC-05 | A hand-off from one channel to another that a server stop interrupts shall leave exactly one message in the receiving channel after both channels have started again. | P1 | Test | Proposed |
+| PIPE-REC-05 | A hand-off from one channel to another that a server stop interrupts shall leave exactly one message in the receiving channel after both channels have started again, and the sending channel shall show the outcome of that message; when the system cannot tell whether the receiving channel holds the message, it shall send it again. | P1 | Test | Proposed |
 | PIPE-REC-06 | The system shall never have two sends of one message to one destination under way at the same time, whether from the channel, its queue, a resend, or recovery while an earlier deployment of the channel is still sending. | P1 | Test | Proposed |
 
 - PIPE-REC-01: source: docs/user/capabilities.md "Recover messages after a crash" (Yes); docs/design/02-engine.md "Recovery"; D-133, D-187, D-213, D-233. A message whose content the storage setting did not keep is counted as failed at every start and left unfinished today (D-133, code).
 - PIPE-REC-02: source: #401 (one message became 28 and all 28 were sent). Conflict: D-213 and D-233 run it again as a new message and close the original; #401 and the work it cites keep the same message, kept here as the later intent. D-345 (#408) does this.
 - PIPE-REC-03: source: D-213; docs/user/connector-reference.md "Every destination" (the partner can get the interrupted message twice). Delivery is at least once (README Out of scope), so the repeat must be visible; nothing marks it today. The mark itself is an assumption from the Purpose.
 - PIPE-REC-04: source: #401 "A limit on reruns", which asks for a decision first; the number and the choice of error over holding the channel are the drafter's default.
-- PIPE-REC-05: source: #401 "Channel destinations" (from reading, not reproduced).
+- PIPE-REC-05: source: #401 "Channel destinations", reproduced in `channel-hand-off.itest.ts`; D-394 does it for a Channel destination, with D-393's ERROR for a message the receiving channel failed. Not yet: `routeMessage` in a script that runs again, a receiving channel that splits batches or keeps no raw content, and one that is not started when the sender sends again (#401).
 - PIPE-REC-06: source: D-130, D-233, D-343 (recovery waits for an earlier deployment); #339 (a resend is not checked against a send in progress).
 
 ## Batches and attachments (BAT)

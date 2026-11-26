@@ -95,12 +95,22 @@ describe('sendOnce', () => {
     expect(send.send).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])('reads ERROR, final, for what the target failed (marked finished: %s), and does not send it again', async (processed) => {
+    const store = storeWith(ok(RECORDED), [ok({ processed, status: 'ERROR' })]);
+    const send = channelSend();
+
+    expect(await sendOnce(send, store)).toEqual(ok({
+      status: 'ERROR', content: '', final: true,
+      errorMessage: `Target channel ${TARGET} recorded message 40, from a send a server stop interrupted, with an ERROR status`,
+    }));
+    expect(send.send).not.toHaveBeenCalled();
+    expect(store.forget).toHaveBeenCalledOnce();
+  });
+
   it.each<[string, Result<string | null>, readonly Result<State>[]]>([
     ['nothing was recorded', ok(null), []],
     ['what was recorded cannot be read as JSON', ok('{'), []],
     ['what was recorded names no message', ok(JSON.stringify({ channelId: TARGET })), []],
-    ['the target failed it', ok(RECORDED), [ok({ processed: true, status: 'ERROR' })]],
-    ['the target failed it and could not mark it finished', ok(RECORDED), [ok({ processed: false, status: 'ERROR' })]],
     ['the target finished it without a final status', ok(RECORDED), [ok({ processed: true, status: 'TRANSFORMED' })]],
     ['the target message is gone', ok(RECORDED), [ok(null)]],
   ])('sends when %s', async (_why, recorded, states) => {

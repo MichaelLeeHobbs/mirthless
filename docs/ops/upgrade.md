@@ -722,6 +722,10 @@ A CHANNEL destination read SENT when its target channel answers before its desti
 
 A CHANNEL destination that queues no longer sends a message again once the target has stored it with an error (an HL7 batch the target stored only in part is still sent again), which made a new message in the target for every retry and delivered it again to the target's destinations that worked. It ends ERROR at once. A failure that has gone away (a partner that was down, a lookup that timed out) used to be cleared by the next retry: reprocess the message in the target channel instead.
 
+## A server stop no longer delivers a send to another channel twice (#401)
+
+A CHANNEL destination waits for its target's pipeline, so a stop in between left a message open in each channel: the next start ran the target's and sent again, and the target delivered both. A send now finds the message the target recorded for it and reads as that message did (D-394). This works for sends made after the upgrade: a message left open by a stop before it is sent again once, as before. Give each channel that sends to another a dependency on it, so the target starts first. A target channel now keeps the source map of a message it receives from a Channel Writer, whatever its storage mode: one small row (channel and message ids, no message content) for each message.
+
 ## Standard upgrade (Docker)
 
 1. Get the new code. Nothing changes until step 3. There are no published images; the stack builds from source.

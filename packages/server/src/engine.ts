@@ -448,7 +448,7 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
     storeCustomMetadata: (channelId, messageId, metaDataId, metadata) =>
       MessageService.storeCustomMetadata(channelId, messageId, metaDataId, metadata),
     initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId, handOff) => {
-      // Whatever the mode: a run again without it can route the message another way than the send that is not sent again (D-393).
+      // Whatever the mode: a run again without it can route the message another way than the send that is not sent again (D-394).
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType) || (handOff && r.contentType === CONTENT_TYPE.SOURCE_MAP));
       if (!encrypt) {
         return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId, { handOff });

@@ -1,7 +1,7 @@
 // A Channel Writer's send waits for the target channel's whole pipeline, so a server stop can end it
 // after the target recorded the message. The target records it on the sender's message as well
 // (`CONTENT_TYPE.HAND_OFF`), and the send removes that once it returns: a send that finds one was
-// interrupted, and does not send again what the target delivered (D-393).
+// interrupted, and does not make a second message in the target (D-394).
 
 import { setTimeout as pause } from 'node:timers/promises';
 import { z } from 'zod/v4';
@@ -15,8 +15,8 @@ const handOffSchema = z.object({ channelId: idSchema, messageId: messageIdSchema
 const handedToSchema = z.object({ channelId: idSchema, messageId: messageIdSchema });
 type HandedTo = z.infer<typeof handedToSchema>;
 
-/** A target that reads the same input again finishes its message with one of these, as a live send would see it delivered. */
-const DELIVERED: ReadonlySet<string> = new Set(['SENT', 'FILTERED']);
+/** A source status the pipeline writes only when it is done with the message; any failure in it, reported or hidden, is ERROR. */
+const FINISHED: ReadonlySet<string> = new Set(['SENT', 'FILTERED', 'ERROR']);
 const POLL_MS = 1_000;
 
 /** The send a Channel Writer's source map names (channel-dispatcher.ts), or null. */
@@ -55,22 +55,33 @@ export interface ChannelSend {
 
 const HALTED = 'HALTED';
 
+interface Earlier {
+  readonly to: HandedTo;
+  readonly failed: boolean;
+}
+
 /**
- * Sends, unless an interrupted send of the same destination was delivered by the target. When unsure,
- * it sends: a target message that failed, is gone, or is not finished once its channel stops, is sent again.
+ * Sends, unless the target finished the message an interrupted send of the same destination handed it:
+ * then the send reads as that message did, as a send that returned would have (D-393). When unsure, it
+ * sends: a target message that is gone, or is not finished once its channel stops, is sent again.
  */
 export async function sendOnce(channelSend: ChannelSend, store: HandOffStore): Promise<Result<DestinationResponse>> {
-  const earlier = await deliveredBefore(channelSend, store);
+  const earlier = await finishedBefore(channelSend, store);
   if (earlier === HALTED) return { ok: false, value: null, error: new Error('Interrupted: the channel was halted') } as Result<DestinationResponse>;
-  const result = earlier === null
-    ? await channelSend.send()
-    : { ok: true as const, value: { status: 'SENT' as const, content: `messageId=${String(earlier.messageId)}` }, error: null };
+  const result = earlier === null ? await channelSend.send() : { ok: true as const, value: asSent(earlier), error: null };
   const forgotten = await store.forget(channelSend.key);
   if (!forgotten.ok) store.onUnread(channelSend.key, forgotten.error);
   return result;
 }
 
-async function deliveredBefore({ key, target, halt, deadline }: ChannelSend, store: HandOffStore): Promise<HandedTo | null | typeof HALTED> {
+function asSent({ to, failed }: Earlier): DestinationResponse {
+  const id = String(to.messageId);
+  return failed
+    ? { status: 'ERROR', content: '', errorMessage: `Target channel ${to.channelId} recorded message ${id}, from a send a server stop interrupted, with an ERROR status`, final: true }
+    : { status: 'SENT', content: `messageId=${id}` };
+}
+
+async function finishedBefore({ key, target, halt, deadline }: ChannelSend, store: HandOffStore): Promise<Earlier | null | typeof HALTED> {
   if (target === null) return null;
   const stored = await store.handedTo(key);
   if (!stored.ok) {
@@ -87,11 +98,11 @@ async function deliveredBefore({ key, target, halt, deadline }: ChannelSend, sto
       return null;
     }
     const found = state.value;
-    if (found !== null && DELIVERED.has(found.status ?? '')) {
+    if (found !== null && FINISHED.has(found.status ?? '')) {
       store.onRepeat(key, to);
-      return to;
+      return { to, failed: found.status === 'ERROR' };
     }
-    if (found === null || found.processed || found.status === 'ERROR') return null;
+    if (found === null || found.processed) return null;
     if (halt.aborted) return HALTED;
     // Not finished, and nothing finishes it now.
     if (deadline.aborted || !store.isStarted(to.channelId)) return null;
